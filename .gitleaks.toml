@@ -21,3 +21,19 @@ regexes = [
   '''^AIzaSyFAKE''',
   '''MIIBogIBAAJ\.\.\.''',
 ]
+
+[[allowlists]]
+description = "Generated job-host-v1 contract test vectors (docs/platform/job-host-v1.md, shared with kete-code-platform; not real keys)"
+regexes = [
+  '''^kete_jhe_6VYcQvAovMFvzajh-0vmcx7RWhVSTIIG3X0p3qtdzHk$''',
+  '''^aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU$''',
+  '''^9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE$''',
+]
+
+[[allowlists]]
+description = "Upstream OpenCode test fixtures, byte-identical to OpenCode's public repository (a publishable Stripe test key, a recorded test JWT, a fake Google key)"
+paths = [
+  '''^packages/ai/test/fixtures/recordings/''',
+  '''^packages/console/app/package\.json$''',
+  '''^packages/http-recorder/test/''',
+]

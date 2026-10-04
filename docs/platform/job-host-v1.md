@@ -870,9 +870,9 @@ export type JobHostErrorResponse = z.infer<typeof JobHostErrorResponse>
 
 ```json
 {
-  "enrollment_token": "kete_jhe_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-  "signing_key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-  "sealing_key": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+  "enrollment_token": "kete_jhe_6VYcQvAovMFvzajh-0vmcx7RWhVSTIIG3X0p3qtdzHk",
+  "signing_key": "aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU",
+  "sealing_key": "9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE",
   "facts": {
     "arch": "amd64",
     "driver": "firecracker",

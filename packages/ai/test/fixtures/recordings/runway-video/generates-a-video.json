@@ -169,7 +169,7 @@
         "headers": {
           "content-type": "application/json; charset=utf-8"
         },
-        "body": "{\"id\":\"40576b8b-fb82-4cf8-b571-b63553fcd0f9\",\"createdAt\":\"2026-09-22T19:48:41.125Z\",\"status\":\"SUCCEEDED\",\"output\":[\"https://dnznrvs05pmza.cloudfront.net/5f3daef2-1e85-4840-9f84-629bdbc04e24.mp4?_jwt=REDACTED\"],\"cost\":{\"credits\":24}}"
+        "body": "{\"id\":\"40576b8b-fb82-4cf8-b571-b63553fcd0f9\",\"createdAt\":\"2026-09-22T19:48:41.125Z\",\"status\":\"SUCCEEDED\",\"output\":[\"https://dnznrvs05pmza.cloudfront.net/5f3daef2-1e85-4840-9f84-629bdbc04e24.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiOTFkMzc1NWI5MThiOGQxNSIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MDI2MDA1OX0.K1u7-zuSQAXo9XJM_GU_oEahIBKgqci_ifNE_g1iyQQ\"],\"cost\":{\"credits\":24}}"
       }
     },
     {
@@ -185,14 +185,14 @@
         "headers": {
           "content-type": "application/json; charset=utf-8"
         },
-        "body": "{\"id\":\"40576b8b-fb82-4cf8-b571-b63553fcd0f9\",\"createdAt\":\"2026-09-22T19:48:41.125Z\",\"status\":\"SUCCEEDED\",\"output\":[\"https://dnznrvs05pmza.cloudfront.net/5f3daef2-1e85-4840-9f84-629bdbc04e24.mp4?_jwt=REDACTED\"],\"cost\":{\"credits\":24}}"
+        "body": "{\"id\":\"40576b8b-fb82-4cf8-b571-b63553fcd0f9\",\"createdAt\":\"2026-09-22T19:48:41.125Z\",\"status\":\"SUCCEEDED\",\"output\":[\"https://dnznrvs05pmza.cloudfront.net/5f3daef2-1e85-4840-9f84-629bdbc04e24.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiOTFkMzc1NWI5MThiOGQxNSIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MDI2MDA1OX0.K1u7-zuSQAXo9XJM_GU_oEahIBKgqci_ifNE_g1iyQQ\"],\"cost\":{\"credits\":24}}"
       }
     },
     {
       "transport": "http",
       "request": {
         "method": "GET",
-        "url": "https://dnznrvs05pmza.cloudfront.net/5f3daef2-1e85-4840-9f84-629bdbc04e24.mp4?_jwt=REDACTED",
+        "url": "https://dnznrvs05pmza.cloudfront.net/5f3daef2-1e85-4840-9f84-629bdbc04e24.mp4?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiOTFkMzc1NWI5MThiOGQxNSIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc5MDI2MDA1OX0.K1u7-zuSQAXo9XJM_GU_oEahIBKgqci_ifNE_g1iyQQ",
         "headers": {},
         "body": ""
       },

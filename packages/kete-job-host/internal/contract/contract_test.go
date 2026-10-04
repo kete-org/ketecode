@@ -9,11 +9,11 @@ import (
 func TestValidators(t *testing.T) {
 	ok := map[string]bool{
 		"uuid":   ValidUUID("7d0f3c2e-5b1a-4c8e-9f60-2a4b6c8d0e1f") && !ValidUUID("7D0F3C2E-5B1A-4C8E-9F60-2A4B6C8D0E1F"),
-		"b64":    ValidBase64Url32("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB") && !ValidBase64Url32("aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqV"),
+		"b64":    ValidBase64Url32("aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU") && !ValidBase64Url32("aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqV"),
 		"gen":    ValidGeneration("g-2026-10-03.1") && !ValidGeneration("-g") && !ValidGeneration(strings.Repeat("g", 65)),
 		"ts":     ValidTimestamp("2026-10-03T01:59:40.125Z") && ValidTimestamp("2026-10-03T01:59:40+02:00") && !ValidTimestamp("2026-10-03T01:59:40") && !ValidTimestamp("2026-13-03T01:59:40Z"),
 		"image":  ValidImageRef("ghcr.io/kete-org/kete-job@sha256:"+strings.Repeat("a", 64)) && ValidImageRef("localhost:5000/a/b@sha256:"+strings.Repeat("a", 64)) && !ValidImageRef("ghcr.io/kete-org/kete-job:latest"),
-		"token":  ValidEnrollmentToken("kete_jhe_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") && !ValidEnrollmentToken("kete_jhe_short"),
+		"token":  ValidEnrollmentToken("kete_jhe_6VYcQvAovMFvzajh-0vmcx7RWhVSTIIG3X0p3qtdzHk") && !ValidEnrollmentToken("kete_jhe_short"),
 		"reason": FailedReason(ReasonNoFreeSlot) && !FailedReason(ReasonExited) && DestroyedReason(ReasonMaxAge) && !DestroyedReason(ReasonDriverFailed),
 	}
 	for name, v := range ok {
@@ -29,7 +29,7 @@ func TestValidators(t *testing.T) {
 // TestContractExamples decodes the contract's own example bodies (docs/platform/job-host-v1.md
 // "Examples") and validates them.
 func TestContractExamples(t *testing.T) {
-	enroll := `{"enrollment_token":"kete_jhe_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","signing_key":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","sealing_key":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC","facts":{"arch":"amd64","driver":"firecracker","slots":4,"kvm":true,"reset":"none","generation":"g-2026-10-03.1","versions":{"agent":"0.9.0","firecracker":"1.13.1","guest_kernel":"6.1.141-kete.1","host_kernel":"6.8.0-45-generic"}}}`
+	enroll := `{"enrollment_token":"kete_jhe_6VYcQvAovMFvzajh-0vmcx7RWhVSTIIG3X0p3qtdzHk","signing_key":"aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU","sealing_key":"9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE","facts":{"arch":"amd64","driver":"firecracker","slots":4,"kvm":true,"reset":"none","generation":"g-2026-10-03.1","versions":{"agent":"0.9.0","firecracker":"1.13.1","guest_kernel":"6.1.141-kete.1","host_kernel":"6.8.0-45-generic"}}}`
 	var er EnrollRequest
 	if json.Unmarshal([]byte(enroll), &er) != nil || er.Validate() != nil {
 		t.Fatal("enroll example")
