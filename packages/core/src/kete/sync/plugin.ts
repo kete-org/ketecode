@@ -74,6 +74,7 @@ import { KeteSyncMcp } from "./mcp.js"
 import type { PluginInternal } from "../../plugin/internal.js"
 import { Provider } from "../../provider.js"
 import { KeteGateway } from "../gateway.js"
+import { KeteOffline } from "../offline.js"
 
 export const agentIDHeader = "x-kete-agent-id"
 export const agentVersionHeader = "x-kete-agent-version"
@@ -139,6 +140,8 @@ export function make(
       const config = yield* Config.Service
       const global = yield* Global.Service
       const jobMode = KeteJobMode.enabled(runtimeEnvironment)
+      // Offline mode (--offline, KETE_OFFLINE or kete.offline): the cache is loaded, nothing is sent.
+      const offline = KeteOffline.enabled(runtimeEnvironment, Config.latest(yield* config.entries(), "kete"))
       const jobKey = options.job?.key ?? KeteJobSecrets.gatewayKey
       const jobOrganization = options.job?.organization ?? KeteJobSecrets.organization
       // Job mode never touches the OS key store (`native: undefined`; job mode refuses to spawn it).
@@ -399,10 +402,14 @@ export function make(
         }),
         Effect.catch((cause) => Effect.logWarning(`${Brand.displayName} managed agent sync failed`, { cause })),
       )
-      // Startup, then every `interval`. Forked, so a slow platform never delays startup.
-      yield* sync.pipe(Effect.repeat(Schedule.spaced(interval)), Effect.forkScoped)
+      // Startup, then every `interval`. Forked, so a slow platform never delays startup. Offline mode
+      // sends nothing: the copy loaded above (and so its policies and the fail-closed guard) stays as it is.
+      if (offline) yield* Effect.logInfo(`${Brand.displayName} offline: platform sync paused, using the cached copy`)
+      else yield* sync.pipe(Effect.repeat(Schedule.spaced(interval)), Effect.forkScoped)
 
-      if (options.registration !== false && jobMode) {
+      if (offline) {
+        // No runtime registration while offline either.
+      } else if (options.registration !== false && jobMode) {
         yield* Effect.logInfo(`${Brand.displayName} runtime registration is off in job mode`)
       } else if (options.registration !== false) {
         // Resolved on every tick, so a config change is picked up without a restart.

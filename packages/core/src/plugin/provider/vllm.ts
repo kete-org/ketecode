@@ -6,6 +6,7 @@ import { Config } from "../../config.js"
 import { Model } from "../../model.js"
 import type { PluginInternal } from "../internal.js"
 import { foldSettings } from "./configured.js"
+import { KeteLocalHosts } from "../../kete/local-hosts.js" // kete_change
 
 const providerID = "vllm"
 
@@ -133,7 +134,7 @@ export function make(origin = "http://127.0.0.1:8000", interval: Duration.Input 
   } satisfies PluginInternal.InternalPlugin)
 }
 
-export const VLLMPlugin = make()
+export const VLLMPlugin = make(KeteLocalHosts.origin("vllm")) // kete_change: KETE_VLLM_HOST
 
 function configured(entries: readonly Entry[], origin: string) {
   const settings = foldSettings(entries, providerID, undefined)

@@ -109,6 +109,8 @@ import { KeteWorktrees } from "../kete/worktrees.js" // kete_change
 import { KetePermissionCeiling } from "../kete/permission-ceiling.js" // kete_change
 import { KeteUnattended } from "../kete/unattended.js" // kete_change
 import { KeteJobPlugin } from "../kete/job-plugin.js" // kete_change
+import { KeteLocalModels } from "../kete/local-models.js" // kete_change
+import { KeteOffline } from "../kete/offline.js" // kete_change
 import { KeteSessionMove } from "../kete/session-move.js" // kete_change
 import { KeteStaleWrite } from "../kete/stale-write.js" // kete_change
 import { KeteWorkflows } from "../kete/workflows.js" // kete_change
@@ -313,6 +315,10 @@ const post = [
   ConfigProviderPlugin.Plugin,
   ConfigWebSearchPlugin.Plugin,
   ConfigPolicyPlugin.Plugin,
+  // kete_change: after ConfigProviderPlugin, so a configured `capabilities.tools` is applied; local server status and no-tools models
+  KeteLocalModels.Plugin,
+  // kete_change: offline mode removes non-local models, remote MCP servers and web tools; adds no rules, so policy applies as online
+  KeteOffline.Plugin,
   // kete_change: before KeteUnattended.Plugin; job mode disables every MCP server and every non-kete model
   KeteJobPlugin.Plugin,
   // kete_change: last, after every hook that could still turn "ask" into "allow"; see kete/unattended.ts
@@ -328,6 +334,7 @@ export const guarded: ReadonlySet<string> = new Set([
   KeteUnattended.PolicyPlugin.id,
   KeteUnattended.Plugin.id,
   KeteJobPlugin.Plugin.id,
+  KeteOffline.Plugin.id,
 ])
 // kete_change end
 

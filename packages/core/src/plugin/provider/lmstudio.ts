@@ -6,6 +6,7 @@ import { Config } from "../../config.js"
 import { Model } from "../../model.js"
 import type { PluginInternal } from "../internal.js"
 import { foldSettings } from "./configured.js"
+import { KeteLocalHosts } from "../../kete/local-hosts.js" // kete_change
 
 const providerID = "lmstudio"
 
@@ -147,7 +148,7 @@ export function make(origin = "http://127.0.0.1:1234", interval: Duration.Input 
   } satisfies PluginInternal.InternalPlugin)
 }
 
-export const LMStudioPlugin = make()
+export const LMStudioPlugin = make(KeteLocalHosts.origin("lmstudio")) // kete_change: KETE_LMSTUDIO_HOST
 
 function configured(entries: readonly Entry[], origin: string) {
   const settings = foldSettings(entries, providerID, undefined)

@@ -226,7 +226,7 @@ const layer = Layer.effect(
           assistantMessageID = SessionMessage.ID.create()
           continue
         }
-        yield* checks({ sessionID, agent: loaded.agent.id, cost: loaded.session.cost }) // kete_change
+        yield* checks({ sessionID, agent: loaded.agent.id, cost: loaded.session.cost, model: loaded.model }) // kete_change
         const stepLimitReached = loaded.agent.info.steps !== undefined && step >= loaded.agent.info.steps
         const transcript = SessionModelRequest.baseTranscript({
           agent: loaded.agent.info,

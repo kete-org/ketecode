@@ -16,12 +16,14 @@ import type { Agent } from "@opencode/schema/agent"
 import { KeteUnattendedSchema } from "@opencode/schema/kete/unattended"
 import { SessionError } from "@opencode/schema/session-error"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
+import type { ModelResolver } from "../model-resolver.js"
 import type { SessionSchema } from "../session/schema.js"
 import { Config } from "../config.js"
 import { StepFailedError } from "../session/error.js"
 import { SessionStore } from "../session/store.js"
 import { KeteAudit } from "./audit.js"
 import { KeteBudget } from "./budget.js"
+import { KeteOffline } from "./offline.js"
 import { KeteUnattended } from "./unattended.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
 
@@ -37,7 +39,23 @@ export const make = Effect.gen(function* () {
     readonly sessionID: SessionSchema.ID
     readonly agent: Agent.ID
     readonly cost: number
+    /** The resolved model: offline mode refuses a step whose model isn't local. */
+    readonly model?: Pick<ModelResolver.Resolved, "ref" | "model">
   }) {
+    // Offline mode (docs/local-models.md): fail closed for a model that isn't local, whatever the agent.
+    if (input.model) {
+      const entries = yield* config.entries()
+      const { providerID, id } = input.model.ref
+      if (
+        KeteOffline.enabled(process.env, Config.latest(entries, "kete")) &&
+        !KeteOffline.isLocalModel(providerID, input.model.model.route.endpoint.baseURL)
+      )
+        return yield* Effect.fail(
+          new StepFailedError({
+            error: SessionError.Error.make({ type: "offline", message: KeteOffline.refusal(providerID, id) }),
+          }),
+        )
+    }
     const state = yield* KeteUnattendedPolicy.resolve(get, input.sessionID)
     if (state.kind === "interactive") {
       if (KeteJobMode.enabled())

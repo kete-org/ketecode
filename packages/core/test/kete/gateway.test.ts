@@ -587,6 +587,52 @@ describe("KeteGateway", () => {
       expect(yield* integrations.get(KeteGateway.integrationID)).toBeUndefined()
     }),
   )
+
+  // Offline mode (--offline / KETE_OFFLINE / kete.offline): no gateway, price or balance request at all.
+  const offlineDocument = (baseURL: string) =>
+    new Document({
+      type: "document",
+      info: decode({
+        providers: { kete: { settings: { baseURL, apiKey: key } } },
+        kete: { offline: true, platform: { url: baseURL } },
+      }),
+    })
+
+  it.live("offline (environment): makes no requests and offers no gateway models", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(gateway),
+      ({ requests, server }) =>
+        Effect.gen(function* () {
+          const providers = yield* Provider.Service
+          const config = yield* Config.Test
+          yield* seedCatalog()
+          yield* config.setEntries([settings({ baseURL: `${server.url.origin}/`, apiKey: key }, server.url.origin)])
+          yield* addPlugin({ OPENCODE_OFFLINE: "1" })
+          yield* Effect.promise(() => Bun.sleep(100))
+          expect(requests).toEqual([])
+          expect(yield* providers.get(KeteGateway.providerID)).toBeUndefined()
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("offline (config kete.offline): makes no requests", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(gateway),
+      ({ requests, server }) =>
+        Effect.gen(function* () {
+          const providers = yield* Provider.Service
+          const config = yield* Config.Test
+          yield* seedCatalog()
+          yield* config.setEntries([offlineDocument(`${server.url.origin}/`)])
+          yield* addPlugin()
+          yield* Effect.promise(() => Bun.sleep(100))
+          expect(requests).toEqual([])
+          expect(yield* providers.get(KeteGateway.providerID)).toBeUndefined()
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
 })
 
 describe("KeteGateway.configured", () => {

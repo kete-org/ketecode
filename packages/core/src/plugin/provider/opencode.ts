@@ -15,6 +15,7 @@ import { ConfigPolicy } from "@opencode/schema/config/policy"
 import { ConfigProvider } from "@opencode/schema/config/provider"
 import { Money } from "@opencode/schema/money"
 import { KeteHosted } from "../../kete/hosted.js" // kete_change
+import { KeteOffline } from "@opencode/util/kete/offline" // kete_change
 
 const defaultServer = "https://opencode.ai/console"
 const clientID = "opencode-cli"
@@ -143,6 +144,10 @@ export const OpencodePlugin = define<HttpClient.HttpClient | Bus.Service | Manag
       return yield* ctx.integration.connection.resolve(connection).pipe(
         Effect.flatMap((credential) => {
           if (!credential) return Effect.succeed({ config: undefined, connection, organization: undefined })
+          // kete_change start: offline mode makes no Console request; the config stays as it was, as when a fetch fails
+          if (KeteOffline.enabled())
+            return Effect.succeed({ config: snapshot.config, connection, organization: snapshot.organization })
+          // kete_change end
           return fetchConfig(http, credential).pipe(
             Effect.map((config) => ({
               config,

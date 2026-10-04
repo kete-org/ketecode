@@ -41,6 +41,7 @@ import { Model } from "../model.js"
 import type { PluginInternal } from "../plugin/internal.js"
 import { foldSettings } from "../plugin/provider/configured.js"
 import { Provider } from "../provider.js"
+import { KeteOffline } from "./offline.js"
 import { Money } from "@opencode/schema/money"
 
 export const providerID = Provider.ID.make("kete")
@@ -159,6 +160,9 @@ export function make(
     effect: Effect.fn(function* (ctx) {
       const http = yield* HttpClient.HttpClient
       const config = yield* Config.Service
+      // Offline mode: no gateway models, balance or price requests (docs/local-models.md). Decided at
+      // activation; the models would be removed by KeteOffline anyway, this keeps the network quiet.
+      if (KeteOffline.enabled(environment, Config.latest(yield* config.entries(), "kete"))) return
       const signedIn = Effect.fn("KeteGateway.signedIn")(function* () {
         const account = yield* Effect.tryPromise(() => KeteAccount.read(accountOptions))
         if (!account) return undefined

@@ -813,3 +813,30 @@ the Kete-owned `core/src/kete/audit.ts`.
   `core/test/kete/job-fs-sites.test.ts`; classify it.
 - If upstream changes `Environment.node`'s or `FSUtil.node`'s tag or deps, re-check the
   replacements in `job-server.ts`.
+
+## Local models (feature/local-models)
+
+Remote and LAN Ollama / LM Studio / vLLM hosts, a status RPC, models without tools, and offline mode
+(`docs/tasks/2026-10-04-local-models`, `docs/local-models.md`). Kete-owned code needs no markers:
+`util/src/kete/offline.ts`, `schema/src/kete/local-models.ts`, `core/src/kete/{local-hosts,
+local-models,offline}.ts`, and the offline no-ops in `core/src/kete/{gateway,run-checks}.ts` and
+`core/src/kete/sync/plugin.ts`. `schema/src/config/kete.ts` (`kete.offline`) is Kete-owned too.
+Pass A (core) rows are below; the CLI, TUI and web UI rows are added by later passes.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/provider/{ollama,lmstudio,vllm}.ts` | Import; the exported plugin is `make(KeteLocalHosts.origin("<id>"))` instead of `make()` (1 line each) | `origin` is the plugins' only host input apart from config (which still wins); the instances are built at module load |
+| `core/src/plugin/provider/ollama.ts` | Marked block in `make`: a second `ctx.event` subscription clears this host's discovery cache entry and calls `refresh()` on `rpc.kete.local-models.rediscover` | the discovery cache and `refresh` are closure-private; no hook triggers them |
+| `core/src/plugin/internal.ts` | Imports; `KeteLocalModels.Plugin` and `KeteOffline.Plugin` in `post` after `ConfigPolicyPlugin`, before `KeteJobPlugin`; `KeteOffline.Plugin.id` in `guarded` | internal plugins can only be registered here; repository config must not be able to remove offline mode |
+| `core/src/session/runner/llm.ts` | The existing marked `checks({...})` call also passes `model: loaded.model` | the runner check needs the resolved model; no hook can fail a step |
+| `core/src/session/runner/model.ts` | Import; `ModelUnavailableError.message` appends `KeteOffline.unavailableHint()` (empty unless offline) | a model removed by offline mode fails here, before any Kete code runs |
+| `core/src/plugin/provider/opencode.ts` | Import; `load` returns the last snapshot instead of fetching the Console config while `KeteOffline.enabled()` | the plugin's own network call; no switch exists |
+
+**Sync checklist**, on top of the usual one:
+
+- `plugin/provider/{ollama,lmstudio,vllm}.ts`: the `make(origin)` signature and `configured()` (config
+  `baseURL` over `origin`) are what `KeteLocalHosts` and the status probe (`core/src/kete/local-models.ts`
+  `target`) mirror; if upstream changes endpoint paths (`/api/tags`, `/api/show`, `/api/v1/models`,
+  `/health`, `/v1/models`), update the probe.
+- `session/runner/llm.ts`: `checks` must still be called before every step with the resolved model.
+- `plugin/host.ts`: plugin event streams must keep passing `rpc.*` events through (rediscovery).

@@ -261,6 +261,53 @@ describe("organization policies in the runtime", () => {
   )
 })
 
+// Offline mode (--offline / KETE_OFFLINE / kete.offline): no sync or registration request, but the
+// copy synced earlier is loaded at startup and its policies are enforced exactly as online.
+describe("organization policies in offline mode", () => {
+  it.live("offline (environment): sends no sync or registration request, and the cached deny policy still applies", () =>
+    Effect.gen(function* () {
+      const fake = platform()
+      const options = yield* account(fake.url)
+      // Online first: this sync writes the cache.
+      const online = yield* start(options)
+      yield* eventually(
+        online.evaluate({ action: "shell", resources: ["git push --force origin main"], effect: "allow", agent: "build" as never }),
+        (result) => result.effect === "deny",
+      )
+      const syncs = fake.authorizations.length
+      expect(syncs).toBeGreaterThan(0)
+
+      const offline = yield* start(options, { every: "1 hour" }, { environment: { OPENCODE_OFFLINE: "1" } })
+      yield* Effect.promise(() => Bun.sleep(200))
+      expect(fake.authorizations.length).toBe(syncs)
+      expect(fake.registrations).toEqual([])
+      // The cached policies apply at once, with no sync to load them.
+      const denied = yield* offline.evaluate({
+        action: "shell",
+        resources: ["git push --force origin main"],
+        effect: "allow",
+        agent: "build" as never,
+      })
+      expect(denied.effect).toBe("deny")
+      expect(denied.message).toBe("Blocked by Kete Labs's policy “No force pushes” (No force push).")
+      // Offline never loosens anything.
+      expect((yield* offline.evaluate({ action: "edit", resources: ["src/a.ts"], effect: "deny" })).effect).toBe("deny")
+    }),
+  )
+
+  it.live("offline (config kete.offline): sends no sync or registration request", () =>
+    Effect.gen(function* () {
+      const fake = platform()
+      const options = yield* account(fake.url)
+      const offlineConfig = new Document({ type: "document", info: decodeInfo({ kete: { offline: true } }) })
+      yield* start(options, { every: "1 hour" }, { entries: [offlineConfig] })
+      yield* Effect.promise(() => Bun.sleep(200))
+      expect(fake.authorizations).toEqual([])
+      expect(fake.registrations).toEqual([])
+    }),
+  )
+})
+
 // Job mode piece A2: the job's gateway key replaces the account; no policies means the guard holds.
 describe("organization policies in job mode", () => {
   const jobKey = "kete_job_POLICYSYNC0123456789"
