@@ -1,0 +1,7 @@
+{
+  "description": "job-host-v1 firecracker config disk (docs/contracts/job-host-v1.md \"Config disk\"): header, the configuration JSON, then NUL bytes to exactly `size` bytes. sha256_hex is of the whole image.",
+  "header": "kete-job-config v1\n",
+  "json": "{\"job_id\":\"9b2e4f60-1a3c-4d5e-8f70-6b8c0d2e4f61\",\"platform_url\":\"https://portal.kete.example\",\"claim_token\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"storage_host\":\"storage.kete.example\",\"host_profile\":\"microvm\"}",
+  "size": 8192,
+  "sha256_hex": "26026f1be3b45eaeeae878252b7246a2242edd9370e4a883045ea47e236a3268"
+}

@@ -1,0 +1,184 @@
+import { expect } from "bun:test"
+import { Effect } from "effect"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { it } from "../../core/test/lib/effect"
+import { ServerProcess } from "../src/process"
+
+it.live("authenticates API requests behind the frontend transform while allowing browser preflight", () =>
+  Effect.gen(function* () {
+    const fallback = "fallback".repeat(256)
+    const server = yield* ServerProcess.start<never, never>(
+      {
+        hostname: "127.0.0.1",
+        port: 0,
+        password: "secret",
+        cors: ["http://192.168.1.10:3001", "https://example.com", "http://localhost:3000"], // kete_change: other localhost ports need --cors
+        app: { version: "test-version" },
+        database: { path: ":memory:" },
+      },
+      undefined,
+      (api) =>
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest
+          const url = new URL(request.url, "http://localhost")
+          if (url.pathname === "/api" || url.pathname.startsWith("/api/") || url.pathname === "/openapi.json")
+            return yield* api
+          return HttpServerResponse.raw(fallback, { contentType: "text/plain" })
+        }),
+    )
+    const response = yield* Effect.promise(() =>
+      fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
+        method: "OPTIONS",
+        headers: {
+          origin: "http://localhost:3000",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+      }),
+    )
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:3000")
+    expect(response.headers.get("access-control-allow-headers")).toBe("authorization")
+
+    const status = yield* Effect.promise(() =>
+      fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
+        headers: {
+          authorization: `Basic ${btoa("opencode:secret")}`,
+          origin: "http://localhost:3000",
+        },
+      }),
+    )
+
+    expect(status.status).toBe(200)
+    expect(status.headers.get("access-control-allow-origin")).toBe("http://localhost:3000")
+    expect(yield* Effect.promise(() => status.json())).toMatchObject({ version: "test-version" })
+
+    yield* Effect.forEach(
+      ["http://192.168.1.10:3001", "https://example.com", "https://untrusted.example.com"],
+      (origin) =>
+        Effect.gen(function* () {
+          // kete_change start: Kete's local guard answers an untrusted origin with 403 before CORS and auth
+          if (origin === "https://untrusted.example.com") {
+            const rejected = yield* Effect.promise(() =>
+              fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
+                headers: { origin, authorization: `Basic ${btoa("opencode:secret")}` },
+              }),
+            )
+            expect(rejected.status).toBe(403)
+            return
+          }
+          // kete_change end
+          const allowed = origin === "https://untrusted.example.com" ? null : origin
+          const preflight = yield* Effect.promise(() =>
+            fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
+              method: "OPTIONS",
+              headers: {
+                origin,
+                "access-control-request-method": "GET",
+                "access-control-request-headers": "authorization",
+              },
+            }),
+          )
+          expect(preflight.status).toBe(204)
+          expect(preflight.headers.get("access-control-allow-origin")).toBe(allowed)
+
+          const status = yield* Effect.promise(() =>
+            fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
+              headers: { origin, authorization: `Basic ${btoa("opencode:secret")}` },
+            }),
+          )
+          expect(status.status).toBe(200)
+          expect(status.headers.get("access-control-allow-origin")).toBe(allowed)
+          yield* Effect.promise(() => status.arrayBuffer())
+
+          const denied = yield* Effect.promise(() =>
+            fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), { headers: { origin } }),
+          )
+          expect(denied.status).toBe(401)
+          expect(denied.headers.get("access-control-allow-origin")).toBe(allowed)
+          yield* Effect.promise(() => denied.arrayBuffer())
+        }),
+    )
+
+    const event = yield* Effect.promise(() =>
+      fetch(new URL("/api/event", HttpServer.formatAddress(server.address)), {
+        headers: {
+          "accept-encoding": "br",
+          authorization: `Basic ${btoa("opencode:secret")}`,
+        },
+      }),
+    )
+    expect(event.status).toBe(200)
+    expect(event.headers.get("content-encoding")).toBeNull()
+    const body = event.body
+    if (!body) return yield* Effect.die(new Error("Event response has no body"))
+    const reader = body.getReader()
+    yield* Effect.promise(() => readUntil(reader, "server.connected"))
+    yield* server.updateAvailable("2.0.0")
+    yield* Effect.promise(() => readUntil(reader, "installation.update-available"))
+    yield* server.updated("2.0.0")
+    yield* Effect.promise(() => readUntil(reader, "installation.updated"))
+    yield* Effect.promise(() => reader.cancel())
+
+    const missing = yield* Effect.promise(() =>
+      fetch(new URL("/missing", HttpServer.formatAddress(server.address)), {
+        headers: {
+          "accept-encoding": "br",
+          authorization: `Basic ${btoa("opencode:secret")}`,
+        },
+      }),
+    )
+    expect(missing.status).toBe(200)
+    expect(missing.headers.get("content-encoding")).toBe("br")
+    expect(missing.headers.get("content-type")).toBe("text/plain")
+    expect(missing.headers.get("vary")?.toLowerCase()).toContain("accept-encoding")
+    expect(yield* Effect.promise(() => missing.text())).toBe(fallback)
+
+    yield* Effect.forEach(["/api", "/api/missing", "/openapi.json"], (pathname) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => fetch(new URL(pathname, HttpServer.formatAddress(server.address))))
+        expect(response.status).toBe(401)
+        expect(yield* Effect.promise(() => response.text())).toBe("")
+      }),
+    )
+
+    yield* Effect.forEach(["/", "/workspace/example", "/_assets/app.js", "/icons/icon.svg", "/sw.js"], (pathname) =>
+      Effect.gen(function* () {
+        yield* Effect.forEach(["GET", "HEAD"], (method) =>
+          Effect.gen(function* () {
+            yield* Effect.forEach([undefined, `Basic ${btoa("opencode:wrong")}`], (authorization) =>
+              Effect.gen(function* () {
+                const response = yield* Effect.promise(() =>
+                  fetch(new URL(pathname, HttpServer.formatAddress(server.address)), {
+                    method,
+                    headers: authorization ? { authorization } : undefined,
+                  }),
+                )
+                expect(response.status).toBe(200)
+                expect(response.headers.get("www-authenticate")).toBeNull()
+                expect(yield* Effect.promise(() => response.text())).toBe(method === "HEAD" ? "" : fallback)
+              }),
+            )
+            const response = yield* Effect.promise(() =>
+              fetch(new URL(pathname, HttpServer.formatAddress(server.address)), {
+                method,
+                headers: { authorization: `Basic ${btoa("opencode:secret")}` },
+              }),
+            )
+            expect(response.status).toBe(200)
+            expect(yield* Effect.promise(() => response.text())).toBe(method === "HEAD" ? "" : fallback)
+          }),
+        )
+      }),
+    )
+  }),
+)
+
+async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, expected: string) {
+  while (true) {
+    const next = await reader.read()
+    if (next.done) throw new Error(`Event stream ended before ${expected}`)
+    if (new TextDecoder().decode(next.value).includes(expected)) return
+  }
+}

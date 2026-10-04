@@ -1,0 +1,924 @@
+# Kete-owned. Builds and publishes a Kete Code release when a kete-vX.Y.Z tag is pushed.
+# See docs/release.md.
+# The kete- prefix keeps Kete's tags apart from upstream OpenCode's vX.Y.Z tags, which this
+# repository also holds.
+#
+#   build      cross-compiles every target on Linux (packages/kete-tools release) and assembles the
+#              public file set (packages/kete-tools distribute public: CLI archives, install.sh,
+#              install.ps1 and their own SHA256SUMS; never a .vsix)
+#   smoke      runs the Linux, macOS (arm64) and Windows binaries with a throwaway home. On tags
+#              always; manual runs only with all_platforms (macOS and Windows minutes count
+#              multiplied against the free allowance)
+#   extension  checks every platform .vsix: target, version, bundled binary
+#   image      the cloud job image (packages/kete-job-image) for linux/amd64 and linux/arm64 from
+#              the released linux-x64 and linux-arm64 kete, with read-only permissions: builds both
+#              (arm64 under QEMU), runs the full end-to-end test (scripts/e2e.sh) on amd64 and only a
+#              smoke test on arm64, and on tags saves both images as an artifact (with its SHA-256)
+#   image-publish  tags only, the only job with packages: write and id-token: write: loads that
+#              artifact (checksum verified), pushes those images, joins them into one index
+#              (ghcr.io/kete-org/kete-job:<tag>), signs the index and both per-arch digests with
+#              cosign keyless signing (Sigstore, this workflow's GitHub OIDC identity) and verifies
+#              every signature against that identity; manual runs push and sign nothing
+#   kernel     the microvm guest kernel (packages/kete-job-host/kernel/build.sh, pinned Linux LTS,
+#              checked-in config) for amd64 and arm64 (cross-compiled), read-only permissions;
+#              saves both with their sha256 allowlist lines as an artifact
+#   kernel-publish  tags only, id-token: write only: signs each kernel with cosign keyless
+#              sign-blob (Sigstore bundle) and verifies the bundle against this workflow's tag
+#              identity (kete-code-platform ADR 0023 rule 21)
+#   cloudvm-images  tags only, after image-publish: the provider images for VM-per-job hosts
+#              (kete-cloudvm-images.yml: cloudvm kernel, base disks, per-provider imports where an
+#              image-builder credential is configured); publish doesn't wait for it
+#   publish    tags only, after smoke, extension, image and kernel pass: this repository's GitHub
+#              Release, first as a DRAFT with every archive, .vsix and SHA256SUMS, plus the job
+#              image's digests and signing identity in the notes, kete-job-image.digest (the
+#              linux/amd64 digest Fly pins today) and kete-job-image.digests (index, per-arch
+#              digests, signing identity; kete-code-platform ADR 0023 rule 17), and the guest
+#              kernels with their .sha256 and .sigstore.json bundles; then published. Any failure
+#              leaves the draft and fails the job; re-running replaces the draft's files.
+#   sign       tags only, when public distribution is on (repository variable
+#              KETE_PUBLIC_DISTRIBUTION=true; ADR 0009): signs the public SHA256SUMS with the pinned
+#              Ed25519 update key (SHA256SUMS.sig, what kete upgrade verifies; environment
+#              release-signing) and with cosign keyless (SHA256SUMS.sigstore.json, what the install
+#              scripts verify). Checks out only update-keys.json; runs only openssl, jq and cosign
+#   distribute tags only, same switch, after publish and sign: the public release on
+#              kete-org/kete-releases, its README, the Homebrew formula on kete-org/homebrew-tap
+#              (stable only) and the npm packages (@ketecode/cli + platform packages; pre-releases
+#              under the npm tag "next"). Environment distribution: a GitHub App installation token
+#              scoped to those two repositories (contents: write) and NPM_TOKEN
+#
+# The VS Code extension is NOT published here: publishing to the Marketplace and Open VSX is an
+# explicit, separate step (kete-extension-publish.yml, dispatched on a released stable tag).
+#
+# Upstream's publish workflow (publish.yml) stays disabled: it publishes to OpenCode's npm
+# packages, Homebrew tap and image registry.
+name: kete-release
+
+on:
+  push:
+    tags: ["kete-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag to build, e.g. kete-v0.1.0. Manual runs build and check only; they never publish."
+        required: true
+      all_platforms:
+        description: "Also smoke-test the macOS and Windows binaries (uses multiplied minutes)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: kete-release-${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # Twelve cross-compiled targets plus their archives outgrow the runner's free disk; drop the
+      # preinstalled toolchains this job never uses.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null
+          df -h /
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      # Cross-compiles every target from Linux, archives each with LICENSE and NOTICE, packages the
+      # VS Code extension, and writes SHA256SUMS into packages/kete-tools/dist-release.
+      - name: Build release
+        run: bun run --cwd packages/kete-tools release "$TAG"
+
+      - name: Verify checksums
+        run: (cd packages/kete-tools/dist-release && sha256sum -c SHA256SUMS)
+
+      # What kete-org/kete-releases receives (ADR 0009): every CLI archive (checked against the
+      # release's SHA256SUMS), install.sh and install.ps1, and a SHA256SUMS of exactly those files.
+      - name: Assemble the public release
+        run: |
+          set -euo pipefail
+          bun run --cwd packages/kete-tools distribute public "$PWD/packages/kete-tools/dist-release" "$RUNNER_TEMP/public"
+          (cd "$RUNNER_TEMP/public" && sha256sum -c SHA256SUMS)
+
+      - name: Upload the public release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-release
+          path: ${{ runner.temp }}/public/
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release
+          path: packages/kete-tools/dist-release/
+          retention-days: 1
+          if-no-files-found: error
+
+  smoke:
+    needs: build
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      # Tags: all three. Manual runs: Linux, plus macOS and Windows with all_platforms.
+      matrix:
+        include: ${{ fromJSON((github.event_name == 'push' || inputs.all_platforms) && '[{"runner":"ubuntu-latest","target":"linux-x64","archive":"tar.gz"},{"runner":"macos-latest","target":"darwin-arm64","archive":"zip"},{"runner":"windows-latest","target":"windows-x64","archive":"zip"}]' || '[{"runner":"ubuntu-latest","target":"linux-x64","archive":"tar.gz"}]') }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      - name: Unpack ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          archive="release/kete-$version-${{ matrix.target }}.${{ matrix.archive }}"
+          test -f "$archive" || { echo "missing $archive"; ls release; exit 1; }
+          mkdir -p bin
+          case "${{ matrix.archive }}" in
+            tar.gz) tar -xzf "$archive" -C bin ;;
+            zip) if command -v unzip >/dev/null; then unzip -q "$archive" -d bin; else 7z x -y -obin "$archive" >/dev/null; fi ;;
+          esac
+          ls -la bin
+          test -f bin/LICENSE && test -f bin/NOTICE
+
+      # A throwaway home, so the binary can't read or write the runner's real configuration.
+      - name: Smoke test ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          home="$RUNNER_TEMP/kete-home"
+          mkdir -p "$home"
+          export HOME="$home" USERPROFILE="$home" APPDATA="$home/AppData/Roaming" LOCALAPPDATA="$home/AppData/Local"
+          unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
+          kete="bin/kete"; [ -f bin/kete.exe ] && kete="bin/kete.exe"
+          chmod +x "$kete" 2>/dev/null || true
+
+          echo "== kete --version"
+          "$kete" --version | tee version.txt
+          grep -F "kete v$version" version.txt
+
+          echo "== kete --help"
+          "$kete" --help > help.txt
+          grep -F "Kete Code" help.txt
+          if grep -i -n "opencode" help.txt; then echo "--help mentions OpenCode"; exit 1; fi
+
+          echo "== kete debug paths"
+          "$kete" debug paths | tee paths.txt
+          if grep -i -n "opencode" paths.txt; then echo "debug paths mentions opencode"; exit 1; fi
+          for key in data cache config state; do
+            line="$(grep -E "^${key}[[:space:]]" paths.txt)" || { echo "no $key path"; exit 1; }
+            echo "$line" | grep -E '[\\/]kete[[:space:]]*$' >/dev/null || { echo "$key is not a kete directory: $line"; exit 1; }
+          done
+          grep -E '^db[[:space:]].*kete\.db[[:space:]]*$' paths.txt >/dev/null || { echo "database is not kete.db"; exit 1; }
+
+  extension:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      # One package per VS Code target (packages/kete-vscode/src/binary.ts), each with the right
+      # version and an executable bundled binary.
+      - name: Check platform packages
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          targets="darwin-arm64 darwin-x64 linux-x64 linux-arm64 alpine-x64 alpine-arm64 win32-x64 win32-arm64"
+          packages=(release/*.vsix)
+          count=${#packages[@]}
+          [ "$count" -eq 8 ] || { echo "::error::expected 8 .vsix files, found $count"; ls release; exit 1; }
+          for target in $targets; do
+            vsix="release/kete-code-$version-$target.vsix"
+            test -f "$vsix" || { echo "::error::missing $vsix"; exit 1; }
+            packaged=$(unzip -p "$vsix" extension/package.json | jq -r .version)
+            [ "$packaged" = "$version" ] || { echo "::error::$vsix has version $packaged, expected $version"; exit 1; }
+            unzip -p "$vsix" extension.vsixmanifest | grep -q "TargetPlatform=\"$target\"" \
+              || { echo "::error::$vsix is not packaged for $target"; exit 1; }
+            case "$target" in
+              win32-*) unzip -Z1 "$vsix" | grep -qx extension/bin/kete.exe || { echo "::error::$vsix has no kete.exe"; exit 1; } ;;
+              *) unzip -Z "$vsix" extension/bin/kete | grep -q '^-rwx' || { echo "::error::$vsix: bin/kete missing or not executable"; exit 1; } ;;
+            esac
+            echo "ok $target ($packaged)"
+          done
+
+      - name: Run the binary bundled in the linux-x64 package
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          mkdir -p vsix && unzip -q "release/kete-code-$version-linux-x64.vsix" -d vsix
+          home="$RUNNER_TEMP/kete-home" && mkdir -p "$home"
+          HOME="$home" vsix/extension/bin/kete --version | tee version.txt
+          grep -F "kete v$version" version.txt
+
+  image:
+    # After the extension too, so a failed release never leaves a pushed image behind.
+    needs: [build, smoke, extension]
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    # Builds and tests only: no registry or signing permission (image-publish has those).
+    permissions:
+      contents: read
+    outputs:
+      images_sha256: ${{ steps.save.outputs.sha256 }}
+    steps:
+      # Two images, the e2e layer and the fake platform outgrow the runner's free disk otherwise.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null
+          df -h /
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      - name: Verify checksums and unpack the linux-x64 and linux-arm64 kete
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum -c SHA256SUMS)
+          version="${TAG#kete-v}"
+          for target in linux-x64 linux-arm64; do
+            mkdir -p "$RUNNER_TEMP/kete-$target"
+            tar -xzf "release/kete-$version-$target.tar.gz" -C "$RUNNER_TEMP/kete-$target"
+            test -x "$RUNNER_TEMP/kete-$target/kete"
+          done
+          rm -rf release
+
+      # The arm64 image's RUN steps (apt-get) run under QEMU on this amd64 runner.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Build the linux/amd64 image
+        run: |
+          bash packages/kete-job-image/scripts/build.sh --arch amd64 --tag kete-job:amd64 \
+            --kete "$RUNNER_TEMP/kete-linux-x64/kete" --version "${TAG#kete-v}" --revision "$GITHUB_SHA"
+
+      # Before any push: the image's real entrypoint, helper, proxy and kete against the fake platform.
+      - name: End-to-end test (linux/amd64)
+        env:
+          E2E_STATE: ${{ runner.temp }}/kete-e2e-state
+        run: |
+          bash packages/kete-job-image/scripts/e2e.sh kete-job:amd64
+          docker image rm kete-job-e2e:local >/dev/null
+
+      - name: Build the linux/arm64 image
+        run: |
+          bash packages/kete-job-image/scripts/build.sh --arch arm64 --tag kete-job:arm64 \
+            --kete "$RUNNER_TEMP/kete-linux-arm64/kete" --version "${TAG#kete-v}" --revision "$GITHUB_SHA"
+
+      # Under QEMU the whole e2e would take too long for the free minutes; the arm64 binaries are the
+      # same code as amd64's, cross-compiled. This checks the image is arm64 and its binaries start:
+      # the entrypoint refuses an empty configuration (exit 2, a boot "invalid" phase line) and
+      # kete-job-init refuses to run as anything but PID 1 (exit 2).
+      - name: Smoke test (linux/arm64)
+        run: |
+          set -euo pipefail
+          [ "$(docker image inspect kete-job:arm64 --format '{{.Os}}/{{.Architecture}}')" = linux/arm64 ]
+          set +e
+          out="$(docker run --rm --platform linux/arm64 kete-job:arm64)"
+          code=$?
+          set -e
+          echo "$out"
+          [ "$code" = 2 ] || { echo "::error::arm64 entrypoint exited $code, expected 2"; exit 1; }
+          grep -q '"step":"boot","event":"failed","code":"invalid"' <<<"$out"
+          init="$(docker run --rm --platform linux/arm64 --entrypoint /bin/sh kete-job:arm64 -c '/usr/local/libexec/kete/kete-job-init; echo "init exit $?"' 2>&1)"
+          echo "$init"
+          grep -qx 'init exit 2' <<<"$init"
+
+      # Tags only: hand image-publish exactly the images tested above (amd64: e2e; arm64: smoke),
+      # with a checksum it verifies before loading.
+      - name: Save the tested images (tags only)
+        id: save
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+        run: |
+          set -euo pipefail
+          docker save kete-job:amd64 kete-job:arm64 | gzip -1 > "$RUNNER_TEMP/kete-job-images.tar.gz"
+          sum="$(sha256sum "$RUNNER_TEMP/kete-job-images.tar.gz" | cut -d' ' -f1)"
+          echo "sha256=$sum" >> "$GITHUB_OUTPUT"
+          ls -lh "$RUNNER_TEMP/kete-job-images.tar.gz"
+
+      - name: Upload the tested images (tags only)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-job-images
+          path: ${{ runner.temp }}/kete-job-images.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Manual run
+        if: github.event_name != 'push'
+        run: |
+          echo "::notice::Manual run: the job images were built and tested ($(docker image inspect kete-job:amd64 --format '{{.Id}}'), $(docker image inspect kete-job:arm64 --format '{{.Id}}')); nothing is pushed or signed."
+
+  image-publish:
+    # Tags only, and the only job that may write packages or mint an OIDC token. No checkout and no
+    # build: it loads the images the image job tested and runs only docker, jq and cosign.
+    needs: [image]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      # cosign keyless signing (Sigstore, GitHub OIDC).
+      id-token: write
+    outputs:
+      index: ${{ steps.push.outputs.index }}
+      amd64: ${{ steps.push.outputs.amd64 }}
+      arm64: ${{ steps.push.outputs.arm64 }}
+    env:
+      REPO: ghcr.io/kete-org/kete-job
+    steps:
+      - name: Download the tested images
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kete-job-images
+          path: ${{ runner.temp }}/images
+
+      - name: Verify and load the tested images
+        env:
+          SUM: ${{ needs.image.outputs.images_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SUM" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the image job reported no checksum"; exit 1; }
+          echo "$SUM  $RUNNER_TEMP/images/kete-job-images.tar.gz" | sha256sum -c -
+          gunzip -c "$RUNNER_TEMP/images/kete-job-images.tar.gz" | docker load
+          rm -f "$RUNNER_TEMP/images/kete-job-images.tar.gz"
+          [ "$(docker image inspect kete-job:amd64 --format '{{.Os}}/{{.Architecture}}')" = linux/amd64 ]
+          [ "$(docker image inspect kete-job:arm64 --format '{{.Os}}/{{.Architecture}}')" = linux/arm64 ]
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # Push the images the image job tested (linux/amd64: the full end-to-end test; linux/arm64:
+      # a smoke test under QEMU only), join them into one index, sign the index and both per-arch
+      # digests (keyless: the certificate names this workflow on this tag), and verify every
+      # signature against that identity before anything is published. The registry token goes to
+      # docker login on stdin, never on a command line.
+      - name: Push, index, sign and verify
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          is_digest() { [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]; }
+          # The linux/<arch> image manifest digest of a pushed tag (a single-platform index, as the
+          # containerd image store pushes, is resolved to its one platform manifest).
+          platform_digest() {
+            local m
+            m="$(docker buildx imagetools inspect "$1" --format '{{json .Manifest}}')"
+            if jq -e '.manifests' >/dev/null <<<"$m"; then
+              jq -r --arg a "$2" '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $a)] | if length == 1 then .[0].digest else "" end' <<<"$m"
+            else
+              jq -r '.digest' <<<"$m"
+            fi
+          }
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for arch in amd64 arm64; do
+            docker tag "kete-job:$arch" "$REPO:$TAG-linux-$arch"
+            docker push "$REPO:$TAG-linux-$arch"
+          done
+          amd64="$(platform_digest "$REPO:$TAG-linux-amd64" amd64)"
+          arm64="$(platform_digest "$REPO:$TAG-linux-arm64" arm64)"
+          if ! is_digest "$amd64" || ! is_digest "$arm64"; then
+            echo "::error::no per-arch registry digests ($amd64, $arm64)"
+            exit 1
+          fi
+          docker buildx imagetools create --tag "$REPO:$TAG" "$REPO@$amd64" "$REPO@$arm64"
+          index="$(docker buildx imagetools inspect "$REPO:$TAG" --format '{{json .Manifest}}' | jq -r '.digest')"
+          is_digest "$index" || { echo "::error::no index digest"; exit 1; }
+          # The index holds exactly the two tested images.
+          docker buildx imagetools inspect "$REPO@$index" --format '{{json .Manifest}}' \
+            | jq -e --arg a "$amd64" --arg b "$arm64" '[.manifests[].digest] | sort == ([$a, $b] | sort)' >/dev/null \
+            || { echo "::error::the index doesn't list exactly the two per-arch digests"; exit 1; }
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/kete-release.yml@refs/tags/$TAG"
+          issuer="https://token.actions.githubusercontent.com"
+          for d in "$index" "$amd64" "$arm64"; do
+            cosign sign --yes "$REPO@$d"
+          done
+          for d in "$index" "$amd64" "$arm64"; do
+            cosign verify --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$REPO@$d" >/dev/null \
+              || { echo "::error::the signature on $REPO@$d does not verify against $identity"; exit 1; }
+          done
+          {
+            echo "index=$index"
+            echo "amd64=$amd64"
+            echo "arm64=$arm64"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::Job image index: $REPO@$index (linux/amd64 $amd64, linux/arm64 $arm64), signed by $identity"
+
+  kernel:
+    # Builds only: no signing permission (kernel-publish has it). Reproducible from the pins in
+    # kernel/build.sh; both arches build on this amd64 runner (arm64 with the cross compiler).
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.save.outputs.sha256 }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Check the kernel configurations
+        run: packages/kete-job-host/kernel/check-config.sh
+
+      - name: Build the guest kernels
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            packages/kete-job-host/kernel/build.sh "$arch" --out "$RUNNER_TEMP/kernels"
+          done
+          ls -l "$RUNNER_TEMP/kernels"
+
+      - name: Save the kernels
+        id: save
+        run: |
+          set -euo pipefail
+          tar -C "$RUNNER_TEMP/kernels" -cf "$RUNNER_TEMP/kete-guest-kernels.tar" .
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/kete-guest-kernels.tar" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the kernels
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-guest-kernels
+          path: ${{ runner.temp }}/kete-guest-kernels.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  kernel-publish:
+    # Tags only. No checkout and no build: it signs the kernels the kernel job built.
+    needs: [kernel]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # cosign keyless signing (Sigstore, GitHub OIDC).
+      id-token: write
+    steps:
+      - name: Download the kernels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kete-guest-kernels
+          path: ${{ runner.temp }}/in
+
+      - name: Verify the artifact
+        env:
+          SUM: ${{ needs.kernel.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SUM" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the kernel job reported no checksum"; exit 1; }
+          echo "$SUM  $RUNNER_TEMP/in/kete-guest-kernels.tar" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/kernels"
+          tar -C "$RUNNER_TEMP/kernels" -xf "$RUNNER_TEMP/in/kete-guest-kernels.tar"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Sign and verify the kernels
+        working-directory: ${{ runner.temp }}/kernels
+        run: |
+          set -euo pipefail
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/kete-release.yml@refs/tags/$TAG"
+          issuer="https://token.actions.githubusercontent.com"
+          n=0
+          for k in kete-guest-kernel-*; do
+            case "$k" in *.sha256|*.sigstore.json) continue ;; esac
+            [ "$(cat "$k.sha256")" = "sha256:$(sha256sum "$k" | cut -d' ' -f1)" ] || { echo "::error::$k doesn't match its .sha256"; exit 1; }
+            cosign sign-blob --yes --bundle "$k.sigstore.json" "$k"
+            cosign verify-blob --bundle "$k.sigstore.json" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$k" \
+              || { echo "::error::the signature on $k does not verify against $identity"; exit 1; }
+            n=$((n + 1))
+          done
+          [ "$n" = 2 ] || { echo "::error::expected 2 kernels, found $n"; exit 1; }
+
+      - name: Upload the signed kernels
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-guest-kernels-signed
+          path: ${{ runner.temp }}/kernels/
+          retention-days: 1
+          if-no-files-found: error
+
+  cloudvm-images:
+    # Tags only. Its own workflow file (kete-code-platform ADR 0023 rule 18), from the index digest
+    # image-publish signed; the release doesn't depend on it. No secrets are passed: the provider
+    # jobs read their image-builder credentials from the cloudvm-images environment only.
+    needs: [image-publish]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/kete-cloudvm-images.yml
+    with:
+      tag: ${{ github.ref_name }}
+      job_image: ghcr.io/kete-org/kete-job@${{ needs.image-publish.outputs.index }}
+
+  publish:
+    needs: [smoke, extension, image, image-publish, kernel-publish]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # No environment and no secrets: this job only writes this repository's own release with the
+    # workflow token. The extension's registry tokens are used only by kete-extension-publish.yml.
+    permissions:
+      contents: write
+    steps:
+      # gh reads the repository from the checkout.
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      - name: Verify checksums
+        run: (cd release && sha256sum -c SHA256SUMS)
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A re-run after a failed publish: refresh the draft's files. Never touch a published release.
+            [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" = true ] \
+              || { echo "::error::Release $TAG is already published"; exit 1; }
+            gh release upload "$TAG" release/* --clobber
+          else
+            # Only a suffix on the version (kete-v0.1.0-rc.1) marks a pre-release, not the kete- prefix.
+            flags=(--draft --verify-tag --generate-notes --title "Kete Code v${TAG#kete-v}")
+            if [[ "${TAG#kete-v}" == *-* ]]; then flags+=(--prerelease); fi
+            gh release create "$TAG" release/* "${flags[@]}"
+          fi
+
+      # The platform pins the job image by digest (ADR 0019 rule 7), in the notes and as assets:
+      # kete-job-image.digest keeps its one-line format and meaning (the linux/amd64 image Fly pins
+      # today); kete-job-image.digests adds the signed index, both per-arch digests and the signing
+      # identity the host agent verifies (kete-code-platform ADR 0023 rule 17).
+      - name: Record the job image digests and signing identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INDEX: ${{ needs.image-publish.outputs.index }}
+          AMD64: ${{ needs.image-publish.outputs.amd64 }}
+          ARM64: ${{ needs.image-publish.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          for d in "$INDEX" "$AMD64" "$ARM64"; do
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the image job reported no digests"; exit 1; }
+          done
+          repo=ghcr.io/kete-org/kete-job
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/kete-release.yml@refs/tags/$TAG"
+          issuer="https://token.actions.githubusercontent.com"
+          echo "$repo@$AMD64" > kete-job-image.digest
+          {
+            echo "index $repo@$INDEX"
+            echo "linux/amd64 $repo@$AMD64"
+            echo "linux/arm64 $repo@$ARM64"
+            echo "cosign-identity $identity"
+            echo "cosign-issuer $issuer"
+            echo "tested linux/amd64=e2e linux/arm64=qemu-smoke-only"
+          } > kete-job-image.digests
+          gh release upload "$TAG" kete-job-image.digest kete-job-image.digests --clobber
+          gh release view "$TAG" --json body -q .body > notes.md
+          lines=(
+            "Job image: $repo@$AMD64"
+            "Job image index (linux/amd64, linux/arm64): $repo@$INDEX"
+            "Job image linux/arm64: $repo@$ARM64"
+            "Job images signed with cosign keyless signing: identity $identity, issuer $issuer"
+            "Job image testing: linux/amd64 passed the full end-to-end test; linux/arm64 was smoke-tested under QEMU only (its binaries start), not run end to end"
+          )
+          changed=0
+          for line in "${lines[@]}"; do
+            if ! grep -qF "$line" notes.md; then
+              printf '\n%s\n' "$line" >> notes.md
+              changed=1
+            fi
+          done
+          [ "$changed" = 0 ] || gh release edit "$TAG" --notes-file notes.md
+
+      # The guest kernels the host agent allowlists by digest (ADR 0023 rule 21), with their
+      # sha256 lines and Sigstore bundles.
+      - name: Download the signed kernels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kete-guest-kernels-signed
+          path: kernels
+
+      - name: Attach the guest kernels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls kernels/kete-guest-kernel-* >/dev/null
+          gh release upload "$TAG" kernels/kete-guest-kernel-* --clobber
+          gh release view "$TAG" --json body -q .body > notes.md
+          changed=0
+          for f in kernels/kete-guest-kernel-*.sha256; do
+            line="Guest kernel $(basename "${f%.sha256}"): $(cat "$f") (signed: .sigstore.json, same identity as the job images)"
+            if ! grep -qF "$line" notes.md; then
+              printf '\n%s\n' "$line" >> notes.md
+              changed=1
+            fi
+          done
+          [ "$changed" = 0 ] || gh release edit "$TAG" --notes-file notes.md
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false
+
+      - name: Public distribution
+        env:
+          ENABLED: ${{ vars.KETE_PUBLIC_DISTRIBUTION }}
+        run: |
+          if [ "$ENABLED" = true ]; then
+            echo "::notice::Public distribution is on: the sign and distribute jobs publish to kete-org/kete-releases, Homebrew and npm."
+          else
+            echo "::notice::Public distribution is off (repository variable KETE_PUBLIC_DISTRIBUTION is not 'true'): nothing was published outside this repository."
+          fi
+          echo "::notice::The VS Code extension is not published by releases; run kete-extension-publish on this tag when it should go out."
+
+  sign:
+    # Tags only, once public distribution is switched on (repository variable
+    # KETE_PUBLIC_DISTRIBUTION=true, docs/release.md "Public distribution"). The only job that can read
+    # the update signing key (environment release-signing, restricted to kete-v* tags). It checks out
+    # nothing but the pinned key list and runs only openssl, jq and cosign on the public files the build
+    # job assembled.
+    needs: [build, smoke, extension]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v') && vars.KETE_PUBLIC_DISTRIBUTION == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release-signing
+    permissions:
+      contents: read
+      # cosign keyless signing (Sigstore, GitHub OIDC).
+      id-token: write
+    steps:
+      - name: Check out the pinned update keys only
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          sparse-checkout: packages/cli/src/kete/update-keys.json
+          sparse-checkout-cone-mode: false
+
+      - name: Download the public release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-release
+          path: public
+
+      - name: Verify the public release files
+        run: |
+          set -euo pipefail
+          (cd public && sha256sum -c SHA256SUMS)
+          # Nothing unlisted gets signed alongside.
+          listed="$(cut -d' ' -f3 public/SHA256SUMS | sort)"
+          present="$(find public -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)"
+          [ "$listed" = "$present" ] || { echo "::error::public/ holds files SHA256SUMS doesn't list"; exit 1; }
+
+      # SHA256SUMS.sig: the 64-byte Ed25519 signature kete upgrade verifies against the keys pinned in
+      # the binary (packages/cli/src/kete/update-keys.json). Refuses a key that isn't pinned there:
+      # a signature no released kete could verify would break every upgrade silently.
+      - name: Sign with the update key
+        env:
+          KEY: ${{ secrets.KETE_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$KEY" ] || { echo "::error::KETE_UPDATE_SIGNING_KEY is not set in the release-signing environment"; exit 1; }
+          umask 077
+          key="$RUNNER_TEMP/update-key.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$KEY" > "$key"
+          [ "$(openssl pkey -in "$key" -noout -text 2>/dev/null | head -n 1)" = "ED25519 Private-Key:" ] \
+            || { echo "::error::KETE_UPDATE_SIGNING_KEY is not a PEM Ed25519 private key"; exit 1; }
+          openssl pkey -in "$key" -pubout -outform DER > "$RUNNER_TEMP/update-key.pub.der"
+          public="$(tail -c 32 "$RUNNER_TEMP/update-key.pub.der" | base64 -w0)"
+          jq -e --arg k "$public" '[.keys[].publicKey] | index($k) != null' packages/cli/src/kete/update-keys.json >/dev/null \
+            || { echo "::error::the signing key's public key ($public) is not pinned in packages/cli/src/kete/update-keys.json"; exit 1; }
+          openssl pkeyutl -sign -inkey "$key" -rawin -in public/SHA256SUMS -out public/SHA256SUMS.sig
+          [ "$(stat -c %s public/SHA256SUMS.sig)" = 64 ] || { echo "::error::unexpected signature size"; exit 1; }
+          openssl pkeyutl -verify -pubin -keyform DER -inkey "$RUNNER_TEMP/update-key.pub.der" -rawin \
+            -in public/SHA256SUMS -sigfile public/SHA256SUMS.sig
+          echo "::notice::SHA256SUMS signed with the pinned update key $public"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # SHA256SUMS.sigstore.json: what install.sh and install.ps1 verify (identity: this workflow on this tag).
+      - name: Sign with cosign keyless and verify
+        run: |
+          set -euo pipefail
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/kete-release.yml@refs/tags/$TAG"
+          issuer="https://token.actions.githubusercontent.com"
+          cosign sign-blob --yes --bundle public/SHA256SUMS.sigstore.json public/SHA256SUMS
+          cosign verify-blob --bundle public/SHA256SUMS.sigstore.json --certificate-identity "$identity" \
+            --certificate-oidc-issuer "$issuer" public/SHA256SUMS \
+            || { echo "::error::the SHA256SUMS signature does not verify against $identity"; exit 1; }
+
+      - name: Upload the signed public release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-release-signed
+          path: public/
+          retention-days: 1
+          if-no-files-found: error
+
+  distribute:
+    # Tags only, same switch, after this repository's release is published and the public files are
+    # signed. Publishes to kete-org/kete-releases, kete-org/homebrew-tap and npm (ADR 0009). The
+    # credentials live in the distribution environment (restricted to kete-v* tags) and reach only
+    # the steps that publish; generation runs first, with none.
+    needs: [publish, sign]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v') && vars.KETE_PUBLIC_DISTRIBUTION == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: distribution
+    permissions:
+      contents: read
+      # npm provenance (only once the source repository is public: npm refuses provenance from a
+      # private repository).
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Download the signed public release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-release-signed
+          path: public
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # Exactly what a user's kete upgrade and install script will check, before anything is public.
+      - name: Verify the signed public release
+        run: |
+          set -euo pipefail
+          bun run --cwd packages/kete-tools distribute verify "$PWD/public" -
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/kete-release.yml@refs/tags/$TAG"
+          cosign verify-blob --bundle public/SHA256SUMS.sigstore.json --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com public/SHA256SUMS
+
+      - name: Generate the notes, Homebrew formula and npm packages
+        env:
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          tools="bun run --cwd packages/kete-tools distribute"
+          $tools notes "$PWD/public" "$RUNNER_TEMP/notes.md"
+          $tools homebrew "$PWD/public" "$RUNNER_TEMP/tap/Formula/kete.rb"
+          repository=()
+          if [ "$PRIVATE" = false ]; then repository=(--repository "git+https://github.com/$GITHUB_REPOSITORY.git"); fi
+          $tools npm "$PWD/public" "$RUNNER_TEMP/npm" "${repository[@]}"
+          ls "$RUNNER_TEMP/npm"
+
+      - name: Create a token for the public repositories
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.KETE_DIST_APP_CLIENT_ID }}
+          private-key: ${{ secrets.KETE_DIST_APP_PRIVATE_KEY }}
+          owner: kete-org
+          repositories: |
+            kete-releases
+            homebrew-tap
+          permission-contents: write
+
+      # Draft first, then published, so the release appears whole. A re-run after a later step failed
+      # finds the release published: it checks it holds this SHA256SUMS and moves on.
+      - name: Publish to kete-org/kete-releases
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          repo=kete-org/kete-releases
+          if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
+            if [ "$(gh release view "$TAG" --repo "$repo" --json isDraft -q .isDraft)" = false ]; then
+              gh release download "$TAG" --repo "$repo" --pattern SHA256SUMS --output "$RUNNER_TEMP/published-SHA256SUMS"
+              cmp -s "$RUNNER_TEMP/published-SHA256SUMS" public/SHA256SUMS \
+                || { echo "::error::$repo already has a published $TAG with different files"; exit 1; }
+              echo "::notice::$repo $TAG is already published with these files"
+              exit 0
+            fi
+            gh release upload "$TAG" --repo "$repo" public/* --clobber
+            gh release edit "$TAG" --repo "$repo" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            flags=(--draft --title "Kete Code v${TAG#kete-v}" --notes-file "$RUNNER_TEMP/notes.md")
+            if [[ "${TAG#kete-v}" == *-* ]]; then flags+=(--prerelease); fi
+            gh release create "$TAG" --repo "$repo" public/* "${flags[@]}"
+          fi
+          # Only the highest stable version becomes "latest" (what install.sh and kete upgrade
+          # install), so re-running an older tag never moves it back.
+          version="${TAG#kete-v}"
+          current="$(gh release view --repo "$repo" --json tagName -q .tagName 2>/dev/null || true)"
+          current="${current#kete-v}"
+          if [[ "$version" == *-* ]]; then
+            gh release edit "$TAG" --repo "$repo" --draft=false
+          elif [ -z "$current" ] || [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n 1)" = "$version" ]; then
+            gh release edit "$TAG" --repo "$repo" --draft=false --latest
+          else
+            gh release edit "$TAG" --repo "$repo" --draft=false --latest=false
+          fi
+
+      # Stable releases only: the releases repository's README (install instructions) and the formula.
+      - name: Update the releases README and the Homebrew tap
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${TAG#kete-v}" == *-* ]]; then
+            echo "::notice::$TAG is a pre-release: the Homebrew formula and the README stay on the latest stable release."
+            exit 0
+          fi
+          gh auth setup-git --hostname github.com
+          commit() {
+            git -C "$1" add -A
+            if git -C "$1" diff --cached --quiet; then echo "$2: unchanged"; return 0; fi
+            git -C "$1" -c user.name="Kete Code release" -c user.email="kete-release@users.noreply.github.com" \
+              commit -q -m "$3"
+            git -C "$1" push -q origin HEAD
+          }
+          gh repo clone kete-org/kete-releases "$RUNNER_TEMP/releases-repo" -- --depth 1 -q
+          cp packages/kete-tools/distribution/releases-README.md "$RUNNER_TEMP/releases-repo/README.md"
+          commit "$RUNNER_TEMP/releases-repo" kete-releases "docs: install instructions for ${TAG#kete-v}"
+          gh repo clone kete-org/homebrew-tap "$RUNNER_TEMP/tap-repo" -- --depth 1 -q
+          mkdir -p "$RUNNER_TEMP/tap-repo/Formula"
+          cp "$RUNNER_TEMP/tap/Formula/kete.rb" "$RUNNER_TEMP/tap-repo/Formula/kete.rb"
+          commit "$RUNNER_TEMP/tap-repo" homebrew-tap "kete ${TAG#kete-v}"
+
+      # Platform packages first, the launcher last, so the launcher never points at missing packages.
+      # A version npm already has is skipped (a re-run finishes a partial publish).
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          [ -n "$NPM_TOKEN" ] || { echo "::error::NPM_TOKEN is not set in the distribution environment"; exit 1; }
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc"
+          # npm expands ${NPM_TOKEN} itself: the token is never written to disk or a command line.
+          # shellcheck disable=SC2016
+          printf '//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n' > "$NPM_CONFIG_USERCONFIG"
+          version="${TAG#kete-v}"
+          flags=(--access public --tag "$([[ "$version" == *-* ]] && echo next || echo latest)")
+          if [ "$PRIVATE" = false ]; then flags+=(--provenance); else echo "::notice::npm provenance is off while the source repository is private"; fi
+          for dir in "$RUNNER_TEMP"/npm/cli-* "$RUNNER_TEMP/npm/cli"; do
+            name="$(jq -r .name "$dir/package.json")"
+            if [ "$(npm view "$name@$version" version 2>/dev/null || true)" = "$version" ]; then
+              echo "$name@$version is already published"
+              continue
+            fi
+            npm publish "$dir" "${flags[@]}" || { echo "::error::npm publish $name@$version failed"; exit 1; }
+          done

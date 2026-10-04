@@ -1,0 +1,109 @@
+# Kete-owned. Every inherited upstream workflow is disabled in the repository settings
+# (see docs/upstream-sync.md); only kete-* workflows run.
+#
+# Kept within GitHub's free minutes on purpose (private repo; the allowance is shared across
+# the organisation): two standard Linux jobs, superseded PR runs are cancelled, docs-only
+# changes are skipped, nothing is uploaded.
+# - build:       lint, typecheck, CLI binary smoke test (~5 min)
+# - kete-checks: upstream marker/leak/licence check and every Kete-owned test (~1 min)
+# The engine packages' full suites run locally instead:
+#   bun run --cwd packages/kete-tools verify --base main
+name: kete-build
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore: ["**/*.md", "docs/**"]
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md", "docs/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Saves the dependency cache only on pushes to main; pull requests restore it.
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Lint
+        run: bun run lint
+
+      # `bun run check` typechecks 3 packages at once; core (~6 GB) and cli (~4.7 GB)
+      # together exceed the standard runner's memory and get OOM-killed.
+      - name: Typecheck
+        run: bun turbo typecheck --concurrency=1
+
+      - name: Build CLI binary
+        run: bun run --cwd packages/cli build --single --skip-install
+
+      - name: Smoke test binary
+        run: packages/cli/dist/cli-linux-x64/bin/kete --version
+
+  kete-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Full history: upstream:check compares against the merge base with origin/main.
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      # origin holds no upstream tags (they must never be pushed there), so fetch just the
+      # pinned release tag that the marker check diffs against.
+      - name: Fetch pinned upstream tag
+        run: |
+          tag="$(cat .opencode-version)"
+          git fetch --no-tags https://github.com/anomalyco/opencode.git "refs/tags/$tag:refs/tags/$tag"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Upstream check (markers, leaks, licence)
+        run: bun run --cwd packages/kete-tools upstream:check
+
+      # The public install scripts (ADR 0009): POSIX sh for macOS/Linux, PowerShell for Windows.
+      # shellcheck and pwsh are preinstalled on ubuntu-latest; install.sh's behaviour is tested in
+      # packages/kete-tools/test/distribute.test.ts below.
+      - name: Lint the install scripts
+        run: shellcheck -s sh packages/kete-tools/distribution/install.sh
+
+      - name: Parse install.ps1
+        shell: pwsh
+        run: |
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile("$PWD/packages/kete-tools/distribution/install.ps1", [ref]$null, [ref]$errors)
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.ToString() }; exit 1 }
+
+      - name: Kete-owned tests
+        run: |
+          set -euo pipefail
+          suite() {
+            if [ ! -d "packages/$1/$2" ]; then return 0; fi
+            echo "::group::$1/$2"
+            (cd "packages/$1" && eval "$3")
+            echo "::endgroup::"
+          }
+          suite util test/kete "bun test test/kete"
+          # core's test script isolates HOME/XDG; never run bare `bun test` there.
+          suite core test/kete "bun run test ./test/kete"
+          suite server test/kete "bun test test/kete"
+          suite tui test/kete "bun test test/kete"
+          suite cli test/kete "bun test test/kete"
+          suite kete-tools test "bun test"
+          suite kete-vscode test "bun test"
+          suite app src/kete "bun test --conditions=solid --preload ./happydom.ts ./src/kete"
+          suite ui src/theme/kete "bun test ./src/theme/kete"

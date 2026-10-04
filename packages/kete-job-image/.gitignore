@@ -1,0 +1,2 @@
+# build.sh output: compiled binaries, the staged image context, e2e state (holds test tokens)
+.build/

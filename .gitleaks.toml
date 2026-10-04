@@ -1,0 +1,23 @@
+title = "Kete Code gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known fake fixtures, doc examples and false positives"
+regexes = [
+  '''I18nPluralKey$''',
+  '''^go\.faq\.''',
+  '''^alt\+shift\+''',
+  '''0123456789abcdef''',
+  '''^9f8e7d6c5b4a$''',
+  '''^a1c3e5f7092b4d6f''',
+  '''^4f9c2a7e1b8d3f6a''',
+  '''ROLECHECK0+''',
+  '''^sk-ant-abcdefgh''',
+  '''^sk-1234567890''',
+  '''^gwkey-0123456789$''',
+  '''^abcdef123456$''',
+  '''^AIzaSyFAKE''',
+  '''MIIBogIBAAJ\.\.\.''',
+]

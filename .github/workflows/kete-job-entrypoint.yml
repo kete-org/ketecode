@@ -1,0 +1,62 @@
+# Kete-owned. Path-filtered so it only runs when the cloud job entrypoint, or the root helper or
+# egress proxy it drives, actually changes, protecting the shared CI minutes budget (see
+# kete-build.yml). One ubuntu-latest job: gofmt, Go vet (also with the integration tag), unit tests
+# with the race detector, then the privileged integration suite (scripts/integration.sh: the real
+# helper and proxy, real users, cgroups, nftables and /proc remount, the in-process fake platform,
+# a fake `kete`). The suite runs in a privileged container with a private cgroup namespace and its
+# own network namespace, so the users, the /proc remount, the cgroups and the firewall it sets up
+# never touch the runner itself. ~3-5 minutes.
+name: kete-job-entrypoint
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/kete-job-entrypoint/**"
+      - "packages/kete-root-helper/**"
+      - "packages/kete-egress/**"
+      - ".github/workflows/kete-job-entrypoint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/kete-job-entrypoint/**"
+      - "packages/kete-root-helper/**"
+      - "packages/kete-egress/**"
+      - ".github/workflows/kete-job-entrypoint.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/kete-job-entrypoint/go.mod
+          cache-dependency-path: packages/kete-job-entrypoint/go.sum
+
+      - name: gofmt, vet and unit tests
+        working-directory: packages/kete-job-entrypoint
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go vet -tags integration ./...
+          go vet -tags e2e ./...
+          go test -race ./...
+
+      - name: "Integration tests (privileged container: real helper and proxy, users, cgroups, nftables)"
+        run: |
+          docker run --rm --privileged --cgroupns=private \
+            -v "$PWD/packages:/src" -w /src/kete-job-entrypoint \
+            golang:1.26-bookworm bash scripts/integration.sh

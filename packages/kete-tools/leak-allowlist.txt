@@ -1,0 +1,3 @@
+# OpenCode-name literals that intentionally stay in engine sources after a sync.
+# One entry per line: <file>:<pattern-id>, where pattern-id is project-dir,
+# config-file or display-name (see packages/kete-tools/src/lib.ts). Say why in a comment.

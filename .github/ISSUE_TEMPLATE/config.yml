@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+contact_links:
+  # kete_change start: Kete Code's channels
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/kete-org/ketecode/security/advisories/new
+    about: Privately; never in a public issue (see SECURITY.md).
+  - name: 💬 Account, billing or gateway help
+    url: mailto:support@ketecode.ai
+    about: Questions about your Kete account, usage or the model gateway.
+  # kete_change end

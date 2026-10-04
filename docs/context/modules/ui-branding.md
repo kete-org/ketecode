@@ -1,0 +1,91 @@
+---
+module: ui-branding
+paths: [packages/tui/src/kete/mark.tsx, packages/util/src/kete/wordmark.ts, packages/app/src/kete/brand-text*, packages/app/src/kete/wordmark*, packages/app/src/kete/mark.tsx, packages/app/src/kete/tokens.css, packages/app/src/kete/fonts.ts, packages/ui/src/theme/kete/*, packages/tui/src/kete/theme.*, assets/brand/]
+verified-at: fb75b7596c
+---
+## Quick answers
+- Why does the web UI say "Kete Code" when upstream's ~66 locale files still say "OpenCode"? Runtime rewrite: `brandDictionary` (`packages/app/src/kete/brand-text.ts:39-47`) is applied to every loaded dictionary in `packages/app/src/runtime/i18n/language.tsx:89,93`, not a locale-file edit.
+- What's the brand color and where's it defined? Violet `#6E47F5` (light) / `#A38CFA` (dark tint) — `packages/ui/src/theme/kete/theme.ts:17` (web/VS Code theme palette), `packages/app/src/kete/tokens.css` (`--kete-brand`, the chat panel's own CSS custom properties, asserted equal to the theme value by `tokens.test.ts`), `packages/tui/src/kete/theme.json` (TUI), `packages/kete-vscode/package.json`'s `galleryBanner.color` (Marketplace banner). Changed from the earlier `#7C3AED`/`#A78BFA` in this task (2026-09-29) — user memory `brand-colour-purple` still has the old values and needs a refresh.
+- Why does `opencode.ai` still appear in some UI strings? `brand-text.ts`'s `hosted` regex (line 17) and `overrides` (lines 20-26) deliberately keep OpenCode Zen/Go/Console/Free and the trademark notice unrebranded — rewriting them would state something false.
+- How does the TUI's default theme work without breaking saved `"opencode"` theme settings? `packages/tui/src/kete/theme.ts` registers the same document under both `"kete"` (default) and `"opencode"` (alias); wired at `packages/tui/src/theme/index.ts:10,39`.
+- Is the wordmark still a placeholder? No — `packages/app/src/kete/wordmark.tsx` now renders "Kete" (primary) + "Code" (secondary) in the Bricolage Grotesque 600 font declared by `tokens.css`'s `@font-face`, names sourced from `@opencode/util/kete/brand`; it keeps the same 720×129 box its callers (`new-session/wordmark.tsx`, `servers/connect/screen.tsx`) rely on.
+- Where does the mark (logo) geometry live? `packages/app/src/kete/mark.tsx`'s `MARK_RECTS` (eight rects, `viewBox="0 0 512 512"`) is the single source; `KeteMark` renders it inline (brand rects `var(--kete-brand)`, ink rects `currentColor`). `packages/kete-vscode/media/kete.svg` (activity-bar icon, all `currentColor`) and `packages/app/index.html`'s favicon (a data-URI SVG) are kept in lockstep with it by hand — `packages/kete-vscode/test/brand.test.ts` asserts `kete.svg`'s rects equal `MARK_RECTS`.
+- Where else is the mark drawn? The TUI home screen: `packages/tui/src/kete/mark.tsx`'s `MARK_PIXELS` (9×9 pixel art, half blocks → 9 columns × 5 lines; ink bars `theme.text.base`, brand bars fixed `#6E47F5`) beside upstream's block-letter wordmark via `KeteLogo` (only at ≥ 56×12; `routes/home.tsx` import, `kete_change`). The `kete login` / provider OAuth callback page: `packages/util/src/kete/wordmark.ts`'s `wordmarkSvg` (mark + "Kete Code"; bars asserted equal to `MARK_RECTS` by `packages/core/test/kete/oauth-page.test.ts`).
+- Where do the wordmark font and logo assets live, and can they be copied into a package? `assets/brand/` (repo root; Kete-owned, `docs/jobs.md`/`assets/brand/` added to `isKeteOwned`, `kete-tools-ci` card) is the **single source of truth** — `fonts/bricolage-grotesque-latin-600-normal.woff2` + `OFL.txt` + `README.md`, and `kete-logo-512.png`. Reference these files in place (Vite resolves a Kete CSS `url()` or a `?url` import that points outside the package and hashes it into `dist/_assets`; `packages/app/src/kete/fonts.ts` re-exports the OFL text's URL for the About-page credit); never copy them — `packages/kete-vscode/media/icon.png` is a byte-for-byte copy check (`brand.test.ts`), not a second source.
+- How does the web app bundle fonts in general, and does the wordmark font follow that pattern? Upstream's own UI fonts are `@font-face` rules in `packages/app/src/index.css:6-26` (not this card's path — an upstream file, untouched by this task). The Kete wordmark font follows the same Vite-bundling mechanism but declares its own `@font-face "Kete Wordmark"` inside `tokens.css` instead of editing `index.css`, so it needs no upstream edit at all.
+
+## Purpose
+Kete Code's product identity applied to upstream OpenCode's UI surfaces without touching upstream's own locale/theme files, so upstream merges don't conflict: text rebranding at dictionary-load time (`app/src/kete`), the default color theme in Kete's violet for both the web UI/VS Code extension (`ui/src/theme/kete`) and the TUI (`tui/src/kete`), the mark/wordmark/font identity assets (`app/src/kete/mark.tsx`, `wordmark.tsx`, `tokens.css`, `fonts.ts`, sourced from `assets/brand/`), and VS Code-specific webview theming/messaging (`app/src/kete/vscode-*`). The chat panel's own layout and behavior (empty state, composer controls, permission-mode toggle) is a separate concern — see the `web-app` card, which reuses this card's mark/wordmark/tokens.
+
+## Entry points
+- `packages/app/src/runtime/i18n/language.tsx:2,89,93` — imports `brandDictionary`, applies it to the base dictionary and every lazily-loaded locale dictionary (`kete_change`).
+- `packages/ui/src/theme/default-themes.ts:37,78` and `packages/ui/src/theme/context.tsx:7,84` — `keteTheme` (from `ui/src/theme/kete/theme.ts`) takes the `"oc-2"` slot, upstream's default theme id (`kete_change`).
+- `packages/tui/src/theme/index.ts:10,39` — imports `../kete/theme.json`, registers it as both `opencode` and `kete` in `listThemes()` (`kete_change`).
+- `packages/app/src/kete/vscode-host.tsx` — mounted by `KeteVSCodeShell`/`KeteVSCodeBridge` in `app/src/app.tsx`, `app/src/session/route.tsx`, `app/src/new-session/route.tsx` (docs/upstream-patches.md "VS Code extension").
+
+## Key files
+| File | Lines | Role |
+| --- | --- | --- |
+| `packages/app/src/kete/brand-text.ts` | 48 | `brandText()` regex rewrite rules + `overrides` map + `brandDictionary()` |
+| `packages/app/src/kete/wordmark.tsx` | 41 | "Kete"/"Code" wordmark `<svg>`, Bricolage Grotesque 600 via `tokens.css`, same 720×129 box as upstream's |
+| `packages/app/src/kete/mark.tsx` | 54 | `MARK_RECTS`/`MARK_VIEWBOX` (single geometry source) and `KeteMark` inline SVG |
+| `packages/app/src/kete/tokens.css` | 77 | `--kete-*` custom properties (brand, ink, paper, surfaces, borders, text, radii, font stacks), keyed on `[data-color-scheme]` and `[data-kete-contrast="high"]`; `@font-face "Kete Wordmark"` `url()`-referencing `assets/brand/fonts/…woff2` |
+| `packages/app/src/kete/fonts.ts` | 12 | `wordmarkFont = { name, licenceUrl }`; imports `assets/brand/fonts/OFL.txt?url` so Vite emits the licence file alongside the font |
+| `packages/app/src/kete/assets.d.ts` | — | `declare module "*?url"` (the app's `env.d.ts` doesn't include `vite/client`) |
+| `packages/app/src/kete/vscode-theme.ts` | 95 | Maps VS Code CSS variables → web UI design tokens (`VSCODE_VARIABLES`, `MAPPING`) |
+| `packages/app/src/kete/vscode-host.tsx` | 215 | VS Code webview bridge: opens diffs in the editor, adds editor selection/file to prompt context, applies theme + `data-kete-contrast`, imports `tokens.css` app-wide |
+| `packages/app/src/kete/vscode-messages.ts` | 88 | Validates `postMessage` payloads from the extension (`contextMessage()`, `panelMessage()` — see the `web-app` and `vscode-extension` cards) |
+| `packages/ui/src/theme/kete/theme.ts` | 54 | `keteTheme`: upstream's `oc-2.json` with violet primary/interactive/accent tokens (`brand.light`/`brand.dark`) |
+| `packages/tui/src/kete/theme.ts` | 26 | `defaultTheme`/`legacyDefault` names, `canonicalTheme()` alias resolution |
+| `packages/tui/src/kete/theme.json` | 411 | Regenerated copy of upstream's `assets/v2/opencode.json` with violet as the interactive hue |
+| `assets/brand/fonts/` | — | `bricolage-grotesque-latin-600-normal.woff2`, `OFL.txt`, `README.md` (provenance) — bundle, never load remotely |
+| `assets/brand/kete-logo-512.png` | — | Marketplace/app icon source; `packages/kete-vscode/media/icon.png` is a byte-identical copy, checked by `brand.test.ts` |
+
+## Data flow
+**Web/VS Code text:** locale JSON loads (`language.tsx`) → flattened → `brandDictionary(flatten(...))` maps every string value through `brandText()` (protects `overrides` keys and the `hosted` service-name pattern via a placeholder swap) → cached `Dictionary` used by the UI.
+
+**Web/VS Code color:** `ui/src/theme/kete/theme.ts` takes the imported `oc2ThemeJson`, applies `violet()` to its `light`/`dark` `DesktopTheme` variants (overwrites `palette.primary`/`palette.interactive` and `v2Overrides` accent tokens with the `accents` table) → exported as `keteTheme` → substituted for `"oc-2"` in `default-themes.ts`/`context.tsx`, so upstream's light/dark switching, cache-busting, and preload script all keep working unmodified.
+
+**TUI color:** `tui/src/kete/theme.json` (hand-regenerated from upstream's asset) is parsed once by `getOpenCodeTheme()` (`tui/src/theme/index.ts:26-30`) and exposed in `listThemes()` under both `kete` and `opencode`; `canonicalTheme()` (`tui/src/kete/theme.ts:16-18`) resolves a saved/configured `"opencode"` name to `"kete"` unless a custom/plugin theme has claimed the name `"opencode"`.
+
+**VS Code webview:** `packages/kete-vscode` (separate package) posts VS Code CSS variable values + theme kind into the iframe; `vscode-theme.ts`'s `MAPPING` translates them to the web UI's `--v2-*` tokens, falling back to the web UI's own theme where a mapping is missing. `vscode-host.tsx`'s `applyTheme` also sets `document.documentElement.dataset.keteContrast = "high"` for `high-contrast*` theme kinds, which `tokens.css` reads to fall its surface/border/text tokens back to the VS Code-mapped `--v2-*` tokens instead of the fixed brand palette (a fixed palette can't guarantee contrast against an arbitrary high-contrast theme). `vscode-host.tsx` listens for `kete.addContext` messages (validated by `vscode-messages.ts::contextMessage`) from the parent window only, and calls the extension's `openDiff` when a file is opened in the review/diff view.
+
+**Identity assets:** `mark.tsx`'s `MARK_RECTS` is read directly by `tokens.test.ts` (8 rects inside the 512 viewBox) and by nothing else in this package — `packages/kete-vscode/test/brand.test.ts` parses both it and `media/kete.svg` as text to compare them, since a VS Code test can't import a `.tsx` React/Solid component. `tokens.css`'s font `url()` and `fonts.ts`'s `?url` import both resolve against the repo-root `assets/brand/` at build time; Vite's default `server.fs.allow` (workspace root) covers it in dev, and `bun run build` hashes it into `dist/_assets`.
+
+## Data and APIs used
+- No network/platform calls — pure client-side string/token transforms over locally bundled locale JSON and theme JSON.
+- `@opencode/util/kete/brand` (`Brand.displayName`, `Brand.envPrefix`, `Brand.configFiles`, `Brand.projectDirectory`, `Brand.cliName`) is the single source the regexes in `brand-text.ts` substitute in — never hardcode "Kete"/"kete" literals there (CLAUDE.md §5).
+- `packages/kete-vscode/src/chat.ts` is the message-posting counterpart to `vscode-theme.ts`/`vscode-messages.ts`/`vscode-host.tsx` — a different package, not covered by this card.
+
+## Rules that must not break
+- `brand-text.ts`'s `overrides` (trademark notice, "includes free models" line) must never be overwritten by the generic `brandText()` regex chain — licensing/attribution requirement (CLAUDE.md §4 "Licensing").
+- The `hosted` regex (line 17) must keep "OpenCode Zen/Go/Console/Free/Black" unrebranded — these name OpenCode's own opt-in hosted services (ADR 0003), not Kete Code's.
+- `ui/src/theme/kete/theme.ts` keeps the `"oc-2"` id (comment, lines 3-5) — renaming it would break upstream's light/dark system switch and cached-CSS logic that key on that id.
+- `tui/src/kete/theme.ts`'s `opencode` alias must keep working for existing saved configs (`canonicalTheme()`); don't remove the alias without a config migration.
+- All upstream-file edits enabling these seams (`language.tsx`, `default-themes.ts`, `context.tsx`, `tui/src/theme/index.ts`, `tui/src/context/theme.tsx`, `tui/src/mini/theme.ts`, `tui/src/component/dialog-config.tsx`, `dialog-theme-list.tsx`, `app.tsx`, `session/route.tsx`, `new-session/route.tsx`, `session/review/view.tsx`, `settings/about/about.tsx` (OFL credit), `index.html` (favicon, inside the existing marked line)) must keep their `kete_change` markers — see docs/upstream-patches.md "Web UI branding", "Branding cleanup and provider attribution" and "Chat panel design" for the full file lists.
+- Regenerating `tui/src/kete/theme.json` after an upstream sync that changes `assets/v2/opencode.json` is required to keep the violet hue applied (docs/upstream-patches.md "Branding cleanup", `tui/src/kete/theme.ts` header).
+- The wordmark font ships from `assets/brand/fonts/` with its `OFL.txt` licence and an About-page credit (`packages/app/src/settings/about/about.tsx`, `kete_change`, D5) — never load a font from a remote URL (CLAUDE.md §9, §11 "Offline"); `tokens.test.ts` asserts the `url()` has no `http`/`fonts.googleapis` scheme.
+- `assets/brand/` is the only source for the mark/wordmark font/logo assets — package-local copies (`packages/kete-vscode/media/*`) must stay byte-identical or geometry-identical to it, enforced by `brand.test.ts`, not hand-verified.
+
+## Testing
+- App: `bun test --conditions=solid --preload ./happydom.ts ./src/kete/<file>` from `packages/app` (or `bun run test:unit`, which runs `bun test --conditions=solid --only-failures --preload ./happydom.ts ./src`, per `packages/app/package.json:25`) — `brand-text.test.ts`, `vscode-messages.test.ts`, `vscode-theme.test.ts`, `tokens.test.ts` (brand color matches `packages/ui`'s theme, font `url()` has no remote scheme, `MARK_RECTS` shape).
+- VS Code: `bun test ./test/brand.test.ts` from `packages/kete-vscode` — `media/kete.svg` rects equal `mark.tsx`'s `MARK_RECTS`, `media/icon.png` bytes equal `assets/brand/kete-logo-512.png`, manifest `galleryBanner.color` is the brand color.
+- UI: `bun test ./src/theme/kete/theme.test.ts` from `packages/ui`.
+- TUI: `bun test ./test/kete/theme.test.ts` from `packages/tui` (`packages/tui/test/kete/theme.test.ts`; `packages/tui/src/kete/theme.ts` itself has no colocated `.test.ts`).
+- Upstream test edit to watch: `app/src/providers/catalog/order.test.ts` asserts OpenCode Go/Zen's reordered provider-catalog position (docs/upstream-patches.md "Web UI branding").
+
+## Changes
+- Adding a new locale string that needs a non-literal rebrand: extend `brandText()`'s replace chain in `brand-text.ts` (order matters — more specific patterns like `$OPENCODE_WORKTREE_*` must run before the generic `OpenCode`→`Brand.displayName` swap) or add a key to `overrides` if any substitution would misstate the sentence.
+- Adjusting the brand color: change `brand.light`/`brand.dark` in `ui/src/theme/kete/theme.ts:17`, `tokens.css`'s `--kete-brand`, the matching hue scale in `tui/src/kete/theme.json`, and `packages/kete-vscode/package.json`'s `galleryBanner.color`; keep all four in sync (`tokens.test.ts` only checks `tokens.css` against `theme.ts`) and re-check WCAG AA contrast (file comment, lines 18-19 in `theme.ts`).
+- Changing the mark geometry: edit `mark.tsx`'s `MARK_RECTS` only, then regenerate `packages/kete-vscode/media/kete.svg` (all rects `currentColor`, no `var()` — VS Code masks activity-bar icons) to match; `brand.test.ts` fails until both agree.
+- Adding a new VS Code CSS variable to theme: add it to `VSCODE_VARIABLES` and a `MAPPING` entry in `vscode-theme.ts`; the extension side (`packages/kete-vscode/src/chat.ts`) must send the new variable too.
+- The TUI's placeholder wordmark art (per its own file header) is still unaddressed — the web/VS Code wordmark and mark are done; don't assume the TUI matches yet.
+
+## Gotchas
+- `brandText()` runs on every dictionary **value**, never on keys (file header, line 5) — a rebrand bug shows up as a mis-rewritten sentence, not a missing key.
+- The `hosted` regex placeholder swap (`\u0000HOSTED\u0000`) is order-sensitive: it must run before the generic `OpenCode`→`Brand.displayName` replace and be restored after, or "OpenCode Zen" gets partially rebranded.
+- `keteTheme` mutates only `palette.primary`/`palette.interactive` and specific `v2Overrides` accent keys (`violet()`, theme.ts:39-46) — syntax highlighting colors (`text-code-accent`) are deliberately left as upstream's (file header, line 8).
+- TUI dark mode's accent intentionally differs from the web UI's: `tui/src/kete/theme.ts` header says dark mode's accent "moves from purple to blue" to stay visually distinct from the violet primary — don't "fix" this to match the web palette without checking that rationale.
+- PWA/app icons (`packages/desktop/icons`, raster) are explicitly *not* rebranded yet (docs/upstream-patches.md "Web UI branding") — don't assume every icon surface is covered by this card.
+- Other `#7C3AED` uses outside this card's paths (TUI theme values already covered above, but also the runtime/CLI sign-in pages `core/src/oauth/page.ts`, `cli/src/kete/cli-login.ts`) were out of scope for this task (plan.md D9) and still have the old color — a follow-up, not a bug in what this card covers.
+- `docs/design/kete-code-panel.html:16-96,:226` (an early mockup some historical plan text cites) never existed in this repo or its history; the only design reference is `docs/design/kete-code-panel.html` (v4, added in `86def2722f`) and `mark.tsx`'s own header comment (`:269-278` in that v4 file) for the mark's origin — don't go looking for the older file.

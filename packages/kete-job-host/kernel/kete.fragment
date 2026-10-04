@@ -1,0 +1,69 @@
+# Kete-owned. The guest kernel's requirements (kete-code-platform ADR 0023 rules 7, 15, 21; the
+# job entrypoint and kete-job-init), merged over Firecracker's validated microVM guest
+# configuration for the same kernel series (build.sh --regen-config). check-config.sh checks the
+# resolved config-<arch> files against the "=y" and "is not set" lines of this file.
+
+# No loadable modules: everything the guest needs is built in, nothing can be loaded later.
+# CONFIG_MODULES is not set
+
+# nftables `inet` family: the entrypoint's egress ruleset (meta skuid, ct state, reject with tcp
+# reset and icmpx) and kete-job-init's metadata-drop table. NF_TABLES_INET needs IPv6 in the
+# kernel; the guest still gets no IPv6 address or route (ADR 0023 rule 7, the host drops every
+# IPv6 packet).
+CONFIG_NETFILTER=y
+CONFIG_NF_CONNTRACK=y
+CONFIG_NF_TABLES=y
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_TABLES_IPV4=y
+CONFIG_NF_TABLES_IPV6=y
+CONFIG_NFT_CT=y
+CONFIG_NFT_REJECT=y
+CONFIG_NFT_REJECT_INET=y
+CONFIG_NF_REJECT_IPV4=y
+CONFIG_NF_REJECT_IPV6=y
+CONFIG_IPV6=y
+
+# cgroup v2 with the cpu, memory and pids controllers (the entrypoint's per-user groups).
+CONFIG_CGROUPS=y
+CONFIG_MEMCG=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_CGROUP_SCHED=y
+CONFIG_FAIR_GROUP_SCHED=y
+CONFIG_CFS_BANDWIDTH=y
+
+# Namespaces: user namespaces exist so the entrypoint can set user.max_user_namespaces = 0.
+CONFIG_NAMESPACES=y
+CONFIG_USER_NS=y
+CONFIG_PID_NS=y
+CONFIG_NET_NS=y
+CONFIG_UTS_NS=y
+CONFIG_IPC_NS=y
+
+# Disks: read-only ext4 root, ext4 scratch (label kete-scratch) as the overlay's upper layer.
+CONFIG_EXT4_FS=y
+CONFIG_OVERLAY_FS=y
+CONFIG_VIRTIO_BLK=y
+CONFIG_VIRTIO_NET=y
+CONFIG_VIRTIO_MMIO=y
+CONFIG_DEVTMPFS=y
+CONFIG_TMPFS=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+
+# Static network from the agent's `ip=` argument (kete-job-init reads /proc/net/pnp).
+CONFIG_IP_PNP=y
+
+# Serial console: the only channel out of the guest besides its network (phase lines).
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+
+CONFIG_SECCOMP=y
+CONFIG_SECCOMP_FILTER=y
+
+# No vsock (ADR 0023 rule 7: no vsock device; the microvm profile refuses one), no /dev/mem.
+# CONFIG_VSOCKETS is not set
+# CONFIG_VIRTIO_VSOCKETS is not set
+# CONFIG_DEVMEM is not set
+
+# A panic reboots (Firecracker then exits); the agent also passes panic=1 (P1 handoff).
+CONFIG_PANIC_TIMEOUT=1

@@ -1,0 +1,11 @@
+src/**
+test/**
+node_modules/**
+.gitignore
+tsconfig.json
+**/*.map
+**/*.ts
+.turbo/**
+media/icon.svg
+DEVELOPMENT.md
+script/**

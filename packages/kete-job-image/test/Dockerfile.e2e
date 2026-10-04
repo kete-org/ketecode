@@ -1,0 +1,13 @@
+# Kete-owned. The end-to-end test layer (scripts/e2e.sh), never published: the job image plus cargo
+# (AC5's crates.io check; kept out of the published image for size, D4), the containerised fake
+# platform and the e2e asserter. The fake's per-run test CA is not baked in: e2e.sh bind-mounts a
+# CA bundle with it over the job container's /etc/ssl/certs/ca-certificates.crt, so this layer is
+# built once and reused. The fake container runs from this same image (--entrypoint).
+ARG BASE=kete-job:local
+FROM ${BASE}
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cargo \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+
+COPY bin/kete-job-fake-platform bin/e2e.test /usr/local/libexec/kete-e2e/

@@ -1,0 +1,77 @@
+/*
+ * Kete Code design tokens for the chat panel (empty state, header, composer — see panel.css).
+ * Values from docs/tasks/2026-09-29-chat-panel-design/spec.md ("Tokens"). Scoped to `--kete-*` names
+ * so nothing here touches upstream's `--v2-*`/`--font-family-*` tokens or Tailwind's utility layer:
+ * this file is intentionally unlayered CSS, which beats layered Tailwind utilities without `!important`.
+ *
+ * Light/dark follow `[data-color-scheme]` on the document root, the same attribute upstream's own
+ * tokens key on (packages/ui/src/styles/tokens/theme.css). Inside the VS Code extension,
+ * `[data-kete-contrast="high"]` (set by vscode-host.tsx for VS Code's two high-contrast theme kinds)
+ * maps surfaces, borders and text onto the VS Code-mapped `--v2-*` tokens (vscode-theme.ts) instead,
+ * since a fixed brand palette can't guarantee contrast against an arbitrary high-contrast theme.
+ */
+
+@font-face {
+  font-family: "Kete Wordmark";
+  src: url("../../../../assets/brand/fonts/bricolage-grotesque-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --kete-brand: #6e47f5;
+  --kete-brand-soft: #a38cfa;
+  --kete-brand-ink: #16141d;
+  --kete-brand-paper: #f1eff6;
+
+  --kete-bg: #100f15;
+  --kete-surface: #17151e;
+  --kete-surface-2: #211e2b;
+  --kete-border: #2a2634;
+  --kete-border-strong: #3a3548;
+  --kete-text-1: #f1eff6;
+  --kete-text-2: #a7a3b4;
+  --kete-text-3: #6f6b7d;
+
+  --kete-r-container: 12px;
+  --kete-r-control: 8px;
+  --kete-r-inline: 4px;
+
+  --kete-ui-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --kete-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --kete-wordmark-font: "Kete Wordmark", var(--kete-ui-font);
+}
+
+[data-color-scheme="light"] {
+  --kete-brand-soft: #5a34e6;
+
+  --kete-bg: #fbfafd;
+  --kete-surface: #f4f2f8;
+  --kete-surface-2: #ece9f3;
+  --kete-border: #e0dce9;
+  --kete-border-strong: #cfc9dc;
+  --kete-text-1: #16141d;
+  --kete-text-2: #55516a;
+  --kete-text-3: #8a8699;
+}
+
+/* Inside the VS Code frame: UI text follows the editor's font, same as code. */
+[data-kete-host="vscode"] {
+  --kete-ui-font: var(--font-family-sans);
+  --kete-mono: var(--font-family-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+}
+
+/* High-contrast VS Code themes: no fixed brand palette can guarantee contrast, so surfaces, borders
+   and text fall back to the theme's own VS Code-mapped tokens. Brand/wordmark colours are unchanged
+   (the mark and wordmark still identify the product). */
+[data-kete-contrast="high"] {
+  --kete-bg: var(--v2-background-bg-base);
+  --kete-surface: var(--v2-background-bg-layer-01);
+  --kete-surface-2: var(--v2-background-bg-layer-02);
+  --kete-border: var(--v2-border-border-base);
+  --kete-border-strong: var(--v2-border-border-strong);
+  --kete-text-1: var(--v2-text-text-base);
+  --kete-text-2: var(--v2-text-text-muted);
+  --kete-text-3: var(--v2-text-text-faint);
+}

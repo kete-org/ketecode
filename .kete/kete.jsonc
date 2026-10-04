@@ -1,0 +1,35 @@
+// Generated from .claude/settings.json by scripts/agent/kete-agents.mjs. Edit the source, not this file.
+{
+  "permissions": [
+    {
+      "action": "read",
+      "resource": ".env",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": ".env.*",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "*.pem",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "*.key",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "bun run *publish*",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "bun */script/publish*",
+      "effect": "deny"
+    }
+  ]
+}

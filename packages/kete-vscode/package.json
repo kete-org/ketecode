@@ -1,0 +1,457 @@
+{
+  "$schema": "https://json.schemastore.org/package",
+  "name": "kete-code",
+  "displayName": "Kete Code",
+  "description": "AI coding agent that runs next to your code: chat, edits with diff review, and your Kete account.",
+  "version": "0.0.0",
+  "publisher": "ketecode",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "coding agent",
+    "chat",
+    "llm",
+    "kete",
+    "byok",
+    "code review"
+  ],
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#6E47F5",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "qna": false,
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "icons": {
+      "kete-mark": {
+        "description": "The Kete mark",
+        "default": {
+          "fontPath": "media/kete-mark.woff",
+          "fontCharacter": "\\f101"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "kete.openChat",
+        "title": "Kete Code: Open Chat",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.reloadChat",
+        "title": "Kete Code: Reload Chat",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.openTerminal",
+        "title": "Open Kete Code",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.openNewTerminal",
+        "title": "Open Kete Code in New Tab",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.addFilepathToTerminal",
+        "title": "Kete Code: Insert At-Mentioned"
+      },
+      {
+        "command": "kete.signIn",
+        "title": "Kete Code: Sign In",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.signOut",
+        "title": "Kete Code: Sign Out",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.restartServer",
+        "title": "Kete Code: Restart Server"
+      },
+      {
+        "command": "kete.showLogs",
+        "title": "Kete Code: Show Logs"
+      },
+      {
+        "command": "kete.statusMenu",
+        "title": "Kete Code: Status"
+      },
+      {
+        "command": "kete.sendSelection",
+        "title": "Kete Code: Send Selection to Chat"
+      },
+      {
+        "command": "kete.sendFile",
+        "title": "Kete Code: Send File to Chat"
+      },
+      {
+        "command": "kete.focusChat",
+        "title": "Kete Code: Focus Chat"
+      },
+      {
+        "command": "kete.newChat",
+        "title": "Kete Code: New Chat",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.addToChat",
+        "title": "Kete Code: Add to Chat"
+      },
+      {
+        "command": "kete.moveChatToRight",
+        "title": "Kete Code: Move Chat to Right Side Bar"
+      },
+      {
+        "command": "kete.reviewChanges",
+        "title": "Kete Code: Review Changes",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.revertFile",
+        "title": "Kete Code: Revert File to Before This Turn",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.openSession",
+        "title": "Kete Code: Open Session\u2026"
+      },
+      {
+        "command": "kete.refreshSessions",
+        "title": "Kete Code: Refresh Sessions",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.copySessionLink",
+        "title": "Kete Code: Copy Session Link",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.askBeforeEdits",
+        "title": "Kete Code: Ask Before Edits in This Chat",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.stopAskingBeforeEdits",
+        "title": "Kete Code: Stop Asking Before Edits in This Chat",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.mcp.refresh",
+        "title": "Kete Code: Refresh MCP Servers",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.mcp.approve",
+        "title": "Kete Code: Review and Approve MCP Server\u2026",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.mcp.signIn",
+        "title": "Kete Code: Sign In to MCP Server",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.mcp.connect",
+        "title": "Kete Code: Connect MCP Server",
+        "icon": "$(kete-mark)"
+      },
+      {
+        "command": "kete.mcp.disconnect",
+        "title": "Kete Code: Disconnect MCP Server",
+        "icon": "$(kete-mark)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "kete.openNewTerminal",
+          "group": "navigation"
+        },
+        {
+          "command": "kete.revertFile",
+          "when": "isInDiffEditor && kete.reviewing && resourceScheme =~ /^(file|kete-before)$/",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "kete.newChat",
+          "when": "view == kete.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "kete.reloadChat",
+          "when": "view == kete.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "kete.openChat",
+          "when": "view == kete.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "kete.signIn",
+          "when": "view == kete.chat && !kete.signedIn",
+          "group": "navigation"
+        },
+        {
+          "command": "kete.reviewChanges",
+          "when": "view == kete.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "kete.refreshSessions",
+          "when": "view == kete.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "kete.askBeforeEdits",
+          "when": "view == kete.chat && !kete.askBeforeEdits",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kete.stopAskingBeforeEdits",
+          "when": "view == kete.chat && kete.askBeforeEdits",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kete.mcp.refresh",
+          "when": "view == kete.mcp",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "kete.sendSelection",
+          "when": "editorHasSelection && resourceScheme == file",
+          "group": "kete@1"
+        },
+        {
+          "command": "kete.sendFile",
+          "when": "resourceScheme == file",
+          "group": "kete@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "kete.signIn",
+          "when": "!kete.signedIn"
+        },
+        {
+          "command": "kete.signOut",
+          "when": "kete.signedIn"
+        },
+        {
+          "command": "kete.statusMenu",
+          "when": "false"
+        },
+        {
+          "command": "kete.refreshSessions",
+          "when": "false"
+        },
+        {
+          "command": "kete.askBeforeEdits",
+          "when": "!kete.askBeforeEdits"
+        },
+        {
+          "command": "kete.stopAskingBeforeEdits",
+          "when": "kete.askBeforeEdits"
+        },
+        {
+          "command": "kete.mcp.signIn",
+          "when": "false"
+        },
+        {
+          "command": "kete.mcp.connect",
+          "when": "false"
+        },
+        {
+          "command": "kete.mcp.disconnect",
+          "when": "false"
+        },
+        {
+          "command": "kete.mcp.refresh",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "kete.copySessionLink",
+          "when": "view == kete.sessions && viewItem == session",
+          "group": "inline"
+        },
+        {
+          "command": "kete.mcp.approve",
+          "when": "view == kete.mcp && viewItem == mcp-approve",
+          "group": "inline"
+        },
+        {
+          "command": "kete.mcp.signIn",
+          "when": "view == kete.mcp && viewItem == mcp-sign-in",
+          "group": "inline"
+        },
+        {
+          "command": "kete.mcp.connect",
+          "when": "view == kete.mcp && viewItem == mcp-connect",
+          "group": "inline"
+        },
+        {
+          "command": "kete.mcp.disconnect",
+          "when": "view == kete.mcp && viewItem == mcp-disconnect",
+          "group": "inline"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "kete.focusChat",
+        "key": "ctrl+escape",
+        "mac": "cmd+escape"
+      },
+      {
+        "command": "kete.newChat",
+        "key": "ctrl+shift+escape",
+        "mac": "cmd+shift+escape"
+      },
+      {
+        "command": "kete.addToChat",
+        "key": "alt+k",
+        "mac": "alt+k",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "kete.addFilepathToTerminal",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kete",
+          "title": "Kete Code",
+          "icon": "media/kete.svg"
+        }
+      ]
+    },
+    "views": {
+      "kete": [
+        {
+          "type": "webview",
+          "id": "kete.chat",
+          "name": "Chat"
+        },
+        {
+          "id": "kete.sessions",
+          "name": "Sessions",
+          "icon": "media/kete.svg"
+        },
+        {
+          "id": "kete.mcp",
+          "name": "MCP Servers",
+          "icon": "media/kete.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kete Code",
+      "properties": {
+        "kete.gateway.url": {
+          "type": "string",
+          "default": "",
+          "order": 1,
+          "markdownDescription": "Kete Model Gateway URL for hand configuration, e.g. `http://localhost:8787` (written to `providers.kete.settings.baseURL`). **Not needed when signed in** (**Kete Code: Sign In**): your account's gateway is used and takes precedence over this setting."
+        },
+        "kete.platform.url": {
+          "type": "string",
+          "default": "",
+          "order": 2,
+          "markdownDescription": "Kete platform (portal) URL, e.g. `http://127.0.0.1:3000` (written to `kete.platform.url`). Used by **Kete Code: Sign In** when no other platform URL is set, and for prices and the credit balance when not signed in."
+        },
+        "kete.budget.session": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "default": null,
+          "minimum": 0.01,
+          "order": 3,
+          "markdownDescription": "Pause a session and ask before spending more than this many USD (`kete.budget.session`). Leave empty for no budget."
+        },
+        "kete.cliPath": {
+          "type": "string",
+          "default": "",
+          "order": 4,
+          "markdownDescription": "For development only: absolute path to a `kete` binary to use instead of the one bundled with the extension. The `PATH` is never searched."
+        },
+        "kete.chat.shareEditorContext": {
+          "type": "boolean",
+          "default": true,
+          "order": 5,
+          "markdownDescription": "Share the active file and selection with the chat as a context item that follows the editor. Only workspace files; `files.exclude` matches and secret files (`.env`, keys) are never shared."
+        },
+        "kete.chat.notifications": {
+          "type": "boolean",
+          "default": true,
+          "order": 6,
+          "markdownDescription": "Notify when the chat is hidden and Kete Code needs your approval or finishes a task."
+        },
+        "kete.editorTools.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Let Kete Code read VS Code's diagnostics (errors and warnings from your language servers and linters) through the `editor_diagnostics` tool. Files in `files.exclude` and secret files (`.env`, keys) are left out. Takes effect when the Kete Code server starts."
+        },
+        "kete.chat.askBeforeEdits": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "New chats ask before every file edit, shell command and web fetch, even when the agent's permissions allow them. Change it for one chat with the shield in the chat's title bar. Never allows anything the agent's permissions or your organization's policy deny. Applies to new sessions after the server restarts."
+        }
+      }
+    },
+    "viewsWelcome": [
+      {
+        "view": "kete.sessions",
+        "contents": "No sessions in this workspace yet.\n[New Chat](command:kete.newChat)"
+      },
+      {
+        "view": "kete.mcp",
+        "contents": "No MCP servers yet. Add one to your Kete Code configuration, or ask your organization to add one in the Kete Code portal."
+      }
+    ]
+  },
+  "scripts": {
+    "build": "bun build src/extension.ts --target=node --format=cjs --external=vscode --minify --outfile=dist/extension.js",
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test",
+    "e2e": "bun script/e2e.ts"
+  },
+  "devDependencies": {
+    "@opencode/util": "workspace:*",
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/vscode": "1.94.0",
+    "@typescript/native-preview": "catalog:",
+    "jsonc-parser": "3.3.1"
+  },
+  "extensionKind": [
+    "workspace"
+  ]
+}

@@ -1,0 +1,97 @@
+# Kete-owned. The cloud job image's end-to-end test (packages/kete-job-image/README.md): builds the
+# Linux x64 `kete`, the Go binaries and the image once, then runs scripts/e2e.sh: the image's real
+# entrypoint, root helper, egress proxy and `kete` against the containerised fake platform, for the
+# no-agent, lifecycle and AC5 (real npm, PyPI and crates.io installs through the proxy) scenarios.
+# Path-filtered to the job path, protecting the shared CI minutes budget (see kete-build.yml);
+# ~12-15 minutes. On failure the e2e state (minus the test credentials) is uploaded.
+name: kete-job-image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/kete-job-entrypoint/**"
+      - "packages/kete-job-image/**"
+      - "packages/kete-root-helper/**"
+      - "packages/kete-egress/**"
+      - "packages/cli/src/kete/job*.ts"
+      - "packages/cli/src/kete/dumpable.ts"
+      - "packages/util/src/kete/job-*.ts"
+      - "packages/util/src/kete/tool-*.ts"
+      - "packages/util/src/kete/http-url.ts"
+      - "packages/util/src/kete/sync/**"
+      - "packages/core/src/kete/job-*"
+      - "packages/core/src/kete/job-request/**"
+      - "packages/core/src/kete/gateway.ts"
+      - "packages/core/src/kete/unattended*.ts"
+      - "packages/core/src/kete/audit.ts"
+      - "packages/core/src/kete/sync/**"
+      - "packages/server/src/kete/job-*"
+      - ".github/workflows/kete-job-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/kete-job-entrypoint/**"
+      - "packages/kete-job-image/**"
+      - "packages/kete-root-helper/**"
+      - "packages/kete-egress/**"
+      - "packages/cli/src/kete/job*.ts"
+      - "packages/cli/src/kete/dumpable.ts"
+      - "packages/util/src/kete/job-*.ts"
+      - "packages/util/src/kete/tool-*.ts"
+      - "packages/util/src/kete/http-url.ts"
+      - "packages/util/src/kete/sync/**"
+      - "packages/core/src/kete/job-*"
+      - "packages/core/src/kete/job-request/**"
+      - "packages/core/src/kete/gateway.ts"
+      - "packages/core/src/kete/unattended*.ts"
+      - "packages/core/src/kete/audit.ts"
+      - "packages/core/src/kete/sync/**"
+      - "packages/server/src/kete/job-*"
+      - ".github/workflows/kete-job-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Build the Linux x64 kete
+        working-directory: packages/cli
+        run: bun run build --target=kete-linux-x64 --skip-web-ui
+
+      - name: Build the image
+        run: bash packages/kete-job-image/scripts/build.sh --arch amd64
+
+      - name: End-to-end test (no-agent, lifecycle, AC5)
+        env:
+          E2E_STATE: ${{ runner.temp }}/kete-e2e-state
+          E2E_KEEP_LOGS: "1"
+        run: bash packages/kete-job-image/scripts/e2e.sh kete-job:local
+
+      # The state holds the fake's test credentials (tokens.json, job.env, config.json): never uploaded.
+      - name: Remove the test credentials from the state
+        if: failure()
+        run: sudo find "$RUNNER_TEMP/kete-e2e-state" \( -name tokens.json -o -name job.env -o -name config.json \) -delete
+
+      - name: Upload the e2e state
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-job-e2e-state
+          path: ${{ runner.temp }}/kete-e2e-state/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1,0 +1,57 @@
+# Kete-owned. The cloudvm kernel's additions (kete-code-platform ADR 0023 rules 15, 18, 21; P6
+# handoff): a provider VM per job boots this kernel from its disk through firmware and GRUB, with
+# no initramfs and no module loader (kete-job-init is PID 1, the image has no kmod). Merged over
+# Firecracker's validated guest configuration plus kete.fragment (build.sh --variant cloudvm
+# --regen-config), so every hardening term of the microvm kernel holds here too; this file only
+# adds the firmware, disk, NIC, console and clock drivers of the supported providers, all built in.
+# check-config.sh checks config-cloudvm-<arch> against kete.fragment and this file.
+
+# Boot: firmware (UEFI on every arm64 shape and most amd64 ones; BIOS through GRUB on DigitalOcean
+# and Hetzner amd64), a GPT disk, the root file system found by partition label (root=PARTLABEL=
+# kete-root: no initramfs, so no root=LABEL=). ACPI powers the VM off when kete-job-init does.
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+CONFIG_PARTITION_ADVANCED=y
+CONFIG_EFI_PARTITION=y
+CONFIG_ACPI=y
+CONFIG_PCI=y
+CONFIG_PCI_MSI=y
+
+# Addresses from the provider's DHCP through the kernel's own client (`ip=::::::dhcp:<dns0>:<dns1>`;
+# kete-job-init reads /proc/net/pnp). The command-line resolvers win over DHCP's.
+CONFIG_IP_PNP=y
+CONFIG_IP_PNP_DHCP=y
+
+# Disks. GCP: virtio-scsi or NVMe (Axion/C3 and later need NVMe); DigitalOcean: virtio-blk;
+# Hetzner: virtio-scsi; OCI paravirtualized launch mode: virtio-scsi/virtio-blk (iSCSI attachment
+# is not used: the boot volume is paravirtualized).
+CONFIG_VIRTIO_PCI=y
+# GCP's virtio devices are transitional (legacy interface).
+CONFIG_VIRTIO_PCI_LEGACY=y
+CONFIG_VIRTIO_BLK=y
+CONFIG_SCSI=y
+CONFIG_BLK_DEV_SD=y
+CONFIG_SCSI_VIRTIO=y
+CONFIG_BLK_DEV_NVME=y
+
+# Network. virtio-net everywhere (the GCP adapter asks for VIRTIO_NET); gVNIC for GCP shapes that
+# require it (Axion and third-generation machine types).
+CONFIG_NETDEVICES=y
+CONFIG_ETHERNET=y
+CONFIG_VIRTIO_NET=y
+CONFIG_NET_VENDOR_GOOGLE=y
+CONFIG_GVE=y
+
+# Wall clock for TLS from the first request: kvm-clock on amd64, the CMOS RTC as a fallback; the
+# EFI and PL031 RTCs on arm64 (cloudvm-<arch>.fragment).
+CONFIG_RTC_CLASS=y
+CONFIG_RTC_HCTOSYS=y
+
+# Entropy from the hypervisor where offered.
+CONFIG_HW_RANDOM=y
+CONFIG_HW_RANDOM_VIRTIO=y
+
+# Serial console (phase lines; GCP and OCI expose it to the adapters' log read): 8250 ttyS0 on
+# amd64, PL011 ttyAMA0 on arm64 (cloudvm-<arch>.fragment).
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y

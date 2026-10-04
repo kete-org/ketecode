@@ -1,0 +1,39 @@
+# kete-job-host-enroll: first-boot enrollment of a dedicated host the platform rebuilt (kete-code
+# packages/kete-job-host; platform ADR 0023 rule 8, R1 provider_rebuild). The platform rebuilds
+# the server from the pinned host image with user data that writes /etc/kete-job-host/config.json
+# (driver dedicated, reset provider_rebuild, the rebuild's generation) and
+# /etc/kete-job-host/enroll.token (root 0600, a fresh single-use token). This unit enrolls with
+# it; the platform approves the enrollment automatically because it started that rebuild. The
+# token file is removed on a definitive answer (accepted, or the token refused) and kept after a
+# network error or a transient answer, for the retry.
+# Installed and enabled by `packaging/install.sh --driver dedicated`.
+[Unit]
+Description=Kete Code job host enrollment (dedicated host, first boot after a rebuild)
+Documentation=https://github.com/kete-org/ketecode/tree/main/packages/kete-job-host
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+ConditionPathExists=/etc/kete-job-host/enroll.token
+Before=kete-job-host.service
+# Failures before any request (already enrolled, spent generation, bad file mode) can't heal by
+# retrying: give up after a bounded number of attempts.
+StartLimitIntervalSec=30min
+StartLimitBurst=20
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/kete-job-host enroll --config /etc/kete-job-host/config.json --token-file /etc/kete-job-host/enroll.token
+# A network error leaves the token for another attempt; a refusal (spent or unknown token) does not.
+Restart=on-failure
+RestartSec=15s
+RestartPreventExitStatus=2
+StateDirectory=kete-job-host
+StateDirectoryMode=0700
+UMask=0077
+ProtectHome=yes
+PrivateTmp=yes
+ProtectSystem=full
+ReadWritePaths=/etc/kete-job-host
+
+[Install]
+WantedBy=multi-user.target

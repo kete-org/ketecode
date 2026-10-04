@@ -1,0 +1,108 @@
+# Kete-owned. Path-filtered so it only runs when the self-hosted job host agent changes,
+# protecting the shared CI minutes budget (see kete-build.yml). One ubuntu-latest job: gofmt, Go
+# vet and the unit and scenario tests with the race detector (the shared job-host-v1 test
+# vectors, the fake platform over real TLS, the fake driver; the host nftables table rendered
+# against golden files, parsed with `nft -c`, applied and checked; rootfs conversion with
+# mkfs.ext4; cosign bundle verification against checked-in Sigstore data; the firecracker
+# driver's rendering and file handling; the dedicated driver launching a fake entrypoint for real:
+# namespaces, loop-mounted overlay root, veth, cgroup limits, reaping), the guest kernel config
+# check, and a compile of the KVM acceptance tests (they need a KVM host: scripts/kvm-test.sh). A
+# second job checks each guest kernel configuration against the release toolchain (kernel-config).
+# The tests run as root (the agent
+# refuses key, state and config files not owned by root); no KVM or network needed.
+# ~2-3 minutes.
+name: kete-job-host
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/kete-job-host/**"
+      - ".github/workflows/kete-job-host.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/kete-job-host/**"
+      - ".github/workflows/kete-job-host.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/kete-job-host/go.mod
+          cache-dependency-path: packages/kete-job-host/go.sum
+
+      - name: Install nftables, e2fsprogs and iproute2
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nftables e2fsprogs iproute2
+
+      - name: Guest kernel config check
+        run: packages/kete-job-host/kernel/check-config.sh
+
+      - name: gofmt, vet and tests (race)
+        working-directory: packages/kete-job-host
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go vet -tags kvm ./...
+          GOOS=darwin go vet ./...
+          # The agent's private files must be root-owned, so the tests run as root.
+          sudo env "PATH=$PATH" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" go test -race ./...
+
+      - name: Compile the KVM acceptance tests
+        working-directory: packages/kete-job-host
+        run: |
+          CGO_ENABLED=0 go test -c -tags kvm -o "$RUNNER_TEMP/kvm.test" ./internal/kvmtest
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/probe" ./internal/kvmtest/probe
+
+      - name: Build
+        working-directory: packages/kete-job-host
+        run: CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/kete-job-host" ./cmd/kete-job-host
+
+  # Each guest kernel configuration must be stable under olddefconfig on the release runner's
+  # toolchain (linux/amd64; kernel/build.sh). Regenerates it first and uploads the result, so a
+  # failing check comes with the configuration to commit. No compile: ~4 minutes per entry.
+  kernel-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [microvm, cloudvm]
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Regenerate the configuration
+        run: packages/kete-job-host/kernel/build.sh "${{ matrix.arch }}" --variant "${{ matrix.variant }}" --regen-config --out "$RUNNER_TEMP/regen"
+
+      - name: Upload the regenerated configuration
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kernel-config-${{ matrix.variant }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/regen/
+          retention-days: 7
+
+      - name: Check the committed configuration
+        run: packages/kete-job-host/kernel/build.sh "${{ matrix.arch }}" --variant "${{ matrix.variant }}" --check-only --out "$RUNNER_TEMP/check"

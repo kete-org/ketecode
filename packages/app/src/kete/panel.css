@@ -1,0 +1,331 @@
+/*
+ * The chat panel's own layout and look: header, empty state (hero mark, tip, notices), the CLI
+ * hint, the footer that holds them above the composer, and the composer's brand styling. Reads
+ * `--kete-*` tokens (tokens.css). Unlayered, like tokens.css, so it beats upstream's layered
+ * Tailwind utilities without fighting specificity; selectors key only on `data-component`,
+ * `data-action`, `data-slot` and `data-kete` attributes (never on upstream's Tailwind classes), so an
+ * upstream class rename can't silently break this file.
+ */
+
+/* ---------- Layout: header above a scrolling column above a pinned footer ---------- */
+
+[data-component="new-session"] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Fills the height left under the header; centers the column horizontally. */
+[data-kete="panel-stack"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* The column: never wider than 680px, same side padding for the scroll area and the footer so
+   both line up. panel-layout.tsx's KeteNewSessionLayout renders the two children below. */
+[data-kete="panel-column"] {
+  width: 100%;
+  max-width: 680px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px;
+}
+
+/* Scrolls independently of the footer: hero mark, tip and notices start at the top, not centered
+   in the middle of the panel. */
+[data-kete="panel-scroll"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: min(12vh, 96px) 0 24px;
+}
+
+/* Pinned to the bottom of the column; never scrolls with the hero/notices above it. */
+[data-kete="panel-footer"] {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+/* ---------- Header ---------- */
+
+[data-kete="panel-header"] {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  color: var(--kete-text-1);
+}
+
+.kete-panel-header-mark {
+  width: 20px;
+  height: 20px;
+  color: var(--kete-text-1);
+}
+
+.kete-panel-header-wordmark {
+  height: 18px;
+  width: auto;
+  color: var(--kete-text-1);
+}
+
+/* ---------- Empty state: hero mark, tip, notices ---------- */
+
+[data-kete="empty-state"] {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.kete-hero-mark {
+  width: 84px;
+  height: 84px;
+  color: var(--kete-text-1);
+}
+
+@keyframes kete-weave {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Weaves in once, rect by rect, ~0.7s total (8 rects * 45ms stagger + a 320ms fade each). No source
+   mockup carries these values (see handoff.md); chosen to match the composer's existing
+   150-180ms ease timings without feeling slower than the panel opening. */
+.kete-hero-mark rect {
+  transform-origin: center;
+  opacity: 0;
+  animation: kete-weave 320ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.kete-hero-mark rect:nth-child(1) {
+  animation-delay: 0ms;
+}
+.kete-hero-mark rect:nth-child(2) {
+  animation-delay: 45ms;
+}
+.kete-hero-mark rect:nth-child(3) {
+  animation-delay: 90ms;
+}
+.kete-hero-mark rect:nth-child(4) {
+  animation-delay: 135ms;
+}
+.kete-hero-mark rect:nth-child(5) {
+  animation-delay: 180ms;
+}
+.kete-hero-mark rect:nth-child(6) {
+  animation-delay: 225ms;
+}
+.kete-hero-mark rect:nth-child(7) {
+  animation-delay: 270ms;
+}
+.kete-hero-mark rect:nth-child(8) {
+  animation-delay: 315ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kete-hero-mark rect {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.kete-tip {
+  margin: 0;
+  max-width: 34ch;
+  text-align: center;
+  color: var(--kete-text-2);
+  font-size: 14.5px;
+}
+
+.kete-tip kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 0 5px;
+  margin: 0 1px;
+  border: 1px solid var(--kete-border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--kete-r-inline);
+  font: 12px/1.6 var(--kete-mono);
+  color: var(--kete-text-1);
+  background: var(--kete-surface);
+  text-align: center;
+  vertical-align: 1px;
+}
+
+.kete-notices {
+  width: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--kete-surface);
+  border: 1px solid var(--kete-border);
+  border-radius: var(--kete-r-container);
+}
+
+.kete-notice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 44px 15px 16px;
+}
+.kete-notice + .kete-notice {
+  border-top: 1px solid var(--kete-border);
+}
+.kete-notice h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--kete-text-1);
+}
+.kete-notice-new h2 {
+  color: var(--kete-brand-soft);
+}
+.kete-notice p {
+  margin: 0;
+  color: var(--kete-text-2);
+}
+.kete-notice p code {
+  font-family: var(--kete-mono);
+  font-size: 12.5px;
+  background: var(--kete-surface-2);
+  color: var(--kete-text-1);
+  padding: 1px 5px;
+  border-radius: var(--kete-r-inline);
+}
+.kete-notice-dismiss {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* ---------- CLI hint ---------- */
+
+[data-kete="cli-hint"] {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--kete-surface);
+  border: 1px solid var(--kete-border);
+  border-radius: var(--kete-r-control);
+  color: var(--kete-text-2);
+}
+[data-kete="cli-hint"] p {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+}
+[data-kete="cli-hint"] code {
+  font-family: var(--kete-mono);
+  font-size: 12.5px;
+  background: var(--kete-surface-2);
+  color: var(--kete-text-1);
+  padding: 1px 5px;
+  border-radius: var(--kete-r-inline);
+}
+
+/* ---------- Composer: brand border, ring, send, mode toggle ---------- */
+
+[data-component="composer"] {
+  border: 1px solid var(--kete-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--kete-brand) 12%, transparent);
+  transition:
+    box-shadow 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+[data-component="composer"]:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--kete-brand) 24%, transparent);
+}
+
+[data-action="composer-submit"] {
+  background: color-mix(in srgb, var(--kete-brand) 38%, transparent);
+  color: var(--kete-brand-paper);
+}
+[data-action="composer-submit"]:not(:disabled) {
+  background: var(--kete-brand);
+  color: var(--kete-brand-paper);
+}
+[data-action="composer-submit"]:not(:disabled):hover {
+  background: color-mix(in srgb, var(--kete-brand) 88%, black);
+}
+
+/* The model control (composer.tsx's ComposerModelControl) and the effort select
+   (ComposerEditorConfiguredSelect with the kete-effort class, editor.tsx) read as one pill. */
+[data-action="composer-model"] {
+  border-radius: 999px;
+  background: var(--kete-surface-2);
+}
+.kete-effort {
+  border-radius: 999px;
+}
+@media (max-width: 379px) {
+  .kete-effort {
+    display: none;
+  }
+}
+
+[data-kete="mode-toggle"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  margin: 0 4px;
+  border-radius: var(--kete-r-control);
+  color: var(--kete-text-2);
+  font-size: 13px;
+  font: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+[data-kete="mode-toggle"]:hover {
+  background: var(--kete-surface-2);
+  color: var(--kete-text-1);
+}
+[data-kete="mode-toggle"][data-mode="ask"],
+[data-kete="mode-toggle"][data-mode="plan"] {
+  color: var(--kete-brand-soft);
+}
+
+/* ---------- Focus rings, in brand ---------- */
+
+[data-kete] :focus-visible,
+.kete-tip :focus-visible,
+[data-kete="mode-toggle"]:focus-visible {
+  outline: 2px solid var(--kete-brand);
+  outline-offset: 2px;
+  border-radius: var(--kete-r-control);
+}
+
+/* ---------- Small widths (AC2: usable at 300px) ---------- */
+
+@media (max-width: 300px) {
+  [data-kete="panel-header"] {
+    padding: 8px 10px;
+  }
+  .kete-hero-mark {
+    width: 56px;
+    height: 56px;
+  }
+}

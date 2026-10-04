@@ -1,0 +1,41 @@
+# Kete-owned. Shared steps of kete-cloudvm-images.yml's provider jobs: the base disks from the disk
+# job (checksum verified, sparse), and Packer (pinned version and SHA-256) with the template's
+# plugins.
+name: kete-cloudvm-setup
+description: Download and verify the cloudvm base disks, install Packer and the template's plugins
+inputs:
+  disks-sha256:
+    description: The disk job's SHA-256 of kete-cloudvm-disks.tar.gz
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Download the disks
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: kete-cloudvm-disks
+        path: ${{ runner.temp }}/in
+
+    - name: Verify and unpack the disks
+      shell: bash
+      env:
+        SUM: ${{ inputs.disks-sha256 }}
+      run: |
+        set -euo pipefail
+        [[ "$SUM" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the disk job reported no checksum"; exit 1; }
+        echo "$SUM  $RUNNER_TEMP/in/kete-cloudvm-disks.tar.gz" | sha256sum -c -
+        mkdir -p "$RUNNER_TEMP/disks"
+        tar -C "$RUNNER_TEMP/disks" -S -xzf "$RUNNER_TEMP/in/kete-cloudvm-disks.tar.gz"
+        rm -f "$RUNNER_TEMP/in/kete-cloudvm-disks.tar.gz"
+        ls -ls "$RUNNER_TEMP/disks"
+
+    - name: Install Packer and the plugins
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -fsSL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/packer.zip" \
+          "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_amd64.zip"
+        echo "$PACKER_SHA256  $RUNNER_TEMP/packer.zip" | sha256sum -c -
+        unzip -q -o "$RUNNER_TEMP/packer.zip" -d "$RUNNER_TEMP/bin"
+        echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/bin/packer" init packages/kete-job-image/packer

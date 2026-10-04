@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kete Code</title>
+<!--
+  Kete Code webview panel (v4): empty state + active conversation state.
+  Mode: Operate. Tokens and components carried from v3.
+
+  Views:  body[data-view="empty"]  first open: mark, tip, starters, what's new
+          body[data-view="active"] after the first message: conversation header on top,
+                                   the prompt pinned under it, activity timeline, composer below
+  Run:    body[data-run="running"] composer queues messages, send becomes stop, elapsed timer shows
+
+  Shipping in the extension: add a nonce to <style>/<script>; CSP:
+  default-src 'none'; style-src ${webview.cspSource} 'nonce-X'; script-src 'nonce-X'; img-src ${webview.cspSource} data:;
+  Icons are Tabler (MIT); import them from @tabler/icons in the extension.
+
+  Preview only: send any message to watch a scripted run. #offline / #loading show those states.
+  Ctrl/Cmd+Shift+L flips theme.
+-->
+<style>
+  :root {
+    --brand: #6E47F5;
+    --brand-hover: #7A56F6;
+    --brand-soft: #A38CFA;
+    --brand-ink: #16141D;
+    --brand-paper: #F1EFF6;
+
+    --bg: #100F15;
+    --surface: #17151E;
+    --surface-2: #211E2B;
+    --code-bg: #0C0B10;
+    --border: #2A2634;
+    --border-strong: #3A3548;
+    --text-1: var(--brand-paper);
+    --text-2: #A7A3B4;
+    --text-3: #8C88A0;
+    --success: #5FC08F;
+    --danger: #F2837B;
+    --danger-bg: rgba(242, 131, 123, .08);
+    --send-idle-bg: var(--surface-2);
+    --send-idle-fg: var(--text-3);
+
+    /* Shape lock: containers 12, controls 8, chips full pill, inline tokens 4 */
+    --r-container: 12px;
+    --r-control: 8px;
+    --r-inline: 4px;
+
+    --ui-font: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+    --mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    --ease: cubic-bezier(.2, .8, .2, 1);
+  }
+  body.vscode-light, :root[data-theme="light"] body {
+    --bg: #FBFAFD;
+    --surface: #F4F2F8;
+    --surface-2: #ECE9F3;
+    --code-bg: #F7F6FA;
+    --border: #E0DCE9;
+    --border-strong: #CFC9DC;
+    --text-1: var(--brand-ink);
+    --text-2: #55516A;
+    --text-3: #6E6A80;
+    --brand-soft: #5A34E6;
+    --success: #1E8A57;
+    --danger: #B4322A;
+    --danger-bg: rgba(180, 50, 42, .06);
+    --send-idle-bg: var(--surface-2);
+    --send-idle-fg: var(--text-3);
+  }
+  body.vscode-high-contrast {
+    --bg: var(--vscode-sideBar-background);
+    --surface: var(--vscode-sideBar-background);
+    --surface-2: var(--vscode-sideBar-background);
+    --code-bg: var(--vscode-sideBar-background);
+    --border: var(--vscode-contrastBorder);
+    --border-strong: var(--vscode-contrastActiveBorder);
+    --text-2: var(--vscode-foreground);
+    --text-3: var(--vscode-foreground);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  body { background: var(--bg); color: var(--text-1); font: 14px/1.5 var(--ui-font); display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  ::selection { background: color-mix(in srgb, var(--brand) 32%, transparent); }
+  textarea { caret-color: var(--brand); }
+  main { scrollbar-color: var(--vscode-scrollbarSlider-background, var(--border-strong)) transparent; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:not(:disabled):active { transform: scale(.97); }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: var(--r-control); }
+  textarea:focus-visible { outline: none; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .ic-sm { width: 15px; height: 15px; }
+  code, pre { font-family: var(--mono); }
+  code { font-size: 12.5px; background: var(--surface-2); color: var(--text-1); padding: 1px 5px; border-radius: var(--r-inline); }
+  .icon-btn { width: 32px; height: 32px; border-radius: var(--r-control); display: grid; place-items: center; color: var(--text-2); flex: none; }
+  .icon-btn:hover { background: var(--surface-2); color: var(--text-1); }
+
+  /* View switching */
+  body[data-view="empty"] .convo-bar, body[data-view="empty"] .thread { display: none; }
+  body[data-view="active"] .empty { display: none; }
+
+  /* ---------- Conversation bar (active view only) ---------- */
+  .convo-bar {
+    display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .convo-bar h1 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  main { flex: 1; overflow-y: auto; }
+
+  /* ---------- Empty view ---------- */
+  .empty { display: flex; flex-direction: column; align-items: center; padding: 12vh 16px 24px; }
+  .column { width: 100%; max-width: 640px; display: flex; flex-direction: column; align-items: center; }
+  .hero-mark { width: 64px; height: 64px; color: var(--text-1); margin-bottom: 20px; }
+  .tip { color: var(--text-2); text-align: center; max-width: 34ch; margin: 0 0 20px; font-size: 14.5px; }
+  kbd {
+    display: inline-block; min-width: 1.7em; padding: 0 5px; margin: 0 1px;
+    border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--r-inline);
+    font: 12px/1.6 var(--mono); color: var(--text-1); background: var(--surface); text-align: center; vertical-align: 1px;
+  }
+  .starters { width: 100%; list-style: none; margin: 0 0 24px; padding: 0; }
+  .starters button {
+    width: 100%; display: flex; align-items: center; gap: 10px; text-align: left;
+    padding: 8px 16px; border-radius: var(--r-control); color: var(--text-2);
+    transition: background .15s var(--ease), color .15s var(--ease);
+  }
+  .starters button:hover { background: var(--surface); color: var(--text-1); }
+  .starters .ic { width: 16px; height: 16px; color: var(--text-3); }
+  .starters button:hover .ic { color: var(--brand-soft); }
+  body[data-loading] .starters { visibility: hidden; }
+
+  .notices { width: 100%; list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-container); }
+  .notices:not(:has(li:not([hidden]))) { display: none; }
+  .notice { position: relative; padding: 14px 44px 15px 16px; transition: opacity .18s var(--ease); }
+  .notice + .notice { border-top: 1px solid var(--border); }
+  .notice[hidden] { display: none; }
+  .is-leaving { opacity: 0; }
+  .notice h2 { margin: 0 0 4px; font-size: 14px; line-height: 1.4; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .notice h2 .ic { color: var(--text-3); }
+  .notice.is-new h2 { color: var(--brand-soft); }
+  .notice p { margin: 0; color: var(--text-2); max-width: 62ch; }
+  .notice a { color: var(--text-1); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+  .notice a:hover { text-decoration-color: var(--brand-soft); }
+  .dismiss { position: absolute; top: 10px; right: 10px; width: 28px; height: 28px; border-radius: var(--r-control); display: grid; place-items: center; color: var(--text-3); }
+  .dismiss:hover { background: var(--surface-2); color: var(--text-1); }
+  .skeleton { display: none; padding: 16px; gap: 8px; flex-direction: column; }
+  .skeleton i { display: block; height: 10px; border-radius: var(--r-inline); background: var(--surface-2); }
+  .skeleton i:first-child { width: 42%; height: 12px; }
+  .skeleton i:last-child { width: 78%; }
+  body[data-loading] .skeleton { display: flex; }
+  body[data-loading] .notice { display: none; }
+
+  /* ---------- Thread (active view) ---------- */
+  .thread { max-width: 760px; margin: 0 auto; padding: 0 16px 24px; }
+  /* The prompt being worked on stays pinned at the top while the timeline scrolls under it */
+  .prompt-pin { position: sticky; top: 0; z-index: 1; background: var(--bg); padding: 16px 0 12px; }
+  .user-msg {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-container);
+    padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere;
+    max-height: 7.5em; overflow-y: auto;
+  }
+  .timeline { list-style: none; margin: 0; padding: 4px 0 0; position: relative; }
+  .timeline::before { content: ""; position: absolute; left: 4px; top: 16px; bottom: 16px; width: 1px; background: var(--border); }
+  .ev { position: relative; padding: 6px 0 6px 26px; }
+  .ev::before {
+    content: ""; position: absolute; left: 0; top: 13px; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--text-3); box-shadow: 0 0 0 3px var(--bg);
+  }
+  .ev.ok::before { background: var(--success); }
+  .ev.err::before { background: var(--danger); }
+  .ev.live::before { background: var(--brand); }
+  @media (prefers-reduced-motion: no-preference) { .ev.live::before { animation: pulse 1.2s ease-in-out infinite; } }
+  .ev.dim { color: var(--text-3); }
+  .ev p { margin: 0; max-width: 72ch; }
+  .ev + .ev.text, .ev.text + .ev { margin-top: 4px; }
+  .ev.user { padding-left: 26px; }
+  .ev.user::before { display: none; }
+  .ev details summary { cursor: pointer; list-style: none; width: fit-content; }
+  .ev details summary::-webkit-details-marker { display: none; }
+  .ev details summary:hover { color: var(--text-2); }
+  .ev details p { margin-top: 6px; padding-left: 12px; border-left: 1px solid var(--border); color: var(--text-2); }
+  .tool-head b { font-weight: 600; margin-right: 6px; }
+  .tool-head span { color: var(--text-2); }
+  .tool-head code { background: none; padding: 0; font-size: 13px; }
+  .io { margin-top: 8px; border: 1px solid var(--border); border-radius: var(--r-control); background: var(--code-bg); overflow: hidden; }
+  .io-row { display: grid; grid-template-columns: 40px 1fr; gap: 8px; padding: 8px 12px; font: 12.5px/1.55 var(--mono); }
+  .io-row + .io-row { border-top: 1px solid var(--border); }
+  .io-lbl { color: var(--text-3); }
+  .io-row .in { white-space: pre; overflow-x: auto; }
+  .io-row pre { margin: 0; white-space: pre; overflow: hidden; max-height: 5.2em; color: var(--text-2);
+    -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+  .io-row.open pre { max-height: 22em; overflow: auto; -webkit-mask-image: none; mask-image: none; }
+  .io-row .expand { grid-column: 2; justify-self: start; font: 12px var(--ui-font); color: var(--text-3); padding: 2px 0; }
+  .io-row .expand:hover { color: var(--text-1); }
+  .io-row.err pre { color: var(--danger); }
+
+  .working { display: none; align-items: center; gap: 10px; padding: 10px 0 4px 0; color: var(--text-2); }
+  body[data-run="running"] .working { display: flex; }
+  .working svg { width: 16px; height: 16px; color: var(--text-1); }
+  @media (prefers-reduced-motion: no-preference) {
+    .working svg rect { animation: thread 1.4s ease-in-out infinite; }
+    .working svg rect:nth-child(2n) { animation-delay: .35s; }
+    .working svg rect:nth-child(3n) { animation-delay: .7s; }
+  }
+  @keyframes thread { 50% { opacity: .25; } }
+  @keyframes pulse { 50% { opacity: .45; } }
+
+  /* ---------- Footer / composer ---------- */
+  footer { padding: 0 12px 12px; }
+  .queue { max-width: 760px; margin: 0 auto 8px; display: flex; flex-direction: column; gap: 4px; }
+  .queue:empty { display: none; }
+  .queued { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: var(--r-control); background: var(--surface); color: var(--text-2); font-size: 13px; }
+  .queued span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queued em { font-style: normal; color: var(--text-3); }
+  .queued .icon-btn { width: 26px; height: 26px; }
+
+  .composer { max-width: 760px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-container); transition: border-color .15s var(--ease), box-shadow .15s var(--ease); }
+  body[data-view="empty"] .composer { max-width: 640px; }
+  .composer:hover { border-color: var(--text-3); }
+  .composer:focus-within { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+  body[data-gateway="offline"] .composer { border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+  .input-row { display: flex; align-items: flex-start; gap: 8px; padding: 12px 10px 10px 16px; }
+  textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text-1); font: 14.5px/1.5 var(--ui-font); min-height: 22px; max-height: 200px; padding: 2px 0 0; }
+  textarea::placeholder { color: var(--text-3); }
+  .status { display: none; align-items: center; gap: 8px; margin: 0 10px 8px; padding: 8px 8px 8px 10px; border-radius: var(--r-control); background: var(--danger-bg); color: var(--danger); font-size: 13px; }
+  body[data-gateway="offline"] .status { display: flex; }
+  .status span { flex: 1; }
+  .status button { padding: 3px 10px; border-radius: var(--r-control); border: 1px solid currentColor; font-size: 12.5px; font-weight: 600; }
+  .toolbar { display: flex; align-items: center; gap: 4px; padding: 8px; border-top: 1px solid var(--border); }
+  .elapsed { display: none; align-items: center; gap: 5px; padding: 0 6px; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+  body[data-run="running"] .elapsed { display: inline-flex; }
+  .elapsed .ic { width: 16px; height: 16px; }
+  .model { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 12px; margin-left: 4px; border-radius: 999px; background: var(--surface-2); font-size: 13px; white-space: nowrap; min-width: 0; }
+  .model:hover { background: var(--border); }
+  .model .effort { color: var(--text-2); }
+  .model .ic { width: 14px; height: 14px; color: var(--text-3); }
+  .model-skel { display: none; width: 132px; height: 28px; border-radius: 999px; background: var(--surface-2); margin-left: 4px; }
+  body[data-loading] .model { display: none; }
+  body[data-loading] .model-skel { display: block; }
+  @media (prefers-reduced-motion: no-preference) { .skeleton i, .model-skel { animation: pulse 1.4s ease-in-out infinite; } }
+  .spacer { flex: 1; }
+  .mode { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: var(--r-control); font-size: 13px; }
+  .mode:hover { background: var(--surface-2); }
+  .mode .ic { width: 16px; height: 16px; color: var(--text-2); }
+  .send { width: 32px; height: 32px; border-radius: var(--r-control); display: grid; place-items: center; background: var(--send-idle-bg); color: var(--send-idle-fg); transition: background .15s var(--ease), color .15s var(--ease); }
+  .send:not(:disabled) { background: var(--brand); color: #FBFAFD; }
+  .send:not(:disabled):hover { background: var(--brand-hover); }
+  .send:disabled { cursor: default; }
+  .send .i-stop { display: none; }
+  body[data-run="running"] .send .i-send { display: none; }
+  body[data-run="running"] .send .i-stop { display: block; }
+
+  @media (max-width: 360px) {
+    .model .effort, .mode span { display: none; }
+    textarea { min-height: 44px; }
+    .empty { padding-top: 5vh; }
+    .io-row { grid-template-columns: 1fr; gap: 2px; }
+    .io-row .expand { grid-column: 1; }
+  }
+</style>
+</head>
+<body data-view="empty" data-run="idle">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="kete-mark" viewBox="0 0 512 512">
+    <rect x="121" y="61"  width="105" height="37"  rx="10" fill="currentColor"/>
+    <rect x="286" y="61"  width="105" height="202" rx="12" fill="currentColor"/>
+    <rect x="61"  y="121" width="202" height="105" rx="12" fill="var(--brand)"/>
+    <rect x="414" y="121" width="37"  height="105" rx="10" fill="var(--brand)"/>
+    <rect x="121" y="249" width="105" height="202" rx="12" fill="currentColor"/>
+    <rect x="61"  y="286" width="37"  height="105" rx="10" fill="var(--brand)"/>
+    <rect x="249" y="286" width="202" height="105" rx="12" fill="var(--brand)"/>
+    <rect x="286" y="414" width="105" height="37"  rx="10" fill="currentColor"/>
+  </symbol>
+  <!-- Tabler icons (MIT) -->
+  <symbol id="i-sitemap" viewBox="0 0 24 24"><path d="M3 17a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2l0 -2"/><path d="M15 17a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2l0 -2"/><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2l0 -2"/><path d="M6 15v-1a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v1"/><path d="M12 9l0 3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></symbol>
+  <symbol id="i-test" viewBox="0 0 24 24"><path d="M20 8.04l-12.122 12.124a2.857 2.857 0 1 1 -4.041 -4.04l12.122 -12.124"/><path d="M7 13h8"/><path d="M19 15l1.5 1.6a2 2 0 1 1 -3 0l1.5 -1.6"/><path d="M15 3l6 6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></symbol>
+  <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M9 9l1 0"/><path d="M9 13l6 0"/><path d="M9 17l6 0"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M9 5a3 3 0 0 1 3 -3a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3a3 3 0 0 1 -3 -3l0 -5"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M8 21l8 0"/><path d="M12 17l0 4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></symbol>
+  <symbol id="i-slash" viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14"/><path d="M14.5 7.5l-5 9"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6l6 -6"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 5l0 14"/><path d="M18 11l-6 -6"/><path d="M6 11l6 -6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 7v5l3 3"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M12 8l0 4l2 2"/><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/></symbol>
+  <symbol id="i-new-chat" viewBox="0 0 24 24"><path d="M8 9h8"/><path d="M8 13h6"/><path d="M12.01 18.594l-4.01 2.406v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5.5"/><path d="M16 19h6"/><path d="M19 16v6"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><path d="M5 7a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2l0 -10" fill="currentColor"/></symbol>
+</svg>
+
+<!-- Conversation bar: only after the first message -->
+<header class="convo-bar">
+  <h1 id="convo-title">New conversation</h1>
+  <button class="icon-btn" id="history" aria-label="Conversation history"><svg class="ic"><use href="#i-history"/></svg></button>
+  <button class="icon-btn" id="new-chat" aria-label="New conversation"><svg class="ic"><use href="#i-new-chat"/></svg></button>
+</header>
+
+<main id="scroll">
+  <!-- Empty view -->
+  <section class="empty">
+    <div class="column">
+      <svg class="hero-mark" role="img" aria-label="Kete Code"><use href="#kete-mark"/></svg>
+      <p class="tip">Select any code and press <kbd id="mod">⌥</kbd><kbd>K</kbd> to ask Kete about it</p>
+      <ul class="starters" aria-label="Starter prompts">
+        <li><button data-prompt="Explain how this project is structured and where the entry points are."><svg class="ic" aria-hidden="true"><use href="#i-sitemap"/></svg>Explain how this project is structured</button></li>
+        <li><button data-prompt="Find where " data-partial><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>Find where something is implemented</button></li>
+        <li><button data-prompt="Write tests for the file I have open."><svg class="ic" aria-hidden="true"><use href="#i-test"/></svg>Write tests for the open file</button></li>
+      </ul>
+      <ul class="notices" aria-label="What's new">
+        <li class="skeleton" aria-hidden="true"><i></i><i></i></li>
+        <li class="notice is-new" data-notice="portal-agents">
+          <h2>Agents from your portal</h2>
+          <p>Agents you set up in the Kete Code Portal sync here automatically. Pick one with <code>/agent</code>.</p>
+          <button class="dismiss" aria-label="Dismiss"><svg class="ic ic-sm"><use href="#i-x"/></svg></button>
+        </li>
+        <li class="notice" data-notice="agents-md">
+          <h2><svg class="ic ic-sm" aria-hidden="true"><use href="#i-file-text"/></svg>Kete reads your AGENTS.md</h2>
+          <p>Project conventions in <code>AGENTS.md</code> load at the start of every session. <a href="#">How instructions work</a></p>
+          <button class="dismiss" aria-label="Dismiss"><svg class="ic ic-sm"><use href="#i-x"/></svg></button>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Active view -->
+  <section class="thread" aria-live="polite">
+    <div class="prompt-pin"><div class="user-msg" id="pinned"></div></div>
+    <ol class="timeline" id="timeline"></ol>
+    <div class="working" aria-label="Kete is working">
+      <svg><use href="#kete-mark"/></svg><span id="working-label">Weaving</span>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="queue" id="queue" aria-label="Queued messages"></div>
+  <div class="composer">
+    <div class="input-row">
+      <label for="prompt" class="sr-only">Message Kete</label>
+      <textarea id="prompt" rows="1" placeholder="Ask Kete, or type / for commands"></textarea>
+      <button class="icon-btn" aria-label="Voice input"><svg class="ic"><use href="#i-mic"/></svg></button>
+    </div>
+    <div class="status" role="status">
+      <svg class="ic ic-sm" aria-hidden="true"><use href="#i-alert"/></svg>
+      <span>Can't reach Kete Gateway. Check your connection, then retry.</span>
+      <button id="retry">Retry</button>
+    </div>
+    <div class="toolbar">
+      <button class="icon-btn" aria-label="Add context"><svg class="ic"><use href="#i-plus"/></svg></button>
+      <button class="icon-btn" aria-label="Commands"><svg class="ic"><use href="#i-slash"/></svg></button>
+      <span class="elapsed" title="Time on this task"><svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg><span id="elapsed">0s</span></span>
+      <span class="model-skel" aria-hidden="true"></span>
+      <button class="model" aria-label="Choose model"><span id="model-name">Sonnet 5.5</span> <span class="effort" id="model-effort">Medium</span><svg class="ic" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+      <div class="spacer"></div>
+      <button class="mode" id="mode" aria-label="Permission mode: Auto"><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg><span id="mode-label">Auto</span></button>
+      <button class="send" id="send" aria-label="Send" disabled>
+        <svg class="ic i-send"><use href="#i-arrow-up"/></svg>
+        <svg class="ic i-stop" style="width:14px;height:14px"><use href="#i-stop"/></svg>
+      </button>
+    </div>
+  </div>
+</footer>
+
+<script>
+  const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
+  let previewHost = () => {};   // standalone preview stands in for the extension host
+  const post = (msg) => vscode ? vscode.postMessage(msg) : previewHost(msg);
+  const $ = (id) => document.getElementById(id);
+  const body = document.body;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const icon = (id, cls = "ic") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("class", cls); const u = document.createElementNS("http://www.w3.org/2000/svg", "use"); u.setAttribute("href", "#" + id); s.appendChild(u); return s; };
+
+  if (!/Mac/.test(navigator.platform)) $("mod").textContent = "Ctrl";
+
+  /* ---------- Empty view: notices ---------- */
+  const state = (vscode && vscode.getState()) || { dismissed: [] };
+  document.querySelectorAll("[data-notice]").forEach((el) => {
+    if (state.dismissed.includes(el.dataset.notice)) el.hidden = true;
+    el.querySelector(".dismiss").addEventListener("click", () => {
+      el.classList.add("is-leaving");
+      setTimeout(() => { el.hidden = true; }, reduced ? 0 : 180);
+      state.dismissed.push(el.dataset.notice); vscode && vscode.setState(state);
+      post({ type: "dismissNotice", id: el.dataset.notice });
+    });
+  });
+
+  /* ---------- Composer ---------- */
+  const prompt = $("prompt"), send = $("send");
+  const running = () => body.dataset.run === "running";
+  const offline = () => body.dataset.gateway === "offline";
+  const syncSend = () => {
+    if (running()) { send.disabled = false; send.setAttribute("aria-label", "Stop"); return; }
+    send.setAttribute("aria-label", "Send");
+    send.disabled = !prompt.value.trim() || offline();
+  };
+  const resize = () => { prompt.style.height = "auto"; prompt.style.height = prompt.scrollHeight + "px"; };
+  prompt.addEventListener("input", () => { resize(); syncSend(); });
+
+  const queue = [];
+  const renderQueue = () => {
+    const q = $("queue"); q.replaceChildren();
+    queue.forEach((text, i) => {
+      const row = h("div", "queued"); const s = h("span"); s.append(h("em", null, "Queued: "), text);
+      const x = h("button", "icon-btn"); x.setAttribute("aria-label", "Remove queued message"); x.append(icon("i-x", "ic ic-sm"));
+      x.onclick = () => { queue.splice(i, 1); renderQueue(); post({ type: "unqueue", index: i }); };
+      row.append(s, x); q.append(row);
+    });
+  };
+
+  const submit = () => {
+    const text = prompt.value.trim(); if (!text || offline()) return;
+    prompt.value = ""; resize();
+    if (running()) { queue.push(text); renderQueue(); post({ type: "queuePrompt", text }); syncSend(); return; }
+    startTurn(text);
+    post({ type: "sendPrompt", text, mode: modes[modeIdx] });
+  };
+  send.addEventListener("click", () => {
+    if (running()) { post({ type: "stop" }); endTurn("stopped"); return; }
+    submit();
+  });
+  prompt.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
+  $("retry").addEventListener("click", () => post({ type: "retryGateway" }));
+
+  document.querySelectorAll("[data-prompt]").forEach((b) => b.addEventListener("click", () => {
+    prompt.value = b.dataset.prompt; resize(); syncSend(); prompt.focus();
+    prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+  }));
+
+  const modes = ["Auto", "Ask", "Plan"]; let modeIdx = 0;
+  $("mode").addEventListener("click", () => {
+    modeIdx = (modeIdx + 1) % modes.length;
+    $("mode-label").textContent = modes[modeIdx];
+    $("mode").setAttribute("aria-label", "Permission mode: " + modes[modeIdx]);
+    post({ type: "setMode", mode: modes[modeIdx] });
+  });
+
+  /* ---------- Conversation ---------- */
+  const timeline = $("timeline"), scroller = $("scroll");
+  let timer = null, started = 0, live = null;
+  const fmt = (s) => s < 60 ? s + "s" : Math.floor(s / 60) + "m";
+  const stick = () => { const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120; return () => { if (nearBottom) scroller.scrollTop = scroller.scrollHeight; }; };
+
+  function startTurn(text) {
+    const first = body.dataset.view === "empty";
+    body.dataset.view = "active";
+    if (first) {
+      $("pinned").textContent = text;
+      $("convo-title").textContent = text.length > 60 ? text.slice(0, 57) + "..." : text;
+    } else {
+      $("pinned").textContent = text;
+      const u = h("li", "ev user"); u.append(h("div", "user-msg", text)); timeline.append(u);
+    }
+    body.dataset.run = "running";
+    prompt.placeholder = "Queue another message";
+    started = Date.now(); $("elapsed").textContent = "0s";
+    clearInterval(timer); timer = setInterval(() => { $("elapsed").textContent = fmt(Math.round((Date.now() - started) / 1000)); }, 1000);
+    syncSend();
+    scroller.scrollTop = scroller.scrollHeight;
+  }
+
+  function endTurn(status) {
+    clearInterval(timer); body.dataset.run = "idle";
+    if (live) { live.remove(); live = null; }
+    if (status === "stopped") render({ kind: "note", text: "Stopped. Send a message to continue." });
+    prompt.placeholder = "Reply to Kete";
+    syncSend();
+    if (queue.length) { const next = queue.shift(); renderQueue(); startTurn(next); post({ type: "sendPrompt", text: next, mode: modes[modeIdx] }); }
+  }
+
+  // One renderer for every activity event, whether it comes from the host or the preview script
+  function render(ev) {
+    const after = stick();
+    if (ev.kind === "thinking") {             // live, updates in place
+      if (!live) { live = h("li", "ev dim live"); timeline.append(live); }
+      live.textContent = "Thinking, " + ev.tokens.toLocaleString() + " tokens";
+      return after();
+    }
+    if (live) { live.remove(); live = null; }
+    const li = h("li", "ev");
+    if (ev.kind === "thought") {
+      li.classList.add("dim");
+      if (ev.text) { const d = h("details"); d.append(h("summary", null, "Thought for " + ev.seconds + "s"), h("p", null, ev.text)); li.append(d); }
+      else li.textContent = "Thought for " + ev.seconds + "s";
+    } else if (ev.kind === "text") {
+      li.classList.add("text"); li.append(h("p", null, ev.text));
+    } else if (ev.kind === "note") {
+      li.classList.add("dim"); li.textContent = ev.text;
+    } else if (ev.kind === "read") {
+      li.classList.add("ok"); const hd = h("div", "tool-head"); hd.append(h("b", null, "Read"), h("code", null, ev.path)); li.append(hd);
+    } else if (ev.kind === "tool") {
+      li.classList.add(ev.status === "error" ? "err" : ev.status === "running" ? "live" : "ok");
+      li.dataset.id = ev.id || "";
+      const hd = h("div", "tool-head"); hd.append(h("b", null, ev.name), h("span", null, ev.description || "")); li.append(hd);
+      const io = h("div", "io");
+      const inRow = h("div", "io-row"); inRow.append(h("span", "io-lbl", "IN"), h("div", "in", ev.input)); io.append(inRow);
+      if (ev.output != null) {
+        const outRow = h("div", "io-row" + (ev.status === "error" ? " err" : "")); const pre = h("pre", null, ev.output);
+        outRow.append(h("span", "io-lbl", "OUT"), pre);
+        if (ev.output.split("\n").length > 3) {
+          const more = h("button", "expand", "Show all"); more.setAttribute("aria-expanded", "false");
+          more.onclick = () => { const open = outRow.classList.toggle("open"); more.textContent = open ? "Show less" : "Show all"; more.setAttribute("aria-expanded", String(open)); };
+          outRow.append(h("span"), more);
+        }
+        io.append(outRow);
+      }
+      li.append(io);
+      const prev = ev.id && timeline.querySelector(`[data-id="${CSS.escape(ev.id)}"]`);
+      if (prev) { prev.replaceWith(li); return after(); }
+    }
+    timeline.append(li); after();
+  }
+
+  $("new-chat").addEventListener("click", () => {
+    if (running()) post({ type: "stop" });
+    clearInterval(timer); timeline.replaceChildren(); queue.length = 0; renderQueue(); live = null;
+    body.dataset.view = "empty"; body.dataset.run = "idle";
+    prompt.placeholder = "Ask Kete, or type / for commands"; prompt.value = ""; resize(); syncSend();
+    post({ type: "newChat" });
+  });
+  $("history").addEventListener("click", () => post({ type: "openHistory" }));
+
+  /* ---------- Host -> webview ---------- */
+  window.addEventListener("message", ({ data }) => {
+    switch (data.type) {
+      case "init": case "modelChanged":
+        delete body.dataset.loading;
+        if (data.model) { $("model-name").textContent = data.model.name; $("model-effort").textContent = data.model.effort; }
+        break;
+      case "gatewayStatus":
+        if (data.online) delete body.dataset.gateway; else body.dataset.gateway = "offline"; syncSend(); break;
+      case "event": render(data.event); break;          // {kind: thought|text|tool|read|thinking|note, ...}
+      case "turnEnded": endTurn(data.status); break;    // status: done | stopped | error
+      case "workingLabel": $("working-label").textContent = data.text; break;
+    }
+  });
+
+  /* ---------- Standalone preview: scripted run ---------- */
+  if (!vscode) {
+    if (matchMedia("(prefers-color-scheme: light)").matches) document.documentElement.dataset.theme = "light";
+    if (location.hash === "#offline") body.dataset.gateway = "offline";
+    if (location.hash === "#loading") body.dataset.loading = "";
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "l") {
+        const r = document.documentElement; r.dataset.theme = r.dataset.theme === "light" ? "" : "light";
+      }
+    });
+    const script = [
+      [300,  { kind: "thought", seconds: 1, text: "Start with the layout of the repo, then the config, then the main entry point." }],
+      [500,  { kind: "text", text: "I'll start by getting a picture of the project." }],
+      [400,  { kind: "tool", id: "t1", name: "Bash", description: "List project files and structure", status: "running", input: "ls -la && find . -type f -not -path '*/node_modules/*' -not -path './.git/*' | head -50" }],
+      [1100, { kind: "tool", id: "t1", name: "Bash", description: "List project files and structure", status: "ok", input: "ls -la && find . -type f -not -path '*/node_modules/*' -not -path './.git/*' | head -50",
+               output: "total 1112\ndrwxr-xr-x    8 dev  staff    256 Sep 27 11:38 .\ndrwxr-xr-x   49 dev  staff   1568 Sep 28 10:06 ..\n-rw-r--r--    1 dev  staff  47664 Sep 27 11:38 App.js\n-rw-r--r--    1 dev  staff   1204 Sep 27 11:38 README.md\n-rw-r--r--    1 dev  staff    893 Sep 27 11:38 package.json\n-rw-r--r--    1 dev  staff    412 Sep 27 11:38 app.json" }],
+      [500,  { kind: "tool", id: "t2", name: "Bash", description: "Show README, package and app config", status: "running", input: "cat README.md package.json app.json && wc -l App.js" }],
+      [900,  { kind: "tool", id: "t2", name: "Bash", description: "Show README, package and app config", status: "ok", input: "cat README.md package.json app.json && wc -l App.js",
+               output: "# Stillword\n\nA quiet, offline-first Bible reading app built with Expo and React Native.\n\n{\n  \"name\": \"stillword\",\n  \"main\": \"App.js\"\n}\n    1412 App.js" }],
+      [400,  { kind: "thought", seconds: 0 }],
+      [500,  { kind: "read", path: "App.js" }],
+      ...Array.from({ length: 8 }, (_, i) => [220, { kind: "thinking", tokens: 90 * (i + 1) + 17 }]),
+      [300,  { kind: "text", text: "Stillword is a single-screen Expo app with almost everything in App.js (1,412 lines). The biggest risk is that file: state, storage and UI are mixed together, so any change touches everything. I'd split it into screens, a storage module and hooks before adding features." }],
+    ];
+    const runScript = () => {
+      let t = 0;
+      script.forEach(([d, ev]) => { t += d; setTimeout(() => running() && render(ev), t); });
+      setTimeout(() => running() && endTurn("done"), t + 400);
+    };
+    previewHost = (msg) => { console.log("[postMessage]", msg); if (msg.type === "sendPrompt") runScript(); };
+  }
+  post({ type: "ready" });
+</script>
+</body>
+</html>

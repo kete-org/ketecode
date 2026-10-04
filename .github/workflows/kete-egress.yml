@@ -1,0 +1,53 @@
+# Kete-owned. Path-filtered so it only runs when the egress proxy actually changes, protecting the
+# shared CI minutes budget (see kete-build.yml). One ubuntu-latest job: gofmt, Go vet (also with
+# the integration tag), unit tests with the race detector, then the privileged integration suite
+# (scripts/integration.sh: real users, real nftables rules, fake upstreams and DNS). The suite runs
+# inside its own network namespace (`unshare --net`), so the rules it applies never touch the
+# runner's network. ~2-4 minutes.
+name: kete-egress
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/kete-egress/**"
+      - ".github/workflows/kete-egress.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/kete-egress/**"
+      - ".github/workflows/kete-egress.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/kete-egress/go.mod
+          cache-dependency-path: packages/kete-egress/go.sum
+
+      - name: gofmt, vet and unit tests
+        working-directory: packages/kete-egress
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go vet -tags integration ./...
+          go test -race ./...
+
+      - name: Integration tests (root, real users, nftables, own network namespace)
+        working-directory: packages/kete-egress
+        run: sudo env "PATH=$PATH" bash scripts/integration.sh

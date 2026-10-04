@@ -1,0 +1,222 @@
+{
+  "protocolVersion": 1,
+  "vectors": [
+    {
+      "name": "hello_c2h",
+      "type": "HELLO_C2H",
+      "typeByte": 1,
+      "frameHex": "0000000e017b2270726f746f636f6c223a317d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "protocol": 1
+        }
+      }
+    },
+    {
+      "name": "hello_h2c",
+      "type": "HELLO_H2C",
+      "typeByte": 65,
+      "frameHex": "00000074417b2270726f746f636f6c223a312c226d61784672616d65223a313034383537362c22646174614368756e6b223a36353533362c22737464696e57696e646f77223a3236323134342c226f757470757457696e646f77223a3236323134342c22656e76223a5b2250415448222c22484f4d45225d7d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "protocol": 1,
+          "maxFrame": 1048576,
+          "dataChunk": 65536,
+          "stdinWindow": 262144,
+          "outputWindow": 262144,
+          "env": [
+            "PATH",
+            "HOME"
+          ]
+        }
+      }
+    },
+    {
+      "name": "spawn",
+      "type": "SPAWN",
+      "typeByte": 2,
+      "frameHex": "00000087027b2261726776223a5b22676974222c22737461747573225d2c22656e76223a5b5b2250415448222c222f7573722f62696e225d2c5b22484f4d45222c222f7372762f7774225d5d2c22637764223a222f7372762f7774222c22737464696e223a2270697065222c227374646f7574223a2270697065222c22737464657272223a2270697065227d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "argv": [
+            "git",
+            "status"
+          ],
+          "env": [
+            [
+              "PATH",
+              "/usr/bin"
+            ],
+            [
+              "HOME",
+              "/srv/wt"
+            ]
+          ],
+          "cwd": "/srv/wt",
+          "stdin": "pipe",
+          "stdout": "pipe",
+          "stderr": "pipe"
+        }
+      }
+    },
+    {
+      "name": "spawned",
+      "type": "SPAWNED",
+      "typeByte": 66,
+      "frameHex": "00000017427b22706964223a343234322c226964223a22703137227d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "pid": 4242,
+          "id": "p17"
+        }
+      }
+    },
+    {
+      "name": "stdin_data",
+      "type": "STDIN",
+      "typeByte": 3,
+      "frameHex": "000000050368656c6c6f",
+      "decoded": {
+        "kind": "raw",
+        "hex": "68656c6c6f"
+      }
+    },
+    {
+      "name": "stdin_end",
+      "type": "STDIN_END",
+      "typeByte": 4,
+      "frameHex": "0000000004",
+      "decoded": {
+        "kind": "empty"
+      }
+    },
+    {
+      "name": "stdin_credit",
+      "type": "STDIN_CREDIT",
+      "typeByte": 72,
+      "frameHex": "000000044800040000",
+      "decoded": {
+        "kind": "u32",
+        "value": 262144
+      }
+    },
+    {
+      "name": "credit_stdout",
+      "type": "CREDIT",
+      "typeByte": 5,
+      "frameHex": "00000005050100010000",
+      "decoded": {
+        "kind": "stream_u32",
+        "stream": 1,
+        "value": 65536
+      }
+    },
+    {
+      "name": "credit_stderr",
+      "type": "CREDIT",
+      "typeByte": 5,
+      "frameHex": "00000005050200008000",
+      "decoded": {
+        "kind": "stream_u32",
+        "stream": 2,
+        "value": 32768
+      }
+    },
+    {
+      "name": "stdout_data",
+      "type": "STDOUT",
+      "typeByte": 67,
+      "frameHex": "00000009436c696e65206f6e650a",
+      "decoded": {
+        "kind": "raw",
+        "hex": "6c696e65206f6e650a"
+      }
+    },
+    {
+      "name": "stderr_data",
+      "type": "STDERR",
+      "typeByte": 68,
+      "frameHex": "00000008447761726e696e670a",
+      "decoded": {
+        "kind": "raw",
+        "hex": "7761726e696e670a"
+      }
+    },
+    {
+      "name": "eof_stdout",
+      "type": "EOF",
+      "typeByte": 69,
+      "frameHex": "000000014501",
+      "decoded": {
+        "kind": "u8",
+        "value": 1
+      }
+    },
+    {
+      "name": "eof_stderr",
+      "type": "EOF",
+      "typeByte": 69,
+      "frameHex": "000000014502",
+      "decoded": {
+        "kind": "u8",
+        "value": 2
+      }
+    },
+    {
+      "name": "kill",
+      "type": "KILL",
+      "typeByte": 6,
+      "frameHex": "00000024067b227369676e616c223a225349475445524d222c2273636f7065223a2267726f7570227d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "signal": "SIGTERM",
+          "scope": "group"
+        }
+      }
+    },
+    {
+      "name": "exit_code",
+      "type": "EXIT",
+      "typeByte": 70,
+      "frameHex": "00000018467b22636f6465223a332c227369676e616c223a6e756c6c7d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "code": 3,
+          "signal": null
+        }
+      }
+    },
+    {
+      "name": "exit_signal",
+      "type": "EXIT",
+      "typeByte": 70,
+      "frameHex": "00000020467b22636f6465223a6e756c6c2c227369676e616c223a225349474b494c4c227d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "code": null,
+          "signal": "SIGKILL"
+        }
+      }
+    },
+    {
+      "name": "error",
+      "type": "ERROR",
+      "typeByte": 71,
+      "frameHex": "00000030477b22636f6465223a22637764222c226d657373616765223a226f75747369646520776f726b7472656520726f6f74227d",
+      "decoded": {
+        "kind": "json",
+        "value": {
+          "code": "cwd",
+          "message": "outside worktree root"
+        }
+      }
+    }
+  ]
+}

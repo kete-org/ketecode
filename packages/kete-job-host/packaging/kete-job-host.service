@@ -1,0 +1,44 @@
+# kete-job-host: the self-hosted job host agent (kete-code packages/kete-job-host; platform
+# ADR 0023 rule 6). Runs as root: it owns the host's keys, the host nftables table and the jailed
+# Firecracker microVMs (P4) or the dedicated host's one job (P5). It never listens on a port.
+#
+# Install with packaging/install.sh (binary, unit, sysctl, directories), write
+# /etc/kete-job-host/config.json, enroll once (`printf '%s\n' "$TOKEN" | kete-job-host enroll`),
+# check with `kete-job-host doctor`, then `systemctl enable --now kete-job-host`.
+[Unit]
+Description=Kete Code job host agent
+Documentation=https://github.com/kete-org/ketecode/tree/main/packages/kete-job-host
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/kete-job-host run --config /etc/kete-job-host/config.json
+Restart=on-failure
+RestartSec=10s
+# Exit 3: halted (revoked, generation mismatch, key refused) — an operator must act.
+RestartPreventExitStatus=2 3
+StateDirectory=kete-job-host
+StateDirectoryMode=0700
+ConfigurationDirectory=kete-job-host
+UMask=0077
+ProtectHome=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelModules=yes
+ProtectControlGroups=no
+LimitNOFILE=65536
+# VMs outlive an agent restart or stop (ADR 0023 rule 12: the restarted agent re-adopts or destroys
+# them). Each jailed Firecracker runs in its own cgroup, /sys/fs/cgroup/kete-job-host-vms/<machine>,
+# outside this unit's, and in its own PID namespace (the jailer's parent exits at once), so no VM
+# process is in this unit's cgroup. KillMode=mixed sends SIGTERM to the agent and SIGKILL to
+# anything still in the unit's cgroup when it stops (an mkfs.ext4 or nft it was running), never to
+# a VM. To destroy every VM, withdraw them on the platform or disable the host (host_disabled).
+# The dedicated driver's job likewise lives in /sys/fs/cgroup/kete-job-host-jobs/<machine> and its
+# own namespaces (its reaper is re-parented to init when the agent exits).
+KillMode=mixed
+TimeoutStopSec=90s
+
+[Install]
+WantedBy=multi-user.target

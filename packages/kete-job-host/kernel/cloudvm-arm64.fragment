@@ -1,0 +1,6 @@
+# Kete-owned. cloudvm additions for arm64 only (see cloudvm.fragment): the PL011 UART (ttyAMA0, the
+# serial console of GCP Axion, OCI Ampere and Hetzner CAX VMs) and the EFI and PL031 RTCs.
+CONFIG_SERIAL_AMBA_PL011=y
+CONFIG_SERIAL_AMBA_PL011_CONSOLE=y
+CONFIG_RTC_DRV_EFI=y
+CONFIG_RTC_DRV_PL031=y

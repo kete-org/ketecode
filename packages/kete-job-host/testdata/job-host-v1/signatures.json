@@ -1,0 +1,207 @@
+{
+  "description": "job-host-v1 request signatures (RFC 9421, ed25519; docs/contracts/job-host-v1.md \"Signatures\"). Ed25519 keys are RFC 8032 32-byte seeds, hex; public keys raw 32 bytes, base64url. Each refusal applies `override` to the named request (poll unless `request` says otherwise) and must be refused with `reason`; `public_key` replaces the key the verifier holds for the keyid (poll). Enroll requests are verified with the key from their body and keyid must equal its fingerprint. Verifiers must refuse S >= L and small-order or non-canonical public keys.",
+  "keys": {
+    "ed25519_seed_hex": "38104d78d5b47c5424acdfd1b3e9c8e0c988ebfd14699b702ce8783b105ca118",
+    "ed25519_public": "aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU",
+    "x25519_private_hex": "de9fe71743178987e36609f578b8912979c353fb6a6f9a5ac873c785e154343b",
+    "x25519_public": "9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE",
+    "fingerprint": "03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a",
+    "other_ed25519_seed_hex": "223979bffe9fb64546039f918397dbb612c17ad717868d67ac9502342e073cc3",
+    "other_ed25519_public": "6uUZMRZSj4h6k98L6aaz-MNmdvBQAOt2HCxcCGPyT5I"
+  },
+  "requests": [
+    {
+      "name": "enroll",
+      "method": "POST",
+      "authority": "portal.kete.example",
+      "path": "/api/v1/job-hosts/enroll",
+      "body": "{\"enrollment_token\":\"kete_jhe_6VYcQvAovMFvzajh-0vmcx7RWhVSTIIG3X0p3qtdzHk\",\"signing_key\":\"aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU\",\"sealing_key\":\"9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE\",\"facts\":{\"arch\":\"amd64\",\"driver\":\"firecracker\",\"slots\":4,\"kvm\":true,\"reset\":\"none\",\"generation\":\"g-2026-10-03.1\",\"versions\":{\"agent\":\"0.9.0\",\"firecracker\":\"1.13.1\",\"guest_kernel\":\"6.1.141-kete.1\",\"host_kernel\":\"6.8.0-45-generic\"}}}",
+      "params": {
+        "created": 1790992800,
+        "expires": 1790992860,
+        "nonce": "000102030405060708090a0b0c0d0e0f",
+        "keyid": "03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a"
+      },
+      "headers": {
+        "content-type": "application/json",
+        "content-digest": "sha-256=:g/WdUO00UEfXJt0EmmIpyInAsKwawbfvyEVa1+0G3Lw=:",
+        "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790992800;expires=1790992860;nonce=\"000102030405060708090a0b0c0d0e0f\";keyid=\"03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a\";alg=\"ed25519\";tag=\"kete-job-host-v1\"",
+        "signature": "kete=:QkPfr4Gov88RHRxm7DiKZNomSH5KUqrvXdzh0yIZe2a7NssbB7K90+WmKhehgYA4/n82VjUTNk/dO7qTPg+BAw==:"
+      },
+      "signature_base": "\"@method\": POST\n\"@authority\": portal.kete.example\n\"@path\": /api/v1/job-hosts/enroll\n\"content-type\": application/json\n\"content-digest\": sha-256=:g/WdUO00UEfXJt0EmmIpyInAsKwawbfvyEVa1+0G3Lw=:\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790992800;expires=1790992860;nonce=\"000102030405060708090a0b0c0d0e0f\";keyid=\"03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a\";alg=\"ed25519\";tag=\"kete-job-host-v1\"",
+      "verify_at": 1790992805
+    },
+    {
+      "name": "poll",
+      "method": "POST",
+      "authority": "portal.kete.example",
+      "path": "/api/v1/job-hosts/poll",
+      "body": "{\"generation\":\"g-2026-10-03.1\",\"versions\":{\"agent\":\"0.9.0\",\"firecracker\":\"1.13.1\",\"guest_kernel\":\"6.1.141-kete.1\",\"host_kernel\":\"6.8.0-45-generic\"},\"slots\":{\"total\":4,\"free\":3},\"starts_blocked\":null,\"applied_revision\":7,\"machines\":[{\"machine_id\":\"3f6b9d2a-8c41-4e7f-b5a0-9d1c2e3f4a5b\",\"job_id\":\"9b2e4f60-1a3c-4d5e-8f70-6b8c0d2e4f61\",\"state\":\"running\",\"since\":\"2026-10-03T01:59:31Z\",\"phase_lines\":[{\"ts\":\"2026-10-03T01:59:40.125Z\",\"step\":\"claim\",\"event\":\"ok\"}],\"phase_lines_dropped\":0}]}",
+      "params": {
+        "created": 1790992800,
+        "expires": 1790992860,
+        "nonce": "f0e1d2c3b4a5968778695a4b3c2d1e0f",
+        "keyid": "7d0f3c2e-5b1a-4c8e-9f60-2a4b6c8d0e1f"
+      },
+      "headers": {
+        "content-type": "application/json",
+        "content-digest": "sha-256=:6wORMGyX85X9rFt4nK9T02ad1xLSygvTiiILmJ3hD78=:",
+        "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790992800;expires=1790992860;nonce=\"f0e1d2c3b4a5968778695a4b3c2d1e0f\";keyid=\"7d0f3c2e-5b1a-4c8e-9f60-2a4b6c8d0e1f\";alg=\"ed25519\";tag=\"kete-job-host-v1\"",
+        "signature": "kete=:ddaaXs1RY3XF0m/bVvGd/nYCBEv4JE+JEDKSf6Ra+VfjrI0AOLHY30iXuWJTkf9RKExjgCHLpPgAvd/zF0M7Cg==:"
+      },
+      "signature_base": "\"@method\": POST\n\"@authority\": portal.kete.example\n\"@path\": /api/v1/job-hosts/poll\n\"content-type\": application/json\n\"content-digest\": sha-256=:6wORMGyX85X9rFt4nK9T02ad1xLSygvTiiILmJ3hD78=:\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790992800;expires=1790992860;nonce=\"f0e1d2c3b4a5968778695a4b3c2d1e0f\";keyid=\"7d0f3c2e-5b1a-4c8e-9f60-2a4b6c8d0e1f\";alg=\"ed25519\";tag=\"kete-job-host-v1\"",
+      "verify_at": 1790992805
+    }
+  ],
+  "refusals": [
+    {
+      "name": "body changed after signing",
+      "override": {
+        "body": "{\"generation\":\"g-2026-10-03.1\",\"versions\":{\"agent\":\"0.9.0\",\"firecracker\":\"1.13.1\",\"guest_kernel\":\"6.1.141-kete.1\",\"host_kernel\":\"6.8.0-45-generic\"},\"slots\":{\"total\":4,\"free\":2},\"starts_blocked\":null,\"applied_revision\":7,\"machines\":[{\"machine_id\":\"3f6b9d2a-8c41-4e7f-b5a0-9d1c2e3f4a5b\",\"job_id\":\"9b2e4f60-1a3c-4d5e-8f70-6b8c0d2e4f61\",\"state\":\"running\",\"since\":\"2026-10-03T01:59:31Z\",\"phase_lines\":[{\"ts\":\"2026-10-03T01:59:40.125Z\",\"step\":\"claim\",\"event\":\"ok\"}],\"phase_lines_dropped\":0}]}"
+      },
+      "reason": "digest_mismatch"
+    },
+    {
+      "name": "path changed",
+      "override": {
+        "path": "/api/v1/job-hosts/enroll"
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "authority changed",
+      "override": {
+        "authority": "portal.other.example"
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "signed by another key",
+      "override": {
+        "headers": {
+          "signature": "kete=:f5ltPXlHZA+SDB52GqKoyIBlED/aTAKsKSQIMxbsweYqiIHYemi9rfATgQm8S5Iqw5J9liieYm/Jc9e4103uCw==:"
+        }
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "verifier holds another key for the keyid",
+      "override": {
+        "public_key": "6uUZMRZSj4h6k98L6aaz-MNmdvBQAOt2HCxcCGPyT5I"
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "created 61 s in the past",
+      "override": {
+        "verify_at": 1790992861
+      },
+      "reason": "clock_skew"
+    },
+    {
+      "name": "created 61 s in the future",
+      "override": {
+        "verify_at": 1790992739
+      },
+      "reason": "clock_skew"
+    },
+    {
+      "name": "expires 61 s after created",
+      "override": {
+        "headers": {
+          "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790992800;expires=1790992861;nonce=\"f0e1d2c3b4a5968778695a4b3c2d1e0f\";keyid=\"7d0f3c2e-5b1a-4c8e-9f60-2a4b6c8d0e1f\";alg=\"ed25519\";tag=\"kete-job-host-v1\""
+        }
+      },
+      "reason": "signature_malformed"
+    },
+    {
+      "name": "other tag",
+      "override": {
+        "headers": {
+          "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790992800;expires=1790992860;nonce=\"f0e1d2c3b4a5968778695a4b3c2d1e0f\";keyid=\"7d0f3c2e-5b1a-4c8e-9f60-2a4b6c8d0e1f\";alg=\"ed25519\";tag=\"other\""
+        }
+      },
+      "reason": "signature_malformed"
+    },
+    {
+      "name": "component missing",
+      "override": {
+        "headers": {
+          "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-digest\");created=1790992800;expires=1790992860;nonce=\"f0e1d2c3b4a5968778695a4b3c2d1e0f\";keyid=\"7d0f3c2e-5b1a-4c8e-9f60-2a4b6c8d0e1f\";alg=\"ed25519\";tag=\"kete-job-host-v1\""
+        }
+      },
+      "reason": "signature_malformed"
+    },
+    {
+      "name": "other label",
+      "override": {
+        "headers": {
+          "signature": "sig1=:ddaaXs1RY3XF0m/bVvGd/nYCBEv4JE+JEDKSf6Ra+VfjrI0AOLHY30iXuWJTkf9RKExjgCHLpPgAvd/zF0M7Cg==:"
+        }
+      },
+      "reason": "signature_malformed"
+    },
+    {
+      "name": "digest with another algorithm",
+      "override": {
+        "headers": {
+          "content-digest": "sha-512=:6wORMGyX85X9rFt4nK9T02ad1xLSygvTiiILmJ3hD78=:"
+        }
+      },
+      "reason": "signature_malformed"
+    },
+    {
+      "name": "enroll: keyid is not the fingerprint of the body keys (correctly signed by the body key)",
+      "request": "enroll",
+      "override": {
+        "headers": {
+          "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790992800;expires=1790992860;nonce=\"000102030405060708090a0b0c0d0e0f\";keyid=\"e43bea222d720b901f59a4433f23e685a07b929c3029408572abc28b3e174499\";alg=\"ed25519\";tag=\"kete-job-host-v1\"",
+          "signature": "kete=:3HhKgOk6w/l45303FET7wO+Mk+Yehw4e8kRS0p1Gv24OVbHshX3eFBndF0InO4FovV/bIqTqOO4Ic1O/D1GLAw==:"
+        }
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "malleated signature (S + L)",
+      "override": {
+        "headers": {
+          "signature": "kete=:ddaaXs1RY3XF0m/bVvGd/nYCBEv4JE+JEDKSf6Ra+VfQgINdUhTrNx80sQUyi95mKExjgCHLpPgAvd/zF0M7Gg==:"
+        }
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "small-order public key (identity) with the forged signature R = identity, S = 0",
+      "override": {
+        "public_key": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "headers": {
+          "signature": "kete=:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==:"
+        }
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "content type with a parameter",
+      "override": {
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        }
+      },
+      "reason": "malformed_request"
+    }
+  ],
+  "reference": {
+    "rfc9421_b26": {
+      "description": "RFC 9421 B.2.6: test-key-ed25519 (JWK d and x, base64url) over the given signature base; Ed25519 is deterministic.",
+      "ed25519_seed": "n4Ni-HpISpVObnQMW0wOhCKROaIKqKtW_2ZYb2p9KcU",
+      "ed25519_public": "JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs",
+      "signature_base": "\"date\": Tue, 20 Apr 2021 02:07:55 GMT\n\"@method\": POST\n\"@path\": /foo\n\"@authority\": example.com\n\"content-type\": application/json\n\"content-length\": 18\n\"@signature-params\": (\"date\" \"@method\" \"@path\" \"@authority\" \"content-type\" \"content-length\");created=1618884473;keyid=\"test-key-ed25519\"",
+      "signature_base64": "wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw=="
+    },
+    "rfc9530_b1": {
+      "description": "RFC 9530 Appendix B.1: Content-Digest of the body {\"hello\": \"world\"} followed by an LF.",
+      "body": "{\"hello\": \"world\"}\n",
+      "content_digest": "sha-256=:RK/0qy18MlBSVnWgjwz6lZEWjP/lF5HF9bvEF8FabDg=:"
+    }
+  }
+}

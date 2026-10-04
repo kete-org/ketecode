@@ -1,0 +1,160 @@
+# Kete-owned. Runs the public CLI installers exactly as users do (ADR 0009, docs/release.md
+# "Installing"): `curl -fsSL https://ketecode.ai/cli/install | sh` and `irm …/cli/install.ps1`,
+# through the website's redirects to the signed scripts on kete-org/kete-releases, with cosign
+# installed so the Sigstore signature check runs. Checks that the installed kete runs and reports
+# the expected version, and on Windows that the install directory was added to the user PATH.
+#
+#   linux        ubuntu-latest (x64, glibc)
+#   alpine       alpine container (x64, musl), with libstdc++ and libgcc as documented
+#   macos        macos-latest (arm64)
+#   windows      windows-latest under PowerShell 7 and Windows PowerShell 5.1
+#
+# Runs after every successful kete-release on a kete-v* tag (once public distribution is on), by
+# hand (Actions → kete-installer-smoke → Run workflow) for any version (empty: the latest stable
+# release, as users get it), and on pull requests that change this file (the newest published
+# release, pre-releases included). Read-only; no secrets.
+# macOS and Windows minutes count multiplied against the free allowance: about 10 minutes a run.
+name: kete-installer-smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/kete-installer-smoke.yml]
+  workflow_run:
+    workflows: [kete-release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to install, e.g. 0.2.0 or 0.2.0-rc.4 (empty: the latest stable release)"
+        required: false
+        default: ""
+      base_url:
+        description: "Site serving /cli/install and /cli/install.ps1"
+        required: false
+        default: "https://ketecode.ai"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || inputs.version || github.ref }}
+  cancel-in-progress: false
+
+env:
+  BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url || 'https://ketecode.ai' }}
+
+jobs:
+  # The version to install: the dispatch input, the released tag, or (pull requests) the newest
+  # published release. Empty means the latest stable release. Inputs reach scripts only through
+  # the environment, never interpolated into them.
+  version:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'kete-v') && vars.KETE_PUBLIC_DISTRIBUTION == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ inputs.version }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            workflow_dispatch) version="$INPUT" ;;
+            workflow_run) version="$TAG" ;;
+            *) version="$(gh api 'repos/kete-org/kete-releases/releases?per_page=1' --jq '.[0].tag_name')" ;;
+          esac
+          version="${version#kete-v}"
+          version="${version#v}"
+          if [ -n "$version" ] && ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::not a version: $version"; exit 1
+          fi
+          case "$BASE_URL" in https://*) ;; *) echo "::error::base_url must be https"; exit 1 ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Installing: ${version:-the latest stable release} from $BASE_URL"
+
+  unix:
+    needs: version
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux (x64, glibc), os: ubuntu-latest, container: "" }
+          - { name: alpine (x64, musl), os: ubuntu-latest, container: "alpine:3" }
+          - { name: macos (arm64), os: macos-latest, container: "" }
+    steps:
+      # libstdc++ and libgcc: the musl build's C++ runtime, which Alpine doesn't install by default
+      # (docs/release.md "Installing"); the install script names them when they're missing.
+      - name: Install curl, cosign and the C++ runtime (Alpine)
+        if: matrix.container != ''
+        run: apk add --no-cache curl cosign libstdc++ libgcc
+
+      - name: Install cosign
+        if: matrix.container == ''
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Install with the public command and run kete
+        shell: sh
+        env:
+          version: ${{ needs.version.outputs.version }}
+        run: |
+          set -eu
+          dir="$RUNNER_TEMP/kete-bin"
+          set -- --install-dir "$dir"
+          [ -z "$version" ] || set -- "$@" --version "$version"
+          curl -fsSL "$BASE_URL/cli/install" | sh -s -- "$@"
+          out="$("$dir/kete" --version)"
+          echo "kete --version: $out"
+          case "$out" in
+            "kete v${version:-}"*) ;;
+            *) echo "::error::expected kete v${version:-<latest>}, got: $out"; exit 1 ;;
+          esac
+          "$dir/kete" --help > /dev/null
+
+  windows:
+    needs: version
+    name: windows (${{ matrix.shell }})
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [pwsh, powershell]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Install with the public command and run kete
+        env:
+          KETE_SMOKE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:KETE_SMOKE_VERSION
+          $dir = Join-Path $env:RUNNER_TEMP 'kete-bin'
+          $params = @{ InstallDir = $dir }
+          if ($version) { $params.Version = $version }
+          & ([scriptblock]::Create((Invoke-RestMethod "$($env:BASE_URL)/cli/install.ps1"))) @params
+          $out = & (Join-Path $dir 'kete.exe') --version
+          Write-Host "kete --version: $out"
+          if (-not ($out -like "kete v$version*")) { throw "expected kete v$version, got: $out" }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (($userPath -split ';') -notcontains $dir) { throw "the install directory was not added to the user PATH" }
+          & (Join-Path $dir 'kete.exe') --help | Out-Null

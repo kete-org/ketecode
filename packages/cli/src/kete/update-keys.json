@@ -1,0 +1,9 @@
+{
+  "$comment": "Ed25519 public keys that sign SHA256SUMS of public Kete Code releases (ADR 0009, docs/release.md 'Update signing key'). publicKey is the raw 32-byte key, base64. kete upgrade accepts a release signed by any key listed here; with none, updates are unavailable. The release workflow's sign job refuses to sign unless its private key matches one of these.",
+  "keys": [
+    {
+      "id": "kete-update-2026",
+      "publicKey": "UR21AHT7Qw25M89ZmNOyiCCD3Dgh0iXDW5CIkc4BQTQ="
+    }
+  ]
+}

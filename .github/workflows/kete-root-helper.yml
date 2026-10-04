@@ -1,0 +1,70 @@
+# Kete-owned. Path-filtered so it only runs when the root helper or its TypeScript client
+# actually change, protecting the shared CI minutes budget (a private repo's allowance is shared
+# across the organisation; see kete-build.yml). One ubuntu-latest job: Go vet/unit tests, the Linux
+# integration suite (real root, a real second user, cgroup v2 — scripts/integration.sh sets all of
+# that up), then AC5 end to end (scripts/e2e.sh: the real helper, the real TypeScript client, a
+# shell tool call actually running as the tool uid). ~4-6 minutes.
+name: kete-root-helper
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/kete-root-helper/**"
+      - "packages/util/src/kete/tool-helper.ts"
+      - "packages/util/src/kete/tool-helper-protocol.ts"
+      - "packages/util/src/kete/tool-runner.ts"
+      - "packages/util/src/kete/job-mode.ts"
+      - "packages/server/src/kete/job-server.ts"
+      - "packages/server/test/kete/job-helper-e2e.test.ts"
+      - ".github/workflows/kete-root-helper.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/kete-root-helper/**"
+      - "packages/util/src/kete/tool-helper.ts"
+      - "packages/util/src/kete/tool-helper-protocol.ts"
+      - "packages/util/src/kete/tool-runner.ts"
+      - "packages/util/src/kete/job-mode.ts"
+      - "packages/server/src/kete/job-server.ts"
+      - "packages/server/test/kete/job-helper-e2e.test.ts"
+      - ".github/workflows/kete-root-helper.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/kete-root-helper/go.mod
+          cache-dependency-path: packages/kete-root-helper/go.sum
+
+      - name: Go vet and unit tests
+        working-directory: packages/kete-root-helper
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Linux integration tests (root, a real second user, cgroup v2)
+        working-directory: packages/kete-root-helper
+        run: sudo env "PATH=$PATH" bash scripts/integration.sh
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: AC5 end to end (the real helper, the real TypeScript client)
+        working-directory: packages/kete-root-helper
+        run: bash scripts/e2e.sh

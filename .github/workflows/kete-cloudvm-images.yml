@@ -1,0 +1,405 @@
+# Kete-owned. Builds the cloudvm provider images of a release (kete-code-platform ADR 0023 rules 18
+# and 21; packages/kete-job-image/packer/README.md). Called by kete-release.yml after the job image
+# is published and signed (tags only), or run by hand for a release tag (e.g. after a provider's
+# credentials were added). Kept in its own file, apart from the release's own jobs.
+#
+#   kernel     the cloudvm kernel for amd64 and arm64 (packages/kete-job-host/kernel/build.sh
+#              --variant cloudvm: pinned Linux LTS, checked-in configuration, reproducible), read-only
+#   disk       verifies the job image's cosign signature against kete-release.yml on this very tag,
+#              then builds one base disk per architecture (packer/scripts/build-disk.sh) and saves
+#              them as an artifact with their SHA-256; read-only
+#   gcp, digitalocean, hetzner, oci
+#              tags only: one job per provider in the `cloudvm-images` environment, whose
+#              deployment rule must allow only tags matching kete-v* (Settings → Environments →
+#              cloudvm-images → Deployment branches and tags: "Selected", tag pattern `kete-v*`), so
+#              no branch run can read its credentials. Each credential is in the env of only the
+#              step that checks it is configured and the step that imports. When that provider's
+#              image-builder credential is configured, the job checks the disk
+#              against its manifest and imports it with Packer (description or tag
+#              `kete-job-image=<index digest>`, which the platform's adapters check); when it isn't,
+#              the job says so and does nothing. The image ids go to the job summary: set the
+#              platform's <PROVIDER>_JOBS_IMAGE and KETE_JOB_IMAGE together in one deploy.
+#
+# The image-builder credentials are never the platform's launcher credentials (the providers' setup
+# docs in kete-code-platform docs/integrations/*-jobs.md, "Image builder").
+name: kete-cloudvm-images
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "The release tag, e.g. kete-v0.4.0"
+        type: string
+        required: true
+      job_image:
+        description: "The release's job image index: ghcr.io/kete-org/kete-job@sha256:<64 hex>"
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag, e.g. kete-v0.4.0 (run this workflow from that tag)"
+        required: true
+      job_image:
+        description: "The release's job image index (kete-job-image.digests 'index' line), by digest"
+        required: true
+
+concurrency:
+  group: kete-cloudvm-images-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag }}
+  JOB_IMAGE: ${{ inputs.job_image }}
+  PACKER_VERSION: 1.16.1
+  PACKER_SHA256: af38a9e93e4ed1b9ca68206ae969c64c300c82a3dde46a780dfa629f0867f651
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.save.outputs.sha256 }}
+    steps:
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^kete-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::tag must be kete-vX.Y.Z"; exit 1; }
+          [[ "$JOB_IMAGE" =~ ^ghcr\.io/kete-org/kete-job@sha256:[0-9a-f]{64}$ ]] || { echo "::error::job_image must be pinned by digest"; exit 1; }
+          [ "$GITHUB_REF" = "refs/tags/$TAG" ] || { echo "::error::run this workflow from the tag $TAG (it runs from $GITHUB_REF)"; exit 1; }
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Build the cloudvm kernels
+        run: |
+          set -euo pipefail
+          packages/kete-job-host/kernel/check-config.sh
+          for arch in amd64 arm64; do
+            packages/kete-job-host/kernel/build.sh "$arch" --variant cloudvm --out "$RUNNER_TEMP/kernels"
+          done
+          ls -l "$RUNNER_TEMP/kernels"
+
+      - name: Save the kernels
+        id: save
+        run: |
+          set -euo pipefail
+          tar -C "$RUNNER_TEMP/kernels" -cf "$RUNNER_TEMP/kete-cloudvm-kernels.tar" .
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/kete-cloudvm-kernels.tar" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the kernels
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-cloudvm-kernels
+          path: ${{ runner.temp }}/kete-cloudvm-kernels.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  disk:
+    needs: [kernel]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.save.outputs.sha256 }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Download the kernels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kete-cloudvm-kernels
+          path: ${{ runner.temp }}/in
+
+      - name: Verify the kernels artifact
+        env:
+          SUM: ${{ needs.kernel.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SUM" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the kernel job reported no checksum"; exit 1; }
+          echo "$SUM  $RUNNER_TEMP/in/kete-cloudvm-kernels.tar" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/kernels"
+          tar -C "$RUNNER_TEMP/kernels" -xf "$RUNNER_TEMP/in/kete-cloudvm-kernels.tar"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # Only an image signed by kete-release.yml on this tag (ADR 0023 rule 17).
+      - name: Build the base disks
+        run: |
+          set -euo pipefail
+          identity="^https://github\\.com/kete-org/ketecode/\\.github/workflows/kete-release\\.yml@refs/tags/${TAG//./\\.}\$"
+          for arch in amd64 arm64; do
+            bash packages/kete-job-image/packer/scripts/build-disk.sh --arch "$arch" --job-image "$JOB_IMAGE" \
+              --kernel-dir "$RUNNER_TEMP/kernels" --out "$RUNNER_TEMP/disks" --identity-regexp "$identity"
+          done
+          ls -ls "$RUNNER_TEMP/disks"
+
+      - name: Save the disks
+        id: save
+        run: |
+          set -euo pipefail
+          tar -C "$RUNNER_TEMP/disks" -S -cf - . | gzip -1 > "$RUNNER_TEMP/kete-cloudvm-disks.tar.gz"
+          ls -lh "$RUNNER_TEMP/kete-cloudvm-disks.tar.gz"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/kete-cloudvm-disks.tar.gz" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### cloudvm base disks ($TAG)"
+            for m in "$RUNNER_TEMP"/disks/*.json; do echo '```json'; cat "$m"; echo '```'; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the disks
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-cloudvm-disks
+          path: ${{ runner.temp }}/kete-cloudvm-disks.tar.gz
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  gcp:
+    # Tags only (the cloudvm-images environment is also restricted to kete-v* tags).
+    if: startsWith(github.ref, 'refs/tags/kete-v')
+    needs: [disk]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: cloudvm-images
+    permissions:
+      contents: read
+    steps:
+      - name: Credentials
+        id: creds
+        env:
+          GCP_KEY: ${{ secrets.GCP_IMAGE_BUILDER_KEY }}
+          GCP_PROJECT: ${{ vars.GCP_IMAGE_PROJECT }}
+          GCP_BUCKET: ${{ vars.GCP_IMAGE_BUCKET }}
+        run: |
+          if [ -n "$GCP_KEY" ] && [ -n "$GCP_PROJECT" ] && [ -n "$GCP_BUCKET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::GCP image builder not configured (secret GCP_IMAGE_BUILDER_KEY, variables GCP_IMAGE_PROJECT, GCP_IMAGE_BUCKET): no GCP image built"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.creds.outputs.enabled == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Disks and Packer
+        if: steps.creds.outputs.enabled == 'true'
+        uses: ./.github/actions/kete-cloudvm-setup
+        with:
+          disks-sha256: ${{ needs.disk.outputs.sha256 }}
+
+      - name: Import into GCP
+        if: steps.creds.outputs.enabled == 'true'
+        env:
+          GCP_KEY: ${{ secrets.GCP_IMAGE_BUILDER_KEY }}
+          GCP_PROJECT: ${{ vars.GCP_IMAGE_PROJECT }}
+          GCP_BUCKET: ${{ vars.GCP_IMAGE_BUCKET }}
+        working-directory: packages/kete-job-image/packer
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/gcp-key.json"
+          printf '%s' "$GCP_KEY" > "$key"
+          trap 'rm -f "$key"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$key"
+          for arch in amd64 arm64; do
+            packer build -only='gcp.*' -var arch="$arch" -var job_image="$JOB_IMAGE" -var disk_dir="$RUNNER_TEMP/disks" \
+              -var gcp_project="$GCP_PROJECT" -var gcp_bucket="$GCP_BUCKET" .
+            short="${JOB_IMAGE##*sha256:}"
+            echo "GCP ($arch): GCP_JOBS_IMAGE=projects/$GCP_PROJECT/global/images/kete-cloudvm-$arch-${short:0:12}, KETE_JOB_IMAGE=$JOB_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  digitalocean:
+    # Tags only (the cloudvm-images environment is also restricted to kete-v* tags).
+    if: startsWith(github.ref, 'refs/tags/kete-v')
+    needs: [disk]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: cloudvm-images
+    permissions:
+      contents: read
+    steps:
+      - name: Credentials
+        id: creds
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DO_IMAGE_BUILDER_TOKEN }}
+          DIGITALOCEAN_SPACES_ACCESS_KEY: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+          DIGITALOCEAN_SPACES_SECRET_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+          DO_SPACES_BUCKET: ${{ vars.DO_SPACES_BUCKET }}
+          DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION }}
+          DO_IMAGE_REGIONS: ${{ vars.DO_IMAGE_REGIONS }}
+        run: |
+          if [ -n "$DIGITALOCEAN_TOKEN" ] && [ -n "$DIGITALOCEAN_SPACES_ACCESS_KEY" ] && [ -n "$DIGITALOCEAN_SPACES_SECRET_KEY" ] \
+            && [ -n "$DO_SPACES_BUCKET" ] && [ -n "$DO_SPACES_REGION" ] && [ -n "$DO_IMAGE_REGIONS" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::DigitalOcean image builder not configured (secrets DO_IMAGE_BUILDER_TOKEN, DO_SPACES_ACCESS_KEY, DO_SPACES_SECRET_KEY; variables DO_SPACES_BUCKET, DO_SPACES_REGION, DO_IMAGE_REGIONS as a JSON list): no DigitalOcean image built"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.creds.outputs.enabled == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Disks and Packer
+        if: steps.creds.outputs.enabled == 'true'
+        uses: ./.github/actions/kete-cloudvm-setup
+        with:
+          disks-sha256: ${{ needs.disk.outputs.sha256 }}
+
+      # DigitalOcean has no arm64 Droplets.
+      - name: Import into DigitalOcean
+        if: steps.creds.outputs.enabled == 'true'
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DO_IMAGE_BUILDER_TOKEN }}
+          DIGITALOCEAN_SPACES_ACCESS_KEY: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+          DIGITALOCEAN_SPACES_SECRET_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+          DO_SPACES_BUCKET: ${{ vars.DO_SPACES_BUCKET }}
+          DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION }}
+          DO_IMAGE_REGIONS: ${{ vars.DO_IMAGE_REGIONS }}
+        working-directory: packages/kete-job-image/packer
+        run: |
+          set -euo pipefail
+          packer build -only='digitalocean.*' -var arch=amd64 -var job_image="$JOB_IMAGE" -var disk_dir="$RUNNER_TEMP/disks" \
+            -var do_spaces_bucket="$DO_SPACES_BUCKET" -var do_spaces_region="$DO_SPACES_REGION" -var "do_regions=$DO_IMAGE_REGIONS" . \
+            | tee "$RUNNER_TEMP/packer.log"
+          echo "DigitalOcean (amd64): DO_JOBS_IMAGE=<the image id above: $(grep -o 'ID: [0-9]*' "$RUNNER_TEMP/packer.log" | tail -n1)>, KETE_JOB_IMAGE=$JOB_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+
+  hetzner:
+    # Tags only (the cloudvm-images environment is also restricted to kete-v* tags).
+    if: startsWith(github.ref, 'refs/tags/kete-v')
+    needs: [disk]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: cloudvm-images
+    permissions:
+      contents: read
+    steps:
+      - name: Credentials
+        id: creds
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_IMAGE_BUILDER_TOKEN }}
+          HCLOUD_LOCATION: ${{ vars.HCLOUD_IMAGE_LOCATION }}
+        run: |
+          if [ -n "$HCLOUD_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Hetzner image builder not configured (secret HCLOUD_IMAGE_BUILDER_TOKEN; variable HCLOUD_IMAGE_LOCATION optional): no Hetzner snapshot built"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.creds.outputs.enabled == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Disks and Packer
+        if: steps.creds.outputs.enabled == 'true'
+        uses: ./.github/actions/kete-cloudvm-setup
+        with:
+          disks-sha256: ${{ needs.disk.outputs.sha256 }}
+
+      - name: Snapshot on Hetzner Cloud
+        if: steps.creds.outputs.enabled == 'true'
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_IMAGE_BUILDER_TOKEN }}
+          HCLOUD_LOCATION: ${{ vars.HCLOUD_IMAGE_LOCATION }}
+        working-directory: packages/kete-job-image/packer
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            packer build -only='hetzner.*' -var arch="$arch" -var job_image="$JOB_IMAGE" -var disk_dir="$RUNNER_TEMP/disks" \
+              -var hcloud_location="${HCLOUD_LOCATION:-fsn1}" . | tee "$RUNNER_TEMP/packer-$arch.log"
+            echo "Hetzner ($arch): HCLOUD_JOBS_IMAGE=<the snapshot id: $(grep -o 'ID: [0-9]*' "$RUNNER_TEMP/packer-$arch.log" | tail -n1)>, KETE_JOB_IMAGE=$JOB_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  oci:
+    # Tags only (the cloudvm-images environment is also restricted to kete-v* tags).
+    if: startsWith(github.ref, 'refs/tags/kete-v')
+    needs: [disk]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: cloudvm-images
+    permissions:
+      contents: read
+    steps:
+      - name: Credentials
+        id: creds
+        env:
+          # The OCI CLI reads these (API key authentication of the image-builder user).
+          OCI_CLI_USER: ${{ secrets.OCI_IMAGE_BUILDER_USER }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_IMAGE_BUILDER_TENANCY }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_IMAGE_BUILDER_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_IMAGE_BUILDER_KEY }}
+          OCI_CLI_REGION: ${{ vars.OCI_IMAGE_REGION }}
+          OCI_COMPARTMENT: ${{ vars.OCI_IMAGE_COMPARTMENT }}
+          OCI_NAMESPACE: ${{ vars.OCI_IMAGE_NAMESPACE }}
+          OCI_BUCKET: ${{ vars.OCI_IMAGE_BUCKET }}
+        run: |
+          if [ -n "$OCI_CLI_USER" ] && [ -n "$OCI_CLI_TENANCY" ] && [ -n "$OCI_CLI_FINGERPRINT" ] && [ -n "$OCI_CLI_KEY_CONTENT" ] \
+            && [ -n "$OCI_CLI_REGION" ] && [ -n "$OCI_COMPARTMENT" ] && [ -n "$OCI_NAMESPACE" ] && [ -n "$OCI_BUCKET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::OCI image builder not configured (secrets OCI_IMAGE_BUILDER_USER, _TENANCY, _FINGERPRINT, _KEY; variables OCI_IMAGE_REGION, OCI_IMAGE_COMPARTMENT, OCI_IMAGE_NAMESPACE, OCI_IMAGE_BUCKET): no OCI image built"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.creds.outputs.enabled == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Disks and Packer
+        if: steps.creds.outputs.enabled == 'true'
+        uses: ./.github/actions/kete-cloudvm-setup
+        with:
+          disks-sha256: ${{ needs.disk.outputs.sha256 }}
+
+      - name: OCI CLI and qemu-img
+        if: steps.creds.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends qemu-utils >/dev/null
+          python3 -m pip install --quiet --user 'oci-cli==3.94.1'
+
+      - name: Import into OCI
+        if: steps.creds.outputs.enabled == 'true'
+        env:
+          # The OCI CLI reads these (API key authentication of the image-builder user).
+          OCI_CLI_USER: ${{ secrets.OCI_IMAGE_BUILDER_USER }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_IMAGE_BUILDER_TENANCY }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_IMAGE_BUILDER_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_IMAGE_BUILDER_KEY }}
+          OCI_CLI_REGION: ${{ vars.OCI_IMAGE_REGION }}
+          OCI_COMPARTMENT: ${{ vars.OCI_IMAGE_COMPARTMENT }}
+          OCI_NAMESPACE: ${{ vars.OCI_IMAGE_NAMESPACE }}
+          OCI_BUCKET: ${{ vars.OCI_IMAGE_BUCKET }}
+        working-directory: packages/kete-job-image/packer
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            packer build -only='oci.*' -var arch="$arch" -var job_image="$JOB_IMAGE" -var disk_dir="$RUNNER_TEMP/disks" . \
+              | tee "$RUNNER_TEMP/packer-$arch.log"
+            echo "OCI ($arch): $(grep -o 'OCI_JOBS_IMAGE=[^ ]*' "$RUNNER_TEMP/packer-$arch.log" | tail -n1), KETE_JOB_IMAGE=$JOB_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          done

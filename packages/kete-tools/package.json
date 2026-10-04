@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/package",
+  "name": "@ketecode/tools",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Kete Code maintenance tooling: upstream (OpenCode) sync, upstream-hygiene checks, local verification, release builds and public distribution.",
+  "scripts": {
+    "upstream:sync": "bun src/sync.ts",
+    "upstream:check": "bun src/check.ts",
+    "verify": "bun src/verify.ts",
+    "release": "bun src/release.ts",
+    "distribute": "bun src/distribute.ts",
+    "role-check": "bun src/role-check.ts",
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@opencode/util": "workspace:*"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "@typescript/native-preview": "catalog:"
+  }
+}

@@ -1,0 +1,1 @@
+console=ttyS0 reboot=k panic=1 pci=off quiet loglevel=1 init=/usr/local/libexec/kete/kete-job-init ip=10.200.0.10::10.200.0.9:255.255.255.252::eth0:off:1.1.1.1:8.8.8.8

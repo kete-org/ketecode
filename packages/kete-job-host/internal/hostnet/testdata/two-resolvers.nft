@@ -1,0 +1,49 @@
+table inet kete-job-host
+delete table inet kete-job-host
+table inet kete-job-host {
+	set blocked4 {
+		type ipv4_addr
+		flags interval
+		elements = { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4 }
+	}
+	set resolvers4 {
+		type ipv4_addr
+		elements = { 1.1.1.1, 8.8.8.8 }
+	}
+	# Guest -> the host itself (the agent included): every protocol, every address.
+	chain input {
+		type filter hook input priority filter - 10; policy accept;
+		iifname "kjh*" drop
+	}
+	chain forward {
+		type filter hook forward priority filter - 10; policy accept;
+		iifname "kjh*" jump guest_out
+		oifname "kjh*" jump guest_in
+	}
+	# Guest -> elsewhere: IPv4 from the guest's own address, out of the uplink only (no other
+	# guest, no other host interface), no private or special range, then only DNS to the
+	# resolvers and TCP 443.
+	chain guest_out {
+		meta nfproto != ipv4 drop
+		# No spoofing: the source must route back through the tap it came in on (its /30).
+		fib saddr . iif oif missing drop
+		ip saddr != 10.200.0.0/16 drop
+		oifname != "eth0" drop
+		ip daddr @blocked4 drop
+		ip daddr @resolvers4 udp dport 53 accept
+		ip daddr @resolvers4 tcp dport 53 accept
+		tcp dport 443 accept
+		drop
+	}
+	# Elsewhere -> guest: only replies from the uplink.
+	chain guest_in {
+		meta nfproto != ipv4 drop
+		iifname != "eth0" drop
+		ct state established,related accept
+		drop
+	}
+	chain postrouting {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "eth0" ip saddr 10.200.0.0/16 masquerade
+	}
+}

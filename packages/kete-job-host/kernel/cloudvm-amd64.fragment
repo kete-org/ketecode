@@ -1,0 +1,3 @@
+# Kete-owned. cloudvm additions for amd64 only (see cloudvm.fragment): the CMOS RTC as a wall clock
+# fallback to kvm-clock.
+CONFIG_RTC_DRV_CMOS=y

@@ -1,0 +1,6 @@
+# kete_change start: Kete Code maintainers own the repository; upstream's owners are kept commented for syncs
+* @magbotta
+# kete_change end
+# web + desktop packages
+# packages/app/      @Hona @Brendonovich  # kete_change
+# packages/desktop/  @Hona @Brendonovich  # kete_change
