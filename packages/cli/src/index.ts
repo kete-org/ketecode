@@ -63,7 +63,9 @@ const Handlers = Runtime.handlers(Commands, {
     update: () => import("./commands/handlers/plugin/update"),
     remove: () => import("./commands/handlers/plugin/remove"),
   },
-  models: () => import("./commands/handlers/models"),
+  // kete_change start: `kete models pull` (kete/models-pull.ts)
+  models: { $: () => import("./commands/handlers/models"), pull: () => import("./kete/models-pull") },
+  // kete_change end
   stats: () => import("./commands/handlers/stats"),
   mini: () => import("./commands/handlers/mini"),
   run: () => import("./commands/handlers/run"),

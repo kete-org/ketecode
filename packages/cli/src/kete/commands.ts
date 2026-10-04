@@ -30,6 +30,15 @@ export const Offline = GlobalFlag.setting("offline")({
   ),
 })
 
+/** `kete models pull <name>`: a subcommand of upstream's `models` command (commands/commands.ts). */
+export const modelsPull = Spec.make("pull", {
+  description: "Download a model into Ollama (the Ollama server Kete Code uses: config, KETE_OLLAMA_HOST, OLLAMA_HOST or localhost)",
+  params: {
+    name: Argument.string("name").pipe(Argument.withDescription("Ollama model name, e.g. llama3.2 or qwen2.5-coder:7b")),
+    ...ServerParams,
+  },
+})
+
 export const specs = [
   Spec.make("login", {
     description: `Sign in to your ${Brand.displayName} account in the browser (for model provider keys, use \`${Brand.cliName} auth login\`)`,

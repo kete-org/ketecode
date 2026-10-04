@@ -72,6 +72,7 @@ inherit the bridged values. Consequences for future merges:
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cli/src/index.ts`                     | Imports the env bridge first; the `upgrade` handler and the `Updater` layer are swapped for the Kete-owned verified updater (`kete/upgrade.ts`, `KeteUpdater.layer`), `uninstall` for `kete/uninstall-disabled.ts` (dependency injection at the existing seam) |
 | `cli/src/commands/handlers/default.ts` | No update UI in the TUI while `Brand.updatesAvailable` is false (it is `true` since ADR 0009)                                                                                     |
+| `cli/src/commands/commands.ts`         | `upgrade`/`uninstall` descriptions name Kete Code (`uninstall`: "not yet available")                                                                                              |
 | `cli/script/build.ts`                  | Compiled binary name, `OPENCODE_CLI_NAME` define and `--user-agent` → `Brand.cliName`; `KETE_TARGET` define (the release target `kete upgrade` downloads, e.g. `linux-x64-baseline`) |
 | `tui/src/component/dialog-update.tsx`, `tui/test/component/dialog-update.test.tsx` | The update dialog's four "OpenCode" strings → `Brand.displayName` (the test expects "Kete Code") |
 | `cli/package.json`                     | **No marker possible (JSON):** `bin.opencode` → `bin.kete`                                                                                                                        |
@@ -263,6 +264,7 @@ provider keys; both `--help` texts point at the other.
 
 | File                           | Change                                                                                       |
 | ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `cli/src/commands/commands.ts` | Imports and spreads `KeteCommands.specs`; the `auth` description points to `kete login`     |
 | `cli/src/index.ts`             | Handler map entries for `login`, `logout` and `whoami`                                      |
 
 Upstream test edit: `cli/test/auth.test.ts` expects the new `auth` description.
@@ -773,6 +775,7 @@ a Kete sibling (`cli/src/kete/job-standalone.ts`) reusing upstream's `selfComman
 | `server/src/auth.ts` | Import; the password is compared with `KeteConstantTime.equal` instead of `===` (everywhere, not only in job mode) | the comparison itself is the defect |
 | `server/src/middleware/authorization.ts` | Import; `credentialFromRequest` returns the empty credential when `?auth_token=` is present in job mode | credential extraction is private to this file |
 | `cli/src/server-process.ts` | Import; `Options.socket`; `KeteJobServe.prepare` block at the top of `processEffect`; the password comes from it in job mode; `socket` passed to `start` | the password is read and the server started inside `processEffect`, with no hook between |
+| `cli/src/commands/commands.ts` | `serve`'s `--socket` flag (job mode only) | `serve`'s Spec is upstream |
 | `cli/src/commands/handlers/serve.ts` | Passes `socket` to `ServerProcess.run` | maps flags to `ServerProcess.run` |
 
 **Sync checklist**, on top of the usual one:
@@ -819,7 +822,7 @@ Remote and LAN Ollama / LM Studio / vLLM hosts, a status RPC, models without too
 local-models,offline}.ts`, and the offline no-ops in `core/src/kete/{gateway,run-checks}.ts` and
 `core/src/kete/sync/plugin.ts`. `schema/src/config/kete.ts` (`kete.offline`) is Kete-owned too.
 Pass A (core) and pass B (CLI) rows are below; the TUI and web UI rows are added by a later pass.
-Kete-owned CLI code: `cli/src/kete/{offline,offline-startup}.ts` and the offline
+Kete-owned CLI code: `cli/src/kete/{offline,offline-startup,models-pull,models-list}.ts` and the offline
 refusals in `cli/src/kete/{login,sync,upgrade,updater}.ts`.
 
 | File | Change | Why no seam |
@@ -830,9 +833,11 @@ refusals in `cli/src/kete/{login,sync,upgrade,updater}.ts`.
 | `core/src/session/runner/llm.ts` | The existing marked `checks({...})` call also passes `model: loaded.model` | the runner check needs the resolved model; no hook can fail a step |
 | `core/src/session/runner/model.ts` | Import; `ModelUnavailableError.message` appends `KeteOffline.unavailableHint()` (empty unless offline) | a model removed by offline mode fails here, before any Kete code runs |
 | `core/src/plugin/provider/opencode.ts` | Import; `load` returns the last snapshot instead of fetching the Console config while `KeteOffline.enabled()` | the plugin's own network call; no switch exists |
-| `cli/src/index.ts` | `import "./kete/offline-startup"` inside the existing marked first-import block (right after the env bridge) | offline mode must be decided before any module reads the environment, and only the entry point runs first |
+| `cli/src/index.ts` | `import "./kete/offline-startup"` inside the existing marked first-import block (right after the env bridge); `Handlers.models` becomes `{ $, pull }` (marked block) | offline mode must be decided before any module reads the environment, and only the entry point runs first; the handler map is the only place a subcommand's handler is registered |
 | `cli/src/framework/runtime.ts` | Import; `Command.withGlobalFlags([PrintLogs, KeteCommands.Offline])` | global flags are registered only here; the flag's value is acted on before parsing (`kete/offline-startup.ts`), this makes the parser accept `--offline` on every command and shows it in help |
+| `cli/src/commands/commands.ts` | `models` spec gains `commands: [KeteCommands.modelsPull]` (1 line) | the command tree has no extension point for a subcommand of an upstream command |
 | `cli/src/services/server-connection.ts` | Import; `resolve` runs its input through `KeteCliOffline.connection` first (offline: private server; `--server` refused) | the connection choice is made only here; the background service may have been started online and a remote server's mode can't be checked |
+| `cli/src/commands/handlers/models.ts` | Import; the output lines come from `KeteModelsList.lines(models, isTTY)` (local models get `tools:/vision:/ctx:` on a TTY; piped output unchanged) | the handler builds its lines inline; no hook |
 
 **Sync checklist**, on top of the usual one:
 

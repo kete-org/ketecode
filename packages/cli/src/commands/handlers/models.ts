@@ -5,6 +5,7 @@ import { EOL } from "node:os"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { ServerConnection } from "../../services/server-connection"
+import { KeteModelsList } from "../../kete/models-list" // kete_change
 
 export default Runtime.handler(
   Commands.commands.models,
@@ -18,9 +19,7 @@ export default Runtime.handler(
       headers: Service.headers(server.endpoint),
     })
     const response = yield* Effect.promise(() => client.model.list({ location: { directory: process.cwd() } }))
-    const models = response.data
-      .map((model) => `${model.providerID}/${model.id}`)
-      .toSorted((a, b) => a.localeCompare(b))
+    const models = KeteModelsList.lines(response.data, process.stdout.isTTY === true) // kete_change: local model details on a TTY
     if (models.length > 0) process.stdout.write(models.join(EOL) + EOL)
   }),
 )
