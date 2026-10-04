@@ -660,6 +660,7 @@ with a throwaway HOME and XDG directories and without credentials in the environ
 | `.github/CODEOWNERS` | `* @magbotta` added; upstream's two owner lines commented out (kept for syncs) |
 | `.github/ISSUE_TEMPLATE/config.yml` | Contact links: Kete's private security reporting and support email instead of OpenCode's Discord |
 | `.github/ISSUE_TEMPLATE/bug-report.yml` | The version field asks for the Kete Code version (`kete --version`); its `id` is unchanged |
+| `.gitignore` | Ignores `docs/status/` (local status reports, never committed) |
 
 Kete's own public-facing files are new and Kete-owned: `.github/README.md`, `SECURITY.md`,
 `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (GitHub shows them instead of upstream's root files, which
