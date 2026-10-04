@@ -69,6 +69,10 @@ export class Workflow extends Schema.Class<Workflow>("ConfigKete.Workflow")({
 }) {}
 
 export class Info extends Schema.Class<Info>("ConfigKete.Info")({
+  offline: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Offline mode: only local models (Ollama, LM Studio, vLLM, and providers on this machine or a private network) are used, and platform sync, gateway calls, update checks, remote MCP servers and web fetch/search are off. Cached organization policy still applies. The --offline flag and KETE_OFFLINE do the same. Only the global config can turn off the model catalog fetch and update checks; a project config turns off everything else.",
+  }),
   budget: Budget.pipe(optional).annotate({ description: "Spending limits" }),
   platform: Platform.pipe(optional).annotate({ description: "Kete platform connection" }),
   runtime: Runtime.pipe(optional).annotate({ description: "Where this runtime runs" }),
