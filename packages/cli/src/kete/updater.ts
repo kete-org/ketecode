@@ -16,6 +16,7 @@
 //   rolling back if that fails). An interrupted upgrade leaves the old binary in place.
 import { Brand } from "@opencode/util/kete/brand"
 import { Global } from "@opencode/util/global"
+import { KeteOffline } from "@opencode/util/kete/offline"
 import { execFile } from "node:child_process"
 import crypto from "node:crypto"
 import { constants as fsConstants } from "node:fs"
@@ -311,7 +312,10 @@ export async function install(deps: Deps, version: string, signal: AbortSignal =
   }
 }
 
-const isDisabled = () => ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "")
+// Offline mode also sets OPENCODE_DISABLE_AUTOUPDATE (offline-startup.ts); checking the flag itself too
+// keeps the background check off even if that switch is cleared.
+const isDisabled = () =>
+  ["1", "true"].includes(process.env.OPENCODE_DISABLE_AUTOUPDATE?.toLowerCase() ?? "") || KeteOffline.enabled()
 
 async function readPolicy(configDirectory: string): Promise<Policy> {
   const values = await Promise.all(
@@ -390,6 +394,7 @@ export function make(deps: Deps, configDirectory: string) {
       Effect.catch((error) => Effect.logWarning("update check failed", { error }).pipe(Effect.as(undefined))),
     ),
     check: Effect.fn("cli.kete-updater.check")(function* () {
+      if (KeteOffline.enabled()) return { type: "unavailable" as const, message: KeteOffline.refuse(`${Brand.cliName} upgrade`) }
       const installed = yield* Effect.promise(() => detect(deps))
       if (installed.kind === "extension" || installed.kind === "source")
         return { type: "unavailable" as const, message: managedMessages[installed.kind] }

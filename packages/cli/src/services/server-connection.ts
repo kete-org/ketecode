@@ -6,6 +6,7 @@ import { Effect, Redacted } from "effect"
 import { Env } from "../env"
 import { ServiceConfig } from "./service-config"
 import { Standalone } from "./standalone"
+import { KeteCliOffline } from "../kete/offline" // kete_change
 
 export type Args = {
   readonly server?: string
@@ -19,7 +20,12 @@ export type Resolved = {
   readonly service?: ReturnType<typeof managedService>
 }
 
-export const resolve = Effect.fn("cli.server-connection.resolve")(function* (args: Args) {
+export const resolve = Effect.fn("cli.server-connection.resolve")(function* (input: Args) { // kete_change
+  // kete_change start: offline mode forces a private server and refuses --server (kete/offline.ts)
+  const offline = KeteCliOffline.connection(input)
+  if (!offline.ok) return yield* Effect.fail(new Error(offline.message))
+  const args = offline.args
+  // kete_change end
   if (args.server !== undefined && args.standalone)
     return yield* Effect.fail(new Error("--server and --standalone cannot be combined"))
   if (args.server !== undefined) {

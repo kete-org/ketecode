@@ -2,6 +2,7 @@
 
 // kete_change start: must stay the first import (KETE_* env bridge runs before any module reads env)
 import "./kete/env-bridge"
+import "./kete/offline-startup"
 import { KeteUpdater } from "./kete/updater"
 // kete_change end
 import { NodeRuntime, NodeServices } from "@effect/platform-node"

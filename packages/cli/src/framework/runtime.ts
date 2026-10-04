@@ -1,6 +1,7 @@
 import { Effect, FileSystem, Scope } from "effect"
 import { Command } from "effect/unstable/cli"
 import { PrintLogs } from "../commands/commands"
+import { KeteCommands } from "../kete/commands" // kete_change
 import { Spec } from "./spec"
 import { Global } from "@opencode/util/global"
 import { Updater } from "../services/updater"
@@ -82,7 +83,7 @@ export function handlers<const Root extends Spec.Any>(root: Root, handlers: Hand
 }
 
 export function run(commands: Spec.Any, handlers: ReadonlyArray<LazyHandler>, options: { readonly version: string }) {
-  return Command.run(provide(commands, handlers).pipe(Command.withGlobalFlags([PrintLogs])), options) as Effect.Effect<
+  return Command.run(provide(commands, handlers).pipe(Command.withGlobalFlags([PrintLogs, KeteCommands.Offline])), options) as Effect.Effect< // kete_change
     void,
     unknown,
     Command.Environment

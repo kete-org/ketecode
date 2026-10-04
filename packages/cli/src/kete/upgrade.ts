@@ -13,11 +13,13 @@ import { OPENCODE_VERSION } from "../version"
 import { ReleaseVerify } from "./release-verify"
 import { KeteUpdater } from "./updater"
 import { progress as startProgress } from "./progress"
+import { KeteCliOffline } from "./offline"
 
 export default Runtime.handler(
   Commands.commands.upgrade,
   Effect.fn("cli.upgrade")(
     function* (input) {
+      if (KeteCliOffline.refused(`${Brand.cliName} upgrade`)) return
       intro("Upgrade")
       const updater = yield* Updater.Service
       const detected = yield* updater.method()
