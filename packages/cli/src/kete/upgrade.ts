@@ -2,7 +2,7 @@
 // (or the given) public release over a directly installed binary, verified by ./updater.ts: signed
 // SHA256SUMS (pinned Ed25519 key), archive checksum, no downgrade. Homebrew, npm and extension installs
 // are told how they update instead; nothing here runs a package manager.
-import { intro, log, outro, spinner } from "@clack/prompts"
+import { intro, log, outro } from "@clack/prompts"
 import { Brand } from "@opencode/util/kete/brand"
 import { Effect, Option } from "effect"
 import { Commands } from "../commands/commands"
@@ -12,6 +12,7 @@ import { handlePromptErrors } from "../ui/prompt"
 import { OPENCODE_VERSION } from "../version"
 import { ReleaseVerify } from "./release-verify"
 import { KeteUpdater } from "./updater"
+import { progress as startProgress } from "./progress"
 
 export default Runtime.handler(
   Commands.commands.upgrade,
@@ -61,7 +62,7 @@ export default Runtime.handler(
         )
 
       log.info(`From ${OPENCODE_VERSION} → ${target}`)
-      const progress = spinner()
+      const progress = startProgress()
       progress.start("Downloading and verifying...")
       yield* updater.upgrade("curl", target).pipe(
         Effect.tap(() => Effect.sync(() => progress.stop(`Installed ${Brand.displayName} ${target}`))),

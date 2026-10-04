@@ -1,7 +1,7 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: 7cc73e83d2
+verified-at: f91a61f0e8
 ---
 ## Quick answers
 - Where does `kete job run` get the audit log in job mode (piece A3)? From the relay, not a file:
@@ -97,6 +97,7 @@ verified-at: 7cc73e83d2
   an unattended run nobody reads the title of. `job-run.ts` truncates `spec.prompt` to 80 chars for
   it; `kete run`'s own `resolveSessionTarget` (`session-target.ts`) still lets upstream generate one.
 - How does `kete upgrade` work, and what does it trust? `packages/cli/src/kete/upgrade.ts` (handler) over `KeteUpdater` (`kete/updater.ts`, ADR 0009): it fetches `SHA256SUMS` + `SHA256SUMS.sig` from `Brand.urls.releases` (latest: `releases/latest/download/`, a version: `releases/download/kete-v<v>/`), verifies the Ed25519 signature against `kete/update-keys.json` (`release-verify.ts`), reads the version from the signed archive names, downloads the archive for `KETE_TARGET` (a `build.ts` define), checks its SHA-256, runs `--version` on it, and renames it over the binary (Windows: rename aside + roll back). No pinned key → "unavailable"; Homebrew/npm/extension/source installs (`detect`, from the real path) are never replaced. `kete uninstall` stays disabled (`uninstall-disabled.ts`).
+- Why doesn't `kete upgrade` animate in CI or over `ssh`? `packages/cli/src/kete/progress.ts` uses the spinner only when stdout is a TTY; otherwise one start line and one end line (a spinner writing to a pipe prints every frame).
 - Why does `kete upgrade` say updates are unavailable? The binary predates the first pinned key (`kete-update-2026`, pinned 2026-10-04, PR #78; builds from `kete-v0.2.0-rc.4` on carry it), or it is a source/local build (`channel === "local"`).
 - Where's the `KETE_*`→`OPENCODE_*` env bridge? `packages/cli/src/kete/env-bridge.ts`, imported first in `packages/cli/src/index.ts:4` (must stay the first import — runs before any other module reads `process.env`).
 - How do I add a new top-level `kete` subcommand? Add a `Spec` to `packages/cli/src/kete/commands.ts`'s `specs` array (it's already spread at `packages/cli/src/commands/commands.ts:493`) and a handler entry in `packages/cli/src/index.ts`'s `Handlers` map.
