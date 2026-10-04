@@ -1,5 +1,6 @@
 import { render, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
+import { useKeteLocalModels } from "./kete/local-offer" // kete_change
 import { registerOpencodeSpinner } from "./component/register-spinner"
 import { Effect, Latch } from "effect"
 import { Service, type Endpoint } from "@opencode/client/effect/service"
@@ -493,6 +494,7 @@ function App(props: { pair?: DialogPairCredentials }) {
   const plugins = usePlugin()
   const clipboard = useClipboard()
   const terminalEnvironment = useTuiTerminalEnvironment()
+  useKeteLocalModels() // kete_change: first-run local models offer; once-per-session no-tools notice
   let paletteTimer: ReturnType<typeof setTimeout> | undefined
   const afterFrame = () => {
     // The native writer can still be flushing the frame when FRAME fires. Keep OSC probes behind visible app output.
