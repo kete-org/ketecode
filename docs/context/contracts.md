@@ -241,7 +241,7 @@ the same PR.
   (UUID), `KETE_JOB_PLATFORM_URL` (`https://` plain DNS host, port 443 or none, no path/query/
   userinfo), `KETE_JOB_CLAIM_TOKEN` (printable ASCII, 32-512 bytes), `KETE_JOB_STORAGE_HOST` (plain
   DNS host; the only host signed upload URLs may name, and not equal to the gateway, clone or
-  clone-API host) (`packages/kete-job-entrypoint/README.md` "Machine configuration"). Any other
+  (GitHub only) clone-API host) (`packages/kete-job-entrypoint/README.md` "Machine configuration"). Any other
   variable is ignored (only whether one of Fly's own `FLY_*` machine variables is set is noted, as
   one bit, a Fly signal); invalid → exit 2 with no callback.
 - **Host profiles (ADR 0023 rule 16, self-hosted P1; additive):** optional fifth variable
@@ -269,14 +269,28 @@ the same PR.
   platform's handling of an unclaimed job applies). Staging runbook: `README.md:372-405`. **`KETE_JOB_STORAGE_HOST` is new for the platform** (security
   review); the Fly adapter must set it.
 - **Callbacks as used** (kete-code-platform `docs/jobs.md` §2, under `{platform}/api/v1/jobs/{id}/`):
-  `claim` `{claim_token}` → 200 `{callback_token, deadline, platform_url, gateway_url, gateway_key,
-  clone {url, token, ref, base_sha}, spec}` (strictly validated, `README.md:146-152`; retried only
-  while no byte was written); then Bearer `callback_token`: `events` `{phase, message?,
+  `claim` `{claim_token, features: ["clone_revoke_callback"]}` → 200 `{callback_token, deadline,
+  platform_url, gateway_url, gateway_key, clone {url, token, ref, base_sha, provider?, username?},
+  spec}` (strictly validated, README "Claim response checks"; retried only while no byte was
+  written); then Bearer `callback_token`: `clone-done` `{}` → 204 (after the clone; see below);
+  `events` `{phase, message?,
   effective_timeout_minutes?, kete_cgroup_extra?}` → 204, every 30 s from claim to `done`;
   `result` (kete's result v1 bytes verbatim, or one the entrypoint writes) → 204; `uploads`
   `{bundle}` → 200 `{audit, proxy_log, bundle?}` each `{url, expires_at}`; signed-URL `PUT`
   (`application/x-ndjson` logs, `application/gzip` bundle; PUT assumed, D15); `finish`
   `{push_error?}` → 202. A 404 on any callback = gone: kill, no more callbacks.
+- **Repository providers (jobs-v1 additive, 2026-10-05; platform ADR 0024, kete-org/ketecode-portal#68):**
+  `clone.provider` absent/`github` or `harness_code` (anything else refused, field
+  `clone.provider`); `clone.username` absent (= `x-access-token`) or 1-128 printable ASCII without
+  `:`. The clone authenticates with `Authorization: Basic base64(username:token)`. GitHub: revoke
+  through GitHub's API as before, then `clone-done` best effort (a platform no-op). Harness Code:
+  **no** request to the git host's API; `clone-done` (≤ 3 tries, 5xx retried, 404 = gone) after
+  the clone, and also on clone or verify failure before the result; the clone phase reaches
+  exactly `{platform, clone host}`. Phase step `clone_done`. **Release order:** platforms before
+  #68 reject the unknown `features` field (`strictObject`), so an entrypoint with this change must
+  not ship in a release (image digest) before #68 is deployed. Shared vector:
+  `packages/kete-job-entrypoint/internal/fakeplatform/testdata/jobs-v1/claim-harness-code.json`
+  (byte copy of the platform's `docs/contracts/test-vectors/jobs-v1/`, `SHA256SUMS` beside it).
 - **Outcomes the entrypoint writes:** `error` (1), `refused` (2), `deadline` (1), `proxy_failed`
   (1), `time_limit` (3). `push_error`: `processes_alive`, `symlink`, `unreadable` (over-limit too,
   until the platform adds a value, D10), `proxy_failed`.
@@ -355,10 +369,13 @@ the same PR.
 
 ## 6e. Job API v1 and the gateway's job-key request shape
 
-- **Doc:** `docs/platform/jobs-v1.md:1` — copied from platform commit `a2e3fbf` (2026-10-02); the
-  platform's `packages/shared/src/api/v1/jobs.ts` is the source of truth. It covers the user
-  routes, the container callbacks §6d uses (claim, events incl. `kete_cgroup_extra`, result,
-  uploads, finish) and the job error codes. No kete-code mirror schema yet: the entrypoint's Go
+- **Doc:** `docs/platform/jobs-v1.md:1` — copied from platform commit `a2e3fbf` (2026-10-02),
+  plus the 2026-10-05 Harness Code hunks applied byte for byte from the platform's #68 branch
+  (`d282821`). Not byte-identical overall: earlier platform edits (error codes 429/503, upload
+  expiry text) were never copied; no check enforces equality. The platform's
+  `packages/shared/src/api/v1/jobs.ts` is the source of truth. It covers the user routes, the
+  container callbacks §6d uses (claim incl. `features`, events incl. `kete_cgroup_extra`, result,
+  uploads, finish, clone-done) and the job error codes. No kete-code mirror schema yet: the entrypoint's Go
   types (`packages/kete-job-entrypoint/internal/platform/platform.go`) are the client.
 - **Heartbeat check (ADR 0019 rule 5):** every agent-phase `events` carries `kete_cgroup_extra`
   (processes in the `kete` cgroup whose exe isn't `kete`; an unreadable exe counts), which the

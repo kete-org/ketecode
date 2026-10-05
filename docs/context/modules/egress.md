@@ -70,7 +70,8 @@ verified-at: 6d8972321a
   (user decision D2 of `docs/tasks/2026-09-30-job-entrypoint/plan.md`), only while no job-user
   process exists, reusing the same listener fds (3-5) and log fd (6, so the 10 MB cap holds across
   instances): instance 1 before claim (clone root → platform), instance 2 after claim (clone root →
-  platform, clone host, its API host; agent kete → gateway, platform; agent tool → built-in
+  platform, clone host and, for GitHub only, its API host — a Harness Code claim gets exactly
+  platform and clone host, 2026-10-05; agent kete → gateway, platform; agent tool → built-in
   registry hosts; agent/report root → platform), instance 3 in the report phase (report root →
   platform and the storage host). If the proxy died or the claim was invalid, a **report-only
   instance** (root → platform) is started before `result`; with a job process still alive
@@ -160,7 +161,8 @@ credential lifetimes remain the real bound.
 - Kernel: `nf_tables` inet with `meta skuid`, `ct state`, `th dport`, interval sets; IPv6;
   `/proc/net/tcp{,6}` (`README.md:315-320`).
 - Platform: the allowlists come from `claim` (gateway, platform API and storage hosts) plus the
-  GitHub hosts and the registry list, all via the entrypoint. Nothing is hard-coded but the
+  clone host (GitHub's revoke API host for GitHub only; none for Harness Code) and the registry
+  list, all via the entrypoint. Nothing is hard-coded but the
   registry rules.
 
 ## Rules that must not break
