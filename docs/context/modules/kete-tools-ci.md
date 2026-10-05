@@ -1,7 +1,7 @@
 ---
 module: kete-tools-ci
 paths: [packages/kete-tools/src/*, packages/kete-tools/distribution/*, .github/workflows/kete-extension-publish.yml, .github/workflows/kete-installer-smoke.yml, .github/workflows/kete-job-image.yml, packages/kete-tools/leak-allowlist.txt, .github/workflows/kete-build.yml, .github/workflows/kete-release.yml, .github/workflows/kete-root-helper.yml, .github/workflows/kete-egress.yml, .github/workflows/kete-job-entrypoint.yml, .github/workflows/kete-job-host.yml, .opencode-version]
-verified-at: 8a2747cd4d
+verified-at: a29457ec43
 ---
 
 ## Quick answers
@@ -54,10 +54,15 @@ verified-at: 8a2747cd4d
   release notes (the platform pins by
   digest). Since self-hosted P4, `kernel` (no `needs`, `contents: read`, 90 min) and
   `kernel-publish` (`needs: kernel`, tags only, `id-token: write`) build and sign the guest kernels;
-  `publish` needs `[smoke, extension, image, image-publish, kernel-publish]` and attaches them
+  `publish` needs `[smoke, extension, extension-e2e, image, image-publish, kernel-publish]` and attaches them
   Also a tag-only `cloudvm-images` job (`needs: [image-publish]`, calls `kete-cloudvm-images.yml` with the
   index digest; no secrets passed, `publish` doesn't wait for it): cloudvm kernels, base disks, per-provider
   Packer imports (`job-image` card). PR check: `kete-cloudvm-packer.yml`.
+  Since the Windsurf task, `extension-e2e` (`needs: build`, matrix `vscode`/`vscodium`, 20 min) runs
+  the extension's e2e suite (`packages/kete-vscode/script/e2e.ts --assert`) on the linux-x64 `.vsix`
+  in pinned, SHA-256-checked editor archives under xvfb; `image` needs
+  `[build, smoke, extension, extension-e2e]` and `publish` needs it too (`vscode-extension` card).
+  Bump an editor by changing its matrix `archive` and `sha256` together.
   ("Attach the guest kernels"). Find the line numbers with `grep -n "^  [a-z]*:$" .github/workflows/kete-release.yml`.
 
 - **How do I pull in a new OpenCode release?** `bun run --cwd packages/kete-tools upstream:sync
@@ -160,7 +165,8 @@ rule), §8 (build/release commands), ADR `docs/adr/0001-opencode-upstream-strate
   skips docs-only diffs.
 - `.github/workflows/kete-release.yml` — `build` (cross-compile via `release.ts`) →
   `smoke` (runs the unpacked binary per platform with a throwaway HOME) + `extension` (checks all 8
-  `.vsix` targets/versions/bundled-binary permissions) → `image` (amd64 + arm64 job images, e2e on
+  `.vsix` targets/versions/bundled-binary permissions) + `extension-e2e` (VS Code and VSCodium
+  end-to-end under xvfb) → `image` (amd64 + arm64 job images, e2e on
   amd64, smoke on arm64, read-only) → `image-publish` (tags only: load the artifact, push, index,
   cosign sign and verify) → `publish` (tag pushes only,
   `environment: registries`): draft GitHub Release, records the image digests and signing identity,

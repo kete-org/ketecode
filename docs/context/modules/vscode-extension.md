@@ -1,7 +1,7 @@
 ---
 module: vscode-extension
 paths: [packages/kete-vscode/**, packages/app/src/kete/vscode-*.ts, packages/app/src/kete/vscode-*.tsx]
-verified-at: 6c3649e3a6
+verified-at: a29457ec43
 ---
 
 ## Quick answers
@@ -45,9 +45,28 @@ verified-at: 6c3649e3a6
 - **Who else writes the session's permission mode besides the title-bar toggle?** As of this task,
   the web app's own chat-panel toggle (`packages/app/src/kete/composer-controls.tsx`'s
   `KeteModeToggle`, `mode.ts` — see the `web-app` and `permissions` cards) is a second writer of
-  `kete.permissionMode`, using the same GET-merge-PATCH pattern as `extension.ts:1205-1276`. The
+  `kete.permissionMode`, using the same GET-merge-PATCH pattern as `extension.ts:1208-1279`. The
   extension's title-bar shield still re-reads it via `session.metadata.updated` either way
   (`extension.ts:490`), so it follows whichever side changed it.
+
+- **Does it work in Windsurf, Cursor and VSCodium?** Yes, from Open VSX (the forks can't use the
+  Marketplace). Nothing assumes Microsoft's VS Code: session links use `env.uriScheme`
+  (`sessions.ts`'s `sessionLink` rejects a malformed scheme), the diagnostics tool's description
+  names `env.appName` through `editor-tools.ts`'s `editorName()` (cleaned, ≤64 chars, fallback "the
+  editor"), sign-in uses a loopback callback (no editor scheme), and there's no proposed API.
+  `test/fork.test.ts` guards all of it: no `vscode://`/"VS Code"/Marketplace literal in `src/` code
+  (comments excluded), no `enabledApiProposals`/`extensionDependencies`, no "VS Code" in
+  `contributes`, and no default keybinding on the forks' AI keys (`Cmd/Ctrl+K/L/I/E`, …). README
+  "Using Kete Code in Windsurf, Cursor or VSCodium" has the manual checklist for Windsurf/Cursor.
+- **Why is `engines.vscode` still `^1.94.0`?** It must stay at or below every current fork's base
+  (October 2026: Windsurf/Devin Desktop 1.126, Cursor 1.128, VSCodium 1.135; sources in
+  `docs/tasks/2026-10-05-windsurf/plan.md`). `@types/vscode` is pinned to the same version, so
+  typecheck proves every API used exists at the floor; `test/fork.test.ts` keeps them equal and the
+  floor ≤ 1.126. Raising the floor needs both bumped together and a check of the forks' bases.
+- **Where does the end-to-end suite run?** Locally (`bun run e2e <vsix> [--code <editor CLI>]
+  [--assert]`) and in CI: `kete-release.yml`'s `extension-e2e` job (tags and manual dispatch) runs it
+  with `--assert` on the linux-x64 `.vsix` in pinned, SHA-256-checked VS Code and VSCodium archives
+  under xvfb. Not in `kete-build.yml` (free-minutes budget).
 
 ## Purpose
 
@@ -86,8 +105,8 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
   includes `kete.panel`); `pairingUrl` puts the password only in the URL fragment (`chat.ts:15-18`).
 - `events.ts` (146) — SSE client (`EventStream`) for `/api/event`; `reduce()` turns events into
   `Attention` (pending approvals, busy sessions).
-- `editor-tools.ts` (126) — JSON-RPC/MCP protocol handling for the diagnostics tool, plus
-  `authorized()` (bearer token + exact loopback Host + no Origin, `editor-tools.ts:98-106`).
+- `editor-tools.ts` (137) — JSON-RPC/MCP protocol handling for the diagnostics tool, plus
+  `authorized()` (bearer token + exact loopback Host + no Origin, `editor-tools.ts:109-117`).
 - `editor-context.ts` (61) — what "current file" means; `SECRET` regex (`:8`) and `files.exclude`
   glob matching keep secrets out.
 - `review.ts` (93) — rebuilds a file's pre-turn content from the runtime's unified diff, or reverses
@@ -95,7 +114,9 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
 - `mcp.ts` (111) / `mcp-view.ts` (179) — MCP Servers tree view: parses runtime + `kete sync --status`
   output into rows; approvals/sign-in/connect all go through the CLI or runtime API, never write
   approvals locally.
-- `sessions.ts` (54), `reference.ts` (21), `settings.ts` (51), `status.ts` (63), `account.ts` (57) —
+- `script/e2e.ts` — the end-to-end runner (see Testing); `script/e2e-check.ts` — what `--assert`
+  requires of a run (`failures(report)`, no `vscode` import, unit-tested in `test/e2e-check.test.ts`).
+- `sessions.ts` (59), `reference.ts` (21), `settings.ts` (51), `status.ts` (63), `account.ts` (57) —
   small, independently unit-tested pieces (session list/links, `@path#Lstart-end` references,
   VS Code settings → `kete.jsonc` edits, status-bar text, `kete whoami` parsing).
 - `packages/app/src/kete/vscode-host.tsx` (215) — the web UI's half of the bridge: `KeteVSCodeShell`
@@ -179,7 +200,7 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
 - Editor context and diagnostics never include secret-looking paths or `files.exclude` matches
   (`editor-context.ts:8`, `:21-23`; reused by `workspaceDiagnostics` in `extension.ts`).
 - Editor-tools MCP server: exact loopback `Host`, no `Origin` header, and a timing-safe bearer-token
-  compare (`editor-tools.ts:98-106`); it deliberately does not expose terminal output (may hold
+  compare (`editor-tools.ts:109-117`); it deliberately does not expose terminal output (may hold
   secrets, no redaction layer yet).
 - `insideWorkspace` (`status.ts:57-63`) must gate every workspace-relative path a message provides,
   to prevent path traversal outside the workspace folder.
@@ -216,8 +237,18 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
   present and starts with the `wOFF` magic bytes), every command's icon is `$(kete-mark)` (no
   built-in codicon left), and the two tab SVGs' bars match `MARK_RECTS` in order and color (brand →
   the brand violet in both; ink → ink-on-paper for light, paper-on-ink for dark).
-- End-to-end, real VS Code, local only: `bun run e2e <path/to/.vsix>` (`script/e2e.ts`, isolated
-  profile and Kete state); see `packages/kete-vscode/DEVELOPMENT.md`.
+- `bun test ./test/fork.test.ts` — fork neutrality (see the Quick answer): scheme round trips for
+  vscode/vscode-insiders/windsurf/cursor/vscodium, `editorName`, source/manifest grep, engine floor,
+  keybindings.
+- End-to-end, real editor: `bun run e2e <path/to/.vsix> [--code <editor CLI>] [--electron <exe>]
+  [--assert] [-- <editor args>]` (`script/e2e.ts`, isolated profile and Kete state). VS Code by
+  default; `--code` takes any fork's CLI and derives the executable (Linux `<root>/bin/<name>` →
+  `<root>/<name>`; macOS the single file in `Contents/MacOS/`). `--assert` exits 1 on any
+  `script/e2e-check.ts` failure. A `.vsix` for this machine needs a CLI built with the web UI
+  (`bun run build --single --skip-install` in `packages/cli`) copied to `bin/kete`, then
+  `bunx --bun @vscode/vsce@4.0.0 package <ver> --target <t> --no-dependencies
+  --allow-missing-repository`. CI: `kete-release.yml` `extension-e2e` (VS Code + VSCodium); see
+  `packages/kete-vscode/DEVELOPMENT.md`.
 
 ## Changes
 
@@ -254,5 +285,9 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
 - MCP approvals are never written by `mcp-view.ts` itself — `approve()` only *displays* the exact
   command and calls `kete sync --approve --command <exact>`, which itself refuses if the command
   changed; don't shortcut this by writing config directly.
+- `editorContextFollows` in the e2e depends on the web UI posting `kete.editorContextApplied`;
+  `KeteVSCodeBridge` posts it both on a change and when it mounts with a file the shell already
+  kept (`vscode-host.tsx`) — the mount case was missing until VSCodium's slower composer mount
+  exposed it. Keep both paths if the bridge changes.
 - `review.ts`'s `before()` throws if a non-whole-file patch's context doesn't match the file on disk
   (`review.ts:74`) — that's deliberate ("the file changed since this turn"), not a bug to silence.

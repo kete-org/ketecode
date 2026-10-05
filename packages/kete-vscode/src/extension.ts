@@ -1080,7 +1080,7 @@ async function pickSession(state: State) {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Editor tools: VS Code's diagnostics for the agent, as an MCP server the runtime connects to
+// Editor tools: the host editor's diagnostics for the agent, as an MCP server the runtime connects to
 
 const MAX_MCP_BODY = 1_000_000
 
@@ -1141,7 +1141,10 @@ async function editorToolsEntry(connection: { url: string; password: string }, d
 
 function startEditorTools(state: State) {
   const token = randomBytes(32).toString("base64url")
-  const tools = { diagnostics: (file: string | undefined) => Promise.resolve(workspaceDiagnostics(file)) }
+  const tools = {
+    diagnostics: (file: string | undefined) => Promise.resolve(workspaceDiagnostics(file)),
+    editor: env.appName,
+  }
   const server = createHttpServer((request, response) => {
     const port = state.editorTools?.port ?? 0
     const send = (status: number, body?: unknown) => {
