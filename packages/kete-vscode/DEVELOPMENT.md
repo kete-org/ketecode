@@ -12,7 +12,11 @@ From `packages/kete-vscode/`:
   it, then `code --extensionDevelopmentPath="$PWD"`
 - Packages: `bun run --cwd packages/kete-tools release kete-vX.Y.Z` builds one `.vsix` per platform,
   each with its binary in `bin/` (`--single` for this machine only)
-- End-to-end check in a real VS Code window (isolated profile and Kete state; local only):
-  `bun run e2e <path/to/kete-code-…-<target>.vsix>`
+- End-to-end check in a real editor window (isolated profile and Kete state):
+  `bun run e2e <path/to/kete-code-…-<target>.vsix> [--code <editor CLI>] [--assert]`. VS Code by
+  default; pass a fork's CLI for another editor (e.g. VSCodium's `bin/codium`, or on macOS
+  `VSCodium.app/Contents/Resources/app/bin/codium`). `--assert` fails the run unless every check in
+  `script/e2e-check.ts` holds. CI runs it on the linux-x64 package in VS Code and VSCodium
+  (`kete-release.yml`, `extension-e2e`).
 
 The extension is not published to the VS Code Marketplace or Open VSX yet.

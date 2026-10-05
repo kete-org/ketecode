@@ -138,6 +138,13 @@ and that each carries the tag's version, then publishes to the VS Code Marketpla
 (`--skip-duplicate`, so a re-run finishes a partial publish). Then run the extension part of the
 [manual checklist](#manual-checklist).
 
+**Open VSX is the channel for VS Code forks.** Windsurf, Cursor and VSCodium can't use the VS Code
+Marketplace (its terms limit it to Microsoft's products); they install from Open VSX. The same
+`.vsix` files go to both registries, so a release reaches the forks only once it is on Open VSX:
+check its Open VSX page (<https://open-vsx.org/extension/ketecode/kete-code>) shows the version for
+every platform. The extension's fork support (no hard-coded `vscode://` scheme or product name, no
+proposed API, `engines.vscode` floor) is tested in `packages/kete-vscode/test/fork.test.ts`.
+
 ## What CI does (`.github/workflows/kete-release.yml`)
 
 1. **build**: cross-compiles every CLI target on Linux, archives each with `LICENSE` and
@@ -150,7 +157,11 @@ and that each carries the tag's version, then publishes to the VS Code Marketpla
    `debug paths` lists `kete` directories.
 3. **extension**: there are exactly 8 `.vsix` files; each is packaged for its target, carries the
    tag's version and an executable `bin/kete` (`kete.exe` on Windows); the linux-x64 package's
-   binary runs.
+   binary runs. **extension-e2e** (VS Code and VSCodium, in parallel): installs the linux-x64
+   package into a pinned editor archive (SHA-256 checked) and runs the extension's end-to-end suite
+   under xvfb (`packages/kete-vscode/script/e2e.ts --assert`: sign-in state, chat, editor context,
+   sessions, review, MCP view, server restart, no server left behind). VSCodium stands in for the
+   Open VSX forks; Windsurf and Cursor are covered by the manual checklist.
 4. **image**: the cloud job image (`packages/kete-job-image`) for `linux/amd64` and `linux/arm64`
    from the released `linux-x64` and `linux-arm64` archives (checksums verified first):
    `scripts/build.sh --arch amd64` builds the amd64 image and `scripts/e2e.sh` runs it end to end
@@ -344,8 +355,9 @@ the public README, copied to `kete-org/kete-releases` on each stable release):
   signed or notarized yet, so Gatekeeper blocks the first run of an archive downloaded with a browser
   (allow it in System Settings → Privacy & Security, or `xattr -d com.apple.quarantine kete`);
   the install script's `curl` download isn't quarantined.
-- **VS Code:** install **Kete Code** from the Marketplace (VS Code) or Open VSX (VSCodium, Cursor),
-  or `code --install-extension kete-code-<version>-<target>.vsix`. The extension carries its own
+- **VS Code:** install **Kete Code** from the Marketplace (VS Code) or Open VSX (Windsurf, Cursor,
+  VSCodium), or `code --install-extension kete-code-<version>-<target>.vsix` (`windsurf`, `cursor`,
+  `codium` likewise). The extension carries its own
   `kete`.
 - **Updates:** `kete upgrade [version]` for script and manual installs: it reads the latest release
   from `kete-releases`, verifies `SHA256SUMS.sig` against the key pinned in the binary and the
@@ -360,9 +372,10 @@ the public README, copied to `kete-org/kete-releases` on each stable release):
 
 Run after each stable release, on at least one macOS and one Windows or Linux machine. Use a
 fresh profile so a previous install doesn't mask problems: `code --profile kete-release-check`
-(VS Code), or a separate `--user-data-dir` for VSCodium and Cursor.
+(VS Code), or a separate `--user-data-dir` for Windsurf, Cursor and VSCodium.
 
-For each editor (VS Code from the Marketplace; VSCodium and Cursor from Open VSX):
+For each editor (VS Code from the Marketplace; Windsurf, Cursor and VSCodium from Open VSX; the
+extension README's "Using Kete Code in Windsurf, Cursor or VSCodium" adds the fork-specific checks):
 
 - [ ] Search for **Kete Code** in the Extensions view; the listing shows the icon, the README and
       the new version. Install it.

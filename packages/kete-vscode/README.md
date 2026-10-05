@@ -8,7 +8,8 @@ starts it for you, so there is nothing else to install.
 
 ## Getting started
 
-1. Open a folder in VS Code.
+1. Open a folder in VS Code, or in a fork such as Windsurf, Cursor or VSCodium
+   ([below](#using-kete-code-in-windsurf-cursor-or-vscodium)).
 2. Click the **Kete Code** icon in the activity bar (or run **Kete Code: Open Chat**).
 3. Connect a model: **sign in to your Kete account** (click `Kete` in the status bar, then **Sign in
    to Kete Code**), or connect your own provider key or a local model from the chat's settings.
@@ -40,19 +41,60 @@ starts it for you, so there is nothing else to install.
   **Plan** switches to the read-only **Plan** agent. Neither Ask nor Plan ever allows what the
   agent's permissions or your organization's policy deny. In Ask mode an "Always allow" answered
   earlier doesn't skip the question.
-- **Your editor's diagnostics:** Kete Code can ask VS Code for the errors and warnings your language
+- **Your editor's diagnostics:** Kete Code can ask the editor for the errors and warnings your language
   servers and linters report (the `editor_diagnostics` tool), so it checks its edits the way you
   would. Secret files and `files.exclude` matches are left out; turn it off with
   `kete.editorTools.enabled`.
 - **Sessions:** the Sessions view lists this workspace's sessions, marks those working or waiting
   for your approval, and opens one in the chat. **Copy Session Link** (on each session) makes a
-  `vscode://ketecode.kete-code/session?id=…` link back to it.
+  link back to it in your editor's own scheme (`vscode://ketecode.kete-code/session?id=…` in VS Code,
+  `windsurf://…`, `cursor://…` or `vscodium://…` in the forks).
 - **Looks like VS Code:** the chat takes your theme's colours and fonts, and follows theme changes.
 - **Send Selection / Send File to Chat** (editor context menu) to add code to the prompt.
 - **Terminal:** the Kete Code terminal UI beside the editor (**Kete Code: Open Kete Code** in the
   command palette; `Cmd+Alt+K` / `Ctrl+Alt+K` inserts the current file into it).
 - **Your models:** your Kete account, your own keys for the major providers, or local models
   (Ollama, LM Studio, any OpenAI-compatible server).
+
+## Using Kete Code in Windsurf, Cursor or VSCodium
+
+The extension uses only VS Code's public extension API, so it runs unchanged in VS Code forks.
+
+- **Install** from [Open VSX](https://open-vsx.org/extension/ketecode/kete-code), the extension
+  registry these editors use: search for **Kete Code** in the Extensions view. Or install a
+  downloaded package: `windsurf --install-extension kete-code-<version>-<platform>.vsix` (`cursor`,
+  `codium` likewise), or drag the `.vsix` onto the Extensions view. Pick the package for your
+  platform: it carries that platform's `kete`.
+- **Requirements:** an editor based on VS Code 1.94 or later (current Windsurf, Cursor and VSCodium
+  releases are all well past that).
+- **Keyboard shortcuts:** Kete Code's defaults (`Cmd+Esc`/`Ctrl+Esc`, `Cmd+Shift+Esc`/
+  `Ctrl+Shift+Esc`, `Alt+K`, `Cmd+Alt+K`/`Ctrl+Alt+K`) stay clear of the forks' own AI shortcuts
+  (`Cmd+L`, `Cmd+I`, `Cmd+K`, `Cmd+E` and their `Ctrl` versions). To change one, open **Preferences:
+  Open Keyboard Shortcuts** from the command palette and search for `kete.`. On Windows, `Ctrl+Esc`
+  and `Ctrl+Shift+Esc` are taken by the system (Start menu, Task Manager), so bind **Kete Code:
+  Focus Chat** and **Kete Code: New Chat** to other keys there.
+- **Known differences:** the chat, sign-in, sessions, review, MCP servers and diagnostics work the
+  same as in VS Code; the editor's own AI chat runs alongside and is separate from Kete Code. Links
+  that open a session use the editor's own scheme, so a link copied in Windsurf opens in Windsurf.
+
+### Manual checklist (Windsurf and Cursor)
+
+CI runs the extension's end-to-end test in VS Code and VSCodium. Windsurf and Cursor can't be
+downloaded for automated tests, so check them by hand after each release, with a fresh profile
+(`--user-data-dir`):
+
+- [ ] Install **Kete Code** from Open VSX (or the `.vsix`); the installed package has `bin/kete`
+      (`kete.exe` on Windows), not a universal package without one.
+- [ ] Open a git folder. The status bar shows `Kete · Signed out`; the **Kete Code** icon is in the
+      activity bar.
+- [ ] **Sign in to Kete Code**: the browser opens the portal, approving it signs you in.
+- [ ] Open the chat (`Cmd+Esc` / `Ctrl+Esc` or the icon); ask for a small edit; it applies.
+- [ ] The file you're in shows as a context chip; `Alt+K` adds the selection.
+- [ ] **Review Changes** opens the multi-file diff; **Revert File** asks, then puts the file back.
+- [ ] **Copy Session Link** gives a `windsurf://` (or `cursor://`) link; opening it opens that
+      session in the same editor.
+- [ ] The editor's own AI shortcuts (`Cmd+L`, `Cmd+I`, `Cmd+K`) still open its own features.
+- [ ] **Restart Server** reconnects the chat; closing the window leaves no `kete serve` running.
 
 ## Signing in
 
@@ -63,8 +105,8 @@ you are signed in to; **Sign Out** revokes the key.
 
 ## Platforms
 
-Windows (x64, arm64), macOS (Apple silicon, Intel) and Linux (x64, arm64, including Alpine). VS
-Code installs the build for your platform. With Remote-SSH, WSL or Dev Containers the extension
+Windows (x64, arm64), macOS (Apple silicon, Intel) and Linux (x64, arm64, including Alpine). The
+editor installs the build for your platform. With Remote-SSH, WSL or Dev Containers the extension
 and the agent run on the remote side, next to the code.
 
 ## Privacy and security
