@@ -1,4 +1,4 @@
-<!-- Copied from kete-code-platform docs/contracts/jobs-v1.md at commit a2e3fbf (2026-10-02; unchanged through bc95a41). The platform copy is the source of truth; update both together. -->
+<!-- Copied from kete-code-platform docs/contracts/jobs-v1.md at commit a2e3fbf (2026-10-02; unchanged through bc95a41; the 2026-10-05 Harness Code additions applied byte for byte from feature/harness-code-repos d282821, kete-org/ketecode-portal#68). The platform copy is the source of truth; update both together. -->
 
 # Job API contract — v1
 
@@ -82,6 +82,7 @@ everything and make no more callbacks.
 | `POST /api/v1/jobs/{id}/result` | `running`; once | `JobRunResult` | `204`; the job moves to `finalizing`. |
 | `POST /api/v1/jobs/{id}/uploads` | `finalizing`; once | `JobUploadsRequest` | `200 JobUploadsResponse`: single-use signed `PUT` URLs, 10 minutes. |
 | `POST /api/v1/jobs/{id}/finish` | `finalizing`; once | `JobFinishRequest` | `202`; the platform validates the bundle and creates the branch afterwards. |
+| `POST /api/v1/jobs/{id}/clone-done` | `running` | `JobCloneDoneRequest` (`{}` or empty) | `204`. The platform deletes the job's Harness Code clone token (once; later calls are no-ops). For a GitHub job it does nothing. Added 2026-10-05 (additive). |
 
 - **Claim response:** the only response carrying the job's secrets (gateway key, callback
   token, clone token); never log it. `spec` is a kete job spec v1 with `agent`, `model`
@@ -99,6 +100,26 @@ everything and make no more callbacks.
   `bundle: true`, `bundle` (≤ 10 MB, `application/gzip`).
 - **Finish:** `push_error` says why there is no bundle (`processes_alive`, `symlink`,
   `unreadable`, `proxy_failed`); omit it when a bundle was uploaded.
+- **Repository providers (additive, 2026-10-05; ADR 0024).** The claim request may carry
+  `features` (≤ 16 names, `^[a-z0-9_]{1,40}$`; unknown names are ignored). The claim response's
+  `clone` may carry `provider` (`github` | `harness_code`; absent = `github`) and `username` (the
+  HTTP basic auth username for `token`; absent = `x-access-token`). GitHub claims are unchanged:
+  neither field is sent. A **Harness Code** claim:
+  - is refused (404, the job fails `refused`, `entrypoint_outdated`) unless the request's
+    `features` contains `clone_revoke_callback`, before any credential is minted;
+  - carries `clone.provider = "harness_code"`, `clone.username` and a `clone.url` on the
+    connection's Harness git host;
+  - authenticates the clone with `Authorization: Basic base64(username + ":" + token)`;
+  - must not be revoked through GitHub's API: the entrypoint calls `POST …/clone-done` after the
+    clone and on clone or verify failure (≤ 3 tries), and the platform deletes the token. The
+    clone phase may reach only the platform and the clone host.
+
+  Example: `docs/contracts/test-vectors/jobs-v1/claim-harness-code.json` (request and response).
+- **Push reasons** (`Job.push_reason`, text) gain, for Harness Code jobs: `harness_<code>`
+  (an API or git error code), `harness_rule_violation` (a branch/push rule or hook refused the
+  push), `harness_git_host_mismatch` (the repository's git URL isn't on the cluster's git host),
+  `harness_not_connected`, `protection_unknown` and `base_tree_too_large` (the base commit's
+  trees exceed the fetch caps). `Job.warnings` gains `harness_pipeline_triggers`.
 
 ## Schemas (Zod)
 
@@ -165,7 +186,7 @@ export const JobPushStatus = z.enum(['not_requested', 'pending', 'created', 'no_
 export type JobPushStatus = z.infer<typeof JobPushStatus>
 
 /** Platform-computed notices (ADR 0021 rule 8); mirrors the `jobs.warnings` check. */
-export const JobWarning = z.enum(['create_trigger', 'pull_request_target_trigger'])
+export const JobWarning = z.enum(['create_trigger', 'pull_request_target_trigger', 'harness_pipeline_triggers'])
 export type JobWarning = z.infer<typeof JobWarning>
 
 /**
@@ -335,6 +356,12 @@ export type JobListResponse = z.infer<typeof JobListResponse>
 export const JobClaimRequest = z.strictObject({
   /** The single-use claim token from the machine configuration (256-bit, hex). */
   claim_token: z.string().regex(/^[0-9a-f]{64}$/),
+  /**
+   * What the entrypoint supports (additive; names the platform doesn't know are ignored).
+   * `clone_revoke_callback`: it calls `POST …/clone-done` after the clone and on clone or verify
+   * failure. A Harness Code repository's claim is refused without it.
+   */
+  features: z.array(z.string().regex(/^[a-z0-9_]{1,40}$/)).max(16).optional(),
 })
 export type JobClaimRequest = z.infer<typeof JobClaimRequest>
 
@@ -361,6 +388,10 @@ export const JobSpec = z.strictObject({
 })
 export type JobSpec = z.infer<typeof JobSpec>
 
+/** The repository host of a claim's clone (`JobClaimResponse.clone.provider`). */
+export const JobCloneProvider = z.enum(['github', 'harness_code'])
+export type JobCloneProvider = z.infer<typeof JobCloneProvider>
+
 /** POST …/claim → 200. The only response that ever carries these secrets. */
 export const JobClaimResponse = z.object({
   spec: JobSpec,
@@ -368,13 +399,21 @@ export const JobClaimResponse = z.object({
   gateway_key: z.string().regex(/^[\x21-\x7E]{1,200}$/),
   /** Authenticates every later callback (256-bit, hex); valid until `deadline`. */
   callback_token: z.string().regex(/^[0-9a-f]{64}$/),
-  /** A read-only GitHub installation token for one repository; revoke it after the clone. */
+  /**
+   * A read-only clone credential for one repository. GitHub (`provider` absent or `github`): an
+   * installation token, revoked by the entrypoint after the clone. Harness Code
+   * (`harness_code`): a token the platform minted for the job and deletes on `clone-done`.
+   */
   clone: z.object({
     url: HttpsUrl,
     token: z.string().regex(/^[\x21-\x7E]{1,500}$/),
     ref: JobGitRef,
     /** The commit the platform resolved for `ref`; the clone must be at exactly this commit. */
     base_sha: GitSha,
+    /** Where the repository lives; absent means `github`. */
+    provider: JobCloneProvider.optional(),
+    /** The HTTP basic auth username for `token` (no `:`); absent means `x-access-token`. */
+    username: z.string().regex(/^[\x21-\x39\x3B-\x7E]{1,128}$/).optional(),
   }),
   gateway_url: HttpsUrl,
   /** Equals the machine configuration's platform URL: an origin, no path. */
@@ -466,6 +505,14 @@ export const JobFinishRequest = z.strictObject({
   push_error: JobPushError.optional(),
 })
 export type JobFinishRequest = z.infer<typeof JobFinishRequest>
+
+/**
+ * POST …/clone-done body → 204 (an empty body counts as `{}`). Accepted in `running`. The platform
+ * deletes the job's Harness Code clone token (once); for a GitHub job it does nothing, so the
+ * entrypoint may always call it.
+ */
+export const JobCloneDoneRequest = z.strictObject({})
+export type JobCloneDoneRequest = z.infer<typeof JobCloneDoneRequest>
 ```
 
 ## Examples
