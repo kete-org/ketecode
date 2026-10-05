@@ -90,13 +90,6 @@ export const providerKeys: Readonly<Record<string, readonly string[]>> = {
   PLUGIN_DEEPSEEK_API_KEY: ["DEEPSEEK_API_KEY"],
 }
 
-/** Settings whose values are secrets: never printed, never passed on to the agent's environment as-is. */
-export const secretSettings: readonly string[] = [
-  "PLUGIN_KETE_API_KEY",
-  "PLUGIN_MODEL_API_KEY",
-  ...Object.keys(providerKeys),
-]
-
 const fail = (message: string): never => {
   throw new SettingsError(message)
 }
