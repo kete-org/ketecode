@@ -1,9 +1,10 @@
 ---
 module: sync
 paths: [packages/util/src/kete/sync/**, packages/core/src/kete/sync/**, packages/cli/src/kete/sync.ts]
-verified-at: 6d8972321a
+verified-at: 604889ab32
 ---
 ## Quick answers
+- What does sync do offline? `core/src/kete/sync/plugin.ts:144` decides at activation: the cached copy (and its policies and fail-closed guard) is still loaded, nothing is sent, the periodic sync is not scheduled (`:407`) and runtime registration is skipped (`:410`). `kete sync` is refused offline (exit 2) except `--status`/`--approve` (`cli/src/kete/sync.ts`).
 - Where does `KeteSync.sync` return `signed-out`? `util/src/kete/sync/sync.ts:67`, when no account is readable and no `credential` is given; with a `credential` it never does. `load()` (`sync.ts:49`) and `sync()` (`:63`) both need an account outside job mode; job mode passes `credential: {platform, key, organization?}` (`:12-19`) instead and the account file and OS key store are never read; `load` with a credential and no organization returns undefined.
 - Which platform URL does sync use? An account's `platform_url`; in job mode `KETE_PLATFORM_URL` only (`KeteJobMode.endpoints`, `util/src/kete/job-mode.ts:97`), key = the job's gateway key as Bearer. A 401 says "refused the job's key" without `kete login` advice (`client.ts:65-66`).
 - What does the fail-closed policy guard need? `state.account` set (`plugin.ts:320`): outside job mode only when an account is read; job mode always sets it (`readAccount`, `:161`), so without a loaded cache edit/shell/webfetch ask first (`guardedWithoutPolicies`, `:116`), message without "Run `kete sync`" (`:322`).

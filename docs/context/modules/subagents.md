@@ -1,10 +1,11 @@
 ---
 module: subagents
 paths: [packages/core/src/kete/subagents.ts, packages/core/src/tool/plugin/subagent.ts, packages/core/src/session/subagent-job.ts, packages/core/src/config/plugin/command.ts, packages/core/src/job.ts, packages/schema/src/config/kete.ts]
-verified-at: a6f16f244a
+verified-at: 604889ab32
 ---
 
 ## Quick answers
+- Anything new for subagents? Only the `kete` config schema gained `offline` (`schema/src/config/kete.ts:72`); subagent behaviour is unchanged.
 - Default subagent timeout: 60 minutes, 0 = no limit (`packages/core/src/kete/subagents.ts:36`, config key `kete.subagents.timeout`). This is the *per-subagent* timeout; an **unattended** run also has a *whole-family* time limit — see below and the `unattended` card.
 - Default concurrency cap: 4 running subagents per parent session (`subagents.ts:36`, `kete.subagents.max_concurrent`).
 - Who enforces the cap: `admit()` (`subagents.ts:137-166`), called only from the `subagent` tool (`packages/core/src/tool/plugin/subagent.ts:179`) — slash-command subtasks never call it.

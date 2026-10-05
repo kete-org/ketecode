@@ -1,9 +1,10 @@
 ---
 module: gateway
 paths: [packages/core/src/kete/gateway.ts, packages/tui/src/kete/balance.tsx]
-verified-at: 6d8972321a
+verified-at: 604889ab32
 ---
 ## Quick answers
+- What does the gateway do offline? `core/src/kete/gateway.ts:165` returns at activation when offline (env or `kete.offline`): no models, balance or price requests. `KeteOffline` would also remove non-local models.
 - What is pinned for a job key? The gateway requires `x-kete-agent-id` for job keys (ADR 0020 rule 9, else 403); the runtime sends it only for a synced managed agent (sync plugin, `sync` card), so job mode syncs first and requires `spec.agent` (`job-mode` card). Platform job keys are not built on the platform yet.
 - Where is the job-mode URL rule? `KeteJobMode.endpoints` over `KeteHttpURL.normalize` in util (`job-mode.ts:97`, `http-url.ts`), used at `gateway.ts:453-455`; `urlVariable`/`platformVariable` (`:48-50`) are the util constants. It moved out of core because the CLI can't import core.
 - What is the `kete` provider? A Kete-owned model-provider plugin (`gateway.ts:45` `providerID`) that offers only the models the Kete Model Gateway allows, each on the gateway's native per-provider route.

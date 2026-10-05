@@ -40,6 +40,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | permissions | permission mode ("ask before edits") and the subagent permission ceiling |
 | roles-skills | starter role agents, built-in skills, role-check |
 | attribution-hosted | provider attribution headers, hosted services off by default |
+| local-models | local model servers (Ollama, LM Studio, vLLM): env hosts, `kete.local-models` status RPC, `kete models pull`, no-tools models, offline mode, pickers and first-run offer |
 | subagents | subagent timeout, concurrency limit, stop cascade, subtask checks |
 | unattended | unattended-run fail-closed policy (ADR 0008): `kete.unattended` metadata, the policy-allow/deny hooks, required budget and time limit |
 | audit-log | local append-only audit log for unattended runs (ADR 0008): line format v1, the redactor, storage and cap, fail-closed writes |

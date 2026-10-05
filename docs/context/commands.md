@@ -25,6 +25,10 @@ Kete tests live in `packages/<pkg>/test/kete/` (core, util, cli, tui, server),
 `packages/app/src/kete/*.test.ts`, `packages/ui/src/theme/kete/`, `packages/kete-tools/test/`
 and `packages/kete-vscode/test/`.
 
+Local models and offline mode tests (card `local-models`): core `bun run test ./test/kete/{local-hosts,local-models,offline}.test.ts`;
+util `bun test ./test/kete/{offline,local-picker}.test.ts`; cli `bun test ./test/kete/{offline-startup,models-pull}.test.ts`;
+tui `bun test ./test/kete/local-models.test.tsx`; app `bun test --conditions=solid --preload ./happydom.ts ./src/kete/local-models.test.ts`.
+
 ## Tests: suites
 
 | Scope | Command (inside the package) | Verified |

@@ -1,9 +1,10 @@
 ---
 module: server-sdk
 paths: [packages/server/src/kete/local-guard.ts, packages/server/script/kete/isolated-test.ts, packages/server/src/process.ts, packages/server/src/kete/socket-listen.ts, packages/server/src/kete/constant-time.ts, packages/server/src/auth.ts, packages/server/src/middleware/authorization.ts, packages/server/src/options.ts, packages/protocol, packages/client]
-verified-at: e8079c109b
+verified-at: 604889ab32
 ---
 ## Quick answers
+- What regenerated for offline mode? `kete.offline` appears in `packages/protocol/openapi.json` (~line 13194) and `packages/client/src/promise/generated/types.ts` (~2159). The local models status uses the existing plugin RPC route (`POST /api/rpc/:rpcID/:method`), so there is no new endpoint.
 - What is the `LayerNode` replacement graph `routes.ts`/`instance.ts` build (upstream, not covered
   elsewhere)? `packages/core/src/instance.ts` compiles one per-location `LayerNode.group(nodes)`
   graph (`instance.ts:114`); `Options.replacements` (caller-supplied) win over its own

@@ -1,9 +1,10 @@
 ---
 module: budget
 paths: [packages/core/src/kete/budget.ts, packages/core/src/kete/budget-rule.ts, packages/core/src/session/runner/llm.ts]
-verified-at: a6f16f244a
+verified-at: 604889ab32
 ---
 ## Quick answers
+- Does offline mode change the budget check? No; the runner now also passes the resolved `model` to the run checks (`session/runner/llm.ts:229`) for the offline model check (`unattended` card), which does not affect `KeteBudget`.
 - What does this enforce? A per-session USD spending cap, `kete.budget.session`, checked before each model request step — for an **interactive** session. An unattended session (the `unattended` card) is checked by `KeteRunChecks`/`KeteUnattended.check` instead, at the same seam.
 - What happens at the limit? The step asks the `budget` permission (normal allow/ask/deny rules and prompt); approving unlocks another limit-sized amount before the next prompt. An unattended run never asks `budget` — it has no one to ask — and is refused instead once its family cost reaches its effective budget.
 - Why does `budget-rule.ts` exist separately from `budget.ts`? Built-in agents allow unmatched actions by default (`build` starts with `*: allow`), which would silently approve `budget`; `budget-rule.ts` injects an explicit `budget: ask` rule into every built-in agent so it doesn't.

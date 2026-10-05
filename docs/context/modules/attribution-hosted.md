@@ -1,12 +1,13 @@
 ---
 module: attribution-hosted
 paths: [packages/core/src/kete/attribution.ts, packages/core/src/kete/hosted.ts]
-verified-at: bfd6c66
+verified-at: 604889ab32
 ---
 ## Quick answers
 - What does `attribution.ts` do? Rewrites the app-attribution headers upstream's provider plugins (OpenRouter, Vercel, Kilo, LLM Gateway, ZenMux, NVIDIA, Cerebras) set for OpenCode, replacing them with Kete Code's values, but only when the header still holds upstream's exact default — a user-configured value is left alone.
 - What does `hosted.ts` do? Holds the single switch, `anonymousOpencodeZen = false`, that disables upstream's out-of-the-box anonymous access to OpenCode Zen (the `opencode` provider), per ADR 0003.
 - Where's the seam into upstream? `packages/core/src/plugin/provider/opencode.ts:261-262` — the anonymous-enable branch is gated on `KeteHosted.anonymousOpencodeZen`.
+- What network calls does Kete make by default, and what does offline mode turn off? See "Default outbound calls" under Data and APIs used; offline mode (`docs/local-models.md` "Offline mode", card `local-models`) removes all of them except local model servers (`packages/core/src/kete/offline.ts:66`).
 
 ## Purpose
 Two small always-on policy switches that keep Kete Code from silently crediting or defaulting to OpenCode's own hosted identity/services: `attribution.ts` makes Kete Code identify itself (not OpenCode) to model providers that track the calling app, and `hosted.ts` ensures no code reaches a third-party hosted service (opencode.ai) without the user explicitly opting in (CLAUDE.md §9 Privacy).
@@ -28,6 +29,19 @@ Two small always-on policy switches that keep Kete Code from silently crediting 
 ## Data and APIs used
 - `@opencode/util/kete/brand` (`Brand.urls.website`, `Brand.attribution.{title,nvidiaOrigin,cerebrasIntegration}`) — the only source of Kete Code's identity values; product identity must never be hardcoded (CLAUDE.md §5).
 - Provider config: `providers.opencode.settings.apiKey` (or `OPENCODE_API_KEY` env, or a `sourceConnection`) — presence of any of these is `hasKey` in `opencode.ts:258`, independent of the `anonymousOpencodeZen` switch.
+
+### Default outbound calls
+Everything below happens without the user naming a host; anything not listed needs explicit configuration.
+- The models.dev model catalog fetch (bundled snapshot is the fallback).
+- The Kete gateway and platform, only when configured or signed in: `/api/v1/me`, `/models`, `/sync`, and runtime registration.
+- Update checks (`kete upgrade` is disabled upstream-style; `cli/src/kete/updater.ts` checks).
+- Remote (URL) MCP servers and their OAuth metadata, only for servers the user or policy configured.
+- The `webfetch` and `websearch` tools, when the model calls them.
+- The OpenCode Console config fetch, only when the `opencode` provider has a key (`core/src/plugin/provider/opencode.ts:147`).
+- OTLP telemetry, only when configured.
+- Local model servers (Ollama, LM Studio, vLLM), only on the configured or default loopback hosts (`core/src/kete/local-hosts.ts:66`).
+
+**Offline mode** (`--offline`, `KETE_OFFLINE`, `kete.offline`) turns off the models.dev fetch, the gateway and platform (sync, registration, `kete login`), update checks, remote MCP servers, `webfetch`/`websearch`, the Console fetch and `kete models pull`; non-local models fail with a refusal. Cached organization policy is still loaded and enforced.
 
 ## Rules that must not break
 - `attribution.ts` must never overwrite a header value that isn't exactly upstream's known default — that would clobber a user's own provider configuration (`attribution.ts:35-39,43`).

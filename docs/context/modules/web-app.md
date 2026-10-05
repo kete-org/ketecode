@@ -1,10 +1,11 @@
 ---
 module: web-app
 paths: [packages/app/src/kete/panel.tsx, packages/app/src/kete/panel.css, packages/app/src/kete/panel-layout.tsx, packages/app/src/kete/panel-state.ts, packages/app/src/kete/mode.ts, packages/app/src/kete/composer-controls.tsx, packages/app/src/new-session/view.tsx, packages/app/src/composer/composer.tsx, packages/app/src/composer/editor/editor.tsx, packages/app/src/new-session/composer-adapter.ts]
-verified-at: 6c3649e3a6
+verified-at: 604889ab32
 ---
 
 ## Quick answers
+- Where are the Offline indicator, the first-run local models offer and the no-tools notice? `KeteOfflineIndicator` in the panel header and `KeteLocalOffer` in the empty state (`app/src/kete/panel.tsx:33,43`); the once-per-session no-tools notice via `useKeteNoToolsNotice` in `composer-controls.tsx:51` (the `KeteModeToggle` file). All in `app/src/kete/local-ui.tsx`; see the `local-models` card.
 
 - What is the "Kete panel"? The redesigned empty state + composer of the web app's new-session/
   session view: a header (mark + wordmark), an 84px hero with a one-time weave-in animation, an

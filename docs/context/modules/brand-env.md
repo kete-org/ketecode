@@ -1,9 +1,10 @@
 ---
 module: brand-env
 paths: [packages/util/src/kete/brand.ts, packages/util/src/kete/env.ts, packages/util/src/kete/wordmark.ts, packages/cli/src/kete/env-bridge.ts]
-verified-at: fb75b7596c
+verified-at: 604889ab32
 ---
 ## Quick answers
+- Which local-model env vars exist? `KETE_OFFLINE`, `KETE_OLLAMA_HOST`, `KETE_LMSTUDIO_HOST`, `KETE_VLLM_HOST` are bridged like any `KETE_*` (internal `OPENCODE_OFFLINE`, `OPENCODE_OLLAMA_HOST`, ...); Ollama's own `OLLAMA_HOST` is read unbridged as the fallback (`core/src/kete/local-hosts.ts:27`). See the `local-models` card.
 - What are `KETE_JOB_MODE`/`KETE_JOB_MAX_OUTPUT_TOKENS`/`KETE_JOB_TOOL_SOCKET`? The cloud-job
   runtime image's own env contract (not defined in this card's files —
   `packages/util/src/kete/job-mode.ts`), bridged the same way as every other `KETE_*` var
