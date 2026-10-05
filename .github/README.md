@@ -102,6 +102,19 @@ The model picker groups them under **Local**, marks models that can't call tools
 context size, and tells you when a server you set up can't be reached. Offline mode keeps
 enforcing your organization's cached policy. Details: [docs/local-models.md](../docs/local-models.md).
 
+## Integrations
+
+Built-in MCP presets connect a session to tools your team already uses, read-only or ask-first by
+default, with credentials in your OS credential store:
+
+```sh
+kete mcp presets                      # what's available
+kete mcp add harness                  # Harness (read-only unless --write)
+kete mcp add slack --client-id <id>   # Slack (needs an approved Slack app)
+```
+
+Details: [Harness](../docs/integrations/harness.md), [Slack](../docs/integrations/slack.md).
+
 ## Configuration
 
 Global settings live in `~/.config/kete/`, project settings in `.kete/` at the repository root.
