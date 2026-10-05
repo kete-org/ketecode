@@ -1,10 +1,12 @@
 ---
 module: unattended
-paths: [packages/core/src/kete/unattended-policy.ts, packages/core/src/kete/unattended.ts, packages/core/src/kete/run-checks.ts, packages/schema/src/kete/unattended.ts]
-verified-at: 604889ab32
+paths: [packages/core/src/kete/unattended-policy.ts, packages/core/src/kete/tool-env.ts, packages/core/src/kete/unattended.ts, packages/core/src/kete/run-checks.ts, packages/schema/src/kete/unattended.ts]
+verified-at: 460d1de894
 ---
 
 ## Quick answers
+- What environment do the agent's shell commands get? `core/src/kete/tool-env.ts` (task 2026-10-05-unattended-secret-hygiene, A1): `Shell.create` always spreads `KeteToolEnv.withoutKeteCredentials(...)` (`core/src/shell.ts:267`, marked) — no `KETE_*`/`OPENCODE_*` name ending `_KEY`/`_TOKEN`/`_SECRET`/`_PASSWORD`, nor `KeteJobSecrets.environmentSecrets`; the shell tool's `before` callback then calls `KeteToolEnv.forSession` (`core/src/tool/plugin/shell.ts:116-121,217`, marked), which in an unattended family (`KeteUnattendedPolicy.resolve`, an undecodable policy included) or job mode also drops credential-looking names (`credentialSuffixes`/`credentialNames`, `tool-env.ts:38-69`) except `kete.unattended.passEnv` (never a Kete credential; exact on POSIX, case-insensitive on win32). Interactive sessions keep everything else. User docs: `docs/jobs.md` "Secrets in an unattended run".
+- Can a repository's own config change providers or MCP servers in `kete job run`? No, unless trusted (B1): the CLI refuses before contacting the server — the `cli` card, `cli/src/kete/job-project-config.ts`, `docs/jobs.md` "Repository config in an unattended run". This module (core) has no project-config check of its own; an unattended session created through the API by another client isn't covered (documented residual).
 - What does the run check do offline? `KeteRunChecks` takes an optional `model` input (`core/src/kete/run-checks.ts`) and, when offline mode is on, fails the step with `SessionError` type `offline` unless the model is local (`:50`, `KeteOffline.isLocalModel`); the runner passes it at `session/runner/llm.ts:229`. Cached policy is unaffected.
 - Does job mode (`KETE_JOB_MODE`) change unattended enforcement? Yes — job mode *implies*
   unattended: `run-checks.ts:42-49` checks `KeteJobMode.enabled()` for an otherwise-`interactive`

@@ -23,6 +23,7 @@ import { Runtime } from "../framework/runtime"
 import { ServerConnection } from "../services/server-connection"
 import { JobConnection } from "./job-connection"
 import { JobGit } from "./job-git"
+import { KeteJobProjectConfig } from "./job-project-config"
 import { KeteJobPreflight } from "./job-preflight"
 import { JobRun } from "./job-run"
 import { JobSpec } from "./job-spec"
@@ -195,11 +196,19 @@ export default Runtime.handler(
       environment: resolved.service ? Env.session() : undefined,
       randomId: () => crypto.randomUUID(),
       attached: resolved.service !== undefined,
+      inspectProjectConfig: (directory, stop) => KeteJobProjectConfig.inspect(directory, stop),
     }
 
     const { exitCode } = yield* Effect.promise(() =>
       JobRun.run(
-        { spec, cwd: process.cwd(), serverUrl: server, json: input.json, jobMode },
+        {
+          spec,
+          cwd: process.cwd(),
+          serverUrl: server,
+          json: input.json,
+          jobMode,
+          trustProjectConfig: KeteJobProjectConfig.trusted(input.trustProjectConfig, process.env),
+        },
         runDeps,
       ),
     )

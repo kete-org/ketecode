@@ -13261,6 +13261,18 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "unattended": {
+                "type": "object",
+                "properties": {
+                  "passEnv": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

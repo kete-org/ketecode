@@ -4,6 +4,7 @@ paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/permis
 verified-at: 604889ab32
 ---
 ## Quick answers
+- Does a permission decision change a shell command's environment? No — permissions decide whether it runs; what it sees is `core/src/kete/tool-env.ts` (Kete credentials never; other credentials not in an unattended run), wired after `prepare`'s `permission.assert` in the shell tool's `before` callback (`core/src/tool/plugin/shell.ts:217`). See the `unattended` card.
 - What is in the `post` plugin order now? `internal.ts:319-321`: `KeteLocalModels.Plugin` (after `ConfigProviderPlugin`) then `KeteOffline.Plugin`, before `KeteJobPlugin` and `KeteUnattended`. Neither adds `evaluate` rules, so offline mode never widens a permission; `KeteOffline.Plugin.id` is in `guarded` (`internal.ts:337`) so repository config can't remove it.
 - Where does job mode's `KeteJobPlugin.Plugin` sit in `plugin/internal.ts`'s registration lists,
   and does it touch `evaluate`? It's in `post`, immediately **before** `KeteUnattended.Plugin`

@@ -1,9 +1,10 @@
 ---
 module: config-kete
 paths: [packages/schema/src/config/kete.ts, packages/schema/src/config.ts, packages/core/src/config/normalize.ts, packages/core/src/config/discovery.ts, packages/core/src/config.ts]
-verified-at: 4e26b57120
+verified-at: 460d1de894
 ---
 ## Quick answers
+- What is `kete.unattended.passEnv`? `ConfigKete.Unattended` (`schema/src/config/kete.ts:82-87`, `Info.unattended` `:104`): names an unattended run's shell commands keep although they look like credentials; read by `KeteToolEnv.forSession` via `Config.latest(entries, "kete")` (so, like every `kete` field, the highest-priority file's whole `kete` object wins). `kete job run` refuses a repository config that sets `kete.unattended` (or `kete.integrations`/`kete.platform`) unless `--trust-project-config`. Protocol and client regenerated.
 - What is `kete.integrations.slack.clientId`? The Slack app client ID `kete mcp add slack` uses when `--client-id` isn't given (`schema/src/config/kete.ts:94`, camelCase as the spec named it, unlike `max_concurrent`); protocol and client regenerated. The CLI reads it straight from the project/global config files (`cli/src/kete/mcp-preset-io.ts:33`). See the `mcp-presets` card.
 - What is `kete.offline`? An optional boolean (`schema/src/config/kete.ts:72`): offline mode (local models only, no platform/gateway/update/web/remote-MCP calls). Global config applies process-wide; a project config covers everything except the models.dev fetch and update checks (decided at startup). Fail-closed: a non-boolean counts as on. See the `local-models` card; the schema change regenerated `protocol/openapi.json` and the client types.
 - Is there an env var that disables project config outside job mode? Yes — upstream's

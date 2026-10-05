@@ -18,6 +18,7 @@ import { Shell } from "../../shell.js"
 import { ShellParse } from "../../shell/parse.js"
 import { ShellSelect } from "../../shell/select.js"
 import { ShellResult } from "../../shell/result.js"
+import { KeteToolEnv } from "../../kete/tool-env.js" // kete_change
 
 export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
@@ -111,6 +112,12 @@ export const Plugin = {
     const compatibleShell = shellSelect.resolve({ priority: "compat" })
     const permission = yield* Permission.Service
     const config = yield* Config.Service
+    // kete_change start: an unattended run's commands don't see credentials (kete/tool-env.ts)
+    const toolEnv: KeteToolEnv.Lookup = {
+      session: (id) => sessions.get(id).pipe(Effect.option),
+      config: Effect.map(config.entries(), (entries) => Config.latest(entries, "kete")),
+    }
+    // kete_change end
 
     const prepare = Effect.fn("ShellTool.prepare")(function* (invocation: ShellCreateBefore, context: Tool.Context) {
       const source = {
@@ -207,6 +214,7 @@ export const Plugin = {
                 (invocation) =>
                   Effect.gen(function* () {
                     finalTimeout = yield* prepare(invocation, context)
+                    invocation.env = yield* KeteToolEnv.forSession(toolEnv, context.sessionID, invocation.env) // kete_change
                   }),
               )
               yield* context.progress({ shellID: info.id })

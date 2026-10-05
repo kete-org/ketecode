@@ -130,6 +130,12 @@ export const specs = [
             Flag.withDescription("Print exactly one JSON result object to stdout instead of the run's own output"),
             Flag.withDefault(false),
           ),
+          trustProjectConfig: Flag.boolean("trust-project-config").pipe(
+            Flag.withDescription(
+              "Let the repository's own config set providers, MCP servers, plugins and Kete integration settings (also KETE_TRUST_PROJECT_CONFIG=1)",
+            ),
+            Flag.withDefault(false),
+          ),
         },
       }),
     ],

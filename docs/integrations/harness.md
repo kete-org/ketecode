@@ -268,6 +268,11 @@ pushed, else empty) and `KETE_JOB_URL` (cloud mode).
   (a bare `*` is refused), and `external_directory`, `webfetch` and `websearch` need
   `allow_unsafe: "true"`. Set `allow` and `task` in the pipeline definition, **never from untrusted
   pull request data** (titles, branch names, files): they decide what the agent may run.
+- **The repository's own config:** a pull request can bring a `.kete/` config. `kete job run`
+  refuses the run (`KETE_OUTCOME=refused`) when it sets providers, MCP servers, plugins, sharing or
+  Kete's integration/platform/unattended settings ([details](../jobs.md#repository-config-in-an-unattended-run)).
+  Put any such settings in the step's own configuration instead; set `KETE_TRUST_PROJECT_CONFIG=1`
+  in the step's environment only for repositories whose config you control.
 
 ### Running as a non-root user
 

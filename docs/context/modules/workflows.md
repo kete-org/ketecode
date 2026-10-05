@@ -1,7 +1,7 @@
 ---
 module: workflows
 paths: [packages/core/src/kete/workflows.ts, packages/schema/src/config/kete.ts]
-verified-at: 4e26b57120
+verified-at: 460d1de894
 ---
 
 ## Quick answers

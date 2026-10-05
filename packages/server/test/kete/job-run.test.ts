@@ -27,6 +27,7 @@ import { tmpdirScoped } from "../../../core/test/fixture/tmpdir"
 import { it } from "../../../core/test/lib/effect"
 import { JobGit } from "../../../cli/src/kete/job-git"
 import { JobRun } from "../../../cli/src/kete/job-run"
+import { KeteJobProjectConfig } from "../../../cli/src/kete/job-project-config"
 import { createEmbeddedRoutes } from "../../src/routes"
 
 const setup = Effect.fn(function* () {
@@ -118,6 +119,7 @@ const setup = Effect.fn(function* () {
     onInterrupt: () => () => {},
     randomId: () => crypto.randomUUID(),
     attached: false,
+    inspectProjectConfig: (directory, stop) => KeteJobProjectConfig.inspect(directory, stop),
   }
 
   return { client, llm, repoDir, data, runDeps, requests: () => requestCount }

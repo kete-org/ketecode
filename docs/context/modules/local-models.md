@@ -4,6 +4,7 @@ paths: [packages/core/src/kete/local-hosts.ts, packages/core/src/kete/local-mode
 verified-at: 4e26b57120
 ---
 ## Quick answers
+- Where should an unattended run's local-server address go? The global config: `kete job run` refuses a repository config that sets `providers` unless `--trust-project-config` (`docs/local-models.md` "Environment variables", `docs/jobs.md`).
 - Does offline mode touch stdio MCP servers? Only the built-in presets' (`kete mcp add harness`): `KeteOffline.skip` (`core/src/kete/offline.ts:94`) disables remote servers plus any local server `KeteMcpPresets.detect` recognises, and the plugin logs `KeteMcpPresets.offlineMessage` once per distinct set. See the `mcp-presets` card.
 - How does a remote Ollama/LM Studio/vLLM host get in? `KeteLocalHosts.origin(provider)` (`core/src/kete/local-hosts.ts:79`) is passed as the `origin` of the upstream plugins (`core/src/plugin/provider/{ollama.ts:219,lmstudio.ts:151,vllm.ts:137}`); a configured `providers.<id>.settings.baseURL` still wins because upstream's `configured()` checks config first. Variables and order: `local-hosts.ts:27`.
 - How do clients read local server status? Plugin RPC `kete.local-models`, methods `status` and `rediscover` (`schema/src/kete/local-models.ts:58-72`), registered with `ctx.rpc.register` (`core/src/kete/local-models.ts:406`), served by the existing `POST /api/rpc/:rpcID/:method` (no new endpoint). The plugin event stream carries `rpc.*` events (`core/src/plugin/host.ts:256-264`).

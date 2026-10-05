@@ -229,3 +229,8 @@ more memory.
 | `KETE_LMSTUDIO_HOST` | LM Studio address |
 | `KETE_VLLM_HOST` | vLLM address |
 | `KETE_OFFLINE` | `1` or `true` turns offline mode on; any other non-empty value also counts as on |
+
+**Unattended runs (`kete job run`):** put a local server's address (and any key it needs) in your
+global config, not the repository's. `kete job run` refuses a repository config that sets
+`providers` unless you pass `--trust-project-config`, and the commands an unattended run executes
+don't see `*_API_KEY`/`*_TOKEN` variables from your environment ([`docs/jobs.md`](jobs.md#secrets-in-an-unattended-run)).

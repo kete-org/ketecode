@@ -1,9 +1,10 @@
 ---
 module: server-sdk
 paths: [packages/server/src/kete/local-guard.ts, packages/server/script/kete/isolated-test.ts, packages/server/src/process.ts, packages/server/src/kete/socket-listen.ts, packages/server/src/kete/constant-time.ts, packages/server/src/auth.ts, packages/server/src/middleware/authorization.ts, packages/server/src/options.ts, packages/protocol, packages/client]
-verified-at: 4e26b57120
+verified-at: 460d1de894
 ---
 ## Quick answers
+- Was the protocol regenerated for `kete.unattended`? Yes (2026-10-05): `protocol/openapi.json` and `client/src/promise/generated/types.ts` gained `kete.unattended.passEnv` (config schema only; no endpoint change).
 - Did the MCP presets task change the API? Only the config schema (`kete.integrations`), so `protocol/openapi.json` and `client/src/promise/generated/types.ts` were regenerated; no endpoint changed.
 - What regenerated for offline mode? `kete.offline` appears in `packages/protocol/openapi.json` (~line 13194) and `packages/client/src/promise/generated/types.ts` (~2159). The local models status uses the existing plugin RPC route (`POST /api/rpc/:rpcID/:method`), so there is no new endpoint.
 - What is the `LayerNode` replacement graph `routes.ts`/`instance.ts` build (upstream, not covered
