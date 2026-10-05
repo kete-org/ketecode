@@ -417,7 +417,7 @@
         "kete.editorTools.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Let Kete Code read VS Code's diagnostics (errors and warnings from your language servers and linters) through the `editor_diagnostics` tool. Files in `files.exclude` and secret files (`.env`, keys) are left out. Takes effect when the Kete Code server starts."
+          "markdownDescription": "Let Kete Code read the editor's diagnostics (errors and warnings from your language servers and linters) through the `editor_diagnostics` tool. Files in `files.exclude` and secret files (`.env`, keys) are left out. Takes effect when the Kete Code server starts."
         },
         "kete.chat.askBeforeEdits": {
           "type": "boolean",

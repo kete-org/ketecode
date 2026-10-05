@@ -1,4 +1,4 @@
-// Tools the editor gives the agent, over MCP: VS Code's diagnostics (errors and warnings from the
+// Tools the editor gives the agent, over MCP: the editor's diagnostics (errors and warnings from the
 // language servers the user already runs). The extension serves them on 127.0.0.1 with a random
 // token and registers the server with its own `kete serve` (`PUT /api/experimental/mcp/editor`).
 // This file is the protocol and the formatting; kept free of the `vscode` module for tests.
@@ -22,13 +22,24 @@ export type Diagnostic = {
 export type Tools = {
   /** Diagnostics for one workspace-relative file, or the whole workspace. Undefined: not in the workspace. */
   readonly diagnostics: (path: string | undefined) => Promise<Diagnostic[] | undefined>
+  /** The host editor's name (`vscode.env.appName`: "Visual Studio Code", "Windsurf", "Cursor", "VSCodium", …). */
+  readonly editor?: string
 }
 
-const TOOLS = [
+/**
+ * The host editor's name as the model sees it. The extension runs in VS Code and its forks, so the name
+ * comes from the host, never a hard-coded "VS Code"; control characters are dropped and the length is
+ * bounded, since it ends up in a tool description.
+ */
+export function editorName(appName: string | undefined) {
+  const name = (appName ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 64)
+  return name || "the editor"
+}
+
+const toolList = (editor: string | undefined) => [
   {
     name: "diagnostics",
-    description:
-      "Errors and warnings the user's editor (VS Code) reports from its language servers, linters and type checkers. Pass `path` (relative to the workspace) for one file; omit it for the whole workspace. Use after editing to check your changes compile and lint cleanly.",
+    description: `Errors and warnings the user's editor (${editorName(editor)}) reports from its language servers, linters and type checkers. Pass \`path\` (relative to the workspace) for one file; omit it for the whole workspace. Use after editing to check your changes compile and lint cleanly.`,
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "Workspace-relative file path. Omit for all files." } },
@@ -56,7 +67,7 @@ export async function handle(message: unknown, tools: Tools): Promise<Record<str
     })
   }
   if (message.method === "ping") return result(id, {})
-  if (message.method === "tools/list") return result(id, { tools: TOOLS })
+  if (message.method === "tools/list") return result(id, { tools: toolList(tools.editor) })
   if (message.method === "tools/call") {
     const args = isRecord(params.arguments) ? params.arguments : {}
     if (params.name !== "diagnostics") return error(id, -32602, `unknown tool: ${String(params.name)}`)

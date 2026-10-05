@@ -1,11 +1,14 @@
 // The chat's sessions as a native list, and links to them. The runtime's session list
-// (`GET /api/session?directory=`) is parsed here, and `vscode://ketecode.kete-code/session?id=…`
-// links name one session. Kept free of the `vscode` module so it can be unit-tested.
+// (`GET /api/session?directory=`) is parsed here, and `<scheme>://ketecode.kete-code/session?id=…`
+// links name one session; the scheme is the host's (`vscode.env.uriScheme`: vscode, windsurf, cursor,
+// vscodium, …), never hard-coded. Kept free of the `vscode` module so it can be unit-tested.
 
 export type SessionItem = { readonly id: string; readonly title: string; readonly updated: number }
 
 /** Session ids the runtime makes; anything else in a link or a response is ignored. */
 const ID = /^[A-Za-z0-9_-]{1,128}$/
+/** RFC 3986 scheme syntax (lower case, as `vscode.env.uriScheme` gives it). */
+const SCHEME = /^[a-z][a-z0-9+.-]{0,63}$/
 
 /** Top-level, unarchived sessions from a list response, most recently updated first. */
 export function parseSessions(body: unknown, limit = 50): SessionItem[] {
@@ -34,14 +37,16 @@ export function ago(time: number, now: number) {
   return new Date(time).toISOString().slice(0, 10)
 }
 
-/** The session a `vscode://<extension>/session?id=…` link names, if it is well formed. */
+/** The session a `<scheme>://<extension>/session?id=…` link names, if it is well formed. */
 export function sessionFromLink(path: string, query: string) {
   if (path.replace(/\/+$/, "") !== "/session") return undefined
   const id = new URLSearchParams(query).get("id")
   return id && ID.test(id) ? id : undefined
 }
 
+/** A link that opens session `id` in the host editor. `scheme` is `vscode.env.uriScheme`. */
 export function sessionLink(scheme: string, extensionID: string, id: string) {
+  if (!SCHEME.test(scheme)) throw new Error(`not a URI scheme: ${scheme}`)
   return `${scheme}://${extensionID}/session?id=${encodeURIComponent(id)}`
 }
 
