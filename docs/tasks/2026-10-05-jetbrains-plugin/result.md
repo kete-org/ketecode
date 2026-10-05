@@ -46,8 +46,8 @@ card `docs/context/modules/jetbrains-plugin.md` + INDEX and repo-map rows; refre
 ## Checks
 | Check | Result |
 |---|---|
-| CI `kete-jetbrains` (run 37254916336, commit 75651b4e1b) | pass: build + 59 JUnit tests (Gradle 9 fails a test task that discovers none) + zip check + web UI tests; verifier Compatible on all six IDEs |
-| CI `kete-build` (run 37254916322) | pass |
+| CI `kete-jetbrains` (final run 37255810424, commit a7fb2cbcbf) | pass: build + 59 JUnit tests (Gradle 9 fails a test task that discovers none) + zip check + web UI tests; verifier Compatible on all six IDEs |
+| CI `kete-build` (final run 37255810624) | pass (build, kete-checks) |
 | `packages/app`: `bun run typecheck` | pass |
 | `packages/app`: `bun test --conditions=solid --preload ./happydom.ts ./src/kete` | pass: 74/74 (VS Code host tests unchanged) |
 | root `bun run lint` | pass: 0 warnings, 0 errors |
@@ -59,9 +59,12 @@ card `docs/context/modules/jetbrains-plugin.md` + INDEX and repo-map rows; refre
 
 Verifier IDEs: IntelliJ IDEA Community 2024.3.7 (oldest supported) and 2025.2.6 (2025.3 has no Linux
 x64 build), IntelliJ IDEA 2026.2.3, PyCharm 2026.2.3, WebStorm 2026.2.3, GoLand 2026.2.3. All
-"Compatible"; remaining notes are deprecated/experimental usages the Kotlin compiler synthesises for
-`ToolWindowFactory`/`StatusBarWidget` default methods and the deprecated
-`TerminalToolWindowManager.createShellWidget`.
+"Compatible". Remaining notes: on 2026.2, 7 deprecated / 6 experimental usages; on IC 2024.3 and 2025.2,
+6 deprecated / 2 experimental / 6 internal usages. They are the overrides the Kotlin compiler synthesises
+for `ToolWindowFactory`/`StatusBarWidget` interface defaults (`getAnchor`, `getIcon`, `manage`,
+`isApplicable`, `isDoNotActivateOnStart`, `getPresentation(PlatformType)`) plus the deprecated
+`TerminalToolWindowManager.createShellWidget`; the plugin's own internal-API calls
+(`PluginManagerCore.getPlugin`, `PluginManager.getPluginByClass`) and `ReadAction.compute` were removed.
 
 ## Acceptance criteria
 - [x] AC1 — `kete-jetbrains.yml` build + verify jobs green against IC (2), IU, PY, WS, GO, no compatibility problems.
