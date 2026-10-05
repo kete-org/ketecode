@@ -38,7 +38,7 @@ describe("detectHost", () => {
 
 describe("JetBrains transport", () => {
   afterEach(() => {
-    Reflect.deleteProperty(window, "__keteJetBrains")
+    delete window.__keteJetBrains
     sessionStorage.removeItem(JETBRAINS_STORAGE_KEY)
   })
 
@@ -57,7 +57,7 @@ describe("JetBrains transport", () => {
     postToHost({ type: "kete.hello" })
     postToHost({ type: "kete.session", sessionID: null })
     const sent: unknown[] = []
-    Reflect.set(window, "__keteJetBrains", { postMessage: (message: unknown) => sent.push(message) })
+    window.__keteJetBrains = { postMessage: (message: unknown) => sent.push(message) }
     window.dispatchEvent(new Event(JETBRAINS_READY_EVENT))
     expect(sent).toEqual([{ type: "kete.hello" }, { type: "kete.session", sessionID: null }])
     postToHost({ type: "kete.contextAdded", path: "a.ts" })
@@ -65,7 +65,7 @@ describe("JetBrains transport", () => {
   })
 
   test("the bridge marker alone identifies the host and is remembered", () => {
-    Reflect.set(window, "__keteJetBrains", { postMessage: () => undefined })
+    window.__keteJetBrains = { postMessage: () => undefined }
     expect(currentHost()).toBe("jetbrains")
     expect(sessionStorage.getItem(JETBRAINS_STORAGE_KEY)).toBe("jetbrains")
   })

@@ -21,6 +21,13 @@ export const JETBRAINS_MESSAGE_EVENT = "kete-jetbrains-message"
 
 type JetBrainsBridge = { readonly postMessage: (message: unknown) => void }
 
+declare global {
+  interface Window {
+    /** Injected by the JetBrains plugin (packages/kete-jetbrains core/Bridge.kt); untrusted shape until checked. */
+    __keteJetBrains?: unknown
+  }
+}
+
 /** What detection looks at, so it can be tested without a browser. */
 export type HostEnvironment = {
   /** `window.name`. */
@@ -56,7 +63,7 @@ function storage() {
 
 function bridge(): JetBrainsBridge | undefined {
   if (typeof window === "undefined") return undefined
-  const value: unknown = Reflect.get(window, "__keteJetBrains")
+  const value = window.__keteJetBrains
   if (typeof value !== "object" || value === null || !("postMessage" in value)) return undefined
   const post = value.postMessage
   return typeof post === "function" ? { postMessage: (message) => post.call(value, message) } : undefined
