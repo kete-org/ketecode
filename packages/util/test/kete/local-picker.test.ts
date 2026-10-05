@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { KeteLocalPicker } from "../../src/kete/local-picker"
+import { KeteLocalPicker } from "../../src/kete/local-picker.js"
 
 const ollama = (patch: Partial<KeteLocalPicker.ProviderStatus> = {}): KeteLocalPicker.ProviderStatus => ({
   id: "ollama",
