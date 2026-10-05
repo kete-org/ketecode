@@ -118,8 +118,11 @@ tasks {
     // Gradle 9 archives are reproducible by default and reset every file to rw-r--r--, so the zip
     // would drop the sandbox's executable bit: set it again on the bundled binaries.
     buildPlugin {
-        filesMatching("*/bin/*/kete") {
-            permissions { unix("rwxr-xr-x") }
+        // eachFile, not filesMatching: a filesMatching rule here leaves the entry at rw-r--r--.
+        eachFile {
+            if (relativePath.segments.let { it.size == 4 && it[1] == "bin" && it[3] == "kete" }) {
+                permissions { unix("rwxr-xr-x") }
+            }
         }
     }
 
