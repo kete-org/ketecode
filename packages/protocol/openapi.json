@@ -13191,6 +13191,9 @@
           "kete": {
             "type": "object",
             "properties": {
+              "offline": {
+                "type": "boolean"
+              },
               "budget": {
                 "type": "object",
                 "properties": {

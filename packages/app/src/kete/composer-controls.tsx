@@ -12,6 +12,7 @@ import { Tooltip } from "@opencode/ui/tooltip"
 import type { ComposerModel } from "@/composer/model"
 import { useData, useServer } from "@/runtime/server/current"
 import { apply, derive, KeteModeDraft, next as nextMode, PLAN_AGENT, type ApplyAgent, type Mode } from "./mode"
+import { useKeteNoToolsNotice } from "./local-ui"
 
 const MODE_LABEL: Readonly<Record<Mode, string>> = { auto: "Auto", ask: "Ask", plan: "Plan" }
 
@@ -46,6 +47,8 @@ export function KeteModeToggle(props: { model: ComposerModel }) {
   const server = useServer()
   const data = useData()
   const { sessionID, draftID } = useComposerSessionKey()
+  // Once per session, for a model that can't call tools: it can only answer (local-ui.tsx).
+  useKeteNoToolsNotice({ sessionID, model: () => props.model.model.selection.current() })
 
   const agentView = () => props.model.view.agent
   const planAvailable = createMemo(() => agentView()?.options().some((option) => option.id === PLAN_AGENT) ?? false)

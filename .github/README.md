@@ -87,6 +87,21 @@ kete login                        # or sign in to a Kete account to use the gate
 Your code leaves your machine only as model context for the provider you configured. OpenCode's
 hosted services are off by default.
 
+## Local models
+
+Run models on your own machine or network with Ollama, LM Studio or vLLM, no account needed:
+
+```sh
+ollama serve                          # Kete finds it on its default port
+kete models pull qwen2.5-coder:7b     # pull through your Ollama, then it's listed
+OLLAMA_HOST=192.168.1.20 kete         # a GPU box on your LAN (or KETE_OLLAMA_HOST)
+kete --offline                        # local models only, no other network calls
+```
+
+The model picker groups them under **Local**, marks models that can't call tools, shows their
+context size, and tells you when a server you set up can't be reached. Offline mode keeps
+enforcing your organization's cached policy. Details: [docs/local-models.md](../docs/local-models.md).
+
 ## Configuration
 
 Global settings live in `~/.config/kete/`, project settings in `.kete/` at the repository root.

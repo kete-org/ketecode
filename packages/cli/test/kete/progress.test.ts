@@ -9,6 +9,7 @@ function fakeUi() {
       spinner: () => ({
         start: (m: string) => calls.push(`spinner.start ${m}`),
         stop: (m: string, code?: number) => calls.push(`spinner.stop ${m} ${code ?? 0}`),
+        message: (m: string) => calls.push(`spinner.message ${m}`),
       }),
       log: {
         step: (m: string) => calls.push(`step ${m}`),
@@ -36,5 +37,21 @@ describe("progress", () => {
     const failed = progress(false, ui)
     failed.stop("Upgrade failed", 1)
     expect(calls).toEqual(["step Downloading", "success Installed", "error Upgrade failed"])
+  })
+
+  test("update replaces the spinner text on a terminal and prints a line otherwise", () => {
+    const { calls, ui } = fakeUi()
+    const animated = progress(true, ui)
+    animated.start("Pulling")
+    animated.update("pulling abc: 50%")
+    animated.stop("Pulled")
+    const plain = progress(false, ui)
+    plain.update("verifying sha256 digest")
+    expect(calls).toEqual([
+      "spinner.start Pulling",
+      "spinner.message pulling abc: 50%",
+      "spinner.stop Pulled 0",
+      "step verifying sha256 digest",
+    ])
   })
 })

@@ -6,6 +6,8 @@ import { Config } from "../../config.js"
 import { Model } from "../../model.js"
 import type { PluginInternal } from "../internal.js"
 import { foldSettings } from "./configured.js"
+import { KeteLocalHosts } from "../../kete/local-hosts.js" // kete_change
+import { KeteOffline } from "../../kete/offline.js" // kete_change
 
 const providerID = "ollama"
 
@@ -107,6 +109,7 @@ export function make(origin = "http://127.0.0.1:11434", interval: Duration.Input
       const discover = Effect.fn("OllamaPlugin.discover")(function* () {
         const current = source.current
         if (!current.tagsEndpoint || !current.showEndpoint) return undefined
+        if (yield* KeteOffline.blocks(config, current.baseURL)) return undefined // kete_change: offline mode never contacts a host that isn't local
         return yield* discoveryLock.withPermit(
           Effect.gen(function* () {
             const cached = discovery.get(current.tagsEndpoint)
@@ -199,11 +202,23 @@ export function make(origin = "http://127.0.0.1:11434", interval: Duration.Input
         Stream.runForEach(reload),
         Effect.forkScoped({ startImmediately: true }),
       )
+      // kete_change start: look again now when asked (the kete.local-models RPC, after `kete models pull`)
+      yield* ctx.event.subscribe().pipe(
+        Stream.filter((event) => KeteLocalHosts.isRediscover(event, "ollama")),
+        Stream.runForEach(() =>
+          Effect.suspend(() => {
+            if (source.current.tagsEndpoint) discovery.delete(source.current.tagsEndpoint)
+            return refresh()
+          }).pipe(Effect.ignore),
+        ),
+        Effect.forkScoped({ startImmediately: true }),
+      )
+      // kete_change end
     }),
   } satisfies PluginInternal.InternalPlugin)
 }
 
-export const OllamaPlugin = make()
+export const OllamaPlugin = make(KeteLocalHosts.origin("ollama")) // kete_change: OLLAMA_HOST / KETE_OLLAMA_HOST
 
 function configured(entries: readonly Entry[], origin: string) {
   const settings = foldSettings(entries, providerID, undefined)

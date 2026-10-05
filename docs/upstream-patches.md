@@ -813,3 +813,53 @@ the Kete-owned `core/src/kete/audit.ts`.
   `core/test/kete/job-fs-sites.test.ts`; classify it.
 - If upstream changes `Environment.node`'s or `FSUtil.node`'s tag or deps, re-check the
   replacements in `job-server.ts`.
+
+## Local models (feature/local-models)
+
+Remote and LAN Ollama / LM Studio / vLLM hosts, a status RPC, models without tools, and offline mode
+(`docs/tasks/2026-10-04-local-models`, `docs/local-models.md`). Kete-owned code needs no markers:
+`util/src/kete/offline.ts`, `schema/src/kete/local-models.ts`, `core/src/kete/{local-hosts,
+local-models,offline}.ts`, and the offline no-ops in `core/src/kete/{gateway,run-checks}.ts` and
+`core/src/kete/sync/plugin.ts`. `schema/src/config/kete.ts` (`kete.offline`) is Kete-owned too.
+Kete-owned CLI code: `cli/src/kete/{offline,offline-startup,models-pull,models-list}.ts` and the offline
+refusals in `cli/src/kete/{login,sync,upgrade,updater}.ts`. Kete-owned client code: the shared picker
+rules `util/src/kete/local-picker.ts`, TUI `tui/src/kete/{local-models.ts,local-offer.tsx,local-status.tsx}`,
+web `app/src/kete/{local-models.ts,local-ui.tsx}` and the panel wiring in `app/src/kete/{panel.tsx,
+panel.css,composer-controls.tsx}`.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/provider/{ollama,lmstudio,vllm}.ts` | Import; the exported plugin is `make(KeteLocalHosts.origin("<id>"))` instead of `make()` (1 line each) | `origin` is the plugins' only host input apart from config (which still wins); the instances are built at module load |
+| `core/src/plugin/provider/{ollama,lmstudio,vllm}.ts` | Import of `KeteOffline` (core); one marked line at the start of `discover`: `if (yield* KeteOffline.blocks(config, current.baseURL)) return undefined` (offline mode on and the base URL isn't on this machine or a private network: no discovery request, no API key sent; checked on every tick, so a project `kete.offline` counts) | discovery is closure-private and runs on the plugin's own timer; no hook can stop its requests |
+| `core/src/plugin/provider/ollama.ts` | Marked block in `make`: a second `ctx.event` subscription clears this host's discovery cache entry and calls `refresh()` on `rpc.kete.local-models.rediscover` | the discovery cache and `refresh` are closure-private; no hook triggers them |
+| `core/src/plugin/internal.ts` | Imports; `KeteLocalModels.Plugin` and `KeteOffline.Plugin` in `post` after `ConfigPolicyPlugin`, before `KeteJobPlugin`; `KeteOffline.Plugin.id` in `guarded` | internal plugins can only be registered here; repository config must not be able to remove offline mode |
+| `core/src/session/runner/llm.ts` | The existing marked `checks({...})` call also passes `model: loaded.model` | the runner check needs the resolved model; no hook can fail a step |
+| `core/src/session/runner/model.ts` | Import; `ModelUnavailableError.message` appends `KeteOffline.unavailableHint()` (empty unless offline) | a model removed by offline mode fails here, before any Kete code runs |
+| `core/src/plugin/provider/opencode.ts` | Imports (`Config`, core `KeteOffline`, `Option`); `Effect.serviceOption(Config.Service)` (an optional lookup, so the plugin's declared requirements and upstream's tests stay unchanged); `load` reads `KeteOffline.active(config)` (env flag or `kete.offline` as loaded now; env flag only without config) and returns the last snapshot instead of fetching the Console config while offline | the plugin's own network call; no switch exists |
+| `cli/src/index.ts` | `import "./kete/offline-startup"` inside the existing marked first-import block (right after the env bridge); `Handlers.models` becomes `{ $, pull }` (marked block) | offline mode must be decided before any module reads the environment, and only the entry point runs first; the handler map is the only place a subcommand's handler is registered |
+| `cli/src/framework/runtime.ts` | Import; `Command.withGlobalFlags([PrintLogs, KeteCommands.Offline])` | global flags are registered only here; the flag's value is acted on before parsing (`kete/offline-startup.ts`), this makes the parser accept `--offline` on every command and shows it in help |
+| `cli/src/commands/commands.ts` | `models` spec gains `commands: [KeteCommands.modelsPull]` (1 line) | the command tree has no extension point for a subcommand of an upstream command |
+| `cli/src/services/server-connection.ts` | Import; `resolve` runs its input through `KeteCliOffline.connection` first (offline: private server; `--server` refused) | the connection choice is made only here; the background service may have been started online and a remote server's mode can't be checked |
+| `cli/src/commands/handlers/models.ts` | Import; the output lines come from `KeteModelsList.lines(models, isTTY)` (local models get `tools:/vision:/ctx:` on a TTY; piped output unchanged) | the handler builds its lines inline; no hook |
+| `tui/src/component/dialog-model.tsx` | Imports; `useKeteLocalStatus()`; each model's category/provider name/description/footer go through `dialogFields` (local models: "Local" group, "no tools" and context badges); the options end with `unreachableOptions(...)` (one row per unreachable local server; selecting shows the hint) | the dialog builds its options inline; no slot or hook adds rows or badges |
+| `tui/src/plugin/builtins.ts` | Import and register `KeteLocalStatus` after `KeteBalance` (the "Offline" footer indicator) | built-in TUI plugins are registered only here |
+| `tui/src/app.tsx` | Import; `useKeteLocalModels()` once in `App` (first-run offer; once-per-session no-tools notice) | the offer needs the app's model selection, dialog and toast, which no plugin API exposes |
+| `tui/test/fixture/tui-client.ts` | Answers `POST /api/rpc/kete.local-models/status` with an empty status | the fixture fails on any unexpected request, and the model dialog now asks for status |
+| `app/src/providers/models/select-dialog.tsx` | Imports; `<KeteLocalBadges>` after the Latest badge in the dialog rows and menu rows; local group titles in the menu via `groupTitle`; `<KeteLocalUnreachable />` above the dialog's model list | the picker has no extension point for badges, group titles or extra rows |
+| `app/src/providers/models/provider-group.tsx` | Import; a group's title goes through `groupTitle` ("Local · Ollama") | the section header builds the title inline |
+
+**Sync checklist**, on top of the usual one:
+
+- `plugin/provider/{ollama,lmstudio,vllm}.ts`: the `make(origin)` signature and `configured()` (config
+  `baseURL` over `origin`) are what `KeteLocalHosts` and the status probe (`core/src/kete/local-models.ts`
+  `target`) mirror; if upstream changes endpoint paths (`/api/tags`, `/api/show`, `/api/v1/models`,
+  `/health`, `/v1/models`), update the probe.
+- `session/runner/llm.ts`: `checks` must still be called before every step with the resolved model.
+- `plugin/host.ts`: plugin event streams must keep passing `rpc.*` events through (rediscovery).
+- `cli/src/index.ts`: `./kete/offline-startup` must stay the import right after `./kete/env-bridge`.
+- `cli/src/services/server-connection.ts`: every connection must still go through `resolve` (offline
+  forces `--standalone` there).
+- `tui/src/component/dialog-model.tsx`: if upstream restructures the options, keep the Local group,
+  badges and unreachable rows (tests: `tui/test/kete/local-models.test.tsx`).
+- `app/src/providers/models/select-dialog.tsx`: if the rows or the list container move, keep the badges
+  and the unreachable lines next to them.

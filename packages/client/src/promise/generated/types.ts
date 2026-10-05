@@ -2156,6 +2156,7 @@ export type ConfigEntry =
           policies?: Array<{ action: "provider.use" | "permission"; resource: string; effect: "allow" | "deny" }>
         }
         kete?: {
+          offline?: boolean
           budget?: { session?: number }
           platform?: { url?: string }
           runtime?: { type?: "local" | "kete_cloud" | "enterprise_private" }

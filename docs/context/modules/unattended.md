@@ -1,10 +1,11 @@
 ---
 module: unattended
 paths: [packages/core/src/kete/unattended-policy.ts, packages/core/src/kete/unattended.ts, packages/core/src/kete/run-checks.ts, packages/schema/src/kete/unattended.ts]
-verified-at: a90d57e2d8
+verified-at: 604889ab32
 ---
 
 ## Quick answers
+- What does the run check do offline? `KeteRunChecks` takes an optional `model` input (`core/src/kete/run-checks.ts`) and, when offline mode is on, fails the step with `SessionError` type `offline` unless the model is local (`:50`, `KeteOffline.isLocalModel`); the runner passes it at `session/runner/llm.ts:229`. Cached policy is unaffected.
 - Does job mode (`KETE_JOB_MODE`) change unattended enforcement? Yes — job mode *implies*
   unattended: `run-checks.ts:42-49` checks `KeteJobMode.enabled()` for an otherwise-`interactive`
   family and refuses the step with `StepFailedError({type: "unattended", message:

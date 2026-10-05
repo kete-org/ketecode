@@ -2,7 +2,7 @@
 // to a Kete Code account; `kete auth` stays upstream's command for model-provider keys.
 
 import { Schema } from "effect"
-import { Argument, Flag } from "effect/unstable/cli"
+import { Argument, Flag, GlobalFlag } from "effect/unstable/cli"
 import { Brand } from "@opencode/util/kete/brand"
 import { Spec } from "../framework/spec"
 
@@ -17,6 +17,27 @@ const ServerParams = {
     Flag.optional,
   ),
 }
+
+/** `--offline` on every command (framework/runtime.ts). The value is acted on before parsing, by
+ * ./offline-startup.ts, so the environment is set before any module reads it; this definition makes
+ * the parser accept the flag and shows it in help. */
+export const Offline = GlobalFlag.setting("offline")({
+  flag: Flag.boolean("offline").pipe(
+    Flag.withDescription(
+      "Offline mode: use only local models (Ollama, LM Studio, vLLM, or a provider on this machine or a private network) and make no other network calls (same as KETE_OFFLINE=1)",
+    ),
+    Flag.withDefault(false),
+  ),
+})
+
+/** `kete models pull <name>`: a subcommand of upstream's `models` command (commands/commands.ts). */
+export const modelsPull = Spec.make("pull", {
+  description: "Download a model into Ollama (the Ollama server Kete Code uses: config, KETE_OLLAMA_HOST, OLLAMA_HOST or localhost)",
+  params: {
+    name: Argument.string("name").pipe(Argument.withDescription("Ollama model name, e.g. llama3.2 or qwen2.5-coder:7b")),
+    ...ServerParams,
+  },
+})
 
 export const specs = [
   Spec.make("login", {

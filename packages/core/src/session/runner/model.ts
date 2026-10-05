@@ -7,6 +7,7 @@ import { Provider } from "@opencode/schema/provider"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ModelResolver } from "../../model-resolver.js"
 import { SessionSchema } from "../schema.js"
+import { KeteOffline } from "../../kete/offline.js" // kete_change
 
 export class ModelNotSelectedError extends Schema.TaggedError<ModelNotSelectedError>()(
   "SessionRunnerModel.ModelNotSelectedError",
@@ -26,7 +27,7 @@ export class ModelUnavailableError extends Schema.TaggedError<ModelUnavailableEr
       return `Model unavailable: ${this.providerID}/${this.modelID}. This provider has been deprecated; use azure/${this.modelID} instead.`
     if (this.providerID === "google-vertex-anthropic")
       return `Model unavailable: ${this.providerID}/${this.modelID}. This provider has been deprecated; use google-vertex/${this.modelID} instead.`
-    return `Model unavailable: ${this.providerID}/${this.modelID}`
+    return `Model unavailable: ${this.providerID}/${this.modelID}${KeteOffline.unavailableHint()}` // kete_change
   }
 }
 export const VariantUnavailableError = ModelResolver.VariantUnavailableError

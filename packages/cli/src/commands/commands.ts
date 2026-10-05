@@ -285,6 +285,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     Spec.make("models", {
       description: "List all available models",
       params: ServerParams,
+      commands: [KeteCommands.modelsPull], // kete_change
     }),
     Spec.make("stats", {
       description: "Show shareable usage statistics",

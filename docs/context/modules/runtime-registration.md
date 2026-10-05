@@ -1,9 +1,10 @@
 ---
 module: runtime-registration
 paths: [packages/util/src/kete/runtime-registration.ts]
-verified-at: a90d57e2d8
+verified-at: 604889ab32
 ---
 ## Quick answers
+- Is the runtime registered offline? No: `core/src/kete/sync/plugin.ts:410` skips registration when offline mode is on.
 - Does the cloud-job runtime image register? No — the call site (`core/src/kete/sync/plugin.ts:360-362`)
   skips the whole registration loop and logs one info line when job mode
   (`KETE_JOB_MODE`) is on; this module itself is unchanged (still never reads the flag) — see the

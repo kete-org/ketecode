@@ -1,7 +1,7 @@
 ---
 module: kete-tools-ci
 paths: [packages/kete-tools/src/*, packages/kete-tools/distribution/*, .github/workflows/kete-extension-publish.yml, .github/workflows/kete-installer-smoke.yml, .github/workflows/kete-job-image.yml, packages/kete-tools/leak-allowlist.txt, .github/workflows/kete-build.yml, .github/workflows/kete-release.yml, .github/workflows/kete-root-helper.yml, .github/workflows/kete-egress.yml, .github/workflows/kete-job-entrypoint.yml, .github/workflows/kete-job-host.yml, .opencode-version]
-verified-at: f91a61f0e8
+verified-at: 8a2747cd4d
 ---
 
 ## Quick answers
@@ -28,7 +28,7 @@ verified-at: f91a61f0e8
   (`@ketecode/cli` launcher from `distribution/npm/kete.js` + 8 `@ketecode/cli-<platform>` with
   `os`/`cpu`/`libc`), public notes, and `verify` (SHA256SUMS.sig against the pinned keys, every file
   listed, nothing unlisted). Reuses `packages/cli/src/kete/release-verify.ts`.
-- Which files does upstream:check treat as Kete-owned (no markers needed)? → any path with `kete` in a segment, plus the list in `isKeteOwned` (`packages/kete-tools/src/lib.ts:81-106`): CLAUDE.md, NOTICE, `.opencode-version`, the Kete docs (including `docs/jobs.md`), `docs/adr/`, `assets/brand/` (logos, fonts — upstream has no top-level `assets/`), `docs/platform/`, `docs/context/`, `docs/tasks/`, `scripts/agent/`, `.claude/agents/`, `.claude/skills/`, `.claude/settings.json`. A new file anywhere else fails as "new file outside a kete path".
+- Which files does upstream:check treat as Kete-owned (no markers needed)? → any path with `kete` in a segment, plus the list in `isKeteOwned` (`packages/kete-tools/src/lib.ts:81-106`): CLAUDE.md, NOTICE, `.opencode-version`, the Kete docs (including `docs/jobs.md`, `docs/job-hosts.md`, `docs/local-models.md`), `docs/adr/`, `assets/brand/` (logos, fonts — upstream has no top-level `assets/`), `docs/platform/`, `docs/context/`, `docs/tasks/`, `scripts/agent/`, `.claude/agents/`, `.claude/skills/`, `.claude/settings.json`. A new file anywhere else fails as "new file outside a kete path".
 
 - **What's `kete-release.yml`'s job graph, to add a job (e.g. the job image)?** (Since ADR 0009
   also `sign` and `distribute`, above; `publish` has no environment.) `build`

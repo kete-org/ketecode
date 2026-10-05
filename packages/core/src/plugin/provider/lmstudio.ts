@@ -6,6 +6,8 @@ import { Config } from "../../config.js"
 import { Model } from "../../model.js"
 import type { PluginInternal } from "../internal.js"
 import { foldSettings } from "./configured.js"
+import { KeteLocalHosts } from "../../kete/local-hosts.js" // kete_change
+import { KeteOffline } from "../../kete/offline.js" // kete_change
 
 const providerID = "lmstudio"
 
@@ -82,6 +84,7 @@ export function make(origin = "http://127.0.0.1:1234", interval: Duration.Input 
       const discover = Effect.fn("LMStudioPlugin.discover")(function* () {
         const current = source.current
         if (!current.endpoint) return undefined
+        if (yield* KeteOffline.blocks(config, current.baseURL)) return undefined // kete_change: offline mode never contacts a host that isn't local
         return yield* discoveryLock.withPermit(
           Effect.gen(function* () {
             const cached = discovery.get(current.endpoint)
@@ -147,7 +150,7 @@ export function make(origin = "http://127.0.0.1:1234", interval: Duration.Input 
   } satisfies PluginInternal.InternalPlugin)
 }
 
-export const LMStudioPlugin = make()
+export const LMStudioPlugin = make(KeteLocalHosts.origin("lmstudio")) // kete_change: KETE_LMSTUDIO_HOST
 
 function configured(entries: readonly Entry[], origin: string) {
   const settings = foldSettings(entries, providerID, undefined)

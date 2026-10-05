@@ -1,9 +1,10 @@
 ---
 module: permissions
 paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/permission-ceiling.ts, packages/core/src/permission.ts, packages/core/src/plugin/internal.ts]
-verified-at: a90d57e2d8
+verified-at: 604889ab32
 ---
 ## Quick answers
+- What is in the `post` plugin order now? `internal.ts:319-321`: `KeteLocalModels.Plugin` (after `ConfigProviderPlugin`) then `KeteOffline.Plugin`, before `KeteJobPlugin` and `KeteUnattended`. Neither adds `evaluate` rules, so offline mode never widens a permission; `KeteOffline.Plugin.id` is in `guarded` (`internal.ts:337`) so repository config can't remove it.
 - Where does job mode's `KeteJobPlugin.Plugin` sit in `plugin/internal.ts`'s registration lists,
   and does it touch `evaluate`? It's in `post`, immediately **before** `KeteUnattended.Plugin`
   (`internal.ts:316`, `// kete_change: before KeteUnattended.Plugin; job mode disables every MCP

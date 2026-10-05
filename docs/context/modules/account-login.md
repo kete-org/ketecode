@@ -1,9 +1,10 @@
 ---
 module: account-login
 paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts]
-verified-at: a90d57e2d8
+verified-at: 604889ab32
 ---
 ## Quick answers
+- Does `kete login` work offline? No: `login.ts` calls `KeteCliOffline.refused` first (exit 2); `logout`/`whoami` are unchanged. See the `local-models` card.
 - Does `kete login`/the credential store work in job mode (`KETE_JOB_MODE`)? No — `secret-store.ts:178`
   calls `KeteJobMode.refuseSpawn("OS credential store")` before spawning the OS keychain CLI
   (`run()`, `secret-store.ts:176-183`), since this spawn is outside the shared `ChildProcessSpawner`

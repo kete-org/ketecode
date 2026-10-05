@@ -9,6 +9,10 @@ import { useConnected } from "./use-connected"
 import { useData } from "../context/data"
 import { modelPreferenceKey } from "../model-preference"
 import { useLocation } from "../context/location"
+// kete_change start: local models (Local group, badges, unreachable servers)
+import { dialogFields, unreachableOptions } from "../kete/local-models"
+import { useKeteLocalStatus } from "../kete/local-offer"
+// kete_change end
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
@@ -25,6 +29,7 @@ export function DialogModel(props: { providerID?: string }) {
   const models = createMemo(() => data.location.model.list(location.ref) ?? [])
 
   const showExtra = createMemo(() => connected() && !props.providerID)
+  const keteLocal = useKeteLocalStatus() // kete_change: local servers' status, for the unreachable lines
 
   const options = createMemo(() => {
     const needle = query().trim()
@@ -38,6 +43,7 @@ export function DialogModel(props: { providerID?: string }) {
         const model = models().find((model) => model.providerID === item.providerID && model.id === item.modelID)
         if (!model) return []
         const provider = providers().get(model.providerID)
+        const fields = dialogFields(model, { category, providerName: "", footer: free(model) ? "Free" : undefined }) // kete_change
         return [
           {
             key: item,
@@ -46,7 +52,7 @@ export function DialogModel(props: { providerID?: string }) {
             releaseDate: model.time.released,
             description: provider?.name ?? model.providerID,
             category,
-            footer: free(model) ? "Free" : undefined,
+            footer: fields.footer, // kete_change
             onSelect: () => {
               onSelect(model.providerID, model.id)
             },
@@ -71,15 +77,23 @@ export function DialogModel(props: { providerID?: string }) {
           const provider = providers().get(model.providerID)
           const key = modelPreferenceKey({ providerID: model.providerID, modelID: model.id })
           const favorite = favorites.some((item) => modelPreferenceKey(item) === key)
+          // kete_change start: local models go in the "Local" group with "no tools" and context badges
+          const fields = dialogFields(model, {
+            category: connected() ? (provider?.name ?? model.providerID) : undefined,
+            providerName: provider?.name ?? model.providerID,
+            footer: free(model) ? "Free" : undefined,
+            description: favorite ? "(Favorite)" : undefined,
+          })
+          // kete_change end
           return {
             value: { providerID: model.providerID, modelID: model.id },
             providerID: model.providerID,
-            providerName: provider?.name ?? model.providerID,
+            providerName: fields.providerName, // kete_change
             title: model.name,
             releaseDate: model.time.released,
-            description: favorite ? "(Favorite)" : undefined,
-            category: connected() ? (provider?.name ?? model.providerID) : undefined,
-            footer: free(model) ? "Free" : undefined,
+            description: fields.description, // kete_change
+            category: fields.category, // kete_change
+            footer: fields.footer, // kete_change
             onSelect() {
               onSelect(model.providerID, model.id)
             },
@@ -112,7 +126,12 @@ export function DialogModel(props: { providerID?: string }) {
       )
     }
 
-    return [...favoriteOptions, ...recentOptions, ...modelOptions]
+    // kete_change start: a line for each local server that can't be reached (URL and how to start it)
+    const unreachable = unreachableOptions(keteLocal.status(), keteLocal.showHint).filter(
+      (option) => !props.providerID || option.value.providerID === props.providerID,
+    )
+    return [...favoriteOptions, ...recentOptions, ...modelOptions, ...unreachable]
+    // kete_change end
   })
 
   const provider = createMemo(() => (props.providerID ? providers().get(props.providerID) : undefined))

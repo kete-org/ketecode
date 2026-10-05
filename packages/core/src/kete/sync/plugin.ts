@@ -74,6 +74,7 @@ import { KeteSyncMcp } from "./mcp.js"
 import type { PluginInternal } from "../../plugin/internal.js"
 import { Provider } from "../../provider.js"
 import { KeteGateway } from "../gateway.js"
+import { KeteOffline } from "../offline.js"
 
 export const agentIDHeader = "x-kete-agent-id"
 export const agentVersionHeader = "x-kete-agent-version"
@@ -139,6 +140,22 @@ export function make(
       const config = yield* Config.Service
       const global = yield* Global.Service
       const jobMode = KeteJobMode.enabled(runtimeEnvironment)
+      // Offline mode (--offline, KETE_OFFLINE or kete.offline): the cache is loaded, nothing is sent.
+      // Checked on every sync and registration tick, so `kete.offline` turned on in config pauses both
+      // from the next tick (and turned off resumes them) without a restart.
+      const offline = () => KeteOffline.active(config, runtimeEnvironment)
+      const paused = { logged: false }
+      const whenOnline = <A, E>(name: string, effect: Effect.Effect<A, E>) =>
+        Effect.gen(function* () {
+          if (!(yield* offline())) {
+            paused.logged = false
+            return yield* effect
+          }
+          if (!paused.logged) {
+            paused.logged = true
+            yield* Effect.logInfo(`${Brand.displayName} offline: ${name} paused, using the cached copy`)
+          }
+        })
       const jobKey = options.job?.key ?? KeteJobSecrets.gatewayKey
       const jobOrganization = options.job?.organization ?? KeteJobSecrets.organization
       // Job mode never touches the OS key store (`native: undefined`; job mode refuses to spawn it).
@@ -399,14 +416,18 @@ export function make(
         }),
         Effect.catch((cause) => Effect.logWarning(`${Brand.displayName} managed agent sync failed`, { cause })),
       )
-      // Startup, then every `interval`. Forked, so a slow platform never delays startup.
-      yield* sync.pipe(Effect.repeat(Schedule.spaced(interval)), Effect.forkScoped)
+      // Startup, then every `interval`. Forked, so a slow platform never delays startup. Offline mode
+      // sends nothing: the copy loaded above (and so its policies and the fail-closed guard) stays as it is.
+      const tick = whenOnline("platform sync", sync)
+      yield* tick.pipe(Effect.repeat(Schedule.spaced(interval)), Effect.forkScoped)
 
       if (options.registration !== false && jobMode) {
         yield* Effect.logInfo(`${Brand.displayName} runtime registration is off in job mode`)
       } else if (options.registration !== false) {
         // Resolved on every tick, so a config change is picked up without a restart.
         const register = Effect.gen(function* () {
+          // Offline (checked on every tick): nothing is sent this time.
+          if (yield* offline()) return
           const entries = yield* config.entries()
           const resolved = KeteRuntimeRegistration.resolveRuntimeType(Config.latest(entries, "kete")?.runtime?.type, runtimeEnvironment)
           if (resolved.kind === "invalid") {
@@ -431,7 +452,7 @@ export function make(
       // On demand after a stale-agent error; a burst of errors starts one sync.
       yield* Stream.fromQueue(resync).pipe(
         Stream.debounce("500 millis"),
-        Stream.runForEach(() => sync),
+        Stream.runForEach(() => tick),
         Effect.forkScoped({ startImmediately: true }),
       )
     }),

@@ -1,9 +1,10 @@
 ---
 module: ui-branding
 paths: [packages/tui/src/kete/mark.tsx, packages/util/src/kete/wordmark.ts, packages/app/src/kete/brand-text*, packages/app/src/kete/wordmark*, packages/app/src/kete/mark.tsx, packages/app/src/kete/tokens.css, packages/app/src/kete/fonts.ts, packages/ui/src/theme/kete/*, packages/tui/src/kete/theme.*, assets/brand/]
-verified-at: fb75b7596c
+verified-at: 604889ab32
 ---
 ## Quick answers
+- Where do the "Offline" footer indicator and the picker's Local group live? TUI: `tui/src/kete/local-status.tsx` (footer slots) and `tui/src/kete/local-models.ts` (dialog fields); web: `app/src/kete/local-ui.tsx`. See the `local-models` card.
 - Why does the web UI say "Kete Code" when upstream's ~66 locale files still say "OpenCode"? Runtime rewrite: `brandDictionary` (`packages/app/src/kete/brand-text.ts:39-47`) is applied to every loaded dictionary in `packages/app/src/runtime/i18n/language.tsx:89,93`, not a locale-file edit.
 - What's the brand color and where's it defined? Violet `#6E47F5` (light) / `#A38CFA` (dark tint) — `packages/ui/src/theme/kete/theme.ts:17` (web/VS Code theme palette), `packages/app/src/kete/tokens.css` (`--kete-brand`, the chat panel's own CSS custom properties, asserted equal to the theme value by `tokens.test.ts`), `packages/tui/src/kete/theme.json` (TUI), `packages/kete-vscode/package.json`'s `galleryBanner.color` (Marketplace banner). Changed from the earlier `#7C3AED`/`#A78BFA` in this task (2026-09-29) — user memory `brand-colour-purple` still has the old values and needs a refresh.
 - Why does `opencode.ai` still appear in some UI strings? `brand-text.ts`'s `hosted` regex (line 17) and `overrides` (lines 20-26) deliberately keep OpenCode Zen/Go/Console/Free and the trademark notice unrebranded — rewriting them would state something false.

@@ -1,9 +1,15 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: f91a61f0e8
+verified-at: 8a2747cd4d
 ---
 ## Quick answers
+- How does `--offline` work? `kete/offline-startup.ts` (imported at `index.ts:5`, right after the env bridge) calls `KeteCliOffline.apply` (`kete/offline.ts:55`): env, `--offline` in argv, or `kete.offline` in the global config files turns it on (`flagged`, `kete/offline.ts:37`, reads `--offline=<v>`/`--offline <v>` with the parser's truthy/falsy values: `--offline=false` and `--offline false` are off, an unknown value is on; `offline-startup.test.ts` pins it against the real parser) and sets `OPENCODE_OFFLINE`, `OPENCODE_DISABLE_MODELS_FETCH` and `OPENCODE_DISABLE_AUTOUPDATE` before any module reads env. The flag is also a registered global flag (`kete/commands.ts:24`, `framework/runtime.ts:86`) so the parser accepts it. See the `local-models` card.
+- Which commands refuse offline? `login`, `sync` (not `--status`/`--approve`), `upgrade`, `models pull`: `KeteCliOffline.refused` (`kete/offline.ts:84`) prints the refusal and sets exit code 2. `updater.ts` `isDisabled` and `check()` also honour it.
+- What changes in the server connection offline? `services/server-connection.ts` calls `KeteCliOffline.connection` (`kete/offline.ts:72`): always a private (`standalone`) server, `--server` refused.
+- How does a command with subcommands get its handlers? A `{ $, sub }` map: `index.ts:67` (`models: { $, pull }`), `framework/runtime.ts:43-76`; the spec side is `commands: [KeteCommands.modelsPull]` at `commands/commands.ts:288`.
+- What does `kete models` print on a TTY? `KeteModelsList.lines` (`kete/models-list.ts:26`) adds `tools:yes|no vision:yes|no ctx:<tokens>` for local providers (omitted ctx when unknown); piped output stays `provider/model`.
+- `kete models pull <name>`: `kete/models-pull.ts:145` `pull`; calls the `kete.local-models` RPC, strips `/v1` (`ollamaRoot`, `:77`), streams Ollama's `/api/pull`, then asks for `rediscover`. Exit codes `EXIT` (`:28`). Keyed Ollama servers: no bearer token is sent (status never returns keys).
 - Where does `kete job run` get the audit log in job mode (piece A3)? From the relay, not a file:
   `KeteJobStandalone.start` returns `audit` (`read(rootID)`, `failure()`, `onFailure`), and `job.ts`
   passes `readAudit`/`auditFailure` into `JobRun.run` (`job-run.ts` `Deps.readAudit`,
@@ -109,7 +115,8 @@ Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` agains
 ## Entry points
 - `packages/cli/src/index.ts:4` — `import "./kete/env-bridge"` (side-effecting, must run first).
 - `packages/cli/src/index.ts:28-38` — `Handlers` map: `upgrade` (`kete/upgrade.ts`), `uninstall`, `login`, `logout`, `whoami`, `sync` and (nested) `job: { run }` all route to `./kete/*` modules (each `kete_change`-marked).
-- `packages/cli/src/index.ts:123` — `Effect.provide(KeteUpdater.layer)` (`kete_change`), replaces upstream's `Updater` service with the verified Kete updater.
+- `packages/cli/src/index.ts:5,67` — `import "./kete/offline-startup"` (offline decision) and the `models: { $, pull }` handler map (`kete_change`).
+- `packages/cli/src/index.ts:126` — `Effect.provide(KeteUpdater.layer)` (`kete_change`), replaces upstream's `Updater` service with the verified Kete updater.
 - `packages/cli/src/commands/commands.ts:493` — `...KeteCommands.specs` spreads `login`/`logout`/`whoami`/`sync`/`job` command specs into the root command list (`kete_change`).
 - `packages/cli/src/kete/commands.ts` — `Spec.make("login", …)` etc., and `Spec.make("job", {commands: [Spec.make("run", …)]})` for the nested command; the actual command definitions (params, descriptions).
 
@@ -122,6 +129,10 @@ Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` agains
 | `packages/cli/src/kete/account-io.ts` | 35 | Real stdout/stderr + account store + background-service reload, implementing `account-flow.ts`'s `IO` |
 | `packages/cli/src/kete/cli-login.ts` | 364 | PKCE + loopback callback listener + `/api/v1/cli/*` calls (platform's CLI login protocol) |
 | `packages/cli/src/kete/{login,logout,whoami,sync}.ts` | 25/18/18/21 | `Runtime.handler` wiring each command spec to `account-flow.ts` |
+| `packages/cli/src/kete/offline.ts` | 110 | Pure offline rules: `flagged`, `configValue`/`fromConfig`, `apply`, `connection`, `refused` |
+| `packages/cli/src/kete/offline-startup.ts` | 27 | Side effect only: reads global config files and calls `apply` at startup |
+| `packages/cli/src/kete/models-pull.ts` | 371 | `kete models pull`: injectable `Deps`, `pull`, timeouts, progress, exit codes |
+| `packages/cli/src/kete/models-list.ts` | 35 | `kete models` TTY detail lines for local providers |
 | `packages/cli/src/kete/updater.ts` | 434 | `KeteUpdater`: `Updater.Service` over injectable `Deps` (fetch, extract, probe, rename): `detect`, `signedRelease`, `install` (download + checksum + `--version` probe + atomic swap), background `run` honouring `autoupdate`; `UpdateError.code` discriminates refusals |
 | `packages/cli/src/kete/release-verify.ts` | 177 | Pure: `pinnedKeys`, `verifySignature` (Ed25519, `node:crypto`), `parseChecksums`, `releaseOf` (version + per-target archive from signed names), `compareVersions`, `targets` |
 | `packages/cli/src/kete/update-keys.json` | — | Pinned Ed25519 public keys (`{ id, publicKey }`, raw 32 bytes base64); `kete-update-2026` since rc.4; the private key is env `release-signing`'s `KETE_UPDATE_SIGNING_KEY` |
@@ -168,7 +179,7 @@ Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` agains
 - `job run` must never call `POST /api/worktree` (D1) — that endpoint's `commands.start` setup script would run outside the job's own policy and audit; the CLI creates the worktree and branch itself with `git worktree add -b`.
 
 ## Testing
-- Narrowest: `bun test ./test/kete/<file>.test.ts` inside `packages/cli` — `login.test.ts`, `sync.test.ts`, `sync-mcp.test.ts`, `updater.test.ts` (tampered checksum/signature/archive, downgrade, interrupted and Windows swaps, detection, background policy), `release-verify.test.ts`, `stats.test.ts`, `cli.test.ts`, `job-spec.test.ts`, `job-run.test.ts`, `job-connection.test.ts`, `dumpable.test.ts`, `job-preflight.test.ts`, `job-serve.test.ts`, `job-standalone.test.ts` (`packages/cli/test/kete/`).
+- Narrowest: `bun test ./test/kete/<file>.test.ts` inside `packages/cli` — `login.test.ts`, `sync.test.ts`, `sync-mcp.test.ts`, `offline-startup.test.ts`, `models-pull.test.ts`, `updater.test.ts` (tampered checksum/signature/archive, downgrade, interrupted and Windows swaps, detection, background policy), `release-verify.test.ts`, `stats.test.ts`, `cli.test.ts`, `job-spec.test.ts`, `job-run.test.ts`, `job-connection.test.ts`, `dumpable.test.ts`, `job-preflight.test.ts`, `job-serve.test.ts`, `job-standalone.test.ts` (`packages/cli/test/kete/`).
 - `job-socket.subprocess.test.ts` — the real CLI as a subprocess, a session over the socket, no TCP
   listener, no secret in either process's environ. macOS runs it in source mode (passes the package
   bunfig via `BUN_OPTIONS=--config=…`); Linux checks (dumpable, `/proc/<pid>/environ`) need a built

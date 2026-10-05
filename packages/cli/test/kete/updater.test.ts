@@ -439,6 +439,26 @@ describe("kete updater: service", () => {
     expect(requests.length).toBeGreaterThan(0)
   })
 
+  test("offline: the background check and check() make no request", async () => {
+    const key = keyPair()
+    const server: Server = new Map()
+    await publish(server, key, "0.3.0", { latest: true })
+    const { deps: d, requests } = deps(server, [key.pinned])
+    const previous = process.env.OPENCODE_OFFLINE
+    process.env.OPENCODE_OFFLINE = "1"
+    try {
+      expect(await Effect.runPromise(service(d).run())).toBeUndefined()
+      expect(await Effect.runPromise(service(d).check())).toEqual({
+        type: "unavailable",
+        message: expect.stringContaining("Offline mode is on"),
+      })
+      expect(requests).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_OFFLINE
+      else process.env.OPENCODE_OFFLINE = previous
+    }
+  })
+
   test("upgrade through a package manager's method is refused with its command", async () => {
     const key = keyPair()
     const error = await Effect.runPromise(

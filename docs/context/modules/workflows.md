@@ -1,10 +1,11 @@
 ---
 module: workflows
 paths: [packages/core/src/kete/workflows.ts, packages/schema/src/config/kete.ts]
-verified-at: 715843563a
+verified-at: 604889ab32
 ---
 
 ## Quick answers
+- Anything new for workflows? Only the `kete` config schema gained `offline` (`schema/src/config/kete.ts:72`); workflow behaviour is unchanged.
 - Where workflows are configured: `kete.workflows` (a record keyed by workflow name), schema at `packages/schema/src/config/kete.ts:64-69`, each entry a `Workflow` (`:64-69`) of `WorkflowStep`s (`:47-62`).
 - How a step's task is filled in: `{{input}}` (the workflow call's `input`) and `{{steps.<id>}}` (an earlier step's final answer) — `render()`, `workflows.ts:116-120`, placeholder regex `:34`.
 - What actually runs a step: the `subagent` tool, called through a `Tool.Service` snapshot (`workflows.ts:287-301`) — a step gets every check/limit the `subagent` tool itself applies (permission, nesting depth, `kete.subagents` timeout/concurrency, worktrees).
