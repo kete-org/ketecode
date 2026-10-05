@@ -9,6 +9,7 @@
 - `packages/core/src/kete/offline.ts`: `skip` disables the network-bound presets too and logs the message once per distinct set.
 - `packages/cli/src/kete/mcp-preset.ts`, `mcp-preset-io.ts`, `mcp-presets-command.ts` (new); `cli/src/kete/commands.ts` (flags + `presets` spec).
 - Upstream (marked, recorded in docs/upstream-patches.md "MCP presets"): `cli/src/commands/commands.ts`, `cli/src/commands/handlers/mcp/add.ts`, `cli/src/index.ts`, `core/src/mcp/client.ts`.
+- `packages/kete-tools/src/lib.ts`: `docs/integrations/` counts as Kete-owned for `upstream:check` (+ test).
 - Docs: `docs/integrations/harness.md`, `docs/integrations/slack.md`, `.github/README.md` "Integrations".
 - Tests: `core/test/kete/mcp-presets.test.ts` (17), `cli/test/kete/mcp-preset.test.ts` (20), `util/test/kete/mcp-secret.test.ts` (7).
 
@@ -24,7 +25,8 @@
 | typecheck util, schema, core, cli | PASS |
 | protocol + client `bun run generate`; `check:generated` (both) | PASS |
 | root `bun run lint` | PASS (0 warnings, 0 errors) |
-| `upstream:check` | PASS |
+| `upstream:check` | PASS (after adding `docs/integrations/` to `isKeteOwned`) |
+| kete-tools `bun run typecheck`, `bun run test` | PASS (59) |
 | `stale-cards.mjs` / `card-check.mjs` | all current / clean |
 | Manual (source CLI, throwaway HOME): `mcp presets`, `mcp add slack` without ID, `mcp add docs --write --url …` (refused), `mcp add harness` non-TTY with `HARNESS_API_KEY` | as expected |
 
@@ -49,7 +51,7 @@ Not run: the packages' full suites (`verify --base main`) and a live Harness/Sla
 - Sync `integrations` is `Schema.Unknown` until the platform's contract ships; recorded in contracts.md §2.
 
 ## Cards updated
-New `mcp-presets` card + INDEX row; quick answers in `cli`, `config-kete`, `local-models`, `sync`, `server-sdk`, `account-login`; `subagents` and `workflows` re-verified (shared `schema/src/config/kete.ts`); contracts.md §2 pending `integrations` field. All bumped to `4e26b57120`.
+New `mcp-presets` card + INDEX row; quick answers in `cli`, `config-kete`, `local-models`, `sync`, `server-sdk`, `account-login`; `subagents` and `workflows` re-verified (shared `schema/src/config/kete.ts`); contracts.md §2 pending `integrations` field. All bumped to `4e26b57120`; `kete-tools-ci` to the tooling commit.
 
 ## Metrics
 - Agents used: one build agent
