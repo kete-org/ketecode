@@ -302,13 +302,19 @@ class KeteRuntime : Disposable {
         }
     }
 
+    /**
+     * Reads and discards the server's output (a full pipe would block it). The lines themselves never go
+     * to idea.log (they can carry prompts, paths or secrets); only how many there were, once it ends.
+     */
     private fun drain(stream: InputStream, name: String) {
         val thread = Thread({
+            var lines = 0L
             try {
-                stream.bufferedReader().forEachLine { line -> if (line.isNotBlank()) log.debug("$name: $line") }
+                stream.bufferedReader().forEachLine { line -> if (line.isNotBlank()) lines++ }
             } catch (_: Exception) {
                 // The process ended.
             }
+            log.debug("$name: output closed after $lines line(s)")
         }, "Kete Code output")
         thread.isDaemon = true
         thread.start()

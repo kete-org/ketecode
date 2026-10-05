@@ -28,15 +28,18 @@ import java.util.concurrent.Executors
 
 // The IDE's problems for the agent, as an MCP server the runtime connects to (the contract of
 // packages/kete-vscode/src/editor-tools.ts; protocol in core/EditorTools.kt). One loopback server per
-// IDE with a random bearer token; each project gets its own path (/mcp/<random key>) and is registered
-// with the running `kete serve` under its own directory. The runtime, not the plugin, executes the tool
+// IDE; each project gets its own path (/mcp/<random key>) and its own random bearer token, a new one on
+// every registration (every runtime start or restart), and is registered with the running `kete serve`
+// under its own directory. The runtime, not the plugin, executes the tool
 // call and applies permissions. Secret-looking and IDE-excluded files are never reported.
 
 @Service(Service.Level.APP)
 class EditorToolsServer : Disposable {
     private val log = logger<EditorToolsServer>()
-    private val token = KeteRuntime.randomToken()
-    private val projects = ConcurrentHashMap<String, Project>()
+    /** A registered project and its current bearer token (replaced on every registration). */
+    private class Entry(val project: Project, @Volatile var token: String)
+
+    private val projects = ConcurrentHashMap<String, Entry>()
     private var server: HttpServer? = null
     private var port = 0
 
@@ -58,9 +61,17 @@ class EditorToolsServer : Disposable {
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val port = ensureStarted()
-                val key = projects.entries.firstOrNull { it.value == project }?.key ?: KeteRuntime.randomToken().also { projects[it] = project }
                 val runtime = KeteRuntime.get()
                 val connection = runtime.running() ?: return@executeOnPooledThread
+                // A new token for every (re)connect: one from an earlier runtime run stops working.
+                val token = KeteRuntime.randomToken()
+                val key = synchronized(projects) {
+                    val known = projects.entries.firstOrNull { it.value.project == project }
+                    if (known != null) {
+                        known.value.token = token
+                        known.key
+                    } else KeteRuntime.randomToken().also { projects[it] = Entry(project, token) }
+                }
                 val response = runtime.request(
                     connection,
                     "PUT",
@@ -84,15 +95,17 @@ class EditorToolsServer : Disposable {
     }
 
     fun forget(project: Project) {
-        projects.entries.removeIf { it.value == project }
+        projects.entries.removeIf { it.value.project == project }
     }
 
     private fun handle(exchange: HttpExchange) {
         try {
             val headers = exchange.requestHeaders.mapValues { it.value.toList() }
-            if (!EditorTools.authorized(headers, token, port)) return send(exchange, 401, null)
             val key = exchange.requestURI.path.removePrefix("/mcp/")
-            val project = projects[key]?.takeIf { !it.isDisposed } ?: return send(exchange, 404, null)
+            // An unknown path gets the same answer as a wrong token.
+            val entry = projects[key] ?: return send(exchange, 401, null)
+            if (!EditorTools.authorized(headers, entry.token, port)) return send(exchange, 401, null)
+            val project = entry.project.takeIf { !it.isDisposed } ?: return send(exchange, 404, null)
             // Streamable HTTP without a server-to-client stream: GET is refused, DELETE ends nothing.
             if (exchange.requestMethod == "DELETE") return send(exchange, 200, null)
             if (exchange.requestMethod != "POST") return send(exchange, 405, null)

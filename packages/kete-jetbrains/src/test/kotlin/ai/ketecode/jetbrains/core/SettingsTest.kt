@@ -5,7 +5,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
 
 class KeteConfigTest {
     @Test
@@ -51,6 +55,19 @@ class KeteConfigTest {
     }
 
     @Test
+    fun `finds keys spelled with escapes instead of adding a duplicate`() {
+        // "providers", "kete" and "baseURL" spelled with \u escapes.
+        val before = """{ "provid\u0065rs": { "k\u0065te": { "settings": { "base\u0055RL": "http://old:1" } } } }"""
+        val after = KeteConfig.applySettings(before, KeteSettings(gatewayUrl = "http://new:2"))
+        assertFalse(after.contains("http://old:1"))
+        assertTrue(after.contains("\"provid\\u0065rs\""), "the original spelling is kept")
+        assertEquals(1, Regex("providers|provid\\\\u0065rs").findAll(after).count())
+        assertEquals(mapOf("providers" to mapOf("kete" to mapOf("settings" to mapOf("baseURL" to "http://new:2")))), Json.parse(after))
+        assertThrows(JsoncException::class.java) { KeteConfig.applySettings("""{ "a\u00zz": 1 }""", KeteSettings(gatewayUrl = "http://a")) }
+        assertThrows(JsoncException::class.java) { KeteConfig.applySettings("""{ "a\u-001": 1 }""", KeteSettings(gatewayUrl = "http://a")) }
+    }
+
+    @Test
     fun `refuses files that aren't a JSON object`() {
         assertThrows(JsoncException::class.java) { KeteConfig.applySettings("[1, 2]", KeteSettings(gatewayUrl = "http://a")) }
         assertThrows(JsoncException::class.java) { KeteConfig.applySettings("{ \"a\": ", KeteSettings(gatewayUrl = "http://a")) }
@@ -69,6 +86,44 @@ class KeteConfigTest {
         assertNull(KeteConfig.configDirectory("nothing"))
         assertEquals("ask", KeteConfig.permissionMode("ask"))
         assertEquals("default", KeteConfig.permissionMode("anything"))
+    }
+}
+
+class AtomicFileTest {
+    @TempDir
+    lateinit var temp: Path
+
+    @Test
+    fun `replaces the file whole, keeps comments and leaves no temporary file`() {
+        val file = temp.resolve("kete.jsonc")
+        Files.writeString(file, "{ // mine\n}\n")
+        val text = KeteConfig.applySettings(Files.readString(file), KeteSettings(gatewayUrl = "http://new:2"))
+        AtomicFile.write(file, text)
+        assertEquals(text, Files.readString(file))
+        assertTrue(Files.readString(file).contains("// mine"))
+        assertEquals(listOf("kete.jsonc"), Files.list(temp).use { files -> files.map { it.fileName.toString() }.toList() })
+    }
+
+    @Test
+    fun `creates a missing file and folder`() {
+        val file = temp.resolve("config/kete/kete.jsonc")
+        AtomicFile.write(file, "{}\n")
+        assertEquals("{}\n", Files.readString(file))
+    }
+
+    @Test
+    fun `a symbolic link keeps pointing at the file it leads to`() {
+        val real = Files.createDirectories(temp.resolve("dotfiles")).resolve("kete.jsonc")
+        Files.writeString(real, "{}\n")
+        val link = Files.createDirectories(temp.resolve("config")).resolve("kete.jsonc")
+        try {
+            Files.createSymbolicLink(link, real)
+        } catch (error: Exception) {
+            assumeTrue(false, "can't create symbolic links: ${error.message}")
+        }
+        AtomicFile.write(link, "{ \"a\": 1 }\n")
+        assertTrue(Files.isSymbolicLink(link))
+        assertEquals("{ \"a\": 1 }\n", Files.readString(real))
     }
 }
 

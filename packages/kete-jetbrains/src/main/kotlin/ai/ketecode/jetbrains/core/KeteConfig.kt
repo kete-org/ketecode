@@ -169,7 +169,23 @@ object Jsonc {
                 val char = text[index]
                 if (char == '"') return Pair(out.toString(), index + 1)
                 if (char == '\\' && index + 1 < text.length) {
-                    out.append(text[index + 1])
+                    // JSON escapes, so a key spelled with escapes (e.g. "provid\u0065rs") is still found.
+                    when (val escape = text[index + 1]) {
+                        'b' -> out.append('\b')
+                        'f' -> out.append('\u000C')
+                        'n' -> out.append('\n')
+                        'r' -> out.append('\r')
+                        't' -> out.append('\t')
+                        'u' -> {
+                            val code = text.substring(index + 2, minOf(index + 6, text.length))
+                                .takeIf { hex -> hex.length == 4 && hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' } }?.toInt(16)
+                                ?: throw JsoncException("bad unicode escape at $index")
+                            out.append(code.toChar())
+                            index += 6
+                            continue
+                        }
+                        else -> out.append(escape)
+                    }
                     index += 2
                     continue
                 }

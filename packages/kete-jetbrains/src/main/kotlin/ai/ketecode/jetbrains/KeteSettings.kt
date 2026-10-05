@@ -1,5 +1,6 @@
 package ai.ketecode.jetbrains
 
+import ai.ketecode.jetbrains.core.AtomicFile
 import ai.ketecode.jetbrains.core.KeteConfig
 import ai.ketecode.jetbrains.core.PluginSettings
 import com.intellij.notification.NotificationType
@@ -76,8 +77,13 @@ class KeteSettingsService : SimplePersistentStateComponent<KeteSettingsService.S
             return false
         }
         if (after == before) return false
-        File(directory).mkdirs()
-        file.writeText(if (after.endsWith("\n")) after else "$after\n")
+        try {
+            // Atomically (a temporary file moved over it), so the runtime never reads half a file.
+            AtomicFile.write(file.toPath(), if (after.endsWith("\n")) after else "$after\n")
+        } catch (error: Exception) {
+            notify(null, "Couldn't write ${file.name}: ${error.message}", NotificationType.ERROR)
+            return false
+        }
         logger<KeteSettingsService>().info("updated ${file.name} from the Kete Code settings")
         return true
     }
