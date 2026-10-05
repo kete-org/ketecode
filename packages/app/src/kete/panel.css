@@ -329,3 +329,57 @@
     height: 56px;
   }
 }
+
+/* ---------- Local models: Offline indicator, first-run offer, unreachable servers (local-ui.tsx) ---------- */
+
+[data-kete="offline-indicator"] {
+  margin-left: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--kete-border-strong);
+  border-radius: var(--kete-r-inline);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--kete-text-2);
+}
+
+[data-kete="local-offer"] {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--kete-border);
+  border-radius: var(--kete-r-container);
+  background: var(--kete-surface);
+}
+[data-kete="local-offer"] p {
+  margin: 0;
+  color: var(--kete-text-1);
+}
+[data-kete="local-offer-actions"] {
+  display: flex;
+  gap: 8px;
+}
+
+[data-kete="local-unreachable"] {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--kete-border);
+  border-radius: var(--kete-r-control);
+  font-size: 13px;
+}
+[data-kete="local-unreachable"] p {
+  margin: 0;
+  color: var(--kete-text-2);
+  overflow-wrap: anywhere;
+}
+[data-kete="local-unreachable"] p:first-child {
+  color: var(--kete-text-1);
+}
+[data-kete="local-unreachable"] code {
+  font-family: var(--kete-mono);
+  font-size: 12px;
+}

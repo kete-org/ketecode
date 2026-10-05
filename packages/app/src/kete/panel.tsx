@@ -1,5 +1,6 @@
 // The chat panel's own parts: the header above the empty state, the empty state itself (hero mark,
-// tip, dismissible notices) and the dismissible CLI hint above the composer. Styled by panel.css;
+// tip, dismissible notices, the first-run local models offer) and the dismissible CLI hint above the
+// composer; the header also carries the "Offline" indicator (local-ui.tsx). Styled by panel.css;
 // content (notices, the CLI hint, the tip's platform) comes from panel-state.ts, which the VS Code
 // bridge fills in over `kete.panel` — the browser shows none of it (D4). Dismissing hides locally
 // right away and tells the extension (vscode-host.tsx), whose next `kete.panel` is authoritative.
@@ -21,6 +22,7 @@ import {
   type Platform,
 } from "./panel-state"
 import { dismissCliHint, dismissNotice } from "./vscode-host"
+import { KeteLocalOffer, KeteOfflineIndicator } from "./local-ui"
 import "./panel.css"
 
 export function KetePanelHeader() {
@@ -28,6 +30,7 @@ export function KetePanelHeader() {
     <header data-kete="panel-header">
       <KeteMark class="kete-panel-header-mark" decorative />
       <KeteWordmark class="kete-panel-header-wordmark" />
+      <KeteOfflineIndicator />
     </header>
   )
 }
@@ -37,6 +40,7 @@ export function KeteEmptyState() {
   return (
     <div data-kete="empty-state">
       <KeteMark class="kete-hero-mark" decorative />
+      <KeteLocalOffer />
       <Show when={tipVisible(state())}>
         <p class="kete-tip">
           Select any code and press <TipKeys platform={state().platform} /> to ask Kete about it

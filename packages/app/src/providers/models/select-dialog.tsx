@@ -23,6 +23,10 @@ import { matchesModelSearch } from "./search"
 import { SettingsList } from "@/settings/list"
 import { CONSOLE_GROUP_KEY, consoleModelGroup, ProviderModelSections } from "@/providers/models/provider-group"
 import "@/settings/settings.css"
+// kete_change start: local models (badges, Local group titles, unreachable servers)
+import { groupTitle } from "@/kete/local-models"
+import { KeteLocalBadges, KeteLocalUnreachable } from "@/kete/local-ui"
+// kete_change end
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
@@ -126,6 +130,7 @@ const ModelList: Component<{
                   <Show when={item.latest}>
                     <Badge class="shrink-0">{language.t("model.tag.latest")}</Badge>
                   </Show>
+                  <KeteLocalBadges item={item} /> {/* kete_change */}
                 </div>
               </div>
               <div data-slot="settings-row-control" class="size-4">
@@ -190,6 +195,7 @@ const ModelList: Component<{
       </div>
       <div class="relative min-h-0 flex-1">
         <div ref={(element) => (scrollRef = element)} class="settings-panel settings-models h-full px-4 pt-1 pb-4">
+          <KeteLocalUnreachable /> {/* kete_change: a line per local server that can't be reached */}
           <Show
             when={models().length > 0}
             fallback={<div class="settings-models-status">{language.t("dialog.model.empty")}</div>}
@@ -441,7 +447,11 @@ function ModelSelectorPopoverView(props: {
                   {(group) => (
                     <Menu.Group>
                       <Menu.GroupLabel class="gap-2 px-3">
-                        <span class="min-w-0 truncate">{group.items[0].provider.name}</span>
+                        {/* kete_change start: local server groups read "Local · Ollama" */}
+                        <span class="min-w-0 truncate">
+                          {groupTitle(group.items[0].provider, group.items[0].provider.name)}
+                        </span>
+                        {/* kete_change end */}
                       </Menu.GroupLabel>
                       <Menu.RadioGroup value={props.current}>
                         <For each={group.items}>
@@ -479,6 +489,7 @@ function ModelSelectorPopoverView(props: {
                                 <Show when={item.latest}>
                                   <Badge class="shrink-0">{language.t("model.tag.latest")}</Badge>
                                 </Show>
+                                <KeteLocalBadges item={item} /> {/* kete_change */}
                               </Menu.RadioItem>
                             </Tooltip>
                           )}

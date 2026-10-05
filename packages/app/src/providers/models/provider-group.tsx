@@ -11,6 +11,7 @@ import { OpenCodeLogo } from "@/providers/opencode-logo"
 import { useLanguage } from "@/runtime/i18n/language"
 import customManagedProvider from "@/providers/custom-managed-provider.svg"
 import "@/settings/settings.css"
+import { groupTitle } from "@/kete/local-models" // kete_change
 
 type ModelProvider = { id: string; canonical?: string; name: string }
 type ModelItem = { provider: ModelProvider & { integrationID?: string }; cost?: { input: number } }
@@ -84,7 +85,7 @@ export function ProviderModelSections<T extends ModelItem>(props: {
   const name = (group: ModelGroup<T>) =>
     group.category === "opencode" && group.items.every((item) => !item.cost?.input)
       ? language.t("provider.connect.opencode.freeName")
-      : group.items[0].provider.name
+      : groupTitle(group.items[0].provider, group.items[0].provider.name) // kete_change: "Local · Ollama"
 
   function Header(input: { id: string; icon: JSX.Element; title: JSX.Element; badge?: string; action?: JSX.Element }) {
     return (
