@@ -60,6 +60,8 @@ export interface Input {
    * job mode), needs `spec.branch` (the branch the entrypoint checked out) and a `.git` in `cwd`,
    * and reports `isolated: true` with `worktree` = `cwd`. Nothing is created or cleaned up. */
   readonly jobMode?: boolean
+  /** `--trust-project-config` / `KETE_TRUST_PROJECT_CONFIG=1`: skip the project-config check (B1). */
+  readonly trustProjectConfig?: boolean
 }
 
 // --- Deps: every side effect, written out structurally so callers never import this module's
@@ -94,6 +96,13 @@ export interface Git {
     input: { readonly path: string; readonly branch: string },
     options?: { readonly signal?: AbortSignal },
   ) => Promise<GitDiscardResult>
+}
+
+/** One project config file (or plugin directory) that sets something a repository may not control
+ * in an unattended run — `job-project-config.ts`'s `Finding`, written out structurally. */
+export interface ProjectConfigFinding {
+  readonly file: string
+  readonly keys: ReadonlyArray<string>
 }
 
 export interface StatLike {
@@ -134,6 +143,9 @@ export interface Deps {
   readonly randomId: () => string
   /** True when `client` is attached to the background service (controls whether `session.environment` runs). */
   readonly attached: boolean
+  /** The project config the runtime would load from `directory` up to `stop` (the repository or
+   * worktree root) that a repository may not control unattended (B1, `job-project-config.ts`). */
+  readonly inspectProjectConfig: (directory: string, stop: string) => Promise<ReadonlyArray<ProjectConfigFinding>>
 }
 
 // --- Result (the `--json` contract, v1: additive-only from here on). ---
@@ -192,6 +204,24 @@ function finish(outcome: Outcome, partial: Partial, exitCode?: number): { readon
 
 function refuse(message: string, partial: Partial = {}): { readonly exitCode: number; readonly result: Result } {
   return finish("refused", { ...partial, message })
+}
+
+/** The refusal for B1: names every file and setting, and the ways out. */
+export function projectConfigMessage(findings: ReadonlyArray<ProjectConfigFinding>): string {
+  const listed = findings.map((finding) => `${finding.file}: ${finding.keys.join(", ")}`).join("; ")
+  return (
+    `Unattended run refused: this repository's own config sets what only you may set for an unattended run (${listed}). ` +
+    `Remove those settings or move them to your global config or KETE_CONFIG_CONTENT, or pass --trust-project-config ` +
+    `(or set KETE_TRUST_PROJECT_CONFIG=1) if you trust this repository's config.`
+  )
+}
+
+/** Runs `deps.inspectProjectConfig`, failing closed: an error inspecting is itself a finding. */
+async function untrustedProjectConfig(deps: Deps, directory: string, stop: string): Promise<string | undefined> {
+  const findings = await deps
+    .inspectProjectConfig(directory, stop)
+    .catch((error: unknown) => [{ file: directory, keys: [`could not be inspected: ${errorMessage(error)}`] }])
+  return findings.length > 0 ? projectConfigMessage(findings) : undefined
 }
 
 // --- git helpers ---
@@ -446,6 +476,20 @@ async function execute(input: Input, deps: Deps): Promise<{ readonly exitCode: n
   if (!isolated && spec.branch !== undefined)
     return refuse(`a branch was requested ("${spec.branch}") but ${cwd} is not a git repository`, { isolated: false })
 
+  // B1: before the server sees this directory (and could load a project MCP server or plugin), the
+  // repository's own config may not set providers, MCP servers, plugins, sharing or Kete's
+  // integration/platform/unattended settings. Job mode's server never loads project config.
+  const checkProjectConfig = !jobMode && input.trustProjectConfig !== true
+  if (checkProjectConfig) {
+    // Compare real paths: `git rev-parse --show-toplevel` resolves symlinks (macOS's /tmp, say).
+    const [realCwd, realRoot] = await Promise.all([
+      deps.realpath(cwd).catch(() => cwd),
+      root === undefined ? undefined : deps.realpath(root).catch(() => root),
+    ])
+    const problem = await untrustedProjectConfig(deps, realCwd, realRoot ?? realCwd)
+    if (problem !== undefined) return refuse(problem, { isolated })
+  }
+
   // D1: the server (and thus the worktree the CLI is about to create) must be reachable at this
   // directory on this machine — a loopback tunnel to another host would otherwise pass the URL check above.
   const location = await deps.client.location
@@ -499,6 +543,16 @@ async function execute(input: Input, deps: Deps): Promise<{ readonly exitCode: n
         `warning: failed to clean up the unused worktree/branch (${worktree}, ${branch}): ${discard.remove.stderr.trim()} ${discard.branch.stderr.trim()}`.trim() +
           "\n",
       )
+  }
+
+  // B1 again on the job's own worktree: it's built from the last commit, which can differ from the
+  // working tree checked above.
+  if (checkProjectConfig && worktree !== undefined) {
+    const problem = await untrustedProjectConfig(deps, sessionDirectory, worktree)
+    if (problem !== undefined) {
+      await cleanup()
+      return refuse(problem, { isolated, branch, worktree, directory: sessionDirectory })
+    }
   }
 
   // Defense in depth: `validateSpec` above already refused a bad `model` before anything was

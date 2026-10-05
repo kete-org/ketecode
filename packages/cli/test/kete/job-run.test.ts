@@ -134,6 +134,7 @@ function fakeDeps(input: {
     onInterrupt: () => () => {},
     randomId: () => "0123456789abcdef",
     attached: false,
+    inspectProjectConfig: async () => [],
   }
 }
 
@@ -146,6 +147,7 @@ async function runWith(options: {
   readonly git?: ReturnType<typeof fakeGit>
   readonly auditFiles?: Record<string, string>
   readonly jobMode?: boolean
+  readonly trustProjectConfig?: boolean
   readonly extra?: Partial<JobRun.Deps>
 }) {
   const client = options.client ?? fakeClient()
@@ -155,7 +157,14 @@ async function runWith(options: {
   const stderrLines: string[] = []
   const wrapped: JobRun.Deps = { ...deps, stdout: (text) => stdoutLines.push(text), stderr: (text) => stderrLines.push(text) }
   const result = await JobRun.run(
-    { spec: options.spec ?? validSpec, cwd: options.cwd ?? "/repo", serverUrl: options.serverUrl, json: options.json ?? false, jobMode: options.jobMode },
+    {
+      spec: options.spec ?? validSpec,
+      cwd: options.cwd ?? "/repo",
+      serverUrl: options.serverUrl,
+      json: options.json ?? false,
+      jobMode: options.jobMode,
+      trustProjectConfig: options.trustProjectConfig,
+    },
     wrapped,
   )
   return { ...result, stdoutLines, stderrLines, client, git }
@@ -577,5 +586,117 @@ describe("JobRun.run — job mode: cwd is the entrypoint's prepared worktree", (
     expect(exitCode).toBe(2)
     expect(result.outcome).toBe("audit_failed")
     expect(result.message).toContain("timeout")
+  })
+})
+
+describe("JobRun.run — project config trust (B1, task 2026-10-05-unattended-secret-hygiene)", () => {
+  const completedAudit = {
+    "/data/audit/ses_job.jsonl":
+      JSON.stringify({ v: 1, type: "run", event: "ended", session_id: "ses_job", root_id: "ses_job", reason: "completed" }) + "\n",
+  }
+  const calls = (fn: unknown) => (fn as { mock: { calls: unknown[] } }).mock.calls
+
+  test("AC6: guarded project config refuses before the server is contacted, naming file and keys", async () => {
+    const client = fakeClient()
+    const git = fakeGit()
+    const inspected: Array<[string, string]> = []
+    const { exitCode, result } = await runWith({
+      client,
+      git,
+      extra: {
+        inspectProjectConfig: async (directory, stop) => {
+          inspected.push([directory, stop])
+          return [{ file: "/repo/.kete/kete.json", keys: ["providers.openai", "mcp.evil"] }]
+        },
+      },
+    })
+    expect(exitCode).toBe(2)
+    expect(result.outcome).toBe("refused")
+    expect(result.message).toContain("/repo/.kete/kete.json: providers.openai, mcp.evil")
+    expect(result.message).toContain("--trust-project-config")
+    expect(result.message).toContain("KETE_TRUST_PROJECT_CONFIG=1")
+    expect(inspected).toEqual([["/repo", "/repo"]])
+    expect(calls(client.client.location.get)).toEqual([])
+    expect(git.calls.some((call) => call.fn === "worktreeAdd")).toBe(false)
+  })
+
+  test("a subdirectory run is inspected up to the repository root", async () => {
+    const inspected: Array<[string, string]> = []
+    await runWith({
+      cwd: "/repo/app",
+      client: fakeClient({ locationDirectory: "/repo/app" }),
+      auditFiles: completedAudit,
+      extra: {
+        inspectProjectConfig: async (directory, stop) => {
+          inspected.push([directory, stop])
+          return []
+        },
+      },
+    })
+    expect(inspected).toEqual([
+      ["/repo/app", "/repo"],
+      ["/data/worktree/abcdef/job-01234567/app", "/data/worktree/abcdef/job-01234567"],
+    ])
+  })
+
+  test("an inspection error fails closed", async () => {
+    const client = fakeClient()
+    const { exitCode, result } = await runWith({
+      client,
+      extra: { inspectProjectConfig: async () => Promise.reject(new Error("EACCES")) },
+    })
+    expect(exitCode).toBe(2)
+    expect(result.message).toContain("could not be inspected: EACCES")
+    expect(calls(client.client.location.get)).toEqual([])
+  })
+
+  test("--trust-project-config skips the check", async () => {
+    let inspected = 0
+    const { exitCode } = await runWith({
+      trustProjectConfig: true,
+      auditFiles: completedAudit,
+      extra: {
+        inspectProjectConfig: async () => {
+          inspected++
+          return [{ file: "/repo/kete.json", keys: ["providers.openai"] }]
+        },
+      },
+    })
+    expect(exitCode).toBe(0)
+    expect(inspected).toBe(0)
+  })
+
+  test("job mode skips the check (its server never loads project config)", async () => {
+    let inspected = 0
+    await runWith({
+      jobMode: true,
+      spec: { ...validSpec, branch: "job/x" },
+      auditFiles: { ...completedAudit, "/repo/.git": "gitdir" },
+      extra: {
+        inspectProjectConfig: async () => {
+          inspected++
+          return [{ file: "/repo/kete.json", keys: ["providers.openai"] }]
+        },
+      },
+    })
+    expect(inspected).toBe(0)
+  })
+
+  test("the worktree is re-checked; a finding there removes the worktree and creates no session", async () => {
+    const client = fakeClient()
+    const git = fakeGit()
+    const { exitCode, result } = await runWith({
+      client,
+      git,
+      extra: {
+        inspectProjectConfig: async (directory) =>
+          directory === "/repo" ? [] : [{ file: `${directory}/kete.json`, keys: ["plugins"] }],
+      },
+    })
+    expect(exitCode).toBe(2)
+    expect(result.message).toContain("/data/worktree/abcdef/job-01234567/kete.json: plugins")
+    expect(result.worktree).toBe("/data/worktree/abcdef/job-01234567")
+    expect(git.calls.some((call) => call.fn === "worktreeDiscard")).toBe(true)
+    expect(calls(client.client.session.create)).toEqual([])
   })
 })
