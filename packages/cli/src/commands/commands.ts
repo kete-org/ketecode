@@ -206,7 +206,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       commands: [
         Spec.make("list", { description: "List configured MCP servers and their status" }),
         Spec.make("add", {
-          description: "Add an MCP server to your configuration",
+          description: "Add an MCP server to your configuration, or a built-in preset (`kete mcp presets`)", // kete_change
           params: {
             name: Argument.string("name").pipe(Argument.withDescription("Name of the MCP server")),
             command: Argument.string("command").pipe(
@@ -226,8 +226,10 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
               Flag.withDescription("Write to the global config instead of the project config"),
               Flag.withDefault(false),
             ),
+            ...KeteCommands.mcpPresetParams, // kete_change: `kete mcp add harness|slack` presets
           },
         }),
+        KeteCommands.mcpPresets, // kete_change
         Spec.make("auth", {
           description: "Authenticate with an OAuth-capable remote MCP server",
           params: { name: Argument.string("name").pipe(Argument.withDescription("Name of the MCP server")) },

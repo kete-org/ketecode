@@ -142,6 +142,10 @@ export const SyncResponse = Schema.Struct({
   skills: Schema.optional(Schema.Array(SyncedSkill)),
   /** Added in v1 (platform runtime-registration-policies); absent means the platform serves none. */
   policies: Schema.optional(Schema.Array(SyncedPolicy)),
+  /** Being added by the platform (Slack integration task): organization integration settings, e.g.
+   * `integrations.slack.client_id`. Loosely typed so a shape this runtime doesn't know never fails a
+   * sync; read it through ./integrations.ts. Absent means none. */
+  integrations: Schema.optional(Schema.Unknown),
 })
 
 /** GET /api/v1/sync/skills/{id}/files → 200 */

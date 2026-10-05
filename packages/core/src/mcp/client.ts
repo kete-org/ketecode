@@ -29,6 +29,7 @@ import { Cause, Effect, Exit, Schema } from "effect"
 import { ConfigMCP } from "@opencode/schema/config/mcp"
 import type { Session } from "@opencode/schema/session"
 import { McpStdio } from "./stdio.js"
+import { KeteMcpSecrets } from "../kete/mcp-secrets.js" // kete_change
 
 const DEFAULT_STARTUP_TIMEOUT = 30_000
 const DEFAULT_CATALOG_TIMEOUT = 30_000
@@ -196,14 +197,17 @@ export const connect = Effect.fnUntraced(function* (
   const exit = yield* Effect.gen(function* () {
     if (config.type === "local") {
       const [command, ...args] = config.command
+      // kete_change start: stored secrets, released at spawn only to the definition they were stored for
+      const spawn = yield* KeteMcpSecrets.prepare(server, config, config.cwd ? path.resolve(directory, config.cwd) : directory)
+      // kete_change end
       const transport = yield* McpStdio.make({
         server,
         command,
         args,
-        cwd: config.cwd ? path.resolve(directory, config.cwd) : directory,
+        cwd: spawn.cwd, // kete_change
         environment: {
           ...(command === "opencode" ? { BUN_BE_BUN: "1" } : {}),
-          ...config.environment,
+          ...spawn.environment, // kete_change
         },
       })
       return yield* initialize(transport)

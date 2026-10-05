@@ -2174,6 +2174,7 @@ export type ConfigEntry =
               }>
             }
           }
+          integrations?: { slack?: { clientId?: string } }
         }
       }
     }

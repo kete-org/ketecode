@@ -68,6 +68,17 @@ export class Workflow extends Schema.Class<Workflow>("ConfigKete.Workflow")({
   }),
 }) {}
 
+export class SlackIntegration extends Schema.Class<SlackIntegration>("ConfigKete.SlackIntegration")({
+  clientId: Schema.String.pipe(optional).annotate({
+    description:
+      "Client ID of the Slack app `kete mcp add slack` signs in with (a Slack Marketplace or internal app that a workspace admin has approved). `--client-id` wins; without either, the organization's synced Slack app is used when the platform provides one.",
+  }),
+}) {}
+
+export class Integrations extends Schema.Class<Integrations>("ConfigKete.Integrations")({
+  slack: SlackIntegration.pipe(optional).annotate({ description: "The Slack MCP preset" }),
+}) {}
+
 export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   offline: Schema.Boolean.pipe(optional).annotate({
     description:
@@ -79,5 +90,8 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   subagents: Subagents.pipe(optional).annotate({ description: "Limits for subagents" }),
   workflows: Schema.Record(Schema.String, Workflow).pipe(optional).annotate({
     description: "Reusable workflows that run agents in order, by name; run them with the workflow tool or /<name>",
+  }),
+  integrations: Integrations.pipe(optional).annotate({
+    description: "Settings for the built-in MCP presets (`kete mcp presets`)",
   }),
 }) {}

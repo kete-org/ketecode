@@ -1,7 +1,7 @@
 ---
 module: subagents
 paths: [packages/core/src/kete/subagents.ts, packages/core/src/tool/plugin/subagent.ts, packages/core/src/session/subagent-job.ts, packages/core/src/config/plugin/command.ts, packages/core/src/job.ts, packages/schema/src/config/kete.ts]
-verified-at: 604889ab32
+verified-at: 4e26b57120
 ---
 
 ## Quick answers

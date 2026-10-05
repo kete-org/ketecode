@@ -666,6 +666,31 @@ Kete's own public-facing files are new and Kete-owned: `.github/README.md`, `SEC
 `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (GitHub shows them instead of upstream's root files, which
 stay untouched).
 
+### MCP presets (feature/mcp-presets)
+
+`kete mcp add harness|slack` and `kete mcp presets` (docs/integrations/). The catalogue
+(`schema/src/kete/mcp-presets.ts`) expands a preset to an ordinary `mcp.servers` entry plus top-level
+`permissions` rules, written into the same file upstream's `kete mcp add` writes; nothing about a
+preset is special at runtime. Stored secrets: config holds `{kete-secret:mcp:<name>}` and the runtime
+resolves it from the OS secret store when it spawns a local server (`core/src/kete/mcp-secrets.ts`,
+`util/src/kete/mcp-secret.ts`; only `mcp:` entries resolve, only to a local server whose name owns the
+entry and whose definition matches the fingerprint stored with the secret; such a server runs in
+`<data>/mcp-servers/<name>` instead of the project directory). Offline mode skips the presets
+(`core/src/kete/offline.ts`, Kete-owned). Slack's OAuth uses upstream's remote-MCP OAuth unchanged with
+`oauth.client_id` (PKCE, no secret written).
+
+| File | Change |
+| --- | --- |
+| `cli/src/commands/commands.ts` | `mcp add` takes `KeteCommands.mcpPresetParams` (`--write`, `--org`, `--project`, `--base-url`, `--client-id`, `--new-key`) and its description mentions presets; `mcp presets` subcommand (`KeteCommands.mcpPresets`) |
+| `cli/src/commands/handlers/mcp/add.ts` | A preset name without `--url` or a command routes to `kete/mcp-preset.ts`; preset flags on any other server are an error (`presetInput` helper at the end of the file) |
+| `cli/src/index.ts` | `mcp.presets` handler → `kete/mcp-presets-command.ts` |
+| `core/src/mcp/client.ts` | Before a local server's spawn, `KeteMcpSecrets.prepare` resolves stored-secret references (refusing a definition the secret wasn't stored for) and picks the `cwd` (upstream's for servers without a secret); marked block + two marked lines + import |
+
+**Sync checklist:** if upstream changes how `McpStdio.make` gets its environment, or adds its own
+secret references to MCP config, move the `KeteMcpSecrets.prepare` call with it (both `cwd` and
+`environment` must come from it). If upstream adds an
+`mcp add` flag named like a preset flag, or a `presets` subcommand, the spread/registration collides.
+
 ### Upstream test edits
 
 55 upstream test files and `core/script/test.ts` were updated so their fixtures

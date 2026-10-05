@@ -1,9 +1,10 @@
 ---
 module: sync
 paths: [packages/util/src/kete/sync/**, packages/core/src/kete/sync/**, packages/cli/src/kete/sync.ts]
-verified-at: 8a2747cd4d
+verified-at: 4e26b57120
 ---
 ## Quick answers
+- Does the sync response carry integration settings? Optionally: `integrations` (`util/src/kete/sync/contract.ts:148`, `Schema.Unknown` so an unknown shape never fails a sync), being added by the platform's Slack task; `util/src/kete/sync/integrations.ts` `slackClientId` reads `integrations.slack.client_id` for `kete mcp add slack`. Not yet in docs/platform/sync-v1.md.
 - What does sync do offline? `core/src/kete/sync/plugin.ts:146` `offline()` = `KeteOffline.active` (env flag or `kete.offline` as loaded now), re-checked on every tick: the cached copy (and its policies and fail-closed guard) is always loaded; the periodic and on-demand sync go through `whenOnline` (skipped while offline, logged once) and each registration tick returns early (`:430`). Turning `kete.offline` on in config pauses both from the next tick; off resumes them. `kete sync` is refused offline (exit 2) except `--status`/`--approve` (`cli/src/kete/sync.ts`).
 - Where does `KeteSync.sync` return `signed-out`? `util/src/kete/sync/sync.ts:67`, when no account is readable and no `credential` is given; with a `credential` it never does. `load()` (`sync.ts:49`) and `sync()` (`:63`) both need an account outside job mode; job mode passes `credential: {platform, key, organization?}` (`:12-19`) instead and the account file and OS key store are never read; `load` with a credential and no organization returns undefined.
 - Which platform URL does sync use? An account's `platform_url`; in job mode `KETE_PLATFORM_URL` only (`KeteJobMode.endpoints`, `util/src/kete/job-mode.ts:97`), key = the job's gateway key as Bearer. A 401 says "refused the job's key" without `kete login` advice (`client.ts:65-66`).
