@@ -7,6 +7,7 @@ import { Model } from "../../model.js"
 import type { PluginInternal } from "../internal.js"
 import { foldSettings } from "./configured.js"
 import { KeteLocalHosts } from "../../kete/local-hosts.js" // kete_change
+import { KeteOffline } from "../../kete/offline.js" // kete_change
 
 const providerID = "ollama"
 
@@ -108,6 +109,7 @@ export function make(origin = "http://127.0.0.1:11434", interval: Duration.Input
       const discover = Effect.fn("OllamaPlugin.discover")(function* () {
         const current = source.current
         if (!current.tagsEndpoint || !current.showEndpoint) return undefined
+        if (yield* KeteOffline.blocks(config, current.baseURL)) return undefined // kete_change: offline mode never contacts a host that isn't local
         return yield* discoveryLock.withPermit(
           Effect.gen(function* () {
             const cached = discovery.get(current.tagsEndpoint)

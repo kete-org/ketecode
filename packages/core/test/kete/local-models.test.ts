@@ -486,3 +486,112 @@ describe("KeteLocalModels rediscover", () => {
     ),
   )
 })
+
+/** A client that records every request and answers 503, so nothing leaves this machine. */
+const recording = () => {
+  const requests: Array<{ url: string; authorization: string | undefined }> = []
+  const client = HttpClient.make((request) =>
+    Effect.sync(() => {
+      requests.push({ url: request.url, authorization: request.headers["authorization"] })
+      return HttpClientResponse.fromWeb(request, new Response("unavailable", { status: 503 }))
+    }),
+  )
+  return { requests, client }
+}
+
+describe("KeteLocalModels status in offline mode", () => {
+  const publicHost = "203.0.113.10"
+
+  it.live("a server that isn't on this machine or a private network is blocked: no request, no API key sent", () =>
+    Effect.gen(function* () {
+      const config = yield* Config.Test
+      const key = "public-host-key"
+      yield* config.setEntries([
+        settings("ollama", { baseURL: `http://${publicHost}:11434/v1`, apiKey: key }),
+        settings("lmstudio", { baseURL: `https://${publicHost}/v1`, apiKey: key }),
+        settings("vllm", { baseURL: `http://${publicHost}:8000/v1`, apiKey: key }),
+        document({ kete: { offline: true } }),
+      ])
+      const fake = recording()
+      const mock = yield* startMock({ timeout: "150 millis" }).pipe(Effect.provideService(HttpClient.HttpClient, fake.client))
+      const status = yield* mock.status()
+      expect(status.offline).toBe(true)
+      for (const id of ["ollama", "lmstudio", "vllm"] as const) {
+        const item = find(status, id)
+        expect(item.state).toBe("blocked")
+        expect(item.error).toBe(`offline mode: ${item.url} isn't on this machine or a private network`)
+        expect(item.hint).toContain("turn offline mode off")
+        expect(item.models).toBeUndefined()
+      }
+      expect(fake.requests).toEqual([])
+      expect(JSON.stringify(status)).not.toContain(key)
+    }),
+  )
+
+  it.live("offline from the environment blocks a public OLLAMA_HOST while local servers are still probed", () =>
+    Effect.gen(function* () {
+      const fake = recording()
+      const mock = yield* startMock({
+        environment: { OPENCODE_OFFLINE: "1", OLLAMA_HOST: `${publicHost}:11434`, OPENCODE_VLLM_HOST: "192.168.1.20:8000" },
+        timeout: "150 millis",
+      }).pipe(Effect.provideService(HttpClient.HttpClient, fake.client))
+      const status = yield* mock.status()
+      expect(find(status, "ollama")).toMatchObject({ state: "blocked", source: "env" })
+      // A private-network host is local (D5): it is contacted (the stub answers 503).
+      expect(find(status, "vllm")).toMatchObject({ state: "unreachable", error: "the server answered HTTP 503" })
+      expect(fake.requests.some((request) => request.url.includes(publicHost))).toBe(false)
+      expect(fake.requests.some((request) => request.url.includes("192.168.1.20"))).toBe(true)
+    }),
+  )
+
+  it.live("the same public host is probed when offline mode is off", () =>
+    Effect.gen(function* () {
+      const config = yield* Config.Test
+      yield* config.setEntries([settings("ollama", { baseURL: `http://${publicHost}:11434/v1` })])
+      const fake = recording()
+      const mock = yield* startMock({ timeout: "150 millis" }).pipe(Effect.provideService(HttpClient.HttpClient, fake.client))
+      expect(find(yield* mock.status(), "ollama").state).toBe("unreachable")
+      expect(fake.requests.some((request) => request.url.includes(publicHost))).toBe(true)
+    }),
+  )
+})
+
+describe("KeteLocalModels status errors", () => {
+  it.live("a credentialed base URL never reaches the status or the logs, in any form", () =>
+    Effect.gen(function* () {
+      const config = yield* Config.Test
+      const port = closedPort()
+      const url = `http://user:hunter2@127.0.0.1:${port}/v1?token=abc`
+      yield* config.setEntries([settings("ollama", { baseURL: url }), settings("vllm", { baseURL: url })])
+      const captured = logs()
+      const status = yield* Effect.gen(function* () {
+        const mock = yield* startMock({ timeout: "1 second" })
+        return yield* mock.status()
+      }).pipe(Effect.provide(captured.layer))
+      for (const id of ["ollama", "vllm"] as const) {
+        const item = find(status, id)
+        expect(item).toMatchObject({ state: "unreachable", url: `http://127.0.0.1:${port}/v1` })
+        expect(item.error).toBe("can't connect: connection refused")
+      }
+      const everything = JSON.stringify(status) + "\n" + captured.output.join("\n")
+      expect(everything).not.toContain("hunter2")
+      expect(everything).not.toContain("abc")
+      expect(everything).not.toContain("user:")
+    }),
+  )
+
+  test("transport failures map to fixed texts; the message (which quotes the URL) is never used", () => {
+    const failure = (code: string) => ({
+      _tag: "HttpClientError",
+      message: "Transport error (GET http://user:hunter2@10.0.0.5/v1?token=abc)",
+      reason: { _tag: "TransportError", cause: { code } },
+    })
+    expect(KeteLocalModels.transportReason(failure("ConnectionRefused"))).toBe("connection refused")
+    expect(KeteLocalModels.transportReason(failure("ECONNREFUSED"))).toBe("connection refused")
+    expect(KeteLocalModels.transportReason(failure("ENOTFOUND"))).toBe("host not found")
+    expect(KeteLocalModels.transportReason(failure("ECONNRESET"))).toBe("connection reset")
+    expect(KeteLocalModels.transportReason(failure("UNABLE_TO_VERIFY_LEAF_SIGNATURE"))).toBe("TLS certificate not accepted")
+    expect(KeteLocalModels.transportReason(failure("CERT_HAS_EXPIRED"))).toBe("TLS certificate not accepted")
+    expect(KeteLocalModels.transportReason(new Error("http://user:hunter2@x/?token=abc"))).toBe("can't connect")
+  })
+})

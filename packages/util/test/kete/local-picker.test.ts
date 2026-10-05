@@ -30,6 +30,28 @@ describe("KeteLocalPicker", () => {
     )
   })
 
+  test("a server offline mode won't contact gets a line saying why", () => {
+    const blocked = {
+      offline: true,
+      providers: [
+        ollama({
+          state: "blocked",
+          url: "http://203.0.113.9:11434/v1",
+          models: undefined,
+          error: "offline mode: http://203.0.113.9:11434/v1 isn't on this machine or a private network",
+          hint: "Point it at a host on this machine or a private network, or turn offline mode off.",
+        }),
+      ],
+    }
+    expect(KeteLocalPicker.unreachable(blocked)).toEqual([
+      {
+        providerID: "ollama",
+        text: "Ollama isn't used: offline mode: http://203.0.113.9:11434/v1 isn't on this machine or a private network.",
+        hint: "Point it at a host on this machine or a private network, or turn offline mode off.",
+      },
+    ])
+  })
+
   test("offer needs no model, no earlier offer and a reachable server with models", () => {
     const status = { offline: false, providers: [ollama()] }
     expect(KeteLocalPicker.offer({ status, hasModel: false, offered: false })?.title).toBe(

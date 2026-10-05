@@ -80,6 +80,26 @@ describe("status lines and badges", () => {
     expect(lines[0].hint).toBe("Start it with `ollama serve`.")
     expect(unreachableOptions(undefined, () => {})).toEqual([])
   })
+
+  test("a server offline mode won't contact gets a line saying why, with the offline hint", () => {
+    const options = unreachableOptions(
+      status(
+        ollama({
+          state: "blocked",
+          url: "http://203.0.113.9:11434/v1",
+          models: undefined,
+          error: "offline mode: http://203.0.113.9:11434/v1 isn't on this machine or a private network",
+          hint: "Point it at a host on this machine or a private network, or turn offline mode off.",
+        }),
+      ),
+      () => {},
+    )
+    expect(options).toHaveLength(1)
+    expect(options[0].title).toBe(
+      "Ollama isn't used: offline mode: http://203.0.113.9:11434/v1 isn't on this machine or a private network.",
+    )
+    expect(options[0].details).toEqual(["Point it at a host on this machine or a private network, or turn offline mode off."])
+  })
 })
 
 describe("first-run offer", () => {

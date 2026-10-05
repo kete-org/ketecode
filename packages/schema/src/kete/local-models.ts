@@ -14,7 +14,9 @@ export const ProviderID = Schema.Literals(["ollama", "lmstudio", "vllm"]).annota
 })
 export type ProviderID = typeof ProviderID.Type
 
-export const State = Schema.Literals(["reachable", "unreachable", "not_configured"]).annotate({
+/** `blocked`: offline mode is on and the server isn't on this machine or a private network, so it
+ * isn't contacted at all (no request, no API key sent). */
+export const State = Schema.Literals(["reachable", "unreachable", "not_configured", "blocked"]).annotate({
   identifier: "KeteLocalModels.State",
 })
 export type State = typeof State.Type
@@ -39,7 +41,7 @@ export const ProviderStatus = Schema.Struct({
   source: Source,
   /** Models the server lists (reachable only). */
   models: optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  /** A short reason (at most 300 characters; never headers or keys) when unreachable. */
+  /** A short reason (at most 300 characters; never URLs, headers or keys) when unreachable or blocked. */
   error: optional(Schema.String.check(Schema.isMaxLength(MAX_ERROR))),
   /** A plain-http host that isn't this machine: code sent to it crosses the network unencrypted. */
   insecure: Schema.Boolean,

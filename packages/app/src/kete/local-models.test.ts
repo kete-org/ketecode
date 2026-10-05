@@ -81,6 +81,26 @@ describe("picker", () => {
     // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
     const bad = client({ offline: "no" }) as unknown as Parameters<typeof fetchStatus>[0]
     await expect(fetchStatus(bad, undefined)).rejects.toBeDefined()
+    // A server offline mode won't contact decodes as "blocked" and gets its own line.
+    const blocked = {
+      offline: true,
+      providers: [
+        {
+          id: "ollama" as const,
+          source: "env" as const,
+          insecure: true,
+          hint: "Point it at a host on this machine or a private network, or turn offline mode off.",
+          state: "blocked" as const,
+          url: "http://203.0.113.9:11434/v1",
+          error: "offline mode: http://203.0.113.9:11434/v1 isn't on this machine or a private network",
+        },
+      ],
+    }
+    // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+    const decoded = await fetchStatus(client(blocked) as unknown as Parameters<typeof fetchStatus>[0], undefined)
+    expect(KeteLocalPicker.unreachable(decoded)[0]?.text).toBe(
+      "Ollama isn't used: offline mode: http://203.0.113.9:11434/v1 isn't on this machine or a private network.",
+    )
   })
 
   test("offline follows the runtime's config rule", () => {

@@ -40,6 +40,27 @@ export function enabled(env: Environment = process.env, kete?: { readonly offlin
   return OfflineFlag.enabled(env) || kete?.offline === true
 }
 
+/** Offline mode as it is now: the flag, or `kete.offline` in the config as currently loaded. Long-lived
+ * loops (gateway, sync, registration, local server discovery) call this on every tick, so turning it on
+ * in config pauses them from their next tick without a restart. */
+export function active(config: Config.Interface, env: Environment = process.env): Effect.Effect<boolean> {
+  return config.entries().pipe(Effect.map((entries) => enabled(env, Config.latest(entries, "kete"))))
+}
+
+/** Whether offline mode forbids contacting `url`: it is on and `url` isn't on this machine or a private
+ * network. The local server plugins (plugin/provider/{ollama,lmstudio,vllm}.ts) check it before every
+ * discovery and the status probe before every request, so such a host gets no request and no API key. */
+export function blocks(config: Config.Interface, url: string, env: Environment = process.env): Effect.Effect<boolean> {
+  return active(config, env).pipe(Effect.map((on) => on && !OfflineFlag.isLocalURL(url)))
+}
+
+/** Why a server wasn't contacted (`url` must already be free of credentials and query). */
+export function blockedReason(url: string): string {
+  return `offline mode: ${url} isn't on this machine or a private network`
+}
+
+export const blockedHint = "Point it at a host on this machine or a private network, or turn offline mode off."
+
 /** Whether a model from `providerID` is local: a local provider, or a base URL on this machine or a private network. */
 export function isLocalModel(providerID: string, baseURL: unknown): boolean {
   // The address decides whenever it's known: an Ollama pointed at a public host isn't local. Only

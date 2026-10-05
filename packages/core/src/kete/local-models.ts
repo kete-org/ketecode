@@ -5,7 +5,11 @@
 // - RPC `kete.local-models` (`status`, `rediscover`; schema in @opencode/schema/kete/local-models) on
 //   the existing `POST /api/rpc/:rpcID/:method`: every client reads the same status. Probing happens
 //   only when `status` is called (no background work), 2 s per request, providers concurrently. The
-//   status never carries an API key, request headers or URL credentials, and error text is capped.
+//   status never carries an API key, request headers, URL credentials or query strings: errors are
+//   fixed texts ("connection refused", "timed out", "HTTP 503"), never a transport message (those
+//   quote the request URL).
+// - Offline mode: a server whose base URL isn't on this machine or a private network is `blocked` and
+//   gets no request at all (no API key sent); the provider plugins skip its discovery the same way.
 //   `not_configured` is "no host was set and the default port refuses the connection" — most users
 //   have no local server and shouldn't see three warnings (R1); `unreachable` is a host that was set
 //   explicitly, or a default port that answers badly or not at all.
@@ -31,6 +35,7 @@ import type { PluginInternal } from "../plugin/internal.js"
 import { foldSettings } from "../plugin/provider/configured.js"
 import { KeteLocalHosts } from "./local-hosts.js"
 import { KeteOffline } from "./offline.js"
+import { KeteOffline as OfflineFlag } from "@opencode/util/kete/offline"
 
 export const id = KeteLocalModelsRpc.ID
 
@@ -137,9 +142,13 @@ const decodeVLLM = (value: unknown) => {
 type Failure = { readonly kind: "transport" | "timeout" | "http" | "invalid"; readonly message: string }
 type Fetched = { readonly kind: "ok"; readonly body: unknown } | Failure
 
-/** Error text for a client: credentials in URLs removed, never headers, capped. */
+/** Text for a client: credentials and query strings in URLs removed, never headers, capped. */
 function clean(text: string): string {
-  const redacted = text.replace(/\/\/[^/@\s]*@/g, "//").replace(/\s+/g, " ").trim()
+  const redacted = text
+    .replace(/\/\/[^/@\s]*@/g, "//")
+    .replace(/\?[^\s]*/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
   return redacted.length > KeteLocalModelsRpc.MAX_ERROR
     ? `${redacted.slice(0, KeteLocalModelsRpc.MAX_ERROR - 1)}…`
     : redacted
@@ -149,10 +158,26 @@ function tagged(error: unknown, tag: string): boolean {
   return typeof error === "object" && error !== null && "_tag" in error && error._tag === tag
 }
 
-function messageOf(error: unknown): string {
-  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string")
-    return error.message
-  return ""
+/** The first `code` (Node's ECONNREFUSED, Bun's ConnectionRefused, …) along an error's causes. */
+function codeOf(error: unknown, depth = 0): string | undefined {
+  if (depth > 5 || typeof error !== "object" || error === null) return undefined
+  if ("code" in error && typeof error.code === "string") return error.code
+  const next = "reason" in error && typeof error.reason === "object" && error.reason !== null ? error.reason : undefined
+  return codeOf(next, depth + 1) ?? ("cause" in error ? codeOf(error.cause, depth + 1) : undefined)
+}
+
+/**
+ * A fixed text for a transport failure. Transport messages quote the request URL (credentials and
+ * query included), so they are never passed on; only the error code is read.
+ */
+export function transportReason(error: unknown): string {
+  const code = codeOf(error)?.toLowerCase() ?? ""
+  if (code === "econnrefused" || code === "connectionrefused") return "connection refused"
+  if (code === "enotfound" || code === "eai_again" || code === "dnsfailed" || code === "dns") return "host not found"
+  if (code === "econnreset" || code === "connectionreset" || code === "connectionclosed") return "connection reset"
+  if (code === "etimedout" || code === "timeout") return "timed out"
+  if (["cert", "tls", "ssl", "verify"].some((part) => code.includes(part))) return "TLS certificate not accepted"
+  return "can't connect"
 }
 
 type Target = {
@@ -160,6 +185,8 @@ type Target = {
   readonly baseURL: string
   /** Scheme, host, port and any path prefix before `/v1`; undefined when the URL is unusable. */
   readonly root: string | undefined
+  /** The base URL without credentials, query or fragment (requests are built from it, never from `baseURL`). */
+  readonly base: string | undefined
   readonly apiKey: string | undefined
   readonly source: KeteLocalModelsRpc.Source
 }
@@ -177,16 +204,17 @@ function target(
   const baseURL = (configured ?? `${origin}/v1`).replace(/\/+$/, "")
   const apiKey = typeof settings?.apiKey === "string" && settings.apiKey !== "" ? settings.apiKey : undefined
   const source = configured !== undefined ? "config" : resolved.source
-  if (!URL.canParse(baseURL)) return { id: provider, baseURL, root: undefined, apiKey, source }
+  const unusable: Target = { id: provider, baseURL, root: undefined, base: undefined, apiKey, source }
+  if (!URL.canParse(baseURL)) return unusable
   const url = new URL(baseURL)
-  if (url.protocol !== "http:" && url.protocol !== "https:") return { id: provider, baseURL, root: undefined, apiKey, source }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return unusable
   const path = url.pathname.replace(/\/+$/, "")
   const prefix = path.endsWith("/v1") ? path.slice(0, -3) : path
-  return { id: provider, baseURL, root: `${url.origin}${prefix}`, apiKey, source }
+  return { id: provider, baseURL, root: `${url.origin}${prefix}`, base: `${url.origin}${path}`, apiKey, source }
 }
 
 function shown(baseURL: string): string {
-  return URL.canParse(baseURL) ? KeteLocalHosts.display(baseURL) : clean(baseURL).slice(0, 200)
+  return URL.canParse(baseURL) ? KeteLocalHosts.display(baseURL) : clean(baseURL).replace(/#.*$/, "").slice(0, 200)
 }
 
 export function make(
@@ -233,8 +261,8 @@ export function make(
                 kind: "timeout",
                 message: `no answer within ${Duration.format(Duration.fromInputUnsafe(timeout))}`,
               })
-            const reason = clean(messageOf(error))
-            return Effect.succeed({ kind: "transport", message: reason === "" ? "can't connect" : `can't connect: ${reason}` })
+            const reason = transportReason(error)
+            return Effect.succeed({ kind: "transport", message: reason === "can't connect" ? reason : `can't connect: ${reason}` })
           }),
         )
 
@@ -249,7 +277,9 @@ export function make(
           }
         | Failure
 
-      const ollama = Effect.fn("KeteLocalModels.ollama")(function* (item: Target & { readonly root: string }) {
+      type Usable = Target & { readonly root: string; readonly base: string }
+
+      const ollama = Effect.fn("KeteLocalModels.ollama")(function* (item: Usable) {
         const tags = yield* get(`${item.root}/api/tags`, item.apiKey)
         if (tags.kind !== "ok") return tags satisfies Failure as Result
         const listed = decodeTags(tags.body)
@@ -296,7 +326,7 @@ export function make(
         return { kind: "ok", models: usable.length, contextWarnings } as Result
       })
 
-      const lmstudio = Effect.fn("KeteLocalModels.lmstudio")(function* (item: Target & { readonly root: string }) {
+      const lmstudio = Effect.fn("KeteLocalModels.lmstudio")(function* (item: Usable) {
         const fetched = yield* get(`${item.root}/api/v1/models`, item.apiKey)
         if (fetched.kind !== "ok") return fetched satisfies Failure as Result
         const listed = decodeLMStudio(fetched.body)
@@ -304,7 +334,7 @@ export function make(
         return { kind: "ok", models: listed.models.filter((model) => model.type === "llm").length, contextWarnings: [] } as Result
       })
 
-      const vllm = Effect.fn("KeteLocalModels.vllm")(function* (item: Target & { readonly root: string }) {
+      const vllm = Effect.fn("KeteLocalModels.vllm")(function* (item: Usable) {
         const health = yield* fetchJson(
           Effect.succeed(authorize(HttpClientRequest.get(`${item.root}/health`).pipe(HttpClientRequest.acceptJson), item.apiKey)),
         ).pipe(
@@ -312,14 +342,14 @@ export function make(
           Effect.map((fetched): Fetched => (fetched.kind === "invalid" ? { kind: "ok", body: undefined } : fetched)),
         )
         if (health.kind !== "ok") return health satisfies Failure as Result
-        const fetched = yield* get(`${item.baseURL}/models`, item.apiKey)
+        const fetched = yield* get(`${item.base}/models`, item.apiKey)
         if (fetched.kind !== "ok") return fetched satisfies Failure as Result
         const listed = decodeVLLM(fetched.body)
         if (!listed) return { kind: "invalid", message: "the server's model list wasn't what was expected" } as Result
         return { kind: "ok", models: listed.data.filter((model) => model.owned_by === "vllm").length, contextWarnings: [] } as Result
       })
 
-      const probe = Effect.fn("KeteLocalModels.probe")(function* (item: Target) {
+      const probe = Effect.fn("KeteLocalModels.probe")(function* (item: Target, offline: boolean) {
         const base = {
           id: item.id,
           url: shown(item.baseURL),
@@ -328,7 +358,8 @@ export function make(
           hint: hint(item.id),
         }
         const root = item.root
-        if (root === undefined) {
+        const requestBase = item.base
+        if (root === undefined || requestBase === undefined) {
           const invalid: KeteLocalModelsRpc.ProviderStatus = {
             ...base,
             state: "unreachable",
@@ -336,7 +367,17 @@ export function make(
           }
           return invalid
         }
-        const usable = { ...item, root }
+        // Offline mode: a host that isn't on this machine or a private network is never contacted.
+        if (offline && !OfflineFlag.isLocalURL(item.baseURL)) {
+          const blocked: KeteLocalModelsRpc.ProviderStatus = {
+            ...base,
+            state: "blocked",
+            error: clean(KeteOffline.blockedReason(base.url)),
+            hint: KeteOffline.blockedHint,
+          }
+          return blocked
+        }
+        const usable = { ...item, root, base: requestBase }
         const result: Result = yield* item.id === "ollama"
           ? ollama(usable)
           : item.id === "lmstudio"
@@ -391,8 +432,11 @@ export function make(
 
       const status = Effect.fn("KeteLocalModels.status")(function* () {
         const current = yield* targets()
+        const offline = KeteOffline.enabled(environment, current.kete)
         yield* warnInsecure(current.items)
-        const items = yield* Effect.forEach(current.items, probe, { concurrency: providers.length })
+        const items = yield* Effect.forEach(current.items, (item) => probe(item, offline), {
+          concurrency: providers.length,
+        })
         for (const item of items)
           for (const warning of item.state === "reachable" ? (item.contextWarnings ?? []) : []) {
             const key = `context ${item.url} ${warning.model}`
@@ -400,7 +444,7 @@ export function make(
             warned.add(key)
             yield* Effect.logWarning(warning.message)
           }
-        return { offline: KeteOffline.enabled(environment, current.kete), providers: items }
+        return { offline, providers: items }
       })
 
       const emitter: { current?: (provider: KeteLocalModelsRpc.ProviderID) => Effect.Effect<void, unknown> } = {}

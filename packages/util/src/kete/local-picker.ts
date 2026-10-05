@@ -50,7 +50,7 @@ export function badges(model: Model): string[] {
 
 export type ProviderStatus = {
   readonly id: ProviderID
-  readonly state: "reachable" | "unreachable" | "not_configured"
+  readonly state: "reachable" | "unreachable" | "not_configured" | "blocked"
   readonly url: string
   readonly models?: number
   readonly error?: string
@@ -69,14 +69,18 @@ export type Unreachable = { readonly providerID: ProviderID; readonly text: stri
 /**
  * One line per local server that was set up (or answers badly on its default port) but can't be
  * reached, with the URL tried and how to start it. A server that simply isn't installed is
- * `not_configured` and gets no line, so users without local models see nothing.
+ * `not_configured` and gets no line, so users without local models see nothing. A server that offline
+ * mode won't contact (`blocked`: not on this machine or a private network) gets a line saying so.
  */
 export function unreachable(status: Status | undefined): Unreachable[] {
   return (status?.providers ?? [])
-    .filter((item) => item.state === "unreachable")
+    .filter((item) => item.state === "unreachable" || item.state === "blocked")
     .map((item) => ({
       providerID: item.id,
-      text: `${providers[item.id]} isn't reachable at ${item.url}${item.error ? ` (${item.error})` : ""}.`,
+      text:
+        item.state === "blocked"
+          ? `${providers[item.id]} isn't used: ${item.error ?? `offline mode: ${item.url} isn't on this machine or a private network`}.`
+          : `${providers[item.id]} isn't reachable at ${item.url}${item.error ? ` (${item.error})` : ""}.`,
       hint: item.hint,
     }))
 }
