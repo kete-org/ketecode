@@ -1,9 +1,10 @@
 ---
 module: config-kete
 paths: [packages/schema/src/config/kete.ts, packages/schema/src/config.ts, packages/core/src/config/normalize.ts, packages/core/src/config/discovery.ts, packages/core/src/config.ts]
-verified-at: 604889ab32
+verified-at: 4e26b57120
 ---
 ## Quick answers
+- What is `kete.integrations.slack.clientId`? The Slack app client ID `kete mcp add slack` uses when `--client-id` isn't given (`schema/src/config/kete.ts:94`, camelCase as the spec named it, unlike `max_concurrent`); protocol and client regenerated. The CLI reads it straight from the project/global config files (`cli/src/kete/mcp-preset-io.ts:33`). See the `mcp-presets` card.
 - What is `kete.offline`? An optional boolean (`schema/src/config/kete.ts:72`): offline mode (local models only, no platform/gateway/update/web/remote-MCP calls). Global config applies process-wide; a project config covers everything except the models.dev fetch and update checks (decided at startup). Fail-closed: a non-boolean counts as on. See the `local-models` card; the schema change regenerated `protocol/openapi.json` and the client types.
 - Is there an env var that disables project config outside job mode? Yes — upstream's
   `OPENCODE_CONFIG_PROJECT_DISABLE`/`OPENCODE_DISABLE_PROJECT_CONFIG` (checked in that order,

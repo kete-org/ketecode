@@ -1,9 +1,10 @@
 ---
 module: account-login
 paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts]
-verified-at: 604889ab32
+verified-at: 4e26b57120
 ---
 ## Quick answers
+- Do MCP presets share the account's secret store? The same `KeteSecretStore` module and `kete-code` service, under separate `mcp:<server>` entries (`util/src/kete/mcp-secret.ts`); `kete logout` doesn't remove them. See the `mcp-presets` card.
 - Does `kete login` work offline? No: `login.ts` calls `KeteCliOffline.refused` first (exit 2); `logout`/`whoami` are unchanged. See the `local-models` card.
 - Does `kete login`/the credential store work in job mode (`KETE_JOB_MODE`)? No — `secret-store.ts:178`
   calls `KeteJobMode.refuseSpawn("OS credential store")` before spawning the OS keychain CLI

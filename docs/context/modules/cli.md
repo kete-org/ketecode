@@ -1,9 +1,10 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: 8a2747cd4d
+verified-at: 4e26b57120
 ---
 ## Quick answers
+- How do `kete mcp add harness|slack` and `kete mcp presets` work? Kete flows in `kete/mcp-preset.ts` over an injected `IO` (`kete/mcp-preset-io.ts`), routed from upstream's `commands/handlers/mcp/add.ts:27-42` (marked) when the name is a preset and no `--url`/command is given; flags `KeteCommands.mcpPresetParams` spread into upstream's `mcp add` spec (`commands/commands.ts:229`), `presets` registered at `:232` and `index.ts:56`. See the `mcp-presets` card.
 - How does `--offline` work? `kete/offline-startup.ts` (imported at `index.ts:5`, right after the env bridge) calls `KeteCliOffline.apply` (`kete/offline.ts:55`): env, `--offline` in argv, or `kete.offline` in the global config files turns it on (`flagged`, `kete/offline.ts:37`, reads `--offline=<v>`/`--offline <v>` with the parser's truthy/falsy values: `--offline=false` and `--offline false` are off, an unknown value is on; `offline-startup.test.ts` pins it against the real parser) and sets `OPENCODE_OFFLINE`, `OPENCODE_DISABLE_MODELS_FETCH` and `OPENCODE_DISABLE_AUTOUPDATE` before any module reads env. The flag is also a registered global flag (`kete/commands.ts:24`, `framework/runtime.ts:86`) so the parser accepts it. See the `local-models` card.
 - Which commands refuse offline? `login`, `sync` (not `--status`/`--approve`), `upgrade`, `models pull`: `KeteCliOffline.refused` (`kete/offline.ts:84`) prints the refusal and sets exit code 2. `updater.ts` `isDisabled` and `check()` also honour it.
 - What changes in the server connection offline? `services/server-connection.ts` calls `KeteCliOffline.connection` (`kete/offline.ts:72`): always a private (`standalone`) server, `--server` refused.

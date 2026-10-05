@@ -47,6 +47,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | worktrees-parallel | subagent worktrees, leases, session_move checks, stale writes |
 | workflows | `kete.workflows` and the `workflow` tool |
 | config-kete | the `kete` config section, discovery, adding a key end to end |
+| mcp-presets | built-in MCP presets (`kete mcp add harness`, `kete mcp add slack`, `kete mcp presets`): catalogue, stored MCP secrets (`{kete-secret:mcp:<name>}`), permission rules, offline skip |
 | cli | Kete commands in the CLI, disabled self-update |
 | job-mode | cloud-job runtime flag: process seam, config/plugin/MCP/model restrictions, request enforcement |
 | root-helper | the Go root helper and its TypeScript client: fixed tool user, cgroup isolation, socket protocol v1 |
