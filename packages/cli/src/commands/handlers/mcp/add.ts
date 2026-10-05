@@ -95,6 +95,7 @@ function presetInput(input: {
   readonly project: Option.Option<string>
   readonly baseUrl: Option.Option<string>
   readonly clientId: Option.Option<string>
+  readonly newKey: boolean
 }) {
   return {
     write: input.write,
@@ -102,6 +103,7 @@ function presetInput(input: {
     project: Option.getOrUndefined(input.project),
     baseUrl: Option.getOrUndefined(input.baseUrl),
     clientId: Option.getOrUndefined(input.clientId),
+    newKey: input.newKey,
   }
 }
 // kete_change end

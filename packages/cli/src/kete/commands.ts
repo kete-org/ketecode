@@ -55,6 +55,10 @@ export const mcpPresetParams = {
     Flag.withDescription("Preset slack: client ID of the approved Slack app to sign in with"),
     Flag.optional,
   ),
+  newKey: Flag.boolean("new-key").pipe(
+    Flag.withDescription("Preset harness: ask for a new API key instead of reusing the stored one"),
+    Flag.withDefault(false),
+  ),
 }
 
 /** `kete mcp presets`: a subcommand of upstream's `mcp` command. */

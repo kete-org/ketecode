@@ -197,14 +197,17 @@ export const connect = Effect.fnUntraced(function* (
   const exit = yield* Effect.gen(function* () {
     if (config.type === "local") {
       const [command, ...args] = config.command
+      // kete_change start: stored secrets, released at spawn only to the definition they were stored for
+      const spawn = yield* KeteMcpSecrets.prepare(server, config, config.cwd ? path.resolve(directory, config.cwd) : directory)
+      // kete_change end
       const transport = yield* McpStdio.make({
         server,
         command,
         args,
-        cwd: config.cwd ? path.resolve(directory, config.cwd) : directory,
+        cwd: spawn.cwd, // kete_change
         environment: {
           ...(command === "opencode" ? { BUN_BE_BUN: "1" } : {}),
-          ...(yield* KeteMcpSecrets.resolve(server, config.environment)), // kete_change: stored secrets, resolved at spawn
+          ...spawn.environment, // kete_change
         },
       })
       return yield* initialize(transport)

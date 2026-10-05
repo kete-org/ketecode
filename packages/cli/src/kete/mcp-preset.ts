@@ -4,7 +4,10 @@
 // so tests need no terminal, OS secret store or server.
 //
 // Secrets: the Harness API key goes straight from the hidden prompt to the OS secret store; config
-// gets only `{kete-secret:mcp:harness}`. The key is never printed, logged or put in an error.
+// gets only `{kete-secret:mcp:harness}`. The key is never printed, logged or put in an error. The
+// store also keeps a fingerprint of the server definition written to config, and the runtime only
+// releases the key to that exact definition (util/src/kete/mcp-secret.ts). Re-running the command
+// (e.g. with another `--org`) reuses the stored key and re-binds it; `--new-key` asks for a new one.
 
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import { KeteMcpPresets } from "@opencode/schema/kete/mcp-presets"
@@ -24,16 +27,28 @@ export interface IO {
   readonly interactive: boolean
   /** Hidden input; `undefined` when the user cancelled. */
   readonly promptSecret: (message: string) => Promise<string | undefined>
-  /** Stores `secret` for `server` in the OS secret store (or its fallback file). */
-  readonly saveSecret: (server: string, secret: string) => Promise<{ readonly description: string; readonly fallback: boolean }>
+  /** Stores `secret` for `server`, bound to `definition`, in the OS secret store (or its fallback file). */
+  readonly saveSecret: (
+    server: string,
+    secret: string,
+    definition: KeteMcpSecret.LocalDefinition,
+  ) => Promise<{ readonly description: string; readonly fallback: boolean }>
+  /** The secret already stored for `server`, if any. */
+  readonly storedSecret: (server: string) => Promise<string | undefined>
   readonly readText: (file: string) => Promise<string | undefined>
   readonly writeText: (file: string, text: string) => Promise<void>
-  /** `kete.integrations.slack.clientId` from the project or global config. */
-  readonly configuredSlackClientId: () => Promise<string | undefined>
+  /** `kete.integrations.slack.clientId` from the project or global config, with where it was found. */
+  readonly configuredSlackClientId: () => Promise<ConfiguredClientId | undefined>
   /** The organization's Slack app from the last platform sync, when there is one. */
   readonly syncedSlackClientId: () => Promise<string | undefined>
   /** Runs the server's OAuth sign-in through the local runtime (upstream's `kete mcp auth` flow). */
   readonly signIn: (server: string) => Promise<SignInResult>
+}
+
+export interface ConfiguredClientId {
+  readonly clientId: string
+  readonly scope: "project" | "global"
+  readonly file: string
 }
 
 export interface Input {
@@ -44,6 +59,8 @@ export interface Input {
   readonly project?: string
   readonly baseUrl?: string
   readonly clientId?: string
+  /** Harness: ask for a new API key even when one is stored. */
+  readonly newKey?: boolean
 }
 
 /** 0 done, 1 failed, 2 refused before writing anything (missing input), 130 cancelled. */
@@ -57,6 +74,7 @@ export function presetFlags(input: Omit<Input, "name" | "configPath">): string[]
     input.project !== undefined ? "--project" : undefined,
     input.baseUrl !== undefined ? "--base-url" : undefined,
     input.clientId !== undefined ? "--client-id" : undefined,
+    input.newKey ? "--new-key" : undefined,
   ].filter((flag): flag is string => flag !== undefined)
 }
 
@@ -86,7 +104,7 @@ export function route(name: string, hasServer: boolean, flags: readonly string[]
 }
 
 const allowed: Record<KeteMcpPresets.Name, readonly string[]> = {
-  harness: ["--write", "--org", "--project", "--base-url"],
+  harness: ["--write", "--org", "--project", "--base-url", "--new-key"],
   slack: ["--client-id"],
 }
 
@@ -111,12 +129,19 @@ async function addHarness(io: IO, input: Input): Promise<Exit> {
     return 2
   }
 
-  let apiKey: string
-  let stored: { description: string; fallback: boolean } | undefined
-  if (io.interactive) {
-    const secret = await io.promptSecret("Harness API key (a personal access or service account token; input is hidden)")
-    if (secret === undefined) return 130
-    const trimmed = secret.trim()
+  // A stored key is reused (re-running to change an option shouldn't need it again) unless --new-key.
+  let secret: { readonly value: string; readonly reused: boolean } | undefined
+  if (!input.newKey) {
+    const existing = await io.storedSecret("harness").catch((error: unknown) => {
+      io.warn(`The stored Harness API key could not be read (${message(error)}); enter it again.`)
+      return undefined
+    })
+    if (existing !== undefined) secret = { value: existing, reused: true }
+  }
+  if (secret === undefined && io.interactive) {
+    const entered = await io.promptSecret("Harness API key (a personal access or service account token; input is hidden)")
+    if (entered === undefined) return 130
+    const trimmed = entered.trim()
     if (trimmed === "") {
       io.warn("No API key entered; nothing was changed.")
       return 2
@@ -125,23 +150,30 @@ async function addHarness(io: IO, input: Input): Promise<Exit> {
       io.warn("That API key has characters Kete Code can't store (spaces, quotes, backslashes or non-ASCII); nothing was changed.")
       return 2
     }
-    try {
-      stored = await io.saveSecret("harness", trimmed)
-    } catch (error) {
-      io.warn(message(error))
-      return 1
-    }
-    apiKey = KeteMcpSecret.reference("harness")
-  } else if (io.environment.HARNESS_API_KEY) {
-    apiKey = "{env:HARNESS_API_KEY}"
-  } else {
+    secret = { value: trimmed, reused: false }
+  }
+  if (secret === undefined && !io.environment.HARNESS_API_KEY) {
     io.warn(
       "kete mcp add harness needs a terminal to read the API key (hidden input), or HARNESS_API_KEY set in the environment the runtime starts with.",
     )
     return 2
   }
 
-  const expansion = KeteMcpPresets.harness({ ...options, apiKey })
+  const expansion = KeteMcpPresets.harness({
+    ...options,
+    apiKey: secret ? KeteMcpSecret.reference("harness") : "{env:HARNESS_API_KEY}",
+  })
+  let stored: { description: string; fallback: boolean } | undefined
+  if (secret) {
+    if (expansion.server.type !== "local") throw new Error("The Harness preset must expand to a local server")
+    try {
+      // Bound to exactly the definition written below; the runtime refuses any other.
+      stored = await io.saveSecret("harness", secret.value, expansion.server)
+    } catch (error) {
+      io.warn(message(error))
+      return 1
+    }
+  }
   try {
     await writeConfig(io, input.configPath, "harness", expansion)
   } catch (error) {
@@ -150,7 +182,12 @@ async function addHarness(io: IO, input: Input): Promise<Exit> {
   }
 
   io.print(`MCP server "harness" added to ${input.configPath} (${KeteMcpPresets.harnessPackage}@${KeteMcpPresets.harnessVersion}).`)
-  if (stored) {
+  if (stored && secret?.reused) {
+    io.print(
+      `Reusing the API key already stored in ${stored.description}, now bound to this server definition (use --new-key to replace it).`,
+    )
+    if (stored.fallback) io.warn("No OS credential store was available, so the key is in a file only you can read.")
+  } else if (stored) {
     io.print(`API key stored in ${stored.description}; the config refers to it, it isn't in the file.`)
     if (stored.fallback) io.warn("No OS credential store was available, so the key is in a file only you can read.")
   } else {
@@ -173,12 +210,13 @@ export const slackAppRequirement = [
 ].join("\n")
 
 async function addSlack(io: IO, input: Input): Promise<Exit> {
-  const clientId = input.clientId ?? (await io.configuredSlackClientId()) ?? (await io.syncedSlackClientId())
-  if (clientId === undefined) {
+  const source = await slackClientId(io, input)
+  if (source === undefined) {
     io.warn("No Slack app client ID.")
     for (const line of slackAppRequirement.split("\n")) io.print(line)
     return 2
   }
+  const clientId = source.clientId
   let expansion: KeteMcpPresets.Expansion
   try {
     expansion = KeteMcpPresets.slack({ clientId })
@@ -186,6 +224,9 @@ async function addSlack(io: IO, input: Input): Promise<Exit> {
     io.warn(message(error))
     return 2
   }
+  // Shown before anything is written or signed in to: a project's config (or the organization) chose
+  // this app, and signing in grants it access to your Slack.
+  io.print(`Slack app client ID: ${clientId} (${source.from})`)
   try {
     await writeConfig(io, input.configPath, "slack", expansion)
   } catch (error) {
@@ -212,34 +253,64 @@ async function addSlack(io: IO, input: Input): Promise<Exit> {
   return 1
 }
 
-/** Writes the server and merges its permission rules into a JSONC config, keeping comments and formatting. */
-export async function writeConfig(io: Pick<IO, "readText" | "writeText">, file: string, name: string, expansion: KeteMcpPresets.Expansion) {
-  const text = (await io.readText(file)) ?? "{}"
-  await io.writeText(file, edit(text, file, name, expansion))
+async function slackClientId(io: IO, input: Input): Promise<{ readonly clientId: string; readonly from: string } | undefined> {
+  if (input.clientId !== undefined) return { clientId: input.clientId, from: "from --client-id" }
+  const configured = await io.configuredSlackClientId()
+  if (configured)
+    return { clientId: configured.clientId, from: `from ${configured.scope} config ${configured.file}` }
+  const synced = await io.syncedSlackClientId()
+  if (synced !== undefined) return { clientId: synced, from: "synced from your organization" }
+  return undefined
 }
 
-export function edit(text: string, file: string, name: string, expansion: KeteMcpPresets.Expansion): string {
+/** Writes the server and merges its permission rules into a JSONC config, keeping comments and formatting. */
+export async function writeConfig(
+  io: Pick<IO, "readText" | "writeText" | "warn">,
+  file: string,
+  name: string,
+  expansion: KeteMcpPresets.Expansion,
+) {
+  const text = (await io.readText(file)) ?? "{}"
+  const result = edit(text, file, name, expansion)
+  await io.writeText(file, result.text)
+  for (const rule of result.replaced)
+    io.warn(
+      `Replaced your permission rule allowing ${rule.action} with the preset's "${expansion.permissions.findLast((item) => item.action === rule.action)?.effect ?? "ask"}"; add it back after the preset's rules if you want it.`,
+    )
+}
+
+export function edit(
+  text: string,
+  file: string,
+  name: string,
+  expansion: KeteMcpPresets.Expansion,
+): { readonly text: string; readonly replaced: Permission.Rule[] } {
   const errors: ParseError[] = []
   const parsed: unknown = parse(text, errors, { allowTrailingComma: true })
   if (errors.length > 0 || typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
     throw new Error(`${file} isn't a valid JSON config object; fix it and try again`)
   const current = "permissions" in parsed ? parsed.permissions : undefined
   if (current !== undefined && !Array.isArray(current)) throw new Error(`"permissions" in ${file} isn't a list; fix it and try again`)
-  const existing: Permission.Rule[] = (current ?? []).filter(isRule)
+  const entries: unknown[] = current ?? []
+  // Every entry must be a rule: dropping one silently would lose a user's permission setting.
+  if (!entries.every(isRule)) throw new Error(`"permissions" in ${file} has an entry that isn't a valid rule; fix it and try again`)
+  const existing = entries.filter(isRule)
   const formatting = { formattingOptions: { tabSize: 2, insertSpaces: true } }
   const plain = (value: unknown) => JSON.parse(JSON.stringify(value)) as unknown
+  const merged = KeteMcpPresets.mergePermissions(existing, expansion.permissions)
   let next = applyEdits(text, modify(text, ["mcp", "servers", name], plain(expansion.server), formatting))
-  next = applyEdits(
-    next,
-    modify(next, ["permissions"], plain(KeteMcpPresets.mergePermissions(existing, expansion.permissions)), formatting),
-  )
-  return next
+  next = applyEdits(next, modify(next, ["permissions"], plain(merged.rules), formatting))
+  return { text: next, replaced: merged.replaced }
 }
 
 function isRule(value: unknown): value is Permission.Rule {
   if (typeof value !== "object" || value === null) return false
   const rule = value as Record<string, unknown>
-  return typeof rule.action === "string" && typeof rule.resource === "string" && typeof rule.effect === "string"
+  return (
+    typeof rule.action === "string" &&
+    typeof rule.resource === "string" &&
+    (rule.effect === "allow" || rule.effect === "ask" || rule.effect === "deny")
+  )
 }
 
 /** `kete mcp presets`. */

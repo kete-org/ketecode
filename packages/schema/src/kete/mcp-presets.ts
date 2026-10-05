@@ -161,7 +161,9 @@ export function harness(options: HarnessOptions): Expansion {
   const environment: Record<string, string> = {
     HARNESS_API_KEY: options.apiKey,
     HARNESS_READ_ONLY: options.write ? "false" : "true",
-    ...(options.baseUrl ? { HARNESS_BASE_URL: options.baseUrl.replace(/\/+$/, "") } : {}),
+    // Always explicit, so the server never falls back to a base URL from elsewhere (e.g. a `.env`) and the
+    // stored key's fingerprint covers where it is sent.
+    HARNESS_BASE_URL: (options.baseUrl ?? harnessDefaultBaseUrl).replace(/\/+$/, ""),
     ...(options.accountId ? { HARNESS_ACCOUNT_ID: options.accountId } : {}),
     ...(options.org ? { HARNESS_ORG: options.org } : {}),
     ...(options.project ? { HARNESS_PROJECT: options.project } : {}),
@@ -213,12 +215,34 @@ export function offlineMessage(servers: readonly string[]): string {
   return `Offline mode: skipped MCP server${servers.length === 1 ? "" : "s"} ${servers.map((name) => `"${name}"`).join(", ")} (built-in preset${servers.length === 1 ? "" : "s"} that need${servers.length === 1 ? "s" : ""} the network). Turn offline mode off to use ${servers.length === 1 ? "it" : "them"}.`
 }
 
+const strictness: Record<Permission.Effect, number> = { allow: 0, ask: 1, deny: 2 }
+
+export interface Merged {
+  readonly rules: Permission.Rule[]
+  /** The user's `allow` rules the preset replaced with a stricter rule of its own (worth a warning). */
+  readonly replaced: Permission.Rule[]
+}
+
 /**
- * Merges a preset's rules into a config's `permissions`: earlier copies of the same rules (same action,
- * any effect) are dropped and the preset's rules are appended, so re-running `kete mcp add` never
- * duplicates them and never leaves a stale `allow` behind. Other rules keep their order.
+ * Merges a preset's rules into a config's `permissions`. For each action the preset sets:
+ * - an existing rule on the same action with a narrower resource, or stricter than the preset's (a
+ *   `deny`, or an `ask` where the preset allows), is the user's choice: it is kept and moved after the
+ *   preset's rules so it still wins (permission rules: last match wins);
+ * - an existing `resource: "*"` rule as strict as the preset's is an earlier copy and is dropped, so
+ *   re-running `kete mcp add` never duplicates rules;
+ * - an existing `resource: "*"` `allow` where the preset asks is replaced and reported in `replaced`.
+ * Rules for other actions keep their place and order.
  */
-export function mergePermissions(existing: readonly Permission.Rule[], added: Permission.Ruleset): Permission.Rule[] {
-  const actions = new Set(added.map((item) => item.action))
-  return [...existing.filter((item) => !(actions.has(item.action) && item.resource === "*")), ...added]
+export function mergePermissions(existing: readonly Permission.Rule[], added: Permission.Ruleset): Merged {
+  const preset = new Map(added.map((item) => [item.action, item.effect]))
+  const before: Permission.Rule[] = []
+  const after: Permission.Rule[] = []
+  const replaced: Permission.Rule[] = []
+  for (const item of existing) {
+    const effect = preset.get(item.action)
+    if (effect === undefined) before.push(item)
+    else if (item.resource !== "*" || strictness[item.effect] > strictness[effect]) after.push(item)
+    else if (strictness[item.effect] < strictness[effect]) replaced.push(item)
+  }
+  return { rules: [...before, ...added, ...after], replaced }
 }

@@ -29,15 +29,18 @@ async function read(file: string) {
   })
 }
 
-/** `kete.integrations.slack.clientId` from the first config file (project first, then global) that sets it. */
-export async function configuredSlackClientId(directories: readonly string[]) {
+/** `kete.integrations.slack.clientId` from the first config file (project first, then global) that sets it, and where. */
+export async function configuredSlackClientId(
+  directories: readonly { readonly path: string; readonly scope: "project" | "global" }[],
+): Promise<KeteMcpPreset.ConfiguredClientId | undefined> {
   for (const directory of directories) {
     for (const name of Brand.configFiles) {
-      const text = await read(path.join(directory, name))
+      const file = path.join(directory.path, name)
+      const text = await read(file)
       if (text === undefined) continue
       const value: unknown = parse(text, [], { allowTrailingComma: true })
       const clientId = dig(value, ["kete", "integrations", "slack", "clientId"])
-      if (typeof clientId === "string" && clientId !== "") return clientId
+      if (typeof clientId === "string" && clientId !== "") return { clientId, scope: directory.scope, file }
     }
   }
   return undefined
@@ -109,17 +112,23 @@ export const make = Effect.fn("cli.kete.mcp-preset.io")(function* () {
       const value = await password({ message })
       return isCancel(value) ? undefined : value
     },
-    saveSecret: async (server: string, secret: string) => {
-      const saved = await KeteMcpSecret.save(KeteMcpSecret.stores(global.data), server, secret)
+    saveSecret: async (server: string, secret: string, definition: KeteMcpSecret.LocalDefinition) => {
+      const saved = await KeteMcpSecret.save(KeteMcpSecret.stores(global.data), server, secret, definition)
       return { description: saved.store.description, fallback: saved.store.kind === "file" }
     },
+    storedSecret: async (server: string) =>
+      (await KeteMcpSecret.read(KeteMcpSecret.stores(global.data), KeteMcpSecret.entry(server)))?.secret,
     readText: read,
     writeText: async (file: string, text: string) => {
       await mkdir(path.dirname(file), { recursive: true })
       await writeFile(file, text)
     },
     configuredSlackClientId: () =>
-      configuredSlackClientId([cwd, path.join(cwd, Brand.projectDirectory), global.config]),
+      configuredSlackClientId([
+        { path: cwd, scope: "project" },
+        { path: path.join(cwd, Brand.projectDirectory), scope: "project" },
+        { path: global.config, scope: "global" },
+      ]),
     syncedSlackClientId: async () => {
       // Absent sync data (not signed in, never synced, an older platform) just means no organization app.
       const signedIn = await KeteAccount.read(account).catch(() => undefined)
