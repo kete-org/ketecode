@@ -37,18 +37,33 @@ published from a pre-release: the Marketplace accepts no version suffix.
   (<https://marketplace.visualstudio.com/manage>) and Open VSX namespace `ketecode`
   (`bunx ovsx create-namespace ketecode -p <token>`; ask the Eclipse Foundation to verify it, or
   the listing shows "unverified").
-- **Tokens.** Create the GitHub environment **`registries`** (Settings → Environments), limit its
+- **Credentials.** Create the GitHub environment **`registries`** (Settings → Environments), limit its
   deployment branches and tags to the tag pattern **`kete-v*`** (exactly that: a narrower pattern
   such as `kete-v*.*.*` refuses pre-release tags like `kete-v0.2.0-rc.1`, which is what stopped an
-  earlier rc run), and add two secrets there:
-  - `VSCE_PAT`: an Azure DevOps personal access token with **Marketplace → Manage** scope, for
-    **All accessible organizations**.
-  - `OVSX_PAT`: an Open VSX access token (open-vsx.org → Settings → Access Tokens) of a member of
-    the `ketecode` namespace.
+  earlier rc run).
+  - **VS Code Marketplace: Microsoft Entra ID, no token.** The workflow signs in with GitHub's OIDC
+    token (`azure/login`) and publishes with `vsce publish --azure-credential`, so no Marketplace
+    secret is stored or rotated.
+    1. In Microsoft Entra ID (portal.azure.com → App registrations), register an app such as
+       `kete-extension-publish` (single tenant, no redirect URI, no client secret).
+    2. Under **Certificates & secrets → Federated credentials → Add credential → GitHub Actions
+       deploying Azure resources**: organization `kete-org`, repository `ketecode`, entity
+       **Environment**, environment `registries` (subject
+       `repo:kete-org/ketecode:environment:registries`). Only jobs in that environment, which admits
+       only `kete-v*` tags, can sign in as the app.
+    3. Give the app access to the publisher: add it to an Azure DevOps organization as a user
+       (Organization settings → Users → Add, search the app's name; Stakeholder access is enough),
+       then in <https://marketplace.visualstudio.com/manage> → publisher `ketecode` → **Members**,
+       add it with the **Contributor** role.
+    4. In the `registries` environment, add two **variables** (not secrets; they are identifiers):
+       `AZURE_CLIENT_ID` (the app's Application (client) ID) and `AZURE_TENANT_ID` (Directory
+       (tenant) ID).
+  - **Open VSX:** the secret `OVSX_PAT`, an Open VSX access token (open-vsx.org → Settings → Access
+    Tokens) of a member of the `ketecode` namespace. It expires: note the date and replace the
+    secret before then.
 
   Only `kete-extension-publish.yml` uses the environment, and only when dispatched on a `kete-v*`
-  tag, so no other branch, PR or workflow can read the tokens. Both expire: note the dates and rotate them before then (replace the secret; nothing
-  else changes).
+  tag, so no other branch, PR or workflow can sign in as the app or read the token.
 - **Job image package.** The `image` job pushes with the workflow's own `GITHUB_TOKEN`
   (`packages: write`); no secret is needed. After the **first** tag's push, open the `kete-job`
   package (github.com/orgs/kete-org/packages), link it to `kete-org/ketecode`, and set its

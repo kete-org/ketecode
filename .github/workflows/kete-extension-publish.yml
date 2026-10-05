@@ -31,8 +31,13 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # VSCE_PAT and OVSX_PAT live here; the environment admits kete-v* tags only.
+    # The Entra ID app's IDs (variables) and OVSX_PAT live here; the environment admits kete-v* tags
+    # only, and the app's federated credential trusts this environment only.
     environment: registries
+    permissions:
+      contents: read
+      # GitHub's OIDC token, exchanged with Microsoft Entra ID for the Marketplace publish.
+      id-token: write
     env:
       TAG: ${{ github.ref_name }}
     steps:
@@ -79,17 +84,33 @@ jobs:
             [ "$packaged" = "$version" ] || { echo "::error::$vsix has version $packaged, expected $version"; exit 1; }
           done
 
-      # vsce reads VSCE_PAT and ovsx reads OVSX_PAT from the environment: the tokens never appear on a
-      # command line. --skip-duplicate makes a re-run finish a partial publish instead of failing.
-      - name: Publish to the VS Code Marketplace
+      # The VS Code Marketplace: Microsoft Entra ID instead of a personal access token. azure/login
+      # exchanges this job's GitHub OIDC token for the app's identity (no stored secret); vsce's
+      # --azure-credential then uses that Azure CLI session. --skip-duplicate makes a re-run finish a
+      # partial publish instead of failing.
+      - name: Check the Entra ID settings
         env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
         run: |
           set -euo pipefail
-          [ -n "$VSCE_PAT" ] || { echo "::error::VSCE_PAT is not set in the registries environment"; exit 1; }
-          bunx --bun @vscode/vsce@4.0.0 publish --skip-duplicate --allow-missing-repository --packagePath release/*.vsix \
+          [ -n "$AZURE_CLIENT_ID" ] || { echo "::error::The registries environment has no AZURE_CLIENT_ID variable (docs/release.md)"; exit 1; }
+          [ -n "$AZURE_TENANT_ID" ] || { echo "::error::The registries environment has no AZURE_TENANT_ID variable (docs/release.md)"; exit 1; }
+
+      - name: Sign in to Microsoft Entra ID
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Publish to the VS Code Marketplace
+        run: |
+          set -euo pipefail
+          bunx --bun @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --allow-missing-repository --packagePath release/*.vsix \
             || { echo "::error::Publishing to the VS Code Marketplace failed"; exit 1; }
 
+      # ovsx reads OVSX_PAT from the environment: the token never appears on a command line.
       - name: Publish to Open VSX
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
