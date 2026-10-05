@@ -1,7 +1,7 @@
 ---
 module: kete-tools-ci
 paths: [packages/kete-tools/src/*, packages/kete-tools/distribution/*, .github/workflows/kete-extension-publish.yml, .github/workflows/kete-installer-smoke.yml, .github/workflows/kete-job-image.yml, packages/kete-tools/leak-allowlist.txt, .github/workflows/kete-build.yml, .github/workflows/kete-release.yml, .github/workflows/kete-root-helper.yml, .github/workflows/kete-egress.yml, .github/workflows/kete-job-entrypoint.yml, .github/workflows/kete-job-host.yml, .opencode-version]
-verified-at: 9a828c4c98
+verified-at: 42d29ce9bb
 ---
 
 ## Quick answers
@@ -36,7 +36,12 @@ verified-at: 9a828c4c98
   → `smoke` and `extension` (both `needs: build`) → `image` (`needs: [build, smoke, extension]`,
   so a failed release never leaves a pushed image) → `publish` (`needs: [smoke, extension, image]`,
   tag pushes only). Since self-hosted P1 there's also `image-publish` (`needs: image`, tags only)
-  between them: `publish` needs `[smoke, extension, image, image-publish]`. `image` (75 min,
+  between them: `publish` needs `[smoke, extension, image, image-publish]`. Since then `extension-e2e`
+  and `jetbrains` (both `needs: build`) joined: `image` needs `[build, smoke, extension, extension-e2e,
+  jetbrains]` and `publish` needs `[smoke, extension, extension-e2e, jetbrains, image, image-publish,
+  kernel-publish]`. `jetbrains` builds the JetBrains plugin zips from the release artifact's archives
+  (artifact `jetbrains`, which `publish` downloads into `release/` and checks against
+  `kete-code-jetbrains-<v>.sha256`; see the `jetbrains-plugin` card). `image` (75 min,
   `contents: read` only) frees disk,
   downloads the release artifact, verifies `SHA256SUMS`, unpacks the linux-x64 and linux-arm64
   `kete`, sets up QEMU (`docker/setup-qemu-action`, pinned), builds `kete-job:amd64` and runs

@@ -1,7 +1,7 @@
 ---
 module: ui-branding
 paths: [packages/tui/src/kete/mark.tsx, packages/util/src/kete/wordmark.ts, packages/app/src/kete/brand-text*, packages/app/src/kete/wordmark*, packages/app/src/kete/mark.tsx, packages/app/src/kete/tokens.css, packages/app/src/kete/fonts.ts, packages/ui/src/theme/kete/*, packages/tui/src/kete/theme.*, assets/brand/]
-verified-at: 604889ab32
+verified-at: 139c15e1b2
 ---
 ## Quick answers
 - Where do the "Offline" footer indicator and the picker's Local group live? TUI: `tui/src/kete/local-status.tsx` (footer slots) and `tui/src/kete/local-models.ts` (dialog fields); web: `app/src/kete/local-ui.tsx`. See the `local-models` card.
@@ -30,11 +30,11 @@ Kete Code's product identity applied to upstream OpenCode's UI surfaces without 
 | `packages/app/src/kete/brand-text.ts` | 48 | `brandText()` regex rewrite rules + `overrides` map + `brandDictionary()` |
 | `packages/app/src/kete/wordmark.tsx` | 41 | "Kete"/"Code" wordmark `<svg>`, Bricolage Grotesque 600 via `tokens.css`, same 720×129 box as upstream's |
 | `packages/app/src/kete/mark.tsx` | 54 | `MARK_RECTS`/`MARK_VIEWBOX` (single geometry source) and `KeteMark` inline SVG |
-| `packages/app/src/kete/tokens.css` | 77 | `--kete-*` custom properties (brand, ink, paper, surfaces, borders, text, radii, font stacks), keyed on `[data-color-scheme]` and `[data-kete-contrast="high"]`; `@font-face "Kete Wordmark"` `url()`-referencing `assets/brand/fonts/…woff2` |
+| `packages/app/src/kete/tokens.css` | 77 | `--kete-*` custom properties (brand, ink, paper, surfaces, borders, text, radii, font stacks), keyed on `[data-color-scheme]` and `[data-kete-contrast="high"]`, editor font stacks under `[data-kete-host="vscode"]`/`[data-kete-host="jetbrains"]`; `@font-face "Kete Wordmark"` `url()`-referencing `assets/brand/fonts/…woff2` |
 | `packages/app/src/kete/fonts.ts` | 12 | `wordmarkFont = { name, licenceUrl }`; imports `assets/brand/fonts/OFL.txt?url` so Vite emits the licence file alongside the font |
 | `packages/app/src/kete/assets.d.ts` | — | `declare module "*?url"` (the app's `env.d.ts` doesn't include `vite/client`) |
 | `packages/app/src/kete/vscode-theme.ts` | 95 | Maps VS Code CSS variables → web UI design tokens (`VSCODE_VARIABLES`, `MAPPING`) |
-| `packages/app/src/kete/vscode-host.tsx` | 215 | VS Code webview bridge: opens diffs in the editor, adds editor selection/file to prompt context, applies theme + `data-kete-contrast`, imports `tokens.css` app-wide |
+| `packages/app/src/kete/vscode-host.tsx` | 215 | Editor bridge (VS Code webview or the JetBrains plugin's JCEF page, transport in `ide-host.ts`): opens diffs in the editor, adds editor selection/file to prompt context, applies theme + `data-kete-contrast`, imports `tokens.css` app-wide |
 | `packages/app/src/kete/vscode-messages.ts` | 88 | Validates `postMessage` payloads from the extension (`contextMessage()`, `panelMessage()` — see the `web-app` and `vscode-extension` cards) |
 | `packages/ui/src/theme/kete/theme.ts` | 54 | `keteTheme`: upstream's `oc-2.json` with violet primary/interactive/accent tokens (`brand.light`/`brand.dark`) |
 | `packages/tui/src/kete/theme.ts` | 26 | `defaultTheme`/`legacyDefault` names, `canonicalTheme()` alias resolution |

@@ -1,0 +1,108 @@
+# Kete-owned. Publishes a released stable version of the JetBrains plugin to the JetBrains
+# Marketplace. See docs/release.md ("Publish the JetBrains plugin").
+#
+# Like the VS Code extension, publishing is a go-live step that never happens as a side effect of a
+# release tag: a maintainer dispatches this workflow ON the release tag (the jetbrains-marketplace
+# environment only accepts kete-v* tags) and types the tag again to confirm:
+#
+#   gh workflow run kete-jetbrains-publish.yml --repo kete-org/ketecode --ref kete-v0.3.0 -f confirm=kete-v0.3.0
+#
+# It uploads the all-platform plugin zip already attached to that tag's published GitHub Release
+# (built and checked by kete-release.yml's jetbrains job), after verifying it against the release's
+# kete-code-jetbrains-<v>.sha256; it builds nothing. The JetBrains Marketplace takes one file of at
+# most 400 MB per version, so a release whose all-platform zip didn't fit (kete-release.yml then
+# attaches only the per-OS zips) can't be published here; the run says so and fails. Stable versions
+# only. The plugin must already exist on the Marketplace (the first upload is made by hand, under the
+# vendor account). Re-running is safe: a version the Marketplace already has is reported and skipped.
+name: kete-jetbrains-publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "The tag you are running this on (kete-vX.Y.Z), to confirm publishing its JetBrains plugin to the JetBrains Marketplace"
+        required: true
+
+concurrency:
+  group: kete-jetbrains-publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # JETBRAINS_MARKETPLACE_TOKEN lives here; the environment admits kete-v* tags only.
+    environment: jetbrains-marketplace
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check the tag
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$REF" == refs/tags/kete-v* ]] || { echo "::error::Run this workflow on a release tag (--ref kete-vX.Y.Z), not $REF"; exit 1; }
+          [ "$CONFIRM" = "$TAG" ] || { echo "::error::confirm ($CONFIRM) doesn't match the tag ($TAG)"; exit 1; }
+          [[ "${TAG#kete-v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "::error::$TAG is a pre-release: only stable X.Y.Z versions go to the JetBrains Marketplace"; exit 1; }
+
+      - name: Download the released plugin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          state="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease -q '"\(.isDraft) \(.isPrerelease)"')" \
+            || { echo "::error::$TAG has no GitHub Release; run kete-release first"; exit 1; }
+          [ "$state" = "false false" ] || { echo "::error::$TAG's release is a draft or a pre-release ($state)"; exit 1; }
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "kete-code-jetbrains-$version*" --dir release
+          ls -la release
+          test -f "release/kete-code-jetbrains-$version.zip" || {
+            echo "::error::$TAG has no all-platform plugin zip (kete-code-jetbrains-$version.zip): it was over the Marketplace's 400 MB limit, so the release carries only per-OS zips. Publishing to the Marketplace needs a decision first (see docs/release.md)."
+            exit 1
+          }
+
+      # The per-zip .sha256 comes from the same GitHub Release as the zip, so it guards only against a
+      # corrupted download, not a tampered release: the release's signed SHA256SUMS (Ed25519, on the
+      # public kete-releases) lists the CLI archives, not the plugin zips. See docs/release.md.
+      - name: Verify the plugin
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          zip="release/kete-code-jetbrains-$version.zip"
+          (cd release && sha256sum -c --ignore-missing "kete-code-jetbrains-$version.sha256")
+          grep -q "  kete-code-jetbrains-$version.zip$" "release/kete-code-jetbrains-$version.sha256" \
+            || { echo "::error::$zip is not in kete-code-jetbrains-$version.sha256"; exit 1; }
+          size="$(stat -c %s "$zip")"
+          [ "$size" -le 400000000 ] || { echo "::error::$zip is $((size / 1000000)) MB, over the Marketplace's 400 MB limit"; exit 1; }
+          jar="$(unzip -Z1 "$zip" | grep -E '^kete-jetbrains/lib/kete-jetbrains-.*\.jar$' | head -1)"
+          unzip -p "$zip" "$jar" > plugin.jar
+          xml="$(unzip -p plugin.jar META-INF/plugin.xml)"
+          grep -q '<id>ai.ketecode.kete-code</id>' <<<"$xml" || { echo "::error::$zip has the wrong plugin id"; exit 1; }
+          grep -q "<version>$version</version>" <<<"$xml" || { echo "::error::$zip is not version $version"; exit 1; }
+
+      # The Marketplace upload API (https://plugins.jetbrains.com/docs/marketplace/plugin-upload.html).
+      # The token goes to curl on stdin, never on a command line.
+      - name: Publish to the JetBrains Marketplace
+        env:
+          JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "$JETBRAINS_MARKETPLACE_TOKEN" ] || { echo "::error::JETBRAINS_MARKETPLACE_TOKEN is not set in the jetbrains-marketplace environment"; exit 1; }
+          version="${TAG#kete-v}"
+          status="$(printf 'header = "Authorization: Bearer %s"\n' "$JETBRAINS_MARKETPLACE_TOKEN" | curl --config - \
+            -sS --max-time 900 --retry 2 -o response.txt -w '%{http_code}' \
+            -F xmlId=ai.ketecode.kete-code -F "file=@release/kete-code-jetbrains-$version.zip" \
+            https://plugins.jetbrains.com/plugin/uploadPlugin)" || { echo "::error::The upload request failed"; exit 1; }
+          if [ "$status" = 200 ]; then
+            echo "::notice::Published Kete Code $version to the JetBrains Marketplace (it appears after JetBrains' review)."
+          elif grep -qi "already" response.txt; then
+            echo "::notice::The JetBrains Marketplace already has Kete Code $version; nothing to do."
+          else
+            echo "::error::The JetBrains Marketplace refused the upload (HTTP $status): $(head -c 500 response.txt)"
+            exit 1
+          fi

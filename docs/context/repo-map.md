@@ -16,7 +16,7 @@ CLAUDE.md §2). Kete-owned code is in bold. Module cards are in `modules/`.
 | `packages/tui/` | terminal UI | **`src/kete/`**: balance, theme | gateway, ui-branding |
 | `packages/protocol/`, `packages/client/`, `packages/sdk/` | HTTP API definition, generated `openapi.json` and clients | — (generated; never hand-edit) | server-sdk |
 | `packages/plugin/` | plugin API types (Effect and Promise) | — | conventions.md |
-| `packages/app/` | web UI (also framed in VS Code) | **`src/kete/`**: brand text, wordmark, VS Code bridge | ui-branding, vscode-extension |
+| `packages/app/` | web UI (also framed in VS Code and JetBrains IDEs) | **`src/kete/`**: brand text, wordmark, editor bridge (`ide-host.ts`, `vscode-host.tsx`) | ui-branding, vscode-extension, jetbrains-plugin |
 | `packages/ui/` | UI kit and themes | **`src/theme/kete/`** (violet default theme) | ui-branding |
 | `packages/ai/`, `codemode/`, `session-ui/`, … | upstream libraries Kete doesn't change | — | — |
 | `packages/console/`, `desktop/`, `stats/`, `web/`, `services/www/` | upstream products Kete doesn't ship | — | — |
@@ -26,6 +26,7 @@ CLAUDE.md §2). Kete-owned code is in bold. Module cards are in `modules/`.
 | Path | Holds | Card |
 |---|---|---|
 | **`packages/kete-vscode/`** | VS Code extension (`ketecode.kete-code`): bundled binary, own local server, chat, sessions, review, MCP view | vscode-extension |
+| **`packages/kete-jetbrains/`** | JetBrains plugin (`ai.ketecode.kete-code`, Kotlin/Gradle, built in CI): bundled binary, own local server, JCEF chat, context, review, diagnostics tool | jetbrains-plugin |
 | **`packages/kete-tools/`** | upstream sync, upstream:check, verify, release, role-check | kete-tools-ci |
 | **`packages/kete-root-helper/`** | Go module: the cloud-job root helper (second-user tool spawner, protocol v1) and its scripts/tests; Linux-only, not shipped in the CLI or VS Code binaries — ships in the (future) job container image | root-helper |
 | **`packages/kete-egress/`** | Go module: the cloud-job egress proxy (`kete-egress serve`) and nftables ruleset generator (`kete-egress nft`), config/control/log v1 contract in its README; Linux-only, ships in the (future) job container image, not the CLI or VS Code binaries | egress |

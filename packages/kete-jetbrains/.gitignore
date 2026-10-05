@@ -1,0 +1,6 @@
+.gradle/
+.intellijPlatform/
+build/
+.kotlin/
+# Release builds copy the per-platform kete binaries here (kete-release.yml); never committed.
+bin/

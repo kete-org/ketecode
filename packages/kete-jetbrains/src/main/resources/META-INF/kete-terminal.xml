@@ -1,0 +1,3 @@
+<!-- Loaded only when the Terminal plugin is installed and enabled (see plugin.xml). Nothing to register:
+     KeteTerminal.kt checks for the plugin before using its classes. -->
+<idea-plugin/>

@@ -1,0 +1,75 @@
+<!-- Kete Code for JetBrains IDEs. id, name, version, description, vendor and since-build come from
+     build.gradle.kts (intellijPlatform.pluginConfiguration). -->
+<idea-plugin>
+    <id>ai.ketecode.kete-code</id>
+    <name>Kete Code</name>
+    <vendor>Kete Code</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+    <!-- "Open in Terminal" (KeteTerminal.kt) works only with the IDE's Terminal plugin. -->
+    <depends optional="true" config-file="kete-terminal.xml">org.jetbrains.plugins.terminal</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Kete Code" anchor="right" secondary="false" icon="/icons/kete.svg"
+                    factoryClass="ai.ketecode.jetbrains.KeteToolWindowFactory"/>
+        <applicationConfigurable parentId="tools" id="ai.ketecode.settings" displayName="Kete Code"
+                                 instance="ai.ketecode.jetbrains.KeteConfigurable"/>
+        <statusBarWidgetFactory id="ai.ketecode.status" implementation="ai.ketecode.jetbrains.KeteStatusBarFactory"
+                                order="first"/>
+        <postStartupActivity implementation="ai.ketecode.jetbrains.KeteStartup"/>
+        <notificationGroup id="Kete Code" displayType="BALLOON"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener class="ai.ketecode.jetbrains.KeteTheme$LafListener" topic="com.intellij.ide.ui.LafManagerListener"/>
+        <listener class="ai.ketecode.jetbrains.KeteTheme$ColorsListener" topic="com.intellij.openapi.editor.colors.EditorColorsListener"/>
+        <listener class="ai.ketecode.jetbrains.KeteActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+        <listener class="ai.ketecode.jetbrains.KeteProjectListener" topic="com.intellij.openapi.project.ProjectManagerListener"/>
+    </applicationListeners>
+
+    <actions>
+        <action id="Kete.AddToChat" class="ai.ketecode.jetbrains.AddToKeteAction" text="Add to Kete Code"
+                description="Add the selection (or the file) to the Kete Code chat's context" icon="/icons/kete.svg">
+            <keyboard-shortcut keymap="$default" first-keystroke="alt K"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+        </action>
+
+        <group id="Kete.Menu" text="Kete Code" popup="true" icon="/icons/kete.svg">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Kete.OpenChat" class="ai.ketecode.jetbrains.OpenChatAction" text="Open Chat"
+                    description="Show the Kete Code chat"/>
+            <action id="Kete.NewChat" class="ai.ketecode.jetbrains.NewChatAction" text="New Chat"
+                    description="Start a new Kete Code session for this project"/>
+            <action id="Kete.OpenSession" class="ai.ketecode.jetbrains.OpenSessionAction" text="Open Session…"
+                    description="Open or continue one of this project's Kete Code sessions"/>
+            <separator/>
+            <action id="Kete.ReviewChanges" class="ai.ketecode.jetbrains.ReviewChangesAction" text="Review Changes"
+                    description="Show the last turn's changes in the diff viewer"/>
+            <action id="Kete.RevertFile" class="ai.ketecode.jetbrains.RevertFileAction" text="Revert File…"
+                    description="Put a file back as it was before the last turn"/>
+            <separator/>
+            <action id="Kete.OpenInTerminal" class="ai.ketecode.jetbrains.OpenInTerminalAction" text="Open in Terminal"
+                    description="Run the kete TUI in the IDE's terminal"/>
+            <action id="Kete.SignIn" class="ai.ketecode.jetbrains.SignInAction" text="Sign In to Kete Code"
+                    description="Sign in to your Kete account (kete login)"/>
+            <action id="Kete.SignOut" class="ai.ketecode.jetbrains.SignOutAction" text="Sign Out"
+                    description="Sign out of your Kete account (kete logout)"/>
+            <action id="Kete.RestartServer" class="ai.ketecode.jetbrains.RestartServerAction" text="Restart Server"
+                    description="Restart the Kete Code runtime"/>
+        </group>
+
+        <!-- The status-bar widget's menu: the same actions. -->
+        <group id="Kete.StatusMenu" popup="true">
+            <reference ref="Kete.OpenChat"/>
+            <reference ref="Kete.OpenSession"/>
+            <reference ref="Kete.ReviewChanges"/>
+            <separator/>
+            <reference ref="Kete.SignIn"/>
+            <reference ref="Kete.SignOut"/>
+            <reference ref="Kete.OpenInTerminal"/>
+            <reference ref="Kete.RestartServer"/>
+        </group>
+    </actions>
+</idea-plugin>

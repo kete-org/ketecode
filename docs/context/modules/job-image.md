@@ -1,7 +1,7 @@
 ---
 module: job-image
 paths: [packages/kete-job-image/**, .github/workflows/kete-job-image.yml, .github/workflows/kete-release.yml, .github/workflows/kete-cloudvm-packer.yml, .github/workflows/kete-cloudvm-images.yml, .github/actions/kete-cloudvm-setup/**]
-verified-at: a29457ec43
+verified-at: 139c15e1b2
 ---
 
 ## Quick answers
@@ -43,7 +43,8 @@ verified-at: a29457ec43
   (`E2E_STATE`, `E2E_KEEP_LOGS=1`, `E2E_JOB_TIMEOUT`); it holds test credentials only.
 - Which workflows? `.github/workflows/kete-job-image.yml` (path-filtered PR/push to `main` + dispatch;
   linux-x64 `kete`, `build.sh --arch amd64`, `e2e.sh`; pushes nothing). The release workflow's `image`
-  job: after build, smoke and extension, builds `kete-job:amd64` (released linux-x64 `kete`, e2e)
+  job: after build, smoke, extension, extension-e2e and jetbrains (so a failed release never leaves a
+  pushed image), builds `kete-job:amd64` (released linux-x64 `kete`, e2e)
   and `kete-job:arm64` (linux-arm64 `kete`, QEMU via `docker/setup-qemu-action`, smoke: entrypoint
   exit 2 `boot invalid`, init exit 2 off PID 1), read-only, and on tags saves both as an artifact;
   the tag-only `image-publish` job (alone holding `packages`/`id-token: write`) loads them and pushes both

@@ -6,7 +6,7 @@
 import { createSignal } from "solid-js"
 
 export type Platform = "mac" | "other"
-export type Host = "browser" | "vscode"
+export type Host = "browser" | "vscode" | "jetbrains"
 export type PermissionMode = "default" | "ask"
 
 export type Notice = {
@@ -67,9 +67,10 @@ export function updatePanelState(patch: Partial<PanelState>) {
   setPanelStateSignal((current) => ({ ...current, ...patch }))
 }
 
-/** ⌥K/Alt K is an editor keybinding, so the tip only makes sense inside the VS Code host (D4). */
+/** ⌥K/Alt K is an editor keybinding (VS Code's `kete.addToChat`, the JetBrains plugin's
+ *  "Add to Kete Code"), so the tip only makes sense inside an editor host (D4). */
 export function tipVisible(state: PanelState): boolean {
-  return state.host === "vscode"
+  return state.host !== "browser"
 }
 
 export function dismissNoticeLocally(id: string) {

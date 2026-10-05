@@ -13,6 +13,10 @@
 #   extension-e2e  the extension's end-to-end suite (packages/kete-vscode/script/e2e.ts --assert) on
 #              the linux-x64 .vsix in VS Code and in VSCodium (the Open VSX forks' stand-in), under
 #              xvfb, each editor a pinned archive checked against a pinned SHA-256
+#   jetbrains  the JetBrains plugin (packages/kete-jetbrains) with the released binaries bundled: one
+#              zip per OS (kete-code-jetbrains-<v>-{macos,linux,windows}.zip, both architectures
+#              each), plus one zip with every platform only if it fits the JetBrains Marketplace's
+#              400 MB limit, and kete-code-jetbrains-<v>.sha256 listing them
 #   image      the cloud job image (packages/kete-job-image) for linux/amd64 and linux/arm64 from
 #              the released linux-x64 and linux-arm64 kete, with read-only permissions: builds both
 #              (arm64 under QEMU), runs the full end-to-end test (scripts/e2e.sh) on amd64 and only a
@@ -31,8 +35,8 @@
 #   cloudvm-images  tags only, after image-publish: the provider images for VM-per-job hosts
 #              (kete-cloudvm-images.yml: cloudvm kernel, base disks, per-provider imports where an
 #              image-builder credential is configured); publish doesn't wait for it
-#   publish    tags only, after smoke, extension, extension-e2e, image and kernel pass: this repository's GitHub
-#              Release, first as a DRAFT with every archive, .vsix and SHA256SUMS, plus the job
+#   publish    tags only, after smoke, extension, extension-e2e, jetbrains, image and kernel pass: this repository's GitHub
+#              Release, first as a DRAFT with every archive, .vsix, JetBrains plugin zip and SHA256SUMS, plus the job
 #              image's digests and signing identity in the notes, kete-job-image.digest (the
 #              linux/amd64 digest Fly pins today) and kete-job-image.digests (index, per-arch
 #              digests, signing identity; kete-code-platform ADR 0023 rule 17), and the guest
@@ -50,7 +54,8 @@
 #              scoped to those two repositories (contents: write) and NPM_TOKEN
 #
 # The VS Code extension is NOT published here: publishing to the Marketplace and Open VSX is an
-# explicit, separate step (kete-extension-publish.yml, dispatched on a released stable tag).
+# explicit, separate step (kete-extension-publish.yml, dispatched on a released stable tag). The same
+# goes for the JetBrains plugin and the JetBrains Marketplace (kete-jetbrains-publish.yml).
 #
 # Upstream's publish workflow (publish.yml) stays disabled: it publishes to OpenCode's npm
 # packages, Homebrew tap and image registry.
@@ -310,9 +315,134 @@ jobs:
           cd packages/kete-vscode
           xvfb-run -a bun script/e2e.ts "$vsix" --code "$EDITOR_CLI" --assert -- --disable-gpu
 
+  # The JetBrains plugin with the released binaries bundled (packages/kete-jetbrains/README.md). One
+  # binary is ~80-93 MB compressed, so all six don't fit the JetBrains Marketplace's 400 MB upload
+  # limit: the release carries one zip per OS (both architectures each, installable with "Install
+  # Plugin from Disk"), and a zip with every platform only when it fits. The folder names and the
+  # CLI target each one bundles are packages/kete-jetbrains/src/main/kotlin/ai/ketecode/jetbrains/core/Binary.kt's.
+  jetbrains:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Setup Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      - name: Build the plugin zips
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          out="$RUNNER_TEMP/jetbrains"
+          mkdir -p "$out"
+          # Bundled folder -> CLI build target (core/Binary.kt targets).
+          declare -A target=(
+            [darwin-arm64]=darwin-arm64 [darwin-x64]=darwin-x64-baseline
+            [linux-x64]=linux-x64-baseline [linux-arm64]=linux-arm64
+            [windows-x64]=windows-x64-baseline [windows-arm64]=windows-arm64
+          )
+          # Plugin zip -> the folders it bundles (core/Binary.kt bundles).
+          declare -A bundle=(
+            [macos]="darwin-arm64 darwin-x64" [linux]="linux-x64 linux-arm64" [windows]="windows-x64 windows-arm64"
+            [all]="darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64"
+          )
+          for name in macos linux windows all; do
+            bins="$RUNNER_TEMP/bins-$name"
+            rm -rf "$bins"
+            for folder in ${bundle[$name]}; do
+              cli="${target[$folder]}"
+              case "$cli" in linux-*) archive="release/kete-$version-$cli.tar.gz" ;; *) archive="release/kete-$version-$cli.zip" ;; esac
+              test -f "$archive" || { echo "::error::missing $archive"; ls release; exit 1; }
+              mkdir -p "$bins/$folder"
+              case "$archive" in *.tar.gz) tar -xzf "$archive" -C "$bins/$folder" ;; *) unzip -q "$archive" -d "$bins/$folder" ;; esac
+              test -f "$bins/$folder/kete" || test -f "$bins/$folder/kete.exe" || { echo "::error::no kete binary in $archive"; exit 1; }
+            done
+            (cd packages/kete-jetbrains && ./gradlew clean buildPlugin -PpluginVersion="$version" -PketeBinaries="$bins")
+            built=(packages/kete-jetbrains/build/distributions/*.zip)
+            [ "${#built[@]}" -eq 1 ] || { echo "::error::expected one plugin zip"; exit 1; }
+            if [ "$name" = all ]; then file="kete-code-jetbrains-$version.zip"; else file="kete-code-jetbrains-$version-$name.zip"; fi
+            mv "${built[0]}" "$out/$file"
+            rm -rf "$bins"
+          done
+          # The all-platform zip only goes out if the JetBrains Marketplace would accept it.
+          size="$(stat -c %s "$out/kete-code-jetbrains-$version.zip")"
+          if [ "$size" -gt 400000000 ]; then
+            echo "::notice::The all-platform plugin zip is $((size / 1000000)) MB, over the JetBrains Marketplace's 400 MB limit: not attached. Releases carry the per-OS zips."
+            rm "$out/kete-code-jetbrains-$version.zip"
+          fi
+          (cd "$out" && sha256sum kete-code-jetbrains-*.zip > "kete-code-jetbrains-$version.sha256" && cat "kete-code-jetbrains-$version.sha256")
+
+      # Each zip: the right version and id, and an executable binary for each of its platforms.
+      - name: Check the plugin zips
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          out="$RUNNER_TEMP/jetbrains"
+          check() {
+            name="$1"; zip="$out/$1"; shift
+            test -f "$zip" || { echo "::error::missing $zip"; exit 1; }
+            jar="$(unzip -Z1 "$zip" | grep -E '^kete-jetbrains/lib/kete-jetbrains-.*\.jar$' | head -1)"
+            unzip -p "$zip" "$jar" > "$RUNNER_TEMP/plugin.jar"
+            xml="$(unzip -p "$RUNNER_TEMP/plugin.jar" META-INF/plugin.xml)"
+            grep -q '<id>ai.ketecode.kete-code</id>' <<<"$xml" || { echo "::error::$zip: wrong plugin id"; exit 1; }
+            grep -q "<version>$version</version>" <<<"$xml" || { echo "::error::$zip: not version $version"; exit 1; }
+            for folder in "$@"; do
+              case "$folder" in
+                windows-*) unzip -Z1 "$zip" | grep -qx "kete-jetbrains/bin/$folder/kete.exe" || { echo "::error::$zip: no $folder/kete.exe"; exit 1; } ;;
+                *) unzip -Z "$zip" "kete-jetbrains/bin/$folder/kete" | grep -q '^-rwx' || { echo "::error::$zip: $folder/kete missing or not executable"; exit 1; } ;;
+              esac
+            done
+            echo "ok $name ($(($(stat -c %s "$zip") / 1000000)) MB)"
+          }
+          check "kete-code-jetbrains-$version-macos.zip" darwin-arm64 darwin-x64
+          check "kete-code-jetbrains-$version-linux.zip" linux-x64 linux-arm64
+          check "kete-code-jetbrains-$version-windows.zip" windows-x64 windows-arm64
+          if [ -f "$out/kete-code-jetbrains-$version.zip" ]; then
+            check "kete-code-jetbrains-$version.zip" darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64
+          fi
+          (cd "$out" && sha256sum -c "kete-code-jetbrains-$version.sha256")
+
+      - name: Run the binary bundled in the linux zip
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          mkdir -p plugin && unzip -q "$RUNNER_TEMP/jetbrains/kete-code-jetbrains-$version-linux.zip" -d plugin
+          home="$RUNNER_TEMP/kete-home" && mkdir -p "$home"
+          HOME="$home" plugin/kete-jetbrains/bin/linux-x64/kete --version | tee version.txt
+          grep -F "kete v$version" version.txt
+
+      - name: Upload the plugin zips
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: jetbrains
+          path: ${{ runner.temp }}/jetbrains/
+          retention-days: 1
+          if-no-files-found: error
+
   image:
     # After the extension too, so a failed release never leaves a pushed image behind.
-    needs: [build, smoke, extension, extension-e2e]
+    needs: [build, smoke, extension, extension-e2e, jetbrains]
     runs-on: ubuntu-latest
     timeout-minutes: 75
     # Builds and tests only: no registry or signing permission (image-publish has those).
@@ -630,7 +760,7 @@ jobs:
       job_image: ghcr.io/kete-org/kete-job@${{ needs.image-publish.outputs.index }}
 
   publish:
-    needs: [smoke, extension, extension-e2e, image, image-publish, kernel-publish]
+    needs: [smoke, extension, extension-e2e, jetbrains, image, image-publish, kernel-publish]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -651,6 +781,16 @@ jobs:
 
       - name: Verify checksums
         run: (cd release && sha256sum -c SHA256SUMS)
+
+      # The JetBrains plugin zips go up with everything else (their own .sha256; SHA256SUMS lists the CLI build's files).
+      - name: Download the JetBrains plugin zips
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: jetbrains
+          path: release
+
+      - name: Verify the JetBrains plugin checksums
+        run: (cd release && sha256sum -c kete-code-jetbrains-*.sha256)
 
       - name: Create or update the draft release
         env:
@@ -755,6 +895,7 @@ jobs:
             echo "::notice::Public distribution is off (repository variable KETE_PUBLIC_DISTRIBUTION is not 'true'): nothing was published outside this repository."
           fi
           echo "::notice::The VS Code extension is not published by releases; run kete-extension-publish on this tag when it should go out."
+          echo "::notice::The JetBrains plugin is not published by releases; run kete-jetbrains-publish on this tag when it should go out."
 
   sign:
     # Tags only, once public distribution is switched on (repository variable
