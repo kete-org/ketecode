@@ -56,8 +56,9 @@
   --kete-text-3: #8a8699;
 }
 
-/* Inside the VS Code frame: UI text follows the editor's font, same as code. */
-[data-kete-host="vscode"] {
+/* Inside an editor (the VS Code frame or the JetBrains plugin): UI text follows the editor's font, same as code. */
+[data-kete-host="vscode"],
+[data-kete-host="jetbrains"] {
   --kete-ui-font: var(--font-family-sans);
   --kete-mono: var(--font-family-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
 }
