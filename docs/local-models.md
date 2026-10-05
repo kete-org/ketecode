@@ -66,10 +66,14 @@ unencrypted. Put the server behind HTTPS (a reverse proxy) if that matters on yo
 ## Is the server reachable?
 
 The runtime reports each local server as **reachable** (with its model count), **unreachable**
-(with the address tried and the error) or **not configured** (no address set and nothing answers
-on the default port, which is normal when you don't run that server). Clients read this over the
-runtime's `kete.local-models` plugin RPC (`POST /api/rpc/kete.local-models/status`); it never
-contains API keys, headers or URL credentials.
+(with the address tried and the error), **not configured** (no address set and nothing answers
+on the default port, which is normal when you don't run that server) or **blocked** (offline mode
+is on and the address isn't on this machine or a private network, so it isn't contacted; see
+[Offline mode](#offline-mode)). Clients read this over the runtime's `kete.local-models` plugin RPC
+(`POST /api/rpc/kete.local-models/status`). It never contains API keys, headers, URL credentials
+or query strings: the address is shown without them, and errors are fixed texts (`can't connect:
+connection refused`, `host not found`, `no answer within 2s`, `the server answered HTTP 503`), never
+the underlying transport message.
 
 - **Model picker** (terminal UI and web/VS Code): local models appear in a **Local** group with a
   **no tools** badge when the model can't call tools, and their context size (`32k ctx`). A server
@@ -108,6 +112,10 @@ LM Studio and vLLM have no comparable pull API; download models with their own t
 kete --offline          # or KETE_OFFLINE=1 kete
 ```
 
+`--offline` reads like any boolean flag: `--offline`, `--offline=true` (or `yes`, `on`, `1`, `y`)
+turn it on; `--offline=false` and `--offline false` (or `no`, `off`, `0`, `n`) leave it off. A value
+the parser doesn't accept (`--offline=maybe`) is an error, and is treated as on until then.
+
 ```jsonc
 { "kete": { "offline": true } }   // in ~/.config/kete/kete.jsonc (whole process) or ./.kete/kete.jsonc
 ```
@@ -115,12 +123,19 @@ kete --offline          # or KETE_OFFLINE=1 kete
 Offline mode uses only local models and makes no other network calls. It fails closed: an invalid
 `KETE_OFFLINE` value or a non-boolean `kete.offline` counts as on.
 
-**Which providers count as local:** `ollama`, `lmstudio` and `vllm` (whatever their address), and
-any other provider whose base URL host is `localhost`, a loopback address, or a private-network IP
-(10/8, 172.16/12, 192.168/16, IPv6 ULA `fc00::/7`, link-local `fe80::/10`). LAN **hostnames**
+**Which providers count as local:** any provider whose base URL host is `localhost`, a loopback
+address, or a private-network IP (10/8, 172.16/12, 192.168/16, IPv6 ULA `fc00::/7`, link-local
+`fe80::/10`). `ollama`, `lmstudio` and `vllm` count at their default address (this machine); with
+an address set (config or `*_HOST`), the address decides like for any other provider. LAN **hostnames**
 such as `gpu.lan` don't count, because deciding would need DNS: use the server's IP address in
 the base URL. A request to any other provider fails with "Offline mode: `<provider>/<model>` isn't
 a local model", never a silent fallback.
+
+**Local servers at a non-local address aren't contacted at all.** An Ollama, LM Studio or vLLM
+server whose address isn't local gets no request while offline mode is on: no model discovery
+(`/api/tags`, `/api/show`, `/api/v1/models`, `/health`, `/v1/models`), no status probe
+(`/api/ps` included), and its API key is never sent. Its status is **blocked** with "offline mode:
+`<address>` isn't on this machine or a private network", and the picker shows that line.
 
 **What offline mode turns off:**
 
@@ -142,10 +157,23 @@ online), and `--server` is refused, because Kete can't check that a remote serve
 enforced exactly as online, including its fail-closed rules. Offline mode only removes models,
 servers, tools and network calls; it never widens a permission.
 
-**Scope.** `--offline`, `KETE_OFFLINE` and `kete.offline` in the **global** config apply to the whole
-process. `kete.offline` in a **project** config applies to everything for that project (models,
-MCP, web tools, gateway, sync, the run check), but not to the models.dev fetch and update checks,
-which are decided once when Kete starts.
+**Scope: which switch reaches what, and when.**
+
+- `--offline`, `KETE_OFFLINE` and `kete.offline` in the **global** config are read once when the
+  `kete` process starts (before anything else) and apply to that whole process and any server it
+  starts. Only these turn off the **process-wide** parts, which are decided at startup and need a
+  restart to change: the models.dev catalog fetch, update checks and `kete upgrade`, the choice of
+  a private server (and refusing `--server`), and the refusals of `kete login`, `kete sync` and
+  `kete models pull`.
+- `kete.offline` in a **project** config (or a global config edited while Kete runs) is **live**:
+  it is read from the config as currently loaded, so turning it on takes effect without a restart:
+  - at once, for the next request: the model list (only local models), remote MCP servers,
+    `webfetch`/`websearch`, the run check, and the local server status probe;
+  - from the next tick of each background loop: Kete gateway models and prices (every 5 minutes)
+    and balance (every minute), platform sync (every 5 minutes), runtime registration (daily),
+    local server discovery (every 30 seconds), and the OpenCode Console config fetch (on its next
+    load). A request already in flight when the setting changes finishes; nothing new is sent.
+  Turning it off again resumes the same loops from their next tick.
 
 The terminal UI's footer and the web/VS Code panel header show **Offline** while it's on.
 
