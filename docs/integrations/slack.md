@@ -21,6 +21,11 @@ client ID before you can connect. Kete Code finds it in this order:
 
 Without any of these, `kete mcp add slack` explains what is needed and changes nothing.
 
+Before it writes anything or opens the sign-in, `kete mcp add slack` prints the client ID and where
+it came from (`--client-id`, project config, global config, or synced from your organization). Check
+it: a repository's own config can set the client ID, and signing in grants that app access to your
+Slack.
+
 For an internal app: create it at api.slack.com/apps in your workspace, add the redirect URL
 `http://127.0.0.1:34561/callback` (the preset pins this loopback address and port), add the user
 scopes the tools need (for example `search:read.public`, `channels:history`, `chat:write`,

@@ -50,6 +50,34 @@ Not run: the packages' full suites (`verify --base main`) and a live Harness/Sla
 - `kete.integrations.slack.clientId` is camelCase as specified (other `kete` keys use snake_case).
 - Sync `integrations` is `Schema.Unknown` until the platform's contract ships; recorded in contracts.md §2.
 
+## Security review fixes
+Commit `8421b4e431` (`fix(mcp)`), after a security review BLOCKER: a project's `.kete/` config could exfiltrate the stored Harness key (any server could reference `{kete-secret:mcp:harness}`, or redefine `harness` with another command or `HARNESS_BASE_URL`).
+
+- Binding: the secret store now holds `kete-mcp-v1:<sha256>:<secret>` for `mcp:<server>`; the fingerprint is SHA-256 over canonical JSON of name, `local`, command, cwd, every non-reference environment entry (keys and values) and the keys holding references (`util/src/kete/mcp-secret.ts` `fingerprint`, `encode`/`decode`, `save(…, definition)`). `kete mcp add harness` binds it to exactly the server entry it writes.
+- Release: `resolve` gives the secret only to a local server whose name owns the entry (`mcp:<that server>`) and whose current definition has the stored fingerprint; a value without a fingerprint is never released. Otherwise the server is refused: the error names the server and entry, never the value, and says to re-run `kete mcp add <server>`. References still resolve only as whole `environment` values (never args, URLs or headers).
+- Config source (item 3): the merged config reaching `McpClient.connect` carries no per-server file origin, so project-only servers can't be singled out at spawn; the fingerprint is the guarantee (documented in harness.md, the card and the module header).
+- Beyond the brief: a server that gets a stored secret now spawns in `<data>/mcp-servers/<name>` instead of the project (`core/src/kete/mcp-secrets.ts` `prepare`; marked block in `core/src/mcp/client.ts`). With the project as cwd, the genuine pinned `npx -y harness-mcp-v2@3.2.32` reads the repo's `.npmrc` (registry) and `node_modules` (a planted package of that version), and a server loading `.env` could pick up `HARNESS_BASE_URL`, each sending the key elsewhere without touching config. The preset also always writes `HARNESS_BASE_URL` (default `https://app.harness.io`). `job-fs-sites.test.ts` classifies `mcp-secrets.ts` as `data-dir`.
+- Re-binding (item 4): re-running `kete mcp add harness` reuses the stored key (no prompt) and re-stores it with the new fingerprint; `--new-key` (new flag) asks for a new one.
+- Permissions: `mergePermissions` returns `{ rules, replaced }`; for preset actions, a user's stricter rule (`deny`, or `ask` where the preset allows) or narrower-resource rule is kept and moved after the preset's rules (last match wins); an equal `*` rule is deduplicated; a user's `allow` where the preset asks is replaced and the CLI warns. An invalid `permissions` entry is now refused instead of silently dropped.
+- Slack: prints `Slack app client ID: <id> (<source>)` (flag / project config <file> / global config <file> / synced from your organization) before writing and signing in.
+- Docs: harness.md (binding, isolated cwd, `--new-key`, no integrity hash on the pin, `{env:}` expanded in any config — prefer the stored key, user rules kept); slack.md (client ID shown with its source); upstream-patches.md entry updated.
+
+| Check | Result |
+|---|---|
+| util `bun test ./test/kete` | PASS 267, 14 skip, 0 fail (`mcp-secret.test.ts` 9) |
+| core `bun run test ./test/kete` | PASS 396, 11 skip, 0 fail (`mcp-presets.test.ts` 26) |
+| core `bun run test ./test/mcp.test.ts ./test/mcp-import-boundary.test.ts` | PASS 75 |
+| cli `bun test ./test/kete` | PASS 258, 1 skip, 0 fail (`mcp-preset.test.ts` 26) |
+| typecheck util, schema, core, cli | PASS |
+| protocol + client `check:generated` | PASS (no schema change) |
+| root `bun run lint` | PASS (0 warnings, 0 errors) |
+| `upstream:check` | PASS |
+| `stale-cards.mjs` / `card-check.mjs` | all current / clean (`mcp-presets`, `cli`, `account-login` → `8421b4e431`) |
+
+Tests added for the review: foreign-command project server with the reference, `harness` with a swapped command, genuine command with a changed `HARNESS_BASE_URL`, an added env var, a config `cwd`, `mcp:harness` referenced from server `x` (with and without harness's own definition), a remote server, the genuine definition resolving, `prepare`'s isolated cwd; every refusal asserts the secret isn't in the message. CLI: key bound to the written definition, reuse + re-bind on `--org` re-run, `--new-key`, user deny/narrower rules surviving a re-run with a warning for a replaced allow, invalid permissions entry refused, Slack client ID and source printed before the write.
+
+Not run: the packages' full suites (`verify --base main`); a live Harness/Slack connection.
+
 ## Cards updated
 New `mcp-presets` card + INDEX row; quick answers in `cli`, `config-kete`, `local-models`, `sync`, `server-sdk`, `account-login`; `subagents` and `workflows` re-verified (shared `schema/src/config/kete.ts`); contracts.md §2 pending `integrations` field. All bumped to `4e26b57120`; `kete-tools-ci` to the tooling commit.
 

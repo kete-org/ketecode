@@ -1,7 +1,7 @@
 ---
 module: account-login
 paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts]
-verified-at: 4e26b57120
+verified-at: 8421b4e431
 ---
 ## Quick answers
 - Do MCP presets share the account's secret store? The same `KeteSecretStore` module and `kete-code` service, under separate `mcp:<server>` entries (`util/src/kete/mcp-secret.ts`); `kete logout` doesn't remove them. See the `mcp-presets` card.
