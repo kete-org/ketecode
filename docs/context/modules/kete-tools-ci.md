@@ -23,8 +23,9 @@ verified-at: 3d489dad3d
 - **Why doesn't a release publish the VS Code extension any more?** User decision 2026-10-04 (ADR
   0009 §6): `publish` lost the Marketplace/Open VSX steps and its `registries` environment;
   `.github/workflows/kete-extension-publish.yml` (manual dispatch **on** a stable `kete-v*` tag,
-  `-f confirm=<tag>`) downloads that release's `.vsix` + `SHA256SUMS`, checks them and publishes with
-  `VSCE_PAT`/`OVSX_PAT` (environment `registries`).
+  `-f confirm=<tag>`) downloads that release's `.vsix` + `SHA256SUMS`, checks them and publishes: the
+  Marketplace with Microsoft Entra ID (`azure/login` OIDC + `vsce publish --azure-credential`;
+  variables `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`), Open VSX with `OVSX_PAT` (environment `registries`).
 - **What does `distribute` do?** `bun run --cwd packages/kete-tools distribute public|homebrew|npm|notes|verify`
   (`src/distribute.ts`): public file set, Homebrew formula (x64 = baseline builds), npm packages
   (`@ketecode/cli` launcher from `distribution/npm/kete.js` + 8 `@ketecode/cli-<platform>` with
@@ -251,7 +252,7 @@ Open VSX only through `kete-extension-publish.yml`.
 - `vsce package --target <target>` (`@vscode/vsce@4.0.0`, pinned) for `.vsix` packaging
   (`release.ts:120-139`).
 - GitHub Actions environments, each gated to `kete-v*` tags (`docs/release.md` "One-time setup"):
-  `registries` (VSCE_PAT, OVSX_PAT; only `kete-extension-publish.yml`), `release-signing`
+  `registries` (AZURE_CLIENT_ID/AZURE_TENANT_ID variables for Entra ID, OVSX_PAT; only `kete-extension-publish.yml`), `release-signing`
   (KETE_UPDATE_SIGNING_KEY; only `sign`), `distribution` (KETE_DIST_APP_CLIENT_ID variable,
   KETE_DIST_APP_PRIVATE_KEY, NPM_TOKEN; only `distribute`); repository variable
   `KETE_PUBLIC_DISTRIBUTION`.
