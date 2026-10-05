@@ -1,6 +1,8 @@
 package ai.ketecode.jetbrains.core
 
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.util.Base64
 
@@ -90,9 +92,46 @@ class Backoff(
 object Paths {
     /**
      * The absolute path of a workspace-relative path from the web UI, or null when it would leave the
-     * workspace folder (absolute paths, `..`, or a different drive). Mirrors status.ts `insideWorkspace`.
+     * workspace folder: lexically (absolute paths, `..`, or a different drive; mirrors status.ts
+     * `insideWorkspace`) or through a symbolic link ([realInside]). The path returned is the lexical one
+     * (inside the folder as the IDE names it); [realInside] gives where it really leads.
      */
     fun insideWorkspace(folder: String, relative: String): Path? {
+        val lexical = lexicallyInside(folder, relative) ?: return null
+        realInside(folder, lexical) ?: return null
+        return lexical
+    }
+
+    /**
+     * Where `target` (an absolute path lexically inside `folder`) really leads once symbolic links are
+     * followed, or null when that is outside the real `folder`, is the folder itself, or can't be told
+     * (the folder doesn't exist, or a link on the way dangles). A target that doesn't exist yet is
+     * resolved through its nearest existing parent. A check, not a lock: the file system can still change
+     * between the check and the write.
+     */
+    fun realInside(folder: String, target: Path): Path? {
+        val base = try {
+            Path.of(folder).toRealPath()
+        } catch (_: Exception) {
+            return null
+        }
+        var existing: Path = target.toAbsolutePath().normalize()
+        val missing = ArrayList<String>()
+        while (!Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) {
+            missing.add(0, existing.fileName?.toString() ?: return null)
+            existing = existing.parent ?: return null
+        }
+        val real = try {
+            // Fails for a dangling link, which a write would follow out of the folder.
+            missing.fold(existing.toRealPath()) { path, name -> path.resolve(name) }
+        } catch (_: Exception) {
+            return null
+        }
+        if (real == base || !real.startsWith(base)) return null
+        return real
+    }
+
+    private fun lexicallyInside(folder: String, relative: String): Path? {
         if (relative.isEmpty() || relative.contains('\u0000')) return null
         if (relative.startsWith("/") || relative.startsWith("\\") || Regex("^[A-Za-z]:").containsMatchIn(relative)) return null
         val base = try {

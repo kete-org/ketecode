@@ -63,6 +63,21 @@ class ReviewDiffTest {
     }
 
     @Test
+    fun `an added file that is gone stays added and is never restored as an empty file`() {
+        assertEquals("added", ReviewDiff.reviewStatus("added", exists = false))
+        assertEquals("deleted", ReviewDiff.reviewStatus("modified", exists = false))
+        assertEquals("modified", ReviewDiff.reviewStatus("modified", exists = true))
+        assertEquals("added", ReviewDiff.reviewStatus("added", exists = true))
+
+        assertTrue(ReviewDiff.revert("added", exists = false, before = "") is ReviewDiff.Revert.Skip)
+        assertEquals(ReviewDiff.Revert.Delete, ReviewDiff.revert("added", exists = true, before = ""))
+        assertEquals(ReviewDiff.Revert.Restore, ReviewDiff.revert("deleted", exists = false, before = "one\n"))
+        assertTrue(ReviewDiff.revert("deleted", exists = false, before = "") is ReviewDiff.Revert.Skip)
+        assertEquals(ReviewDiff.Revert.PutBack, ReviewDiff.revert("modified", exists = true, before = "one\n"))
+        assertEquals(ReviewDiff.Revert.PutBack, ReviewDiff.revert("modified", exists = true, before = ""))
+    }
+
+    @Test
     fun `a missing final newline`() {
         val patch = "$header@@ -1,2 +1,2 @@\n one\n-two\n\\ No newline at end of file\n+two\n"
         assertEquals("one\ntwo", ReviewDiff.before(patch, "one\ntwo\n"))

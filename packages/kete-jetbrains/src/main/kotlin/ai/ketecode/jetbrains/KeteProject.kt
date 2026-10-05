@@ -304,7 +304,7 @@ class KeteProject(private val project: Project) : Disposable {
                 log.warn("can't show ${diff.file} before the turn: ${error.message}")
                 return@mapNotNull null
             }
-            val status = if (current == null) "deleted" else diff.status
+            val status = ReviewDiff.reviewStatus(diff.status, exists = current != null)
             entries.add(ReviewEntry(diff.file, status, before))
             val type = FileTypeManager.getInstance().getFileTypeByFileName(target.fileName.toString())
             val left = factory.create(project, before, type)
@@ -339,19 +339,34 @@ class KeteProject(private val project: Project) : Disposable {
     }
 
     private fun confirmRevert(base: String, entry: ReviewEntry) {
-        val target = Paths.insideWorkspace(base, entry.file) ?: return
-        val (question, action) = when (entry.status) {
-            "added" -> "Delete ${entry.file}? $DISPLAY_NAME created it in this turn." to "Delete"
-            "deleted" -> "Restore ${entry.file}? $DISPLAY_NAME deleted it in this turn." to "Restore"
-            else -> "Revert ${entry.file} to how it was before this turn? Your edits since then are lost too." to "Revert"
+        // Inside the project lexically and once symbolic links are followed (a link to ~/.ssh is refused).
+        val target = Paths.insideWorkspace(base, entry.file)
+        val real = target?.let { Paths.realInside(base, it) }
+        if (target == null || real == null) {
+            notify(project, "Not reverting ${entry.file}: it leads outside the project.", NotificationType.WARNING)
+            return
         }
-        val choice = Messages.showOkCancelDialog(project, question, "Revert File", action, "Cancel", Messages.getWarningIcon())
+        val exists = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target) != null
+        val plan = ReviewDiff.revert(entry.status, exists, entry.before)
+        val (question, action) = when (plan) {
+            is ReviewDiff.Revert.Skip -> {
+                notify(project, "Nothing to revert for ${entry.file}: ${plan.reason}.", NotificationType.INFORMATION)
+                return
+            }
+            ReviewDiff.Revert.Delete -> "Delete ${entry.file}? $DISPLAY_NAME created it in this turn." to "Delete"
+            ReviewDiff.Revert.Restore -> "Restore ${entry.file}? $DISPLAY_NAME deleted it in this turn." to "Restore"
+            ReviewDiff.Revert.PutBack -> "Revert ${entry.file} to how it was before this turn? Your edits since then are lost too." to "Revert"
+        }
+        // The full resolved path, so a surprising location is visible before anything is written.
+        val choice = Messages.showOkCancelDialog(project, "$question\n\n$real", "Revert File", action, "Cancel", Messages.getWarningIcon())
         if (choice != Messages.OK) return
         try {
             WriteCommandAction.runWriteCommandAction(project, "Revert ${entry.file}", null, {
+                // Checked again right before writing: the file system may have changed while the dialog was open.
+                if (Paths.insideWorkspace(base, entry.file) == null) throw IllegalStateException("it now leads outside the project")
                 val existing = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target)
-                when (entry.status) {
-                    "added" -> existing?.delete(this)
+                when (plan) {
+                    ReviewDiff.Revert.Delete -> existing?.delete(this)
                     else -> {
                         val file = existing ?: run {
                             val parent = VfsUtil.createDirectoryIfMissing(target.parent.toString())
@@ -363,9 +378,9 @@ class KeteProject(private val project: Project) : Disposable {
                     }
                 }
             })
-            val done = when (entry.status) {
-                "added" -> "deleted"
-                "deleted" -> "restored"
+            val done = when (plan) {
+                ReviewDiff.Revert.Delete -> "deleted"
+                ReviewDiff.Revert.Restore -> "restored"
                 else -> "reverted"
             }
             notify(project, "${entry.file} $done.", NotificationType.INFORMATION)

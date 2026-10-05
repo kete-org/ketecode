@@ -6,6 +6,10 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Base64
 
 class StartLineTest {
@@ -72,12 +76,61 @@ class BackoffTest {
 }
 
 class PathsTest {
-    private val folder = System.getProperty("java.io.tmpdir") + "/kete-project"
+    @TempDir
+    lateinit var temp: Path
+
+    private val project: Path get() = temp.resolve("project").also { Files.createDirectories(it) }
+    private val folder: String get() = project.toString()
 
     @Test
     fun `keeps paths inside the project`() {
         assertNotNull(Paths.insideWorkspace(folder, "src/app.ts"))
         assertTrue(Paths.insideWorkspace(folder, "src/../src/app.ts")!!.endsWith("src/app.ts"))
+        Files.createDirectories(project.resolve("src"))
+        Files.writeString(project.resolve("src/app.ts"), "x")
+        assertEquals(project.resolve("src/app.ts"), Paths.insideWorkspace(folder, "src/app.ts"))
+    }
+
+    @Test
+    fun `refuses symbolic links that lead out of the project`() {
+        val outside = Files.createDirectories(temp.resolve("outside"))
+        Files.writeString(outside.resolve("id_rsa"), "secret")
+        val link = project.resolve("link")
+        try {
+            Files.createSymbolicLink(link, outside)
+        } catch (error: Exception) {
+            // Windows without the symlink privilege: nothing to test there.
+            assumeTrue(false, "can't create symbolic links: ${error.message}")
+        }
+        assertNull(Paths.insideWorkspace(folder, "link/id_rsa"), "an existing file through the link")
+        assertNull(Paths.insideWorkspace(folder, "link/new-file"), "a file a revert would create through the link")
+        assertNull(Paths.insideWorkspace(folder, "link/a/b/c"), "missing folders below the link")
+        assertNull(Paths.insideWorkspace(folder, "link"), "the link itself leads outside")
+        assertNull(Paths.realInside(folder, link.resolve("id_rsa")))
+
+        // A link to a file outside, and a dangling link (a write would follow it).
+        Files.createSymbolicLink(project.resolve("key"), outside.resolve("id_rsa"))
+        assertNull(Paths.insideWorkspace(folder, "key"))
+        Files.createSymbolicLink(project.resolve("dangling"), outside.resolve("not-yet"))
+        assertNull(Paths.insideWorkspace(folder, "dangling"))
+
+        // Links that stay inside are fine, and the real path is where they lead.
+        Files.createDirectories(project.resolve("real"))
+        Files.createSymbolicLink(project.resolve("alias"), project.resolve("real"))
+        assertEquals(project.resolve("alias/a.ts"), Paths.insideWorkspace(folder, "alias/a.ts"))
+        assertEquals(project.toRealPath().resolve("real/a.ts"), Paths.realInside(folder, project.resolve("alias/a.ts")))
+    }
+
+    @Test
+    fun `a project reached through a symbolic link still works`() {
+        val viaLink = temp.resolve("via")
+        try {
+            Files.createSymbolicLink(viaLink, project)
+        } catch (error: Exception) {
+            assumeTrue(false, "can't create symbolic links: ${error.message}")
+        }
+        assertNotNull(Paths.insideWorkspace(viaLink.toString(), "src/app.ts"))
+        assertNull(Paths.insideWorkspace(temp.resolve("missing").toString(), "src/app.ts"), "a project folder that doesn't exist")
     }
 
     @Test

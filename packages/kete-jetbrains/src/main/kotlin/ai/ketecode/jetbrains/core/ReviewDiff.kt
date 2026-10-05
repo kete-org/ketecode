@@ -15,6 +15,37 @@ object ReviewDiff {
     /** One file's change in the runtime's diff response. */
     data class FileDiff(val file: String, val patch: String, val status: String)
 
+    /**
+     * The status the review shows and reverts by: the runtime's, except that a file gone from disk since
+     * the turn counts as "deleted" — unless the turn added it, in which case it stays "added" (there is
+     * nothing before the turn to restore, and restoring would create an empty file).
+     */
+    fun reviewStatus(status: String, exists: Boolean): String = when {
+        exists -> status
+        status == "added" -> "added"
+        else -> "deleted"
+    }
+
+    /** What "Revert file" does for a reviewed file. */
+    sealed interface Revert {
+        /** The turn created it: delete it. */
+        data object Delete : Revert
+        /** It is gone: write `before` back. */
+        data object Restore : Revert
+        /** It changed: put `before` back. */
+        data object PutBack : Revert
+        /** Nothing to do, and why. */
+        data class Skip(val reason: String) : Revert
+    }
+
+    fun revert(status: String, exists: Boolean, before: String): Revert = when {
+        status == "added" && !exists -> Revert.Skip("it no longer exists")
+        status == "added" -> Revert.Delete
+        !exists && before.isEmpty() -> Revert.Skip("it was empty before the turn and is gone now; nothing to restore")
+        !exists -> Revert.Restore
+        else -> Revert.PutBack
+    }
+
     private val HEADER = Regex("^@@ -(\\d+)(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@")
 
     fun parse(patch: String): List<Hunk> {
