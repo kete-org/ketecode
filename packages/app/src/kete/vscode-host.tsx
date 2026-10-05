@@ -196,7 +196,12 @@ export function KeteVSCodeBridge() {
     if (!embedded()) return
     composers.count++
     pending.splice(0).forEach(add)
-    if (editor.latest) prompt.context.add(fileItem(editor.latest))
+    // The editor's file arrived before this prompt box mounted (the shell kept it): show it, and tell
+    // the extension it is applied, as `follow` does for later changes.
+    if (editor.latest) {
+      prompt.context.add(fileItem(editor.latest))
+      window.parent.postMessage({ type: "kete.editorContextApplied", path: editor.latest.path }, "*")
+    }
     const listener = (event: MessageEvent) => {
       if (event.source !== window.parent) return
       const current = editorContextMessage(event.data)
