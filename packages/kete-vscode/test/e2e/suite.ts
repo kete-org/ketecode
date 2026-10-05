@@ -58,7 +58,7 @@ export async function run() {
       const editor = await window.showTextDocument(document)
       results.editorContextFollows = await until(() => api.status().editorContext === "src/app.ts", 15_000).then(
         () => true,
-        () => false,
+        () => ({ applied: api.status().editorContext, active: window.activeTextEditor?.document.uri.toString() ?? null }),
       )
       editor.selection = new Selection(1, 0, 3, 0)
       await commands.executeCommand("kete.sendSelection")

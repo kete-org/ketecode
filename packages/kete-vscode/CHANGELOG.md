@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Works in Windsurf, Cursor and VSCodium (install from Open VSX): the diagnostics tool names the
+  editor you're in, and the chat's editor chip now reports itself when the file was opened before
+  the chat finished loading. See "Using Kete Code in Windsurf, Cursor or VSCodium" in the README.
 - The chat's empty state and composer are redesigned: a header, a hero mark, dismissible "what's
   new" notices and a CLI hint, and an **Auto / Ask / Plan** toggle next to send (Auto and Ask are
   the same permission mode as the title-bar shield; Plan switches to the **Plan** agent).

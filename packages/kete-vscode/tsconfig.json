@@ -6,5 +6,5 @@
     "noEmit": true,
     "types": ["bun", "vscode"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "script"]
 }

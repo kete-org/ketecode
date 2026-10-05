@@ -1,7 +1,7 @@
 ---
 module: job-image
 paths: [packages/kete-job-image/**, .github/workflows/kete-job-image.yml, .github/workflows/kete-release.yml, .github/workflows/kete-cloudvm-packer.yml, .github/workflows/kete-cloudvm-images.yml, .github/actions/kete-cloudvm-setup/**]
-verified-at: e65d087e3c
+verified-at: a29457ec43
 ---
 
 ## Quick answers

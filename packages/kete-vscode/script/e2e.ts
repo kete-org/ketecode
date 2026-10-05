@@ -1,30 +1,57 @@
 #!/usr/bin/env bun
-// End-to-end check of a packaged extension in a real VS Code window, isolated from your own VS Code
+// End-to-end check of a packaged extension in a real editor window, isolated from your own editor
 // (separate user-data and extensions directories) and from your Kete Code state (temporary XDG
 // directories, with a signed-in test account whose key sits in the fallback file store).
 //
-//   bun script/e2e.ts <path/to/kete-code-…-<target>.vsix> [--code <path to the code CLI>]
+//   bun script/e2e.ts <path/to/kete-code-…-<target>.vsix> [--code <editor CLI>] [--electron <editor executable>]
+//                     [--assert] [-- <extra editor arguments>]
 //
-// Local only (it opens a window); not run in CI.
+// The editor is VS Code by default; any fork works by passing its CLI (`--code`), e.g. VSCodium's
+// `bin/codium`. --assert exits 1 unless the run meets every requirement in script/e2e-check.ts.
+// CI (kete-release.yml, extension-e2e) runs it with --assert against VS Code and VSCodium under xvfb.
 
 import { execFileSync, spawn, spawnSync } from "node:child_process"
-import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { KeteAccount } from "@opencode/util/kete/account"
+import { failures } from "./e2e-check"
 
-const vsix = process.argv[2]
-if (!vsix || !existsSync(vsix)) throw new Error("usage: bun script/e2e.ts <vsix> [--code <code CLI>]")
-const codeFlag = process.argv.indexOf("--code")
+const separator = process.argv.indexOf("--")
+const args = separator === -1 ? process.argv.slice(2) : process.argv.slice(2, separator)
+const extra = separator === -1 ? [] : process.argv.slice(separator + 1)
+const flag = (name: string) => {
+  const index = args.indexOf(name)
+  if (index === -1) return undefined
+  const value = args[index + 1]
+  if (!value || value.startsWith("--")) throw new Error(`${name} needs a value`)
+  return value
+}
+const vsix = args[0]
+if (!vsix || vsix.startsWith("--") || !existsSync(vsix))
+  throw new Error("usage: bun script/e2e.ts <vsix> [--code <editor CLI>] [--electron <editor executable>] [--assert] [-- <editor args>]")
+const assert = args.includes("--assert")
 const code =
-  codeFlag > 0
-    ? process.argv[codeFlag + 1]!
-    : process.platform === "darwin"
-      ? "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-      : "code"
-// The `code` launcher returns at once; the test run needs the app's own executable, which waits.
-const electron =
-  process.platform === "darwin" ? path.resolve(path.dirname(code), "../../../MacOS/Code") : code
+  flag("--code") ??
+  (process.platform === "darwin" ? "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" : "code")
+// The CLI launcher returns at once; the test run needs the app's own executable, which waits.
+const electron = flag("--electron") ?? executableFor(code)
+
+/**
+ * The editor executable next to its CLI launcher. Linux archives (VS Code, VSCodium) put the launcher
+ * at `<root>/bin/<name>` and the executable at `<root>/<name>`; macOS apps put it in
+ * `Contents/MacOS/` (VS Code: `Code`, VSCodium: `VSCodium`), the only file there.
+ */
+function executableFor(cli: string) {
+  if (process.platform === "darwin") {
+    const macos = path.resolve(path.dirname(cli), "../../../MacOS")
+    const found = existsSync(macos) ? readdirSync(macos) : []
+    if (found.length !== 1) throw new Error(`can't tell the editor executable in ${macos}; pass --electron`)
+    return path.join(macos, found[0]!)
+  }
+  const sibling = path.resolve(path.dirname(cli), "..", path.basename(cli))
+  return existsSync(sibling) && statSync(sibling).isFile() ? sibling : cli
+}
 
 const root = mkdtempSync(path.join(os.tmpdir(), "kete-e2e-"))
 const dirs = {
@@ -134,7 +161,7 @@ execFileSync(binary, ["session", "import", sessionFile, "--standalone", "--direc
 
 execFileSync("bun", ["build", path.join(import.meta.dir, "../test/e2e/suite.ts"), "--target=node", "--format=cjs", "--external=vscode", `--outfile=${path.join(root, "suite.js")}`], { stdio: "ignore" })
 
-console.log(`running VS Code (${root})`)
+console.log(`running ${electron} (${root})`)
 const child = spawn(
   electron,
   [
@@ -145,6 +172,7 @@ const child = spawn(
     `--extensionDevelopmentPath=${extension}`,
     `--extensionTestsPath=${path.join(root, "suite.js")}`,
     "--new-window",
+    ...extra,
     dirs.workspace,
   ],
   { env: { ...process.env, ...xdg, KETE_E2E_OUT: dirs.out }, stdio: "inherit" },
@@ -153,4 +181,15 @@ const exit = await new Promise<number | null>((resolve) => child.on("exit", reso
 await Bun.sleep(2_000)
 // pgrep exits 1 when nothing matches: no server outlived the window.
 const leftovers = spawnSync("pgrep", ["-f", binary], { encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean).length
-console.log(JSON.stringify({ exit, results: JSON.parse(readFileSync(dirs.out, "utf8")), leftoverServers: leftovers }, null, 2))
+const report = {
+  exit,
+  results: existsSync(dirs.out) ? (JSON.parse(readFileSync(dirs.out, "utf8")) as Record<string, unknown>) : {},
+  leftoverServers: leftovers,
+}
+console.log(JSON.stringify(report, null, 2))
+if (assert) {
+  const problems = failures(report)
+  for (const problem of problems) console.error(`e2e: failed: ${problem}`)
+  if (problems.length > 0) process.exit(1)
+  console.log("e2e: every check passed")
+}
