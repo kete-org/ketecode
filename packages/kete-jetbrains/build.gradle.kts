@@ -115,6 +115,14 @@ tasks {
         }
     }
 
+    // Gradle 9 archives are reproducible by default and reset every file to rw-r--r--, so the zip
+    // would drop the sandbox's executable bit: set it again on the bundled binaries.
+    buildPlugin {
+        filesMatching("*/bin/*/kete") {
+            permissions { unix("rwxr-xr-x") }
+        }
+    }
+
     test {
         useJUnitPlatform()
         // BridgeTest checks the bridge allowlists against the VS Code relay's, read from its source.
