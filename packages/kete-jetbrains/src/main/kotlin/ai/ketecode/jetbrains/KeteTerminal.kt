@@ -1,10 +1,8 @@
 package ai.ketecode.jetbrains
 
 import ai.ketecode.jetbrains.core.Shell
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import org.jetbrains.plugins.terminal.TerminalToolWindowManager
@@ -14,11 +12,14 @@ import org.jetbrains.plugins.terminal.TerminalToolWindowManager
 // its classes are only touched after checking it is installed and enabled.
 
 object KeteTerminal {
-    private const val TERMINAL_PLUGIN = "org.jetbrains.plugins.terminal"
-
-    fun available(): Boolean {
-        val id = PluginId.getId(TERMINAL_PLUGIN)
-        return PluginManagerCore.getPlugin(id) != null && !PluginManagerCore.isDisabled(id)
+    /** Whether the Terminal plugin is loaded: its classes are visible to this plugin only through the optional dependency. */
+    fun available(): Boolean = try {
+        Class.forName("org.jetbrains.plugins.terminal.TerminalToolWindowManager", false, KeteTerminal::class.java.classLoader)
+        true
+    } catch (_: ClassNotFoundException) {
+        false
+    } catch (_: LinkageError) {
+        false
     }
 
     fun open(project: Project) {

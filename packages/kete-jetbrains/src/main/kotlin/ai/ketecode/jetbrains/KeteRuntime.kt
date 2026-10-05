@@ -14,13 +14,12 @@ import ai.ketecode.jetbrains.core.KeteConfig
 import ai.ketecode.jetbrains.core.Pairing
 import ai.ketecode.jetbrains.core.RuntimeStatus
 import ai.ketecode.jetbrains.core.StartLine
-import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.ide.plugins.PluginManager
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.util.Disposer
@@ -53,7 +52,7 @@ import java.util.concurrent.TimeoutException
 
 data class Connection(val url: String, val password: String)
 
-class RuntimeException(message: String) : Exception(message)
+class KeteRuntimeException(message: String) : Exception(message)
 
 @Service(Service.Level.APP)
 class KeteRuntime : Disposable {
@@ -137,7 +136,7 @@ class KeteRuntime : Disposable {
             val child = process
             process = null
             current = null
-            pending?.completeExceptionally(RuntimeException("The server was stopped"))
+            pending?.completeExceptionally(KeteRuntimeException("The server was stopped"))
             pending = null
             child
         }
@@ -203,13 +202,13 @@ class KeteRuntime : Disposable {
             }
             val reason = error.message ?: "kete serve did not start"
             crashed(reason)
-            future.completeExceptionally(RuntimeException(reason))
+            future.completeExceptionally(KeteRuntimeException(reason))
             return
         }
         val connection = Connection(started, password)
         synchronized(lock) {
             if (process !== child) {
-                future.completeExceptionally(RuntimeException("The server was stopped while starting"))
+                future.completeExceptionally(KeteRuntimeException("The server was stopped while starting"))
                 return
             }
             current = connection
@@ -281,13 +280,13 @@ class KeteRuntime : Disposable {
                         if (line != null) {
                             val url = StartLine.parseUrl(line)
                             if (url != null) future.complete(url)
-                            else future.completeExceptionally(RuntimeException("kete serve printed an unexpected start line"))
+                            else future.completeExceptionally(KeteRuntimeException("kete serve printed an unexpected start line"))
                             return@Thread
                         }
                     }
                     if (buffer.length > chunk.size * 16) buffer.setLength(0)
                 }
-                future.completeExceptionally(RuntimeException("kete serve exited before it was ready"))
+                future.completeExceptionally(KeteRuntimeException("kete serve exited before it was ready"))
             } catch (error: Exception) {
                 future.completeExceptionally(error)
             }
@@ -297,9 +296,9 @@ class KeteRuntime : Disposable {
         return try {
             future.get(timeout, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
-            throw RuntimeException("kete serve did not start within ${timeout / 1000} seconds")
+            throw KeteRuntimeException("kete serve did not start within ${timeout / 1000} seconds")
         } catch (error: java.util.concurrent.ExecutionException) {
-            throw RuntimeException(error.cause?.message ?: "kete serve did not start")
+            throw KeteRuntimeException(error.cause?.message ?: "kete serve did not start")
         }
     }
 
@@ -320,8 +319,8 @@ class KeteRuntime : Disposable {
 
     /** The binary to run: the CLI path setting, else the one bundled for this OS/architecture. */
     fun binary(): String {
-        val plugin = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))
-            ?: throw RuntimeException("The Kete Code plugin's files were not found")
+        val plugin = PluginManager.getPluginByClass(KeteRuntime::class.java)
+            ?: throw KeteRuntimeException("The Kete Code plugin's files were not found")
         val resolved = Binary.resolve(
             plugin.pluginPath.toString(),
             KeteSettingsService.get().state.cliPath,
@@ -330,7 +329,7 @@ class KeteRuntime : Disposable {
         )
         return when (resolved) {
             is Binary.Resolved.Ok -> resolved.path
-            is Binary.Resolved.Error -> throw RuntimeException(resolved.message)
+            is Binary.Resolved.Error -> throw KeteRuntimeException(resolved.message)
         }
     }
 
@@ -347,7 +346,7 @@ class KeteRuntime : Disposable {
         val stderr = CompletableFuture.supplyAsync { child.errorStream.bufferedReader().readText() }
         if (!child.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
             child.destroyForcibly()
-            throw RuntimeException("kete ${args.firstOrNull() ?: ""} timed out after $timeoutSeconds s")
+            throw KeteRuntimeException("kete ${args.firstOrNull() ?: ""} timed out after $timeoutSeconds s")
         }
         return CliResult(child.exitValue(), stdout.get(5, TimeUnit.SECONDS), stderr.get(5, TimeUnit.SECONDS))
     }
@@ -516,7 +515,7 @@ class KeteRuntime : Disposable {
             val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
             if (response.statusCode() !in 200..299) {
                 response.body().close()
-                throw RuntimeException("HTTP ${response.statusCode()}")
+                throw KeteRuntimeException("HTTP ${response.statusCode()}")
             }
             val body = response.body()
             stream = body

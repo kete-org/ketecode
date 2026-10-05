@@ -19,7 +19,7 @@ import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -217,10 +217,10 @@ class KeteProject(private val project: Project) : Disposable {
     }
 
     /** Whether the IDE excludes or ignores the file (excluded folders, ignored names, outside the project content). */
-    fun excluded(file: VirtualFile): Boolean = ReadAction.compute<Boolean, RuntimeException> {
+    fun excluded(file: VirtualFile): Boolean = ApplicationManager.getApplication().runReadAction(Computable {
         val index = ProjectFileIndex.getInstance(project)
         FileTypeManager.getInstance().isFileIgnored(file) || index.isExcluded(file) || index.isUnderIgnored(file) || !index.isInContent(file)
-    }
+    })
 
     private fun selection(editor: Editor): Selection {
         val model = editor.selectionModel
@@ -295,7 +295,7 @@ class KeteProject(private val project: Project) : Disposable {
         val requests = diffs.mapNotNull { diff ->
             val target = Paths.insideWorkspace(base, diff.file) ?: return@mapNotNull null
             val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target)
-            val current = file?.let { found -> ReadAction.compute<String?, RuntimeException> { FileDocumentManager.getInstance().getDocument(found)?.text } }
+            val current = file?.let { found -> ApplicationManager.getApplication().runReadAction(Computable { FileDocumentManager.getInstance().getDocument(found)?.text }) }
             val before = try {
                 ReviewDiff.before(diff.patch, current)
             } catch (error: Exception) {

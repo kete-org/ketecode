@@ -9,7 +9,7 @@ import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.components.serviceIfCreated
@@ -143,7 +143,7 @@ class EditorToolsServer : Disposable {
                 if (path != null) return null
                 continue
             }
-            results.addAll(ReadAction.compute<List<EditorTools.Diagnostic>, RuntimeException> { highlights(project, file, relative!!) })
+            results.addAll(ApplicationManager.getApplication().runReadAction(Computable { highlights(project, file, relative!!) }))
         }
         return results
     }
