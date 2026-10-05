@@ -69,6 +69,18 @@ Built in three passes on `feature/local-models`: A = core, util and schema (step
 - Web: local provider groups are titled "Local · Ollama" (dialog sections and menu labels), not merged into one group. Unreachable lines appear in the model dialog only, not in the compact composer menu.
 - An upstream test fixture edit (`tui/test/fixture/tui-client.ts`, marked) answers the status RPC.
 
+## Review findings fixed (2026-10-05)
+| # | Finding | Fix | Evidence |
+|---|---|---|---|
+| 1 | MAJOR: offline mode still contacted public hosts (status probe, upstream discovery) | `KeteOffline.active`/`blocks` (`core/src/kete/offline.ts`); one marked guard line in `discover` of `plugin/provider/{ollama,lmstudio,vllm}.ts`; the status probe returns a new state `blocked` with "offline mode: `<url>` isn't on this machine or a private network" and sends nothing (no API key). Schema `State` gains `blocked` (plugin RPC only, not in `openapi.json`); util `unreachable()` gives it a line, so the TUI and web picker show it unchanged | core `offline-discovery.test.ts` 10/10 (recording stub client: public base URL + offline → zero requests for all three plugins; private-network host still discovered; offline off → contacted); `local-models.test.ts` "status in offline mode" 3/3 (config and env offline, zero requests to the public host, key never in the status); util/tui/app blocked-line tests |
+| 2 | MAJOR: status `error` could leak a credentialed URL | transport failures map to fixed texts by error code (`transportReason`: "connection refused", "host not found", "connection reset", "timed out", "TLS certificate not accepted", "can't connect"); requests built from the credential-free base URL; `clean()` also strips query strings | `local-models.test.ts` "status errors" 2/2: `http://user:hunter2@127.0.0.1:<closed>/v1?token=abc` → neither `hunter2` nor `abc` (nor `user:`) in the status JSON or logs |
+| 3 | MINOR: project `kete.offline` vs running loops | gateway `refresh`/`balance`, sync ticks (periodic and on-demand) and each registration tick re-check `KeteOffline.active`; `opencode.ts` uses it through `Effect.serviceOption(Config.Service)` (no change to its declared requirements or upstream tests); `docs/local-models.md` "Scope" lists process-wide vs live switches | `gateway.test.ts` live offline test; `policy-sync.test.ts` sync pause/resume and registration re-check tests |
+| 4 | MINOR: `--offline=false` / `--offline false` | `flagged` uses the parser's truthy/falsy values (`--offline false` was on, `--offline=yes` was off); unknown values fail closed | `offline-startup.test.ts` 2 new tests, one pinning `flagged` against the real effect CLI parser |
+
+Also: `upstream:check` was failing on this branch ("new file outside a kete path: docs/local-models.md"); `docs/local-models.md` is now in `isKeteOwned` (`kete-tools/src/lib.ts`, like `docs/jobs.md`).
+
+Checks after the fixes (2026-10-05): typecheck util, schema, core, cli, tui, app, kete-tools pass; core `bun run test ./test/kete` 370 pass / 0 fail (11 skip); provider tests ollama/lmstudio/vllm 14/14, opencode 30/30; util `./test/kete` 258 pass / 0 fail (14 skip); cli `./test/kete` 232 pass / 0 fail; tui `./test/kete` 23/23 and full `bun run test` 1407 pass / 0 fail; app `test:unit` 995 pass / 0 fail; kete-tools `bun run test` 59/59; root lint 0 warnings / 0 errors; `upstream:check` pass; protocol and client `check:generated` pass (no diff); `stale-cards.mjs` all current; `card-check.mjs` clean.
+
 ## Left undone / follow-ups
 - `kete models pull` against a bearer-token Ollama (documented limitation).
 - Request-executor guard for process-wide offline (R4 follow-up).
