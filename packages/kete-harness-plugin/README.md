@@ -15,7 +15,9 @@ User guide with pipeline YAML: [`docs/integrations/harness.md`](../../docs/integ
 | `src/settings.ts` | `PLUGIN_*` parsing and validation (refusals name the setting, never its value) |
 | `src/task.ts` | presets (`fix-build`, `review`, `release-notes`), the prompt and allow rules |
 | `src/run.ts` | `run` mode: job spec, `kete job run --json --standalone`, artifacts, the agent's environment |
-| `src/git.ts` | commit the run's worktree and push it to a **new** branch only |
+| `src/git.ts` | commit the run's worktree and push it to a **new** branch only, never reading the repository's config |
+| `src/secrets.ts` | literal masking of every secret value the step was given, before `KeteRedact` |
+| `src/dumpable.ts` | makes the step's process non-dumpable on Linux (its environment holds the secrets) |
 | `src/cloud.ts` | `cloud` mode: create the job, poll with backoff, cancel at the wait limit |
 | `src/outputs.ts` | exit codes and the `$DRONE_OUTPUT`/`$HARNESS_OUTPUT` variables |
 | `Dockerfile`, `gitconfig` | the image (Debian slim pinned by digest, git, ripgrep, CA roots, `kete`, uid 1000) |
@@ -34,21 +36,26 @@ User guide with pipeline YAML: [`docs/integrations/harness.md`](../../docs/integ
 | `base` | both | `review`/`release-notes`: the ref to compare with (default: `origin/<target branch>` / the latest tag) |
 | `budget` | both | **required**: USD for the whole run (cloud: at most 25) |
 | `timeout` | both | **required**: minutes (`30`, `30m`, `2h`; cloud: at most 120) |
-| `allow` | both | extra rules the run may proceed on without asking: JSON `[{"action","resource"}]` or `action:resource` lines (`shell:bun test*`); `question` and `budget` never |
+| `allow` | both | extra rules the run may proceed on without asking: JSON `[{"action","resource"}]` or `action:resource` lines (`shell:bun test*`); `question` and `budget` never; `shell` needs real commands (not a bare `*`); `external_directory`, `webfetch` and `websearch` only with `allow_unsafe` |
+| `allow_unsafe` | both | `true` lets `allow` name `external_directory`, `webfetch` or `websearch` (outside the worktree, the network) |
 | `agent` | both | agent name (run) or slug (cloud, **required**) |
 | `push_branch` | both | run: a NEW branch name, or `true` for the run's own `kete/job/<hex>`; cloud: `true` or a suffix for `kete/job/<suffix>` |
 | `output_dir` | both | workspace-relative directory for `summary.md`, `result.json`, `audit.jsonl` (default `kete-output`) |
 | `kete_api_key` | both | a Kete API key (Harness secret): cloud mode, or run mode through the gateway |
 | `gateway_url` | run | the Kete Model Gateway address (with `kete_api_key`) |
+| `base_url` | both | your Kete platform's address: **required** in cloud mode and with `kete_api_key` in run mode; there is no default |
 | `anthropic_api_key`, `openai_api_key`, `gemini_api_key`, `openrouter_api_key`, `deepseek_api_key` | run | BYOK provider keys (Harness secrets) |
 | `model` | run | `provider/model`; with `model_url`, the model id that endpoint serves |
 | `model_url`, `model_api_key` | run | an OpenAI-compatible endpoint (https, or http on a private network) |
 | `git_author_name`, `git_author_email` | run | the commit's author (default `Kete Code`) |
-| `base_url` | both | the Kete platform (default `https://app.ketecode.ai`) |
 | `project`, `repo` | cloud | **required**: the Kete project id and the connected repository's id |
 | `base_ref`, `open_pr`, `idempotency_key` | cloud | as in `POST /api/v1/jobs`; `open_pr` needs `push_branch` |
 
-Exactly one kind of model access is accepted in run mode.
+Exactly one kind of model access is accepted in run mode. A setting of the other mode (for example
+`project` in run mode, `model` in cloud mode) is refused, not ignored.
+
+**`allow` and `task` must come from the pipeline's own configuration, never from untrusted pull
+request data** (a PR title, branch name or file content): they decide what the agent may run.
 
 ## Outputs
 
@@ -62,13 +69,47 @@ protected branch). Output variables (`$DRONE_OUTPUT` and `$HARNESS_OUTPUT`, one 
 
 - Secrets come only from settings (Harness secrets) and are never printed; refusals name the
   setting, never the value. Output text is redacted with `KeteRedact` (`@opencode/util/kete/redact`).
+- Every line the step prints and everything it writes (output variables, `summary.md`,
+  `result.json`, the audit copy, git output, the log tail in the prompt) first has every known secret
+  value replaced with `[REDACTED]` (`Secrets.redactor`: the Kete API key, provider keys, the endpoint
+  key, `DRONE_NETRC_PASSWORD`, any `PLUGIN_*` key setting; values of 8+ characters), then goes
+  through `KeteRedact`.
 - The agent's process tree starts without `PLUGIN_*`, `DRONE_NETRC_*` or any secret-looking
-  variable; it gets only the model access it needs (`Run.keteEnv`).
-- Pushes go only to a branch that doesn't exist on the remote (`--force-with-lease=<ref>:`), never
-  to the target, default, current, `main` or `master` branch (refused before the run), never with
-  repository hooks. Only a `completed` run is pushed.
+  variable, and **no model key is in its environment**: kete's shell tool hands every command the
+  server's whole environment, so each key goes into its own 0600 file in a 0700 temporary directory
+  outside the workspace, referenced from the provider config as `{file:...}` (`Run.keteEnv`),
+  deleted after the run. On Linux the step makes itself non-dumpable, so the agent's processes
+  can't read the step's own environment from `/proc`.
+- Pushes go only to the `remote.origin.url` read and validated **before** the run (https, ssh or a
+  local path; no `ext::`, no password in the URL), from a fresh temporary repository with its own
+  empty config: system and global config off, the repository's config never read, so whatever the
+  agent wrote there (`core.sshCommand`, `credential.helper`, `url.*.insteadOf`,
+  `remote.origin.pushurl`, `core.fsmonitor`, filters, hooks, includes) has no effect. Only to a
+  branch that doesn't exist on the remote (`--force-with-lease=<ref>:`), never to the target,
+  default, current, `main` or `master` branch (case-insensitive; refused before the run). Only a
+  `completed` run is pushed.
+- Preset shell rules are exact commands (`git diff origin/main...HEAD`), never prefixes like
+  `git diff*`, which would also allow `git diff --output=<file>`.
+- Cloud mode: a cancelled step (SIGTERM, SIGINT) or one that keeps failing to read the job's status
+  asks the platform to cancel the job (10 s limit) before it exits.
+- Output files are created fresh (`Outputs.writeArtifact`): a symlink planted at
+  `kete-output/summary.md` is replaced, never written through.
 - `kete job run`'s unattended policy (ADR 0008) is never relaxed: the step only adds allow rules the
   user configured or a preset needs, and never passes `--auto`.
+
+## Residual risks
+
+- **Commands the run allows run as the step's user.** An allowed command that executes repository
+  code (`bun test`, `npm run build`) can do anything that user can: read the key files while the run
+  lasts (their path is in `KETE_CONFIG_CONTENT`), reach the network, or read `kete`'s own memory where
+  the kernel allows same-user ptrace. Keeping keys out of the environment stops casual leaks
+  (`env`, a test that prints `process.env`, a crash report), not hostile code. Allow only the
+  commands the task needs, use a dedicated key with a spending limit, and don't run untrusted pull
+  requests with build or test commands allowed.
+- **A repository's own `.kete/` config is read by `kete`**, as in any kete run: a pull request can
+  bring one. The unattended policy still decides permissions, but its provider settings may apply.
+  Don't point the step at untrusted code with a key you can't afford to have misused.
+- As root (`runAsUser: 0`), the file modes and the non-dumpable flag protect nothing.
 
 ## Build and test
 

@@ -162,6 +162,7 @@ failed, and pushes its fix to a new branch:
         push_branch: kete/fix-<+pipeline.sequenceId>
         kete_api_key: <+secrets.getValue("kete_api_key")>
         gateway_url: <+variables.kete_gateway_url>
+        base_url: <+variables.kete_platform_url>   # your Kete platform; no default
 ```
 
 Instead of a Kete API key, run mode accepts one provider key (`anthropic_api_key`,
@@ -174,10 +175,13 @@ runs `kete job run`, copies the run's audit log to `kete-output/audit.jsonl` (se
 redacted by the runtime) and writes `kete-output/summary.md` (the outcome, cost, denials and the
 final answer, redacted) and `kete-output/result.json`. Publish `kete-output/` as an artifact, or
 post `summary.md` to the pull request in a later step. With `push_branch`, a completed run's changes
-are committed (repository hooks never run) and pushed **only if that branch doesn't exist** on the
-remote yet; the target branch, the default branch, the current branch, `main` and `master` are
-refused before the run starts. The push uses the clone credentials Harness gives the step
-(`DRONE_NETRC_*`); without them, or with a read-only token, the outcome is `push_failed`.
+are committed and pushed **only if that branch doesn't exist** on the remote yet; the target branch,
+the default branch, the current branch, `main` and `master` (in any letter case) are refused before
+the run starts. The push goes to the `remote.origin.url` the step read before the run (https, ssh or
+a local path), from a temporary repository that never reads the workspace repository's config, so
+nothing the agent writes there (hooks, `core.sshCommand`, `credential.helper`, `url.*.insteadOf`,
+`remote.origin.pushurl`, filters) runs or redirects it. It uses the clone credentials Harness gives
+the step (`DRONE_NETRC_*`); without them, or with a read-only token, the outcome is `push_failed`.
 
 ### Review a pull request
 
@@ -197,8 +201,10 @@ refused before the run starts. The push uses the clone credentials Harness gives
         model: anthropic/claude-sonnet-4-5
 ```
 
-`release-notes` works the same way (`base: v1.2.0` to choose the starting tag); the notes are the
-final answer, in `summary.md` and `KETE_SUMMARY`.
+`release-notes` works the same way (`base: v1.2.0` to choose the starting tag, else the latest tag);
+the notes are the final answer, in `summary.md` and `KETE_SUMMARY`. The presets allow only exact
+read-only git commands for their base (such as `git diff origin/main...HEAD`), listed in the prompt;
+add others with `allow`.
 
 ### Start a cloud job (cloud mode)
 
@@ -221,12 +227,15 @@ final answer, in `summary.md` and `KETE_SUMMARY`.
         push_branch: "true"                             # the platform pushes kete/job/<suffix>
         open_pr: "true"
         kete_api_key: <+secrets.getValue("kete_api_key")>
+        base_url: <+variables.kete_platform_url>        # required: your Kete platform
 ```
 
 The step polls the job with backoff (5 s, growing to 30 s) until it ends, or until its time limit
-plus 15 minutes for provisioning and finishing, when it asks the platform to cancel the job. A
-retried create reuses its `Idempotency-Key` (set `idempotency_key` to make a re-run of the step
-return the same job).
+plus 15 minutes for provisioning and finishing, when it asks the platform to cancel the job. It also
+cancels the job when the step itself is cancelled (Harness stops it with SIGTERM) or can't read the
+job's status any more. A retried create reuses its `Idempotency-Key` (set `idempotency_key` to make
+a re-run of the step return the same job). Run-mode settings (`model`, provider keys, ...) are
+refused in cloud mode, and cloud-mode settings in run mode.
 
 ### Outputs and exit codes
 
@@ -243,9 +252,11 @@ pushed, else empty) and `KETE_JOB_URL` (cloud mode).
 ### Keys and least privilege
 
 - Store every key as a **Harness secret** and reference it with `<+secrets.getValue("...")>`. The
-  step never prints a setting's value, and the agent's processes don't see the step's settings, the
-  clone credentials or other secret-looking variables; they get only the model key the run needs.
-  Note that a provider key *is* in the agent's environment, so `allow` only the commands it needs.
+  step never prints a setting's value (every known secret value is masked in its logs, outputs and
+  artifacts), and the agent's processes don't see the step's settings, the clone credentials or
+  other secret-looking variables. The model key isn't in their environment either: `kete` reads it
+  from a private file outside the workspace. An allowed command that runs repository code (a build or
+  test) can still read that file while the run lasts, so `allow` only the commands the task needs.
 - **Kete API key:** a dedicated key for the pipeline, not a personal one. Cloud mode needs
   `agents.run`, plus `jobs.push` only if you set `push_branch`/`open_pr`. `budget` caps each run;
   the key's own permissions are enforced by the platform.
@@ -253,7 +264,10 @@ pushed, else empty) and `KETE_JOB_URL` (cloud mode).
 - **Git:** use `push_branch` only with a codebase connector whose token can create branches; branch
   protection on your default branch stays your second line of defence (the step never pushes there).
 - **`allow`:** start from nothing and add the commands the task needs; the audit log
-  (`kete-output/audit.jsonl`) lists every denied permission to tune it.
+  (`kete-output/audit.jsonl`) lists every denied permission to tune it. `shell` rules name commands
+  (a bare `*` is refused), and `external_directory`, `webfetch` and `websearch` need
+  `allow_unsafe: "true"`. Set `allow` and `task` in the pipeline definition, **never from untrusted
+  pull request data** (titles, branch names, files): they decide what the agent may run.
 
 ### Running as a non-root user
 
