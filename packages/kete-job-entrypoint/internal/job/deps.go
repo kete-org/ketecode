@@ -59,12 +59,13 @@ type Platform interface {
 	Put(ctx context.Context, url, contentType string, r io.Reader, size int64) error
 	Finish(ctx context.Context, pushError string) error
 	Revoke(ctx context.Context, cloneHost, token string) error
+	CloneDone(ctx context.Context) error
 }
 
 // Git is root's git.
 type Git interface {
 	CheckBranch(ctx context.Context, name string) bool
-	Clone(ctx context.Context, url, ref, token, dest string) error
+	Clone(ctx context.Context, url, ref, username, token, dest string) error
 	Verify(ctx context.Context, gitDir, ref, baseSHA string) error
 	AgentCopy(ctx context.Context, pristine, repo, branch, baseSHA string) error
 }

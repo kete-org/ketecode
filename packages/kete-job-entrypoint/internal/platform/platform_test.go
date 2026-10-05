@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -35,10 +38,10 @@ func TestClaimSuccessAndStatuses(t *testing.T) {
 		if r.URL.Path != "/api/v1/jobs/"+jobID+"/claim" || r.Method != http.MethodPost {
 			t.Errorf("request %s %s", r.Method, r.URL.Path)
 		}
-		var body map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body["claim_token"] != "tok" || r.Header.Get("Authorization") != "" {
-			t.Errorf("claim body %v", body)
+		raw, _ := io.ReadAll(r.Body)
+		// jobs-v1 additive (2026-10-05): the claim announces clone_revoke_callback.
+		if string(raw) != `{"claim_token":"tok","features":["clone_revoke_callback"]}` || r.Header.Get("Authorization") != "" {
+			t.Errorf("claim body %s", raw)
 		}
 		w.WriteHeader(int(status.Load()))
 		_, _ = io.WriteString(w, `{"callback_token":"cb","extra":1}`)
@@ -223,5 +226,159 @@ func TestValidateClaim(t *testing.T) {
 	}
 	if h, u := RevokeURL("github.kete.test"); h != "github.kete.test" || u != "https://github.kete.test/api/v3/installation/token" {
 		t.Error("ghes revoke")
+	}
+}
+
+func TestCloneDone(t *testing.T) {
+	var tries atomic.Int32
+	var fail atomic.Int32 // answer 500 to the first n tries
+	var status atomic.Int32
+	status.Store(204)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/jobs/"+jobID+"/clone-done" || r.Header.Get("Authorization") != "Bearer cb" || string(body) != "{}" {
+			t.Errorf("clone-done request %s %s %q %s", r.Method, r.URL.Path, r.Header.Get("Authorization"), body)
+		}
+		if tries.Add(1) <= fail.Load() {
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(int(status.Load()))
+	}))
+	defer srv.Close()
+	c := newClient(t, srv)
+	c.SetCallbackToken("cb")
+	ctx := context.Background()
+
+	if err := c.CloneDone(ctx); err != nil || tries.Load() != 1 {
+		t.Errorf("success: %v after %d tries", err, tries.Load())
+	}
+	tries.Store(0)
+	fail.Store(2)
+	if err := c.CloneDone(ctx); err != nil || tries.Load() != 3 {
+		t.Errorf("retried success: %v after %d tries", err, tries.Load())
+	}
+	tries.Store(0)
+	fail.Store(5)
+	if err := c.CloneDone(ctx); err == nil || tries.Load() != 3 {
+		t.Errorf("three failures: %v after %d tries (want an error after 3)", err, tries.Load())
+	}
+	tries.Store(0)
+	fail.Store(0)
+	status.Store(404)
+	if err := c.CloneDone(ctx); err != ErrGone || tries.Load() != 1 {
+		t.Errorf("404: %v after %d tries", err, tries.Load())
+	}
+	tries.Store(0)
+	status.Store(409)
+	var se *StatusError
+	if err := c.CloneDone(ctx); !errors.As(err, &se) || se.Status != 409 || tries.Load() != 1 {
+		t.Errorf("409: %v after %d tries (a 4xx is not retried)", err, tries.Load())
+	}
+}
+
+func TestValidateClaimProvider(t *testing.T) {
+	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
+	// Absent: GitHub, x-access-token, the revoke API host.
+	cl, field := validClaim().Validate("https://platform.kete.test", "storage.kete.test", time.Now())
+	if cl == nil || cl.CloneProvider != ProviderGitHub || cl.CloneUsername != "x-access-token" || cl.CloneAPIHost != "api.github.com" {
+		t.Fatalf("default provider: %+v %s", cl, field)
+	}
+	// Explicit github with a username.
+	c := validClaim()
+	c.Clone.Provider, c.Clone.Username = raw(`"github"`), raw(`"bot"`)
+	if cl, field := c.Validate("https://platform.kete.test", "storage.kete.test", time.Now()); cl == nil || cl.CloneUsername != "bot" || cl.CloneAPIHost != "api.github.com" {
+		t.Errorf("explicit github: %+v %s", cl, field)
+	}
+	// Harness Code: no API host.
+	c = validClaim()
+	c.Clone.URL = "https://git.harness.io/acct/default/shop/web.git"
+	c.Clone.Provider, c.Clone.Username = raw(`"harness_code"`), raw(`"kete_code_clone"`)
+	cl, field = c.Validate("https://platform.kete.test", "storage.kete.test", time.Now())
+	if cl == nil || cl.CloneProvider != ProviderHarnessCode || cl.CloneUsername != "kete_code_clone" || cl.CloneAPIHost != "" || cl.CloneHost != "git.harness.io" {
+		t.Fatalf("harness: %+v %s", cl, field)
+	}
+	// Harness Code without a username uses the default.
+	c.Clone.Username = nil
+	if cl, _ := c.Validate("https://platform.kete.test", "storage.kete.test", time.Now()); cl == nil || cl.CloneUsername != "x-access-token" {
+		t.Error("harness default username")
+	}
+	// The storage-host check compares with the clone host only (no API host for Harness).
+	if cl, field := c.Validate("https://platform.kete.test", "git.harness.io", time.Now()); cl != nil || field != "storage_host" {
+		t.Errorf("harness storage host = clone host: %s", field)
+	}
+	if cl, _ := c.Validate("https://platform.kete.test", "api.github.com", time.Now()); cl == nil {
+		t.Error("harness: GitHub's API host refused as the storage host")
+	}
+
+	bad := map[string][2]json.RawMessage{
+		"unknown provider": {raw(`"gitlab"`), nil},
+		"empty provider":   {raw(`""`), nil},
+		"null provider":    {raw(`null`), nil},
+		"number provider":  {raw(`1`), nil},
+		"upper provider":   {raw(`"GITHUB"`), nil},
+	}
+	for name, v := range bad {
+		c := validClaim()
+		c.Clone.Provider, c.Clone.Username = v[0], v[1]
+		if cl, field := c.Validate("https://platform.kete.test", "storage.kete.test", time.Now()); cl != nil || field != "clone.provider" {
+			t.Errorf("%s: field = %q", name, field)
+		}
+	}
+	for name, u := range map[string]string{
+		"colon":     `"user:name"`,
+		"empty":     `""`,
+		"space":     `"a b"`,
+		"control":   `"a\u0001b"`,
+		"non-ascii": `"usér"`,
+		"too long":  `"` + strings.Repeat("u", 129) + `"`,
+		"null":      `null`,
+		"number":    `7`,
+	} {
+		c := validClaim()
+		c.Clone.Username = raw(u)
+		if cl, field := c.Validate("https://platform.kete.test", "storage.kete.test", time.Now()); cl != nil || field != "clone.username" {
+			t.Errorf("username %s: field = %q", name, field)
+		}
+	}
+	c = validClaim()
+	c.Clone.Username = raw(`"` + strings.Repeat("u", 128) + `"`)
+	if cl, _ := c.Validate("https://platform.kete.test", "storage.kete.test", time.Now()); cl == nil {
+		t.Error("a 128-byte username refused")
+	}
+}
+
+// The shared test vector (kete-code-platform docs/contracts/test-vectors/jobs-v1, copied byte
+// for byte into internal/fakeplatform/testdata): our claim request equals its request's shape,
+// and its response validates as a Harness Code claim.
+func TestHarnessCodeVector(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "fakeplatform", "testdata", "jobs-v1", "claim-harness-code.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Request  ClaimRequest    `json:"request"`
+		Response json.RawMessage `json:"response"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	ours, _ := json.Marshal(ClaimRequest{ClaimToken: v.Request.ClaimToken, Features: []string{FeatureCloneRevokeCallback}})
+	theirs, _ := json.Marshal(v.Request)
+	if string(ours) != string(theirs) {
+		t.Errorf("claim request %s, vector %s", ours, theirs)
+	}
+	resp, err := ParseClaim(v.Response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The vector's deadline is fixed; validate just before it.
+	dl, _ := time.Parse(time.RFC3339, resp.Deadline)
+	cl, field := resp.Validate("https://portal.kete.example", "storage.kete.example", dl.Add(-time.Minute))
+	if cl == nil {
+		t.Fatalf("vector refused: %s", field)
+	}
+	if cl.CloneProvider != ProviderHarnessCode || cl.CloneUsername != "kete_code_clone" || cl.CloneHost != "git.harness.io" || cl.CloneAPIHost != "" {
+		t.Errorf("vector claim = %+v", cl)
 	}
 }

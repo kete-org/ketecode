@@ -416,15 +416,55 @@ func uniq(hosts ...string) []string {
 	return out
 }
 
+// harness reports whether the claim's clone is a Harness Code repository: its token is deleted by
+// the platform on clone-done, never through the git host's API.
+func (r *runner) harness() bool { return r.claim.CloneProvider == platform.ProviderHarnessCode }
+
+// cloneDone is the clone-done callback (step clone_done). A 404 marks the job gone. Any other
+// failure is logged; for Harness Code (the token's only revoke) it is also said on the job.
+func (r *runner) cloneDone(ctx context.Context) error {
+	r.log.Start(pl.StepCloneDone)
+	err := r.d.Platform.CloneDone(ctx)
+	switch {
+	case err == nil:
+		r.log.OK(pl.StepCloneDone)
+	case errors.Is(err, platform.ErrGone):
+		r.markGone()
+		r.log.Fail(pl.StepCloneDone, pl.CodeGone)
+	case ctx.Err() != nil:
+		// Deadline, abort or gone: the caller's interrupted() logs and ends the job.
+	default:
+		r.log.FailErr(pl.StepCloneDone, pl.CodeFailed, err)
+		if r.harness() {
+			_ = r.event(ctx, platform.Event{Phase: "clone", Message: "clone token revoke failed"})
+		}
+	}
+	return err
+}
+
+// failClone ends a Harness Code job whose clone or verification failed: clone-done first (the
+// platform deletes the token), then finalize. A GitHub job finalizes as before.
+func (r *runner) failClone(ctx context.Context, f final) int {
+	r.claim.CloneToken = ""
+	if r.harness() {
+		_ = r.cloneDone(ctx)
+		if r.isGone() || ctx.Err() != nil {
+			return r.interrupted()
+		}
+	}
+	return r.finalize(ctx, f)
+}
+
 func (r *runner) afterClaim(ctx context.Context) int {
 	c := r.claim
 	platformHost := r.platformHost()
-	apiHost, _ := platform.RevokeURL(c.CloneHost)
 
-	// Proxy instance 2: the full allowlists (no job-user process exists yet).
+	// Proxy instance 2: the full allowlists (no job-user process exists yet). The clone phase
+	// reaches the platform, the clone host and, for GitHub only, its revoke API host; no later
+	// phase reaches the git host.
 	r.log.Start(pl.StepRestart)
 	second := egress.Instance{
-		Clone:  egress.Hosts{Root: uniq(platformHost, c.CloneHost, apiHost)},
+		Clone:  egress.Hosts{Root: uniq(platformHost, c.CloneHost, c.CloneAPIHost)},
 		Agent:  egress.Hosts{Kete: uniq(c.GatewayHost, platformHost), Tool: layout.RegistryHosts, Root: []string{platformHost}},
 		Report: egress.Hosts{Root: []string{platformHost}},
 	}
@@ -439,7 +479,7 @@ func (r *runner) afterClaim(ctx context.Context) int {
 	r.log.OK(pl.StepRestart)
 
 	if !r.d.Git.CheckBranch(ctx, c.Branch) || !r.d.Git.CheckBranch(ctx, c.Ref) {
-		return r.finalize(ctx, final{result: Synth("error", 1, "invalid claim response: spec.branch")})
+		return r.failClone(ctx, final{result: Synth("error", 1, "invalid claim response: spec.branch")})
 	}
 
 	r.startHeartbeat(ctx)
@@ -448,20 +488,20 @@ func (r *runner) afterClaim(ctx context.Context) int {
 	}
 
 	r.log.Start(pl.StepClone)
-	if err := r.d.Git.Clone(ctx, c.CloneURL, c.Ref, c.CloneToken, r.d.Cfg.Pristine()); err != nil {
+	if err := r.d.Git.Clone(ctx, c.CloneURL, c.Ref, c.CloneUsername, c.CloneToken, r.d.Cfg.Pristine()); err != nil {
 		if ctx.Err() != nil {
+			c.CloneToken = ""
 			return r.interrupted()
 		}
 		r.log.FailErr(pl.StepClone, pl.CodeFailed, err)
 		msg := "clone failed"
 		var ge *gitops.Error
 		if errors.As(err, &ge) {
-			if s := gitops.Scrub(ge.Stderr, c.CloneToken); s != "" {
+			if s := gitops.Scrub(ge.Stderr, c.CloneUsername, c.CloneToken); s != "" {
 				msg += ": " + s
 			}
 		}
-		c.CloneToken = ""
-		return r.finalize(ctx, final{result: Synth("error", 1, msg)})
+		return r.failClone(ctx, final{result: Synth("error", 1, msg)})
 	}
 	r.log.OK(pl.StepClone)
 
@@ -473,25 +513,37 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		}
 		if errors.Is(err, gitops.ErrMismatch) {
 			r.log.Fail(pl.StepVerify, pl.CodeRefused)
-			return r.finalize(ctx, final{result: Synth("refused", 2, "clone HEAD does not match base_sha")})
+			return r.failClone(ctx, final{result: Synth("refused", 2, "clone HEAD does not match base_sha")})
 		}
 		r.log.FailErr(pl.StepVerify, pl.CodeFailed, err)
-		return r.finalize(ctx, final{result: Synth("error", 1, "clone verification failed")})
+		return r.failClone(ctx, final{result: Synth("error", 1, "clone verification failed")})
 	}
 	r.log.OK(pl.StepVerify)
 
-	r.log.Start(pl.StepRevoke)
-	if err := r.d.Platform.Revoke(ctx, c.CloneHost, c.CloneToken); err != nil {
-		if ctx.Err() != nil {
-			c.CloneToken = ""
+	if r.harness() {
+		// Harness Code: no request to the git host's API; the platform deletes the token.
+		c.CloneToken = ""
+		if err := r.cloneDone(ctx); err != nil && (r.isGone() || ctx.Err() != nil) {
 			return r.interrupted()
 		}
-		r.log.FailErr(pl.StepRevoke, pl.CodeFailed, err)
-		_ = r.event(ctx, platform.Event{Phase: "clone", Message: "clone token revoke failed"})
 	} else {
-		r.log.OK(pl.StepRevoke)
+		r.log.Start(pl.StepRevoke)
+		if err := r.d.Platform.Revoke(ctx, c.CloneHost, c.CloneToken); err != nil {
+			if ctx.Err() != nil {
+				c.CloneToken = ""
+				return r.interrupted()
+			}
+			r.log.FailErr(pl.StepRevoke, pl.CodeFailed, err)
+			_ = r.event(ctx, platform.Event{Phase: "clone", Message: "clone token revoke failed"})
+		} else {
+			r.log.OK(pl.StepRevoke)
+		}
+		c.CloneToken = ""
+		// Best effort (a no-op for GitHub on the platform); a 404 still means the job is gone.
+		if err := r.cloneDone(ctx); err != nil && (r.isGone() || ctx.Err() != nil) {
+			return r.interrupted()
+		}
 	}
-	c.CloneToken = ""
 
 	r.log.Start(pl.StepAgentCopy)
 	if err := r.d.Git.AgentCopy(ctx, r.d.Cfg.Pristine(), r.d.Cfg.Repo(), c.Branch, c.BaseSHA); err != nil {

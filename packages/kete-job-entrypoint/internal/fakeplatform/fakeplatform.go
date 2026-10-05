@@ -1,8 +1,9 @@
-// Package fakeplatform is a minimal in-process stand-in for kete-code-platform and GitHub, for the
-// entrypoint's integration suite (and, later, the image's end-to-end test): the container
-// callbacks with jobs.md §2's exact shapes and state rules, a git smart-HTTP server (git
-// http-backend) behind a clone-token check, the GHES-style token revoke, single-use signed
-// uploads, its own test CA and a DNS server for `*.kete.test`. For the image's end-to-end test
+// Package fakeplatform is a minimal in-process stand-in for kete-code-platform, GitHub and Harness
+// Code, for the entrypoint's integration suite (and the image's end-to-end test): the container
+// callbacks with jobs.md §2's exact shapes and state rules (clone-done included), a git
+// smart-HTTP server (git http-backend) behind a clone-token check on a GHES-style host (with the
+// token revoke) and on a Harness-style host (basic auth with the claim's username, no API),
+// single-use signed uploads, its own test CA and a DNS server for `*.kete.test`. For the image's end-to-end test
 // with the real `kete` (cmd/kete-job-fake-platform) it also serves the platform's sync, skill-file,
 // models and `me` routes and a scripted fake gateway (sync.go, gateway.go), forwards DNS outside
 // `*.kete.test` to a real resolver (dns.go) and writes its records to a state directory
@@ -40,6 +41,21 @@ const (
 	GatewayHost  = "gateway.kete.test"
 	StorageHost  = "storage.kete.test"
 	GitHost      = "github.kete.test"
+
+	// HarnessGitHost is the Harness Code git host of a harness_code job (Knobs.Provider): basic
+	// auth with the claim's username, no /api/v3, the repository at HarnessRepoPath.
+	HarnessGitHost = "git.harness.kete.test"
+)
+
+// The Harness Code job's clone (the shared test vector's shape:
+// testdata/jobs-v1/claim-harness-code.json).
+const (
+	ProviderHarnessCode = "harness_code"
+	HarnessRepoPath     = "/acct_Example1/default/shop/web.git"
+	HarnessUsername     = "kete_code_clone"
+
+	// FeatureCloneRevokeCallback is the claim feature a Harness Code claim requires.
+	FeatureCloneRevokeCallback = "clone_revoke_callback"
 )
 
 // Config says where the fake listens.
@@ -68,12 +84,16 @@ type Knobs struct {
 	OmitAgent    bool   // the spec names no agent
 	UnknownAgent bool   // the spec names an agent the sync doesn't list
 	SyncStatus   int    // non-zero: GET /api/v1/sync answers this status with an error body
+
+	// Harness Code (jobs-v1 additive, 2026-10-05).
+	Provider          string // "" (GitHub: the claim names no provider) or ProviderHarnessCode
+	CloneDoneFailures int    // the first n clone-done calls answer 500
 }
 
 // Call is one recorded request.
 type Call struct {
 	Time   time.Time
-	Kind   string // claim, events, result, uploads, finish, revoke, git, put:<kind>; sync, skill_files, models, me, gateway:models, messages
+	Kind   string // claim, events, result, uploads, finish, clone-done, revoke, git, harness-api, put:<kind>; sync, skill_files, models, me, gateway:models, messages
 	Body   []byte
 	Status int
 }
@@ -86,12 +106,16 @@ type Job struct {
 	Deadline                                              time.Time
 	Knobs                                                 Knobs
 	OrgID, AgentID, SkillID                               string // the synced organization, agent and skill
+	CloneUsername                                         string // the claim's clone.username (Harness Code)
+	Features                                              []string
+	CloneDeleted                                          bool // clone-done deleted a Harness Code token
 
 	done chan struct{} // closed by the accepted finish
 
 	state      string // provisioning, running, finalizing, done
 	claims     int
 	events     int
+	cloneDones int
 	agentSeen  bool
 	uploadsSet bool
 	finished   bool
@@ -276,6 +300,10 @@ func (s *Server) NewJob(k Knobs) *Job {
 	if k.BaseSHAOverride != "" {
 		j.BaseSHA = k.BaseSHAOverride
 	}
+	if k.Provider == ProviderHarnessCode {
+		j.CloneToken = "sat.acct_Example1.kete_job_" + random(6) + "." + random(16)
+		j.CloneUsername = HarnessUsername
+	}
 	j.spec = map[string]any{"version": 1, "prompt": k.Prompt, "policy": map[string]any{"version": 1, "budget": 5, "timeout": k.PolicyTimeout}}
 	if !k.OmitBranch {
 		j.spec["branch"] = j.Branch
@@ -368,6 +396,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.platform(w, r)
 	case GitHost:
 		s.git(w, r)
+	case HarnessGitHost:
+		s.harnessGit(w, r)
 	case StorageHost:
 		s.storage(w, r)
 	case GatewayHost:
@@ -422,16 +452,36 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 	}
 	if op == "claim" {
 		var req struct {
-			ClaimToken string `json:"claim_token"`
+			ClaimToken string   `json:"claim_token"`
+			Features   []string `json:"features"`
 		}
 		if err := strict(body, &req); err != nil {
 			s.violation("claim: %v", err)
 			reply(400, nil)
 			return
 		}
+		if !validFeatures(req.Features) {
+			s.violation("claim: features")
+			reply(400, nil)
+			return
+		}
 		if req.ClaimToken != j.ClaimToken {
 			reply(404, nil)
 			return
+		}
+		j.Features = req.Features
+		hasRevoke := false
+		for _, f := range req.Features {
+			hasRevoke = hasRevoke || f == FeatureCloneRevokeCallback
+		}
+		if !hasRevoke {
+			// This entrypoint always announces it; the platform refuses a Harness Code claim
+			// without it (entrypoint_outdated), before any credential is minted.
+			s.violation("claim: no %s feature", FeatureCloneRevokeCallback)
+			if j.Knobs.Provider == ProviderHarnessCode {
+				reply(404, nil)
+				return
+			}
 		}
 		j.claims++
 		if j.claims > 1 {
@@ -440,9 +490,15 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		j.state = "running"
+		clone := map[string]string{"url": "https://" + GitHost + "/org/repo.git", "token": j.CloneToken, "ref": "main", "base_sha": j.BaseSHA}
+		if j.Knobs.Provider == ProviderHarnessCode {
+			clone["url"] = "https://" + HarnessGitHost + HarnessRepoPath
+			clone["provider"] = ProviderHarnessCode
+			clone["username"] = j.CloneUsername
+		}
 		reply(200, map[string]any{
 			"spec": j.spec, "gateway_key": j.GatewayKey, "callback_token": j.CallbackToken,
-			"clone":       map[string]string{"url": "https://" + GitHost + "/org/repo.git", "token": j.CloneToken, "ref": "main", "base_sha": j.BaseSHA},
+			"clone":       clone,
 			"gateway_url": "https://" + GatewayHost, "platform_url": "https://" + PlatformHost,
 			"deadline": j.Deadline.UTC().Format(time.RFC3339Nano),
 		})
@@ -453,6 +509,30 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch op {
+	case "clone-done":
+		// jobs-v1 additive: `running`; `{}` or an empty body; 204 (later calls are no-ops; a
+		// GitHub job's is one too).
+		if j.state != "running" {
+			s.violation("clone-done: state %s", j.state)
+			reply(404, nil)
+			return
+		}
+		if len(body) > 0 {
+			if err := strict(body, &struct{}{}); err != nil {
+				s.violation("clone-done: %v", err)
+				reply(400, nil)
+				return
+			}
+		}
+		j.cloneDones++
+		if j.cloneDones <= j.Knobs.CloneDoneFailures {
+			reply(500, nil)
+			return
+		}
+		if j.Knobs.Provider == ProviderHarnessCode {
+			j.CloneDeleted = true
+		}
+		reply(204, nil)
 	case "events":
 		if j.state != "running" && j.state != "finalizing" {
 			reply(404, nil)
@@ -596,6 +676,14 @@ func (s *Server) git(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if j.Knobs.Provider == ProviderHarnessCode {
+		s.mu.Lock()
+		s.violation("the GitHub host was contacted for a harness_code job")
+		s.record("git", nil, 404)
+		s.mu.Unlock()
+		http.NotFound(w, r)
+		return
+	}
 	if r.Method == http.MethodDelete && r.URL.Path == "/api/v3/installation/token" {
 		s.mu.Lock()
 		if r.Header.Get("Authorization") != "token "+j.CloneToken {
@@ -623,6 +711,62 @@ func (s *Server) git(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	r.Header.Del("Authorization")
 	s.gitServer.ServeHTTP(w, r)
+}
+
+// harnessGit is the Harness Code git host: git smart HTTP at HarnessRepoPath behind basic auth
+// with the claim's username and token (refused once clone-done deleted the token). It has no
+// API: any /api/ request is a contract error (the entrypoint must never call the git host's API
+// for a harness_code job).
+func (s *Server) harnessGit(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	j := s.job
+	if j == nil || j.Knobs.Provider != ProviderHarnessCode {
+		s.record("git", nil, 404)
+		s.mu.Unlock()
+		http.NotFound(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		s.violation("harness_code: the git host's API was called (%s %s)", r.Method, r.URL.Path)
+		s.record("harness-api", nil, 404)
+		s.mu.Unlock()
+		http.NotFound(w, r)
+		return
+	}
+	want := "Basic " + basic(j.CloneUsername, j.CloneToken)
+	rest, ok := strings.CutPrefix(r.URL.Path, HarnessRepoPath+"/")
+	if j.CloneDeleted || r.Header.Get("Authorization") != want || !ok {
+		s.record("git", nil, 401)
+		s.mu.Unlock()
+		w.Header().Set("WWW-Authenticate", `Basic realm="Harness"`)
+		w.WriteHeader(401)
+		return
+	}
+	s.record("git", []byte(r.Method+" "+r.URL.Path), 200)
+	s.mu.Unlock()
+	r.Header.Del("Authorization")
+	r.URL.Path = "/org/repo.git/" + rest
+	r.URL.RawPath = ""
+	s.gitServer.ServeHTTP(w, r)
+}
+
+// validFeatures is the contract's `features`: ≤ 16 names, each `^[a-z0-9_]{1,40}$` (absent is
+// valid).
+func validFeatures(fs []string) bool {
+	if len(fs) > 16 {
+		return false
+	}
+	for _, f := range fs {
+		if f == "" || len(f) > 40 {
+			return false
+		}
+		for _, c := range f {
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *Server) storage(w http.ResponseWriter, r *http.Request) {

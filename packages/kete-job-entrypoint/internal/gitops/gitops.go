@@ -152,24 +152,41 @@ func (r Runner) Run(ctx context.Context, c Call) ([]byte, error) {
 	return stdout.buf.Bytes(), nil
 }
 
-// BasicHeader is the clone's Authorization header value.
-func BasicHeader(token string) string {
-	return "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
+// DefaultUsername is the basic-auth username of a GitHub installation token.
+const DefaultUsername = "x-access-token"
+
+func basicValue(username, token string) string {
+	return base64.StdEncoding.EncodeToString([]byte(username + ":" + token))
 }
 
-// Scrub removes every secret and any Authorization line from git's stderr and cuts it to 300
-// bytes, so it can go into a result message.
-func Scrub(stderr []byte, secrets ...string) string {
+// BasicHeader is the clone's Authorization header: Basic base64(username + ":" + token). The
+// username is the claim's clone.username (x-access-token for GitHub; validated: no `:`).
+func BasicHeader(username, token string) string {
+	return "Authorization: Basic " + basicValue(username, token)
+}
+
+// Scrub removes every secret, the basic-auth value of username with each secret (and of the
+// default username, in case git or a server echoes either), and any line mentioning
+// Authorization from git's stderr, and cuts it to 300 bytes, so it can go into a result message.
+// An empty username means DefaultUsername.
+func Scrub(stderr []byte, username string, secrets ...string) string {
+	if username == "" {
+		username = DefaultUsername
+	}
+	var redact []string
+	for _, s := range secrets {
+		if s != "" {
+			// The encodings first, so replacing the raw text can't break one before it is matched.
+			redact = append(redact, basicValue(username, s), basicValue(DefaultUsername, s), s)
+		}
+	}
 	var lines []string
 	for _, line := range strings.Split(string(stderr), "\n") {
 		if strings.Contains(strings.ToLower(line), "authorization") {
 			continue
 		}
-		for _, s := range secrets {
-			if s != "" {
-				line = strings.ReplaceAll(line, s, "[redacted]")
-				line = strings.ReplaceAll(line, base64.StdEncoding.EncodeToString([]byte("x-access-token:"+s)), "[redacted]")
-			}
+		for _, r := range redact {
+			line = strings.ReplaceAll(line, r, "[redacted]")
 		}
 		lines = append(lines, line)
 	}

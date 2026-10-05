@@ -55,8 +55,16 @@ type event struct {
 	Extra   *int   `json:"kete_cgroup_extra"`
 }
 
-// assertLifecycle checks a complete, clean job (AC1 up to the fake kete).
+// assertLifecycle checks a complete, clean GitHub job (AC1 up to the fake kete).
 func assertLifecycle(t *testing.T, r run) {
+	t.Helper()
+	assertLifecycleVia(t, r, "revoke clone-done", "revoke", fakeplatform.GitHost)
+}
+
+// assertLifecycleVia checks a complete, clean job whose clone token is released by the calls
+// revokeSeq (in order, after events(clone)); revokeKind's first accepted call must come before
+// the agent phase, and gitHost is the clone host root reached.
+func assertLifecycleVia(t *testing.T, r run, revokeSeq, revokeKind, gitHost string) {
 	t.Helper()
 	if r.code != 0 {
 		t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
@@ -86,20 +94,22 @@ func assertLifecycle(t *testing.T, r run) {
 			}
 			k += "(" + e.Phase + ")"
 		}
-		if k == "revoke" {
+		if k == revokeKind && c.Status/100 == 2 && revokeAt.IsZero() {
 			revokeAt = c.Time
 		}
 		if !last.IsZero() && c.Time.Sub(last) > 60*time.Second {
 			t.Errorf("a gap of %v between callbacks", c.Time.Sub(last))
 		}
 		last = c.Time
-		if k == "git" || k == "events(clone)" && len(seq) > 0 && seq[len(seq)-1] == k || k == "events(agent)" && len(seq) > 0 && seq[len(seq)-1] == k {
+		// Heartbeats: every events(clone) after the first (one may land between clone-done's
+		// retries), and repeated events(agent).
+		if k == "git" || k == "events(clone)" && strings.Contains(" "+strings.Join(seq, " ")+" ", " events(clone) ") || k == "events(agent)" && len(seq) > 0 && seq[len(seq)-1] == k {
 			continue
 		}
 		seq = append(seq, k)
 	}
 	got := strings.Join(seq, " ")
-	want := "claim events(clone) revoke events(agent) result events(report) uploads put:audit put:bundle put:proxy_log events(done) finish"
+	want := "claim events(clone) " + revokeSeq + " events(agent) result events(report) uploads put:audit put:bundle put:proxy_log events(done) finish"
 	if got != want {
 		t.Errorf("call sequence:\n got %s\nwant %s", got, want)
 	}
@@ -171,7 +181,7 @@ func assertLifecycle(t *testing.T, r run) {
 		if m["user"] == "root" && m["host"] == fakeplatform.PlatformHost {
 			sawPlatform = true
 		}
-		if m["user"] == "root" && m["host"] == fakeplatform.GitHost {
+		if m["user"] == "root" && m["host"] == gitHost {
 			sawGit = true
 		}
 	}
@@ -186,6 +196,72 @@ func assertLifecycle(t *testing.T, r run) {
 func TestLifecycle(t *testing.T) {
 	r := runJob(t, fakeplatform.Knobs{Prompt: "lifecycle"}, nil)
 	assertLifecycle(t, r)
+}
+
+// TestHarnessCodeLifecycle is TestLifecycle against a harness_code claim (jobs-v1 additive,
+// 2026-10-05; the shared test vector's shape): the claim announces clone_revoke_callback; the
+// clone authenticates with basic auth for the claim's username; the git host's API is never
+// called (the fake records any call as a contract error); the token is released by clone-done,
+// retried once after a 500, before the agent phase; no phase after the clone reaches the git host.
+func TestHarnessCodeLifecycle(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Prompt: "lifecycle", Provider: fakeplatform.ProviderHarnessCode, CloneDoneFailures: 1}, nil)
+	assertLifecycleVia(t, r, "clone-done clone-done", "clone-done", fakeplatform.HarnessGitHost)
+	if countCalls("revoke") != 0 || countCalls("harness-api") != 0 {
+		t.Error("the git host's API was called")
+	}
+	if !r.job.CloneDeleted {
+		t.Error("clone-done did not delete the token")
+	}
+	if strings.Join(r.job.Features, ",") != "clone_revoke_callback" {
+		t.Errorf("claim features %v", r.job.Features)
+	}
+	// After clone-done, root reached the git host no more; the agent and report phases never did.
+	var doneAt time.Time
+	for _, c := range FP.Calls() {
+		if c.Kind == "clone-done" && c.Status == 204 {
+			doneAt = c.Time
+			break
+		}
+	}
+	for _, c := range FP.Calls() {
+		if c.Kind == "git" && c.Time.After(doneAt) {
+			t.Errorf("a git request after clone-done: %s", c.Body)
+		}
+	}
+	plog, _ := FP.Uploaded("proxy_log")
+	for _, line := range strings.Split(strings.TrimSpace(string(plog)), "\n") {
+		var m map[string]any
+		if json.Unmarshal([]byte(line), &m) == nil && m["host"] == fakeplatform.HarnessGitHost && m["user"] != "root" {
+			t.Errorf("a job user reached the git host: %s", line)
+		}
+	}
+}
+
+// TestHarnessCodeWrongCommit: HEAD ≠ base_sha on a Harness Code job calls clone-done before the
+// refused result; kete never starts.
+func TestHarnessCodeWrongCommit(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Prompt: "lifecycle", Provider: fakeplatform.ProviderHarnessCode, BaseSHAOverride: strings.Repeat("1", 40)}, nil)
+	if r.code != 0 {
+		t.Errorf("exit %d", r.code)
+	}
+	if res := resultOf(t); res["outcome"] != "refused" || res["exit_code"] != 2.0 {
+		t.Errorf("result = %v", res)
+	}
+	var doneAt, resultAt time.Time
+	for _, c := range FP.Calls() {
+		switch {
+		case c.Kind == "clone-done" && c.Status == 204:
+			doneAt = c.Time
+		case c.Kind == "result":
+			resultAt = c.Time
+		}
+	}
+	if doneAt.IsZero() || !doneAt.Before(resultAt) || !r.job.CloneDeleted {
+		t.Errorf("clone-done not before the result: %v", FP.Kinds())
+	}
+	if _, err := os.Stat("/var/log/kete-job/kete.stdout"); err == nil {
+		t.Error("kete started")
+	}
 }
 
 // TestAuditOverLimit (piece A3, N5): kete writes more than 20,000,000 bytes to its audit pipe; the

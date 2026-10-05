@@ -3,6 +3,7 @@ package job
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -119,6 +120,8 @@ type fakePlatform struct {
 	putErr     error
 	callback   string
 	events     int
+	// cloneDoneErr is what CloneDone returns (nil when unset).
+	cloneDoneErr error
 }
 
 func (p *fakePlatform) rec(op, body string) {
@@ -203,13 +206,19 @@ func (p *fakePlatform) Revoke(context.Context, string, string) error {
 	p.rec("revoke", "")
 	return nil
 }
+func (p *fakePlatform) CloneDone(context.Context) error {
+	p.rec("clone-done", "")
+	return p.cloneDoneErr
+}
 
 type fakeGit struct {
 	cloneErr, verifyErr, copyErr error
+	username, token              string // the clone's credentials
 }
 
 func (g *fakeGit) CheckBranch(context.Context, string) bool { return true }
-func (g *fakeGit) Clone(context.Context, string, string, string, string) error {
+func (g *fakeGit) Clone(_ context.Context, _, _, username, token, _ string) error {
+	g.username, g.token = username, token
 	return g.cloneErr
 }
 func (g *fakeGit) Verify(context.Context, string, string, string) error { return g.verifyErr }
@@ -518,7 +527,7 @@ func TestLifecycle(t *testing.T) {
 		t.Fatalf("exit %d; log %s", code, e.out)
 	}
 	ops := strings.Join(e.pf.ops(), ",")
-	if !strings.HasPrefix(ops, "claim,events,revoke,events,") {
+	if !strings.HasPrefix(ops, "claim,events,revoke,clone-done,events,") {
 		t.Errorf("ops = %s", ops)
 	}
 	if !strings.HasSuffix(ops, "result,events,uploads,put,put,put,events,finish") {
@@ -551,6 +560,14 @@ func TestLifecycle(t *testing.T) {
 	// Instances: 1 (claim), 2 (agent), 3 (report + storage).
 	if n := len(e.eg.instances); n != 3 {
 		t.Errorf("proxy instances = %d", n)
+	}
+	// GHES: the clone phase reaches the platform, the clone host and its revoke API host (the same
+	// host here); no later phase reaches the git host.
+	if got := strings.Join(e.eg.instances[1].inst.Clone.Root, ","); got != "platform.kete.test,github.kete.test" {
+		t.Errorf("clone allowlist = %s", got)
+	}
+	if e.git.username != "x-access-token" || e.git.token != "clone-0123456789" {
+		t.Errorf("clone credentials %q", e.git.username)
 	}
 	if !contains(e.eg.instances[2].inst.Report.Root, "storage.test") || !contains(e.eg.instances[1].inst.Agent.Kete, "gateway.kete.test") {
 		t.Error("instance allowlists")
@@ -879,5 +896,145 @@ func TestHeartbeatKeteCgroupCheck(t *testing.T) {
 				t.Errorf("no agent heartbeat with %q in %v", c.want, e.pf.find("events"))
 			}
 		})
+	}
+}
+
+// harnessEnv is a Harness Code claim (jobs-v1 additive, 2026-10-05).
+func harnessEnv() *env {
+	e := newEnv(time.Hour)
+	e.pf.claim.Clone.URL = "https://git.harness.kete.test/acct/default/shop/web.git"
+	e.pf.claim.Clone.Provider = json.RawMessage(`"harness_code"`)
+	e.pf.claim.Clone.Username = json.RawMessage(`"kete_code_clone"`)
+	return e
+}
+
+func noLaterGitHost(t *testing.T, e *env, gitHost string) {
+	t.Helper()
+	for i, p := range e.eg.instances {
+		for _, list := range [][]string{p.inst.Agent.Kete, p.inst.Agent.Tool, p.inst.Agent.Root, p.inst.Report.Root} {
+			if contains(list, gitHost) {
+				t.Errorf("instance %d reaches the git host after the clone", i+1)
+			}
+		}
+	}
+}
+
+func TestHarnessLifecycle(t *testing.T) {
+	e := harnessEnv()
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d; log %s", code, e.out)
+	}
+	ops := strings.Join(e.pf.ops(), ",")
+	if !strings.HasPrefix(ops, "claim,events,clone-done,events,") || strings.Contains(ops, "revoke") {
+		t.Errorf("ops = %s", ops)
+	}
+	if !strings.HasSuffix(ops, "result,events,uploads,put,put,put,events,finish") {
+		t.Errorf("ops = %s", ops)
+	}
+	// The clone phase reaches exactly the platform and the clone host (no API host).
+	if got := strings.Join(e.eg.instances[1].inst.Clone.Root, ","); got != "platform.kete.test,git.harness.kete.test" {
+		t.Errorf("clone allowlist = %s", got)
+	}
+	noLaterGitHost(t, e, "git.harness.kete.test")
+	if e.git.username != "kete_code_clone" || e.git.token != "clone-0123456789" {
+		t.Errorf("clone credentials %q", e.git.username)
+	}
+	if !strings.Contains(e.out.String(), `"step":"clone_done","event":"ok"`) || strings.Contains(e.out.String(), `"step":"revoke"`) {
+		t.Errorf("phase log: %s", e.out)
+	}
+	if lastFinish(t, e.pf) != "" {
+		t.Error("push_error on a clean run")
+	}
+}
+
+// A clone failure calls clone-done before the result, and the message carries neither the token
+// nor its basic-auth value.
+func TestHarnessCloneFailed(t *testing.T) {
+	e := harnessEnv()
+	b64 := base64.StdEncoding.EncodeToString([]byte("kete_code_clone:clone-0123456789"))
+	e.git.cloneErr = &gitops.Error{ExitCode: 128, Stderr: []byte("fatal: auth clone-0123456789 failed\nsent " + b64 + "\nAuthorization: Basic " + b64 + "\n")}
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	ops := strings.Join(e.pf.ops(), ",")
+	if !strings.HasPrefix(ops, "claim,events,clone-done,result,") || strings.Contains(ops, "revoke") {
+		t.Errorf("ops = %s", ops)
+	}
+	msg := resultOf(t, e.pf)["message"].(string)
+	if !strings.HasPrefix(msg, "clone failed") || strings.Contains(msg, "clone-0123456789") || strings.Contains(msg, b64) || strings.Contains(msg, "Basic") {
+		t.Errorf("message = %q", msg)
+	}
+}
+
+// HEAD ≠ base_sha: clone-done, then the refused result; kete never starts.
+func TestHarnessWrongCommit(t *testing.T) {
+	e := harnessEnv()
+	e.git.verifyErr = gitops.ErrMismatch
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	ops := strings.Join(e.pf.ops(), ",")
+	if !strings.HasPrefix(ops, "claim,events,clone-done,result,") || strings.Contains(ops, "revoke") {
+		t.Errorf("ops = %s", ops)
+	}
+	if r := resultOf(t, e.pf); r["outcome"] != "refused" || r["exit_code"].(float64) != 2 {
+		t.Errorf("result = %v", r)
+	}
+	if e.m.keteStarted {
+		t.Error("kete started after a wrong commit")
+	}
+}
+
+// A clone-done that keeps failing is said on the job; the job goes on (the platform's backstops
+// delete the token).
+func TestHarnessCloneDoneFails(t *testing.T) {
+	e := harnessEnv()
+	e.pf.cloneDoneErr = errors.New("platform: clone-done: unexpected status 500")
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d; log %s", code, e.out)
+	}
+	found := false
+	for _, ev := range e.pf.find("events") {
+		if strings.Contains(ev.body, "clone token revoke failed") {
+			found = true
+		}
+	}
+	if !found || !e.m.keteStarted {
+		t.Errorf("revoke failure not reported or job stopped: %v", e.pf.ops())
+	}
+	if !strings.Contains(e.out.String(), `"step":"clone_done","event":"failed","code":"failed"`) {
+		t.Errorf("phase log: %s", e.out)
+	}
+}
+
+// A 404 from clone-done is a gone job: kill everything, no more callbacks, exit 0.
+func TestHarnessCloneDoneGone(t *testing.T) {
+	e := harnessEnv()
+	e.pf.cloneDoneErr = platform.ErrGone
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if ops := strings.Join(e.pf.ops(), ","); ops != "claim,events,clone-done" {
+		t.Errorf("ops = %s", ops)
+	}
+	if e.m.keteStarted {
+		t.Error("kete started")
+	}
+}
+
+// GitHub: a failing clone-done is best effort (no events note); the revoke stays as it was.
+func TestGitHubCloneDoneBestEffort(t *testing.T) {
+	e := newEnv(time.Hour)
+	e.pf.cloneDoneErr = errors.New("platform: clone-done: unexpected status 500")
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	for _, ev := range e.pf.find("events") {
+		if strings.Contains(ev.body, "revoke failed") {
+			t.Errorf("events note for a GitHub clone-done: %s", ev.body)
+		}
+	}
+	if len(e.pf.find("revoke")) != 1 || !e.m.keteStarted {
+		t.Errorf("ops = %v", e.pf.ops())
 	}
 }
