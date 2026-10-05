@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.2.4
 
+- Local models: the model picker shows a **Local** group for Ollama, LM Studio and vLLM (also on
+  another machine, via `OLLAMA_HOST`), marks models that can't use tools, and says when a local
+  server isn't reachable. Offline mode (`kete --offline`) keeps everything on your machine.
 - Works in Windsurf, Cursor and VSCodium (install from Open VSX): the diagnostics tool names the
   editor you're in, and the chat's editor chip now reports itself when the file was opened before
   the chat finished loading. See "Using Kete Code in Windsurf, Cursor or VSCodium" in the README.
