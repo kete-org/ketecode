@@ -26,6 +26,15 @@
 #              (ghcr.io/kete-org/kete-job:<tag>), signs the index and both per-arch digests with
 #              cosign keyless signing (Sigstore, this workflow's GitHub OIDC identity) and verifies
 #              every signature against that identity; manual runs push and sign nothing
+#   harness-plugin-image  the Kete Code step image for Harness pipelines (packages/kete-harness-plugin)
+#              for linux/amd64 and linux/arm64 from the released linux-x64 and linux-arm64 kete, with
+#              read-only permissions: builds both (arm64 under QEMU), runs both modes end to end in the
+#              amd64 image against local fakes (scripts/smoke.sh --full) and a smoke test on arm64, and
+#              on tags saves both images as an artifact (with its SHA-256)
+#   harness-plugin-publish  tags only, packages: write and id-token: write: loads that artifact
+#              (checksum verified), pushes those images, joins them into one index
+#              (ghcr.io/kete-org/kete-harness-plugin:<tag>), signs the index and both per-arch digests
+#              with cosign keyless signing and verifies every signature, as image-publish does
 #   kernel     the microvm guest kernel (packages/kete-job-host/kernel/build.sh, pinned Linux LTS,
 #              checked-in config) for amd64 and arm64 (cross-compiled), read-only permissions;
 #              saves both with their sha256 allowlist lines as an artifact
@@ -35,7 +44,7 @@
 #   cloudvm-images  tags only, after image-publish: the provider images for VM-per-job hosts
 #              (kete-cloudvm-images.yml: cloudvm kernel, base disks, per-provider imports where an
 #              image-builder credential is configured); publish doesn't wait for it
-#   publish    tags only, after smoke, extension, extension-e2e, jetbrains, image and kernel pass: this repository's GitHub
+#   publish    tags only, after smoke, extension, extension-e2e, jetbrains, image, harness-plugin-publish and kernel pass: this repository's GitHub
 #              Release, first as a DRAFT with every archive, .vsix, JetBrains plugin zip and SHA256SUMS, plus the job
 #              image's digests and signing identity in the notes, kete-job-image.digest (the
 #              linux/amd64 digest Fly pins today) and kete-job-image.digests (index, per-arch
@@ -648,6 +657,185 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Job image index: $REPO@$index (linux/amd64 $amd64, linux/arm64 $arm64), signed by $identity"
 
+  harness-plugin-image:
+    # After the extension too, like the job image, so a failed release never leaves a pushed image.
+    needs: [build, smoke, extension, extension-e2e, jetbrains]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Builds and tests only: no registry or signing permission (harness-plugin-publish has those).
+    permissions:
+      contents: read
+    outputs:
+      images_sha256: ${{ steps.save.outputs.sha256 }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Compiles the entrypoint (it imports @opencode/util) and runs the fakes the smoke test uses.
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      - name: Verify checksums and unpack the linux-x64 and linux-arm64 kete
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum -c SHA256SUMS)
+          version="${TAG#kete-v}"
+          for target in linux-x64 linux-arm64; do
+            mkdir -p "$RUNNER_TEMP/kete-$target"
+            tar -xzf "release/kete-$version-$target.tar.gz" -C "$RUNNER_TEMP/kete-$target"
+            test -x "$RUNNER_TEMP/kete-$target/kete"
+          done
+          rm -rf release
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Build the linux/amd64 image
+        run: |
+          bash packages/kete-harness-plugin/scripts/build.sh --arch amd64 --tag kete-harness-plugin:amd64 \
+            --kete "$RUNNER_TEMP/kete-linux-x64/kete" --version "${TAG#kete-v}" --revision "$GITHUB_SHA"
+
+      # Before any push: the image's entrypoint and the released kete, both modes, against local fakes.
+      - name: Test the linux/amd64 image (both modes end to end)
+        run: bash packages/kete-harness-plugin/scripts/smoke.sh kete-harness-plugin:amd64 --arch amd64 --full
+
+      - name: Build the linux/arm64 image
+        run: |
+          bash packages/kete-harness-plugin/scripts/build.sh --arch arm64 --tag kete-harness-plugin:arm64 \
+            --kete "$RUNNER_TEMP/kete-linux-arm64/kete" --version "${TAG#kete-v}" --revision "$GITHUB_SHA"
+
+      # Under QEMU: the image is arm64, runs as uid 1000 and its entrypoint refuses an empty configuration.
+      - name: Smoke test (linux/arm64)
+        run: bash packages/kete-harness-plugin/scripts/smoke.sh kete-harness-plugin:arm64 --arch arm64
+
+      - name: Save the tested images (tags only)
+        id: save
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+        run: |
+          set -euo pipefail
+          docker save kete-harness-plugin:amd64 kete-harness-plugin:arm64 | gzip -1 > "$RUNNER_TEMP/kete-harness-plugin-images.tar.gz"
+          sum="$(sha256sum "$RUNNER_TEMP/kete-harness-plugin-images.tar.gz" | cut -d' ' -f1)"
+          echo "sha256=$sum" >> "$GITHUB_OUTPUT"
+          ls -lh "$RUNNER_TEMP/kete-harness-plugin-images.tar.gz"
+
+      - name: Upload the tested images (tags only)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-harness-plugin-images
+          path: ${{ runner.temp }}/kete-harness-plugin-images.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Manual run
+        if: github.event_name != 'push'
+        run: |
+          echo "::notice::Manual run: the Harness step images were built and tested ($(docker image inspect kete-harness-plugin:amd64 --format '{{.Id}}'), $(docker image inspect kete-harness-plugin:arm64 --format '{{.Id}}')); nothing is pushed or signed."
+
+  harness-plugin-publish:
+    # Tags only; with image-publish, the only jobs that may write packages or mint an OIDC token. No
+    # checkout and no build: it loads the images harness-plugin-image tested and runs only docker,
+    # jq and cosign. The GHCR package needs Actions access for this repository (docs/release.md).
+    needs: [harness-plugin-image]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      # cosign keyless signing (Sigstore, GitHub OIDC).
+      id-token: write
+    outputs:
+      index: ${{ steps.push.outputs.index }}
+      amd64: ${{ steps.push.outputs.amd64 }}
+      arm64: ${{ steps.push.outputs.arm64 }}
+    env:
+      REPO: ghcr.io/kete-org/kete-harness-plugin
+    steps:
+      - name: Download the tested images
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kete-harness-plugin-images
+          path: ${{ runner.temp }}/images
+
+      - name: Verify and load the tested images
+        env:
+          SUM: ${{ needs.harness-plugin-image.outputs.images_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SUM" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the harness-plugin-image job reported no checksum"; exit 1; }
+          echo "$SUM  $RUNNER_TEMP/images/kete-harness-plugin-images.tar.gz" | sha256sum -c -
+          gunzip -c "$RUNNER_TEMP/images/kete-harness-plugin-images.tar.gz" | docker load
+          rm -f "$RUNNER_TEMP/images/kete-harness-plugin-images.tar.gz"
+          [ "$(docker image inspect kete-harness-plugin:amd64 --format '{{.Os}}/{{.Architecture}}')" = linux/amd64 ]
+          [ "$(docker image inspect kete-harness-plugin:arm64 --format '{{.Os}}/{{.Architecture}}')" = linux/arm64 ]
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # As image-publish: push the tested images, join them into one index, sign the index and both
+      # per-arch digests (keyless: the certificate names this workflow on this tag) and verify every
+      # signature against that identity. The registry token goes to docker login on stdin.
+      - name: Push, index, sign and verify
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          is_digest() { [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]; }
+          platform_digest() {
+            local m
+            m="$(docker buildx imagetools inspect "$1" --format '{{json .Manifest}}')"
+            if jq -e '.manifests' >/dev/null <<<"$m"; then
+              jq -r --arg a "$2" '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $a)] | if length == 1 then .[0].digest else "" end' <<<"$m"
+            else
+              jq -r '.digest' <<<"$m"
+            fi
+          }
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for arch in amd64 arm64; do
+            docker tag "kete-harness-plugin:$arch" "$REPO:$TAG-linux-$arch"
+            docker push "$REPO:$TAG-linux-$arch"
+          done
+          amd64="$(platform_digest "$REPO:$TAG-linux-amd64" amd64)"
+          arm64="$(platform_digest "$REPO:$TAG-linux-arm64" arm64)"
+          if ! is_digest "$amd64" || ! is_digest "$arm64"; then
+            echo "::error::no per-arch registry digests ($amd64, $arm64)"
+            exit 1
+          fi
+          docker buildx imagetools create --tag "$REPO:$TAG" "$REPO@$amd64" "$REPO@$arm64"
+          index="$(docker buildx imagetools inspect "$REPO:$TAG" --format '{{json .Manifest}}' | jq -r '.digest')"
+          is_digest "$index" || { echo "::error::no index digest"; exit 1; }
+          docker buildx imagetools inspect "$REPO@$index" --format '{{json .Manifest}}' \
+            | jq -e --arg a "$amd64" --arg b "$arm64" '[.manifests[].digest] | sort == ([$a, $b] | sort)' >/dev/null \
+            || { echo "::error::the index doesn't list exactly the two per-arch digests"; exit 1; }
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/kete-release.yml@refs/tags/$TAG"
+          issuer="https://token.actions.githubusercontent.com"
+          for d in "$index" "$amd64" "$arm64"; do
+            cosign sign --yes "$REPO@$d"
+          done
+          for d in "$index" "$amd64" "$arm64"; do
+            cosign verify --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$REPO@$d" >/dev/null \
+              || { echo "::error::the signature on $REPO@$d does not verify against $identity"; exit 1; }
+          done
+          {
+            echo "index=$index"
+            echo "amd64=$amd64"
+            echo "arm64=$arm64"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::Harness step image index: $REPO@$index (linux/amd64 $amd64, linux/arm64 $arm64), signed by $identity"
+
   kernel:
     # Builds only: no signing permission (kernel-publish has it). Reproducible from the pins in
     # kernel/build.sh; both arches build on this amd64 runner (arm64 with the cross compiler).
@@ -760,7 +948,7 @@ jobs:
       job_image: ghcr.io/kete-org/kete-job@${{ needs.image-publish.outputs.index }}
 
   publish:
-    needs: [smoke, extension, extension-e2e, jetbrains, image, image-publish, kernel-publish]
+    needs: [smoke, extension, extension-e2e, jetbrains, image, image-publish, harness-plugin-publish, kernel-publish]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -844,6 +1032,34 @@ jobs:
             "Job image linux/arm64: $repo@$ARM64"
             "Job images signed with cosign keyless signing: identity $identity, issuer $issuer"
             "Job image testing: linux/amd64 passed the full end-to-end test; linux/arm64 was smoke-tested under QEMU only (its binaries start), not run end to end"
+          )
+          changed=0
+          for line in "${lines[@]}"; do
+            if ! grep -qF "$line" notes.md; then
+              printf '\n%s\n' "$line" >> notes.md
+              changed=1
+            fi
+          done
+          [ "$changed" = 0 ] || gh release edit "$TAG" --notes-file notes.md
+
+      # The Harness step image a pipeline pins (ghcr.io/kete-org/kete-harness-plugin@<index>).
+      - name: Record the Harness step image digests and signing identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INDEX: ${{ needs.harness-plugin-publish.outputs.index }}
+          AMD64: ${{ needs.harness-plugin-publish.outputs.amd64 }}
+          ARM64: ${{ needs.harness-plugin-publish.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          for d in "$INDEX" "$AMD64" "$ARM64"; do
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the harness-plugin-publish job reported no digests"; exit 1; }
+          done
+          repo=ghcr.io/kete-org/kete-harness-plugin
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/kete-release.yml@refs/tags/$TAG"
+          gh release view "$TAG" --json body -q .body > notes.md
+          lines=(
+            "Harness step image index (linux/amd64, linux/arm64): $repo@$INDEX ($repo:$TAG)"
+            "Harness step image signed with cosign keyless signing: identity $identity; linux/amd64 tested end to end, linux/arm64 smoke-tested under QEMU only"
           )
           changed=0
           for line in "${lines[@]}"; do

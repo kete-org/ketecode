@@ -14,6 +14,7 @@ upstream OpenCode version the source is synced to (`.opencode-version`).
 | --- | --- | --- |
 | GitHub Release on `kete-org/ketecode` (private) | CLI archives, every `.vsix`, the JetBrains plugin zips, `SHA256SUMS`, job image digests, guest kernels, generated notes | every tag |
 | GHCR `ghcr.io/kete-org/kete-job` | the cloud job image: a signed linux/amd64 + linux/arm64 index tagged with the release tag (per-arch tags `<tag>-linux-<arch>`) | every tag |
+| GHCR `ghcr.io/kete-org/kete-harness-plugin` | the Kete Code step image for Harness pipelines (`packages/kete-harness-plugin`): a signed linux/amd64 + linux/arm64 index tagged with the release tag (per-arch tags `<tag>-linux-<arch>`) | every tag |
 | GitHub Release on `kete-org/kete-releases` (public) | CLI archives, `install.sh`, `install.ps1`, their `SHA256SUMS`, `SHA256SUMS.sig` (Ed25519), `SHA256SUMS.sigstore.json` (cosign), public notes | every tag, once public distribution is on |
 | Homebrew `kete-org/tap/kete` (`kete-org/homebrew-tap`) | `Formula/kete.rb`: per-platform URLs into `kete-releases` and their SHA-256 | stable tags, once public distribution is on |
 | npm `@ketecode/cli` + `@ketecode/cli-<platform>` | launcher + one package per platform | every tag (pre-releases under the npm tag `next`), once public distribution is on |
@@ -52,6 +53,12 @@ published from a pre-release: the Marketplace accepts no version suffix.
   (`packages: write`); no secret is needed. After the **first** tag's push, open the `kete-job`
   package (github.com/orgs/kete-org/packages), link it to `kete-org/ketecode`, and set its
   visibility to **public** so the platform's machines can pull it without credentials.
+- **Harness step image package.** `harness-plugin-publish` pushes `ghcr.io/kete-org/kete-harness-plugin`
+  the same way. After the **first** tag's push, open the `kete-harness-plugin` package, link it to
+  `kete-org/ketecode`, grant this repository **Actions access** (Package settings → Manage Actions
+  access → add `kete-org/ketecode` with the **Write** role; without it later pushes fail with
+  `denied: permission_denied`), and set its visibility to **public** so Harness pipelines can pull it
+  without registry credentials.
 
 ### Public distribution (one-time setup)
 
@@ -232,6 +239,13 @@ publishing.
    issuer `https://token.actions.githubusercontent.com`), and verifies each signature against that
    identity before anything is published (kete-code-platform ADR 0023 rule 17). Manual runs build
    and test both images and push or sign nothing.
+   **harness-plugin-image** / **harness-plugin-publish**: the same pattern for the Harness step
+   image (`packages/kete-harness-plugin`): read-only build of both architectures from the released
+   `linux-x64` and `linux-arm64` `kete`, `scripts/smoke.sh --full` on amd64 (the image's entrypoint
+   and `kete`, run mode against a fake model endpoint and cloud mode against a fake platform) and a
+   smoke test on arm64 under QEMU; then, on tags only, push, index
+   `ghcr.io/kete-org/kete-harness-plugin:<tag>`, cosign-sign and verify (same identity). `publish`
+   adds the index digest and signing identity to the notes.
 5. **kernel**: the microvm guest kernel (`packages/kete-job-host/kernel/`: Linux 6.18 LTS, the
    checked-in configurations, `check-config.sh` first) built with `build.sh` for amd64 and arm64
    (cross-compiled) on the amd64 runner, read-only permissions; saved as an artifact with its

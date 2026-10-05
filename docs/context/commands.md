@@ -103,6 +103,17 @@ Same Docker/Colima setup as the root helper (cgroup v2 required for the integrat
 | `kete job run` job-mode tests | `bun test ./test/kete/job-run.test.ts` in `packages/cli/`; `bun run test ./test/kete/job-run.test.ts` in `packages/server/` |
 | Linux `kete` cross-build | `bun run build --target=kete-linux-arm64 --skip-web-ui` in `packages/cli/` → `dist/cli-linux-arm64/bin/kete` |
 
+## Harness step (`packages/kete-harness-plugin/`)
+
+| Task | Command (inside the package unless noted) |
+|---|---|
+| Unit tests only (fast) | `bun test test/settings.test.ts test/outputs.test.ts test/task.test.ts test/run-env.test.ts` |
+| Cloud mode against the fake platform | `bun test test/cloud.test.ts` |
+| Run mode against the fake model (real `kete job run`, ~15 s; source unless `KETE_TEST_BIN=<built kete>`) | `bun test test/run.test.ts` |
+| Everything / typecheck | `bun run test` / `bun run typecheck` |
+| Image (needs a Linux kete; big, prefer CI) | `bash scripts/build.sh --arch arm64 --kete <path>` then `bash scripts/smoke.sh kete-harness-plugin:local` (`--full` needs Linux host networking) |
+| CI | `gh workflow run kete-harness-plugin.yml --repo kete-org/ketecode --ref <branch>` |
+
 ## Job image (`packages/kete-job-image/`; no Go needed locally)
 
 Colima (or Docker) must run; the Go binaries are built in `golang:1.26-bookworm` with the

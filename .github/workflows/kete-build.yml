@@ -105,5 +105,7 @@ jobs:
           suite cli test/kete "bun test test/kete"
           suite kete-tools test "bun test"
           suite kete-vscode test "bun test"
+          # Run mode drives kete from source here; kete-harness-plugin.yml uses the built binary.
+          suite kete-harness-plugin test "bun run test"
           suite app src/kete "bun test --conditions=solid --preload ./happydom.ts ./src/kete"
           suite ui src/theme/kete "bun test ./src/theme/kete"
