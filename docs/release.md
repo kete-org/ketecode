@@ -166,13 +166,29 @@ verifies the checksum, the 400 MB limit, the plugin id and version, and uploads 
 Marketplace upload API (the token reaches curl on stdin). A version the Marketplace already has is
 reported and skipped. New versions appear after JetBrains' review.
 
-**Open decision: one Marketplace file for every platform.** The Marketplace takes a single file of at
+The checksum check guards only against a corrupted download. `kete-code-jetbrains-<v>.sha256` sits in
+the same GitHub Release as the zip, so anyone able to replace the zip could replace it too; the
+release's Ed25519-signed `SHA256SUMS` (on `kete-org/kete-releases`) lists the CLI archives and install
+scripts, not the plugin zips, so the workflow can't check the zips against a signature. The zips'
+integrity rests on who can write to this repository's releases; listing them in the signed
+`SHA256SUMS` is a possible follow-up.
+
+**The 400 MB Marketplace limit: decided, not built yet.** The Marketplace takes a single file of at
 most 400 MB per version, and one `kete` binary is ~80–93 MB compressed, so a zip with all six
 platforms (~520 MB) doesn't fit. Releases therefore attach one zip per OS (installable with
 **Settings → Plugins → ⚙ → Install Plugin from Disk…**) and the all-platform zip only when it fits;
-until it does, `kete-jetbrains-publish` stops with that explanation. Getting the plugin onto the
-Marketplace needs a choice before go-live: download the platform binary on first use (verified
-against the release's signed checksums), or a smaller binary. Run the
+until it does, `kete-jetbrains-publish` stops with that explanation.
+
+Go-live decision (pre-approved by the maintainer, 2026-10-05): the **Marketplace build carries no
+binary and downloads the platform's `kete` on first use** from the public releases
+(`kete-org/kete-releases`, the release matching the plugin's version). Before running it the plugin
+verifies the release's `SHA256SUMS.sig` (Ed25519) against the pinned update key
+(`packages/cli/src/kete/update-keys.json`, the key `kete upgrade` trusts) with Java's built-in
+Ed25519 (`java.security.Signature`, `Ed25519`), then the archive's SHA-256 against that
+`SHA256SUMS`, and refuses on any mismatch; no unverified binary ever runs. The per-OS zips with
+bundled binaries stay on the GitHub Release for offline installs. **Implementation is a follow-up
+that must land before the first Marketplace publish** (not part of the plugin's first PR); until
+then `kete-jetbrains-publish` has nothing it can upload. Run the
 [manual smoke checklist](../packages/kete-jetbrains/README.md#manual-smoke-checklist) before
 publishing.
 

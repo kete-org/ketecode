@@ -1,7 +1,7 @@
 ---
 module: jetbrains-plugin
 paths: [packages/kete-jetbrains/**, packages/app/src/kete/ide-host.ts, packages/app/src/kete/ide-host.test.ts, .github/workflows/kete-jetbrains.yml, .github/workflows/kete-jetbrains-publish.yml]
-verified-at: fe40894552
+verified-at: 20d03ccfa2
 ---
 
 ## Quick answers
@@ -18,9 +18,11 @@ verified-at: fe40894552
   `sessionStorage` (`kete.host`) because the connect page navigates away, and the injected
   `window.__keteJetBrains` bridge also counts. A framed page is never JetBrains; VS Code is still "framed
   in the iframe named `kete-vscode`".
-- **How do messages travel?** Page → plugin: `window.__keteJetBrains.postMessage(msg)` → JSON through a
-  `JBCefJSQuery` → `core/Bridge.kt` `parse` (allowlist `FROM_PAGE`, field validation, 64 KB cap) →
-  `KeteProject.receive`. Plugin → page: `Bridge.deliverScript` (allowlist `TO_PAGE`) runs
+- **How do messages travel?** Page → plugin: `window.__keteJetBrains.postMessage(msg)` → a
+  `{nonce, message}` envelope through a `JBCefJSQuery` → `core/Bridge.kt` `open` (the current load's
+  nonce, constant-time; then allowlist `FROM_PAGE`, field validation, 64 KB cap) → `KeteProject.receive`.
+  The nonce (`Bridge.newNonce`, new on every main-frame load start) lives only in the injected script's
+  closure: `cefQuery_*` exists in every frame, so a cross-origin iframe could otherwise call it. Plugin → page: `Bridge.deliverScript` (allowlist `TO_PAGE`) runs
   `window.dispatchEvent(new CustomEvent("kete-jetbrains-message", { detail: JSON.parse("<literal>") }))`;
   `ide-host.ts` `onHostMessage` hands `detail` to the same validators (`vscode-messages.ts`,
   `vscode-theme.ts`). Message names are the VS Code relay's (`packages/kete-vscode/src/chat.ts`).
@@ -30,7 +32,14 @@ verified-at: fe40894552
 - **Why per-OS zips?** The JetBrains Marketplace takes one file ≤ 400 MB per version and six binaries are
   ~520 MB. `kete-release.yml`'s `jetbrains` job attaches `kete-code-jetbrains-<v>-{macos,linux,windows}.zip`
   and an all-platform zip only if it fits; `kete-jetbrains-publish.yml` needs that all-platform zip and
-  stops otherwise. Open go-live decision (docs/release.md, "Publish the JetBrains plugin").
+  stops otherwise. Decided for go-live (docs/release.md, "Publish the JetBrains plugin"): the Marketplace
+  build downloads the platform's `kete` from `kete-org/kete-releases` on first use, verified against the
+  Ed25519-signed `SHA256SUMS` with the pinned update key; not built yet (follow-up before Marketplace publish).
+- **Why does revert refuse a path inside the project?** `Paths.insideWorkspace` is lexical and then
+  `Paths.realInside`: the target (or its nearest existing parent) after `toRealPath()` must be inside the
+  real project folder, and a dangling link is refused. `confirmRevert` shows the resolved path and checks
+  again before writing. `ReviewDiff.reviewStatus`/`revert`: an added file that's gone stays "added"
+  (nothing to do), never restored as an empty file.
 - **What does the diagnostics tool report?** The daemon's highlights (weak warning and up) for the
   requested file, or for every open editor when no path is given; the IDE has no project-wide problem
   list for unopened files. Same MCP contract as VS Code's `editor-tools.ts`.
@@ -69,14 +78,19 @@ imports and is unit-tested (JUnit 5, `src/test/kotlin/.../core/`).
   (debounced 150 ms), Add to Kete Code, review (`DiffManager` + `SimpleDiffRequestChain`, before-text
   from `ReviewDiff`), revert (confirmation, `WriteCommandAction`), session picker, badge and
   notifications.
-- `ChatPanel.kt` — `JBCefBrowser` + `JBCefJSQuery`; injects `Bridge.bridgeScript` on main-frame load
-  only for the runtime's origin; drops messages unless the browser shows that origin; external links and
-  popups go to the system browser.
+- `ChatPanel.kt` — `JBCefBrowser` + `JBCefJSQuery`; injects `Bridge.bridgeScript(nonce)` on main-frame
+  load only for the runtime's origin; drops messages (and doesn't `post`) unless the browser shows that
+  origin, and messages without the current nonce; navigations away open the system browser only on a
+  user gesture, at most once a second (`core/ExternalLinks.kt`); popups open nothing (JCEF gives them no
+  gesture), the bridge script turns real clicks on `target="_blank"` links into navigations instead.
 - `EditorToolsServer.kt` — app service: `com.sun.net.httpserver` on 127.0.0.1:0, `/mcp/<random key per
-  project>`, `PUT /api/experimental/mcp/editor?directory=<project>` after every runtime start.
+  project>` with its own bearer token, rotated on every registration; `PUT
+  /api/experimental/mcp/editor?directory=<project>` after every runtime start.
 - `KeteSettings.kt` — `KeteSettingsService` (stored in `kete-code.xml`: cliPath, defaultMode,
   shareEditorContext, notifications, editorTools, gatewayUrl, platformUrl, sessionBudget, dismissed
-  notices, cliHintDismissed) and the `Settings → Tools → Kete Code` page; `syncConfig` edits `kete.jsonc`.
+  notices, cliHintDismissed) and the `Settings → Tools → Kete Code` page; `syncConfig` edits `kete.jsonc`
+  and writes it with `core/AtomicFile.kt` (temp file in the same folder, `ATOMIC_MOVE`, a symlink's
+  target replaced, permissions kept).
 - `KeteStatusBar.kt`, `KeteActions.kt` (actions, `KeteAccount` sign-in/out), `KeteTheme.kt` (LAF →
   `kete.theme`), `KeteTerminal.kt` (`TerminalToolWindowManager.createShellWidget` + quoted binary).
 - `core/` — `Json.kt` (strict JSON), `Runtime.kt` (`StartLine`, `Pairing`, `Backoff`, `Paths.insideWorkspace`,
@@ -116,11 +130,13 @@ imports and is unit-tested (JUnit 5, `src/test/kotlin/.../core/`).
 ## Rules that must not break
 
 - Never run a `kete` from the `PATH`; only `Binary.resolve`'s result.
-- The pairing password only in the URL fragment; never logged.
+- The pairing password only in the URL fragment; never logged. The runtime's stdout/stderr lines are never
+  logged either (`KeteRuntime.drain` logs only a line count).
 - Bridge: a message type must be in `Bridge.FROM_PAGE`/`TO_PAGE` and in the web UI's validators; keep the
-  lists equal to `packages/kete-vscode/src/chat.ts`'s (`BridgeTest` pins them). Inject the bridge only
+  lists equal to `packages/kete-vscode/src/chat.ts`'s (`BridgeTest` reads chat.ts through the
+  `kete.vscodeChat` system property set in `build.gradle.kts`, so drift fails the test). Inject the bridge only
   into the runtime's origin; never `executeJavaScript` a message except through `deliverScript`.
-- Every path from the page goes through `Paths.insideWorkspace`; editor context and diagnostics through
+- Every path from the page goes through `Paths.insideWorkspace` (lexical + real path); editor context and diagnostics through
   `ContextFilter.shareable` (secrets, IDE-excluded/ignored, outside content).
 - Diagnostics MCP server: `EditorTools.authorized` (no `Origin`, exactly one `Host` equal to
   `127.0.0.1:<port>`, timing-safe bearer compare). No terminal output is exposed.
@@ -132,8 +148,9 @@ imports and is unit-tested (JUnit 5, `src/test/kotlin/.../core/`).
 
 - Narrowest (needs a JDK, else CI): `./gradlew test --tests 'ai.ketecode.jetbrains.core.BridgeTest'`.
 - Package: `./gradlew buildPlugin test`; verifier: `./gradlew verifyPlugin -PverifyIde=<code>:<version>`.
-- CI: `kete-jetbrains.yml` (path-filtered) — build, tests, zip check, web UI IDE-host tests, verifier
-  matrix (IC 2024.3.7, IC 2025.2.6, IU/PY/WS/GO 2026.2.3).
+- CI: `kete-jetbrains.yml` (path-filtered, includes `packages/kete-vscode/src/chat.ts`) — build, tests,
+  zip check, web UI IDE-host tests, verifier: pull requests only IC 2024.3.7; pushes to main and
+  workflow_dispatch the full matrix (IC 2024.3.7, IC 2025.2.6, IU/PY/WS/GO 2026.2.3).
 - Web UI side: `bun test --conditions=solid --preload ./happydom.ts ./src/kete` in `packages/app`
   (`ide-host.test.ts`: detection, queued transport, JetBrains theme mapping, validators).
 - Real IDE: the manual smoke checklist in `packages/kete-jetbrains/README.md`.

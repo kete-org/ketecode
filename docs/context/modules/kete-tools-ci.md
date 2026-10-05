@@ -1,7 +1,7 @@
 ---
 module: kete-tools-ci
 paths: [packages/kete-tools/src/*, packages/kete-tools/distribution/*, .github/workflows/kete-extension-publish.yml, .github/workflows/kete-installer-smoke.yml, .github/workflows/kete-job-image.yml, packages/kete-tools/leak-allowlist.txt, .github/workflows/kete-build.yml, .github/workflows/kete-release.yml, .github/workflows/kete-root-helper.yml, .github/workflows/kete-egress.yml, .github/workflows/kete-job-entrypoint.yml, .github/workflows/kete-job-host.yml, .opencode-version]
-verified-at: 139c15e1b2
+verified-at: 20d03ccfa2
 ---
 
 ## Quick answers

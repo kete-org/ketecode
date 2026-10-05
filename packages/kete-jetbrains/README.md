@@ -86,7 +86,8 @@ both architectures each) with the released binaries, plus an all-platform zip on
 JetBrains Marketplace's 400 MB limit, and attaches them to the GitHub Release. Install one with
 **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Publishing to the Marketplace is a separate,
 manual step (`kete-jetbrains-publish.yml`); see `docs/release.md` ("Publish the JetBrains plugin"),
-including the open decision about the size limit.
+including the size-limit decision (the Marketplace build will download a verified `kete` on first
+use; a follow-up before the first Marketplace publish).
 
 ## Manual smoke checklist
 
@@ -112,6 +113,8 @@ release's zip for their OS into a clean IDE (and ideally one other product, e.g.
 8. **Sessions:** Open Session… lists the project's sessions and opens the chosen one in the chat.
 9. **Diagnostics:** with a type error in an open file, ask the agent to check problems; it calls the
    `editor` `diagnostics` tool and reports the error.
-10. **Terminal:** Open in Terminal runs the `kete` TUI in the IDE's terminal.
-11. **Restart:** Restart Server; the chat reloads and keeps working. Close the last project: no
+10. **Links:** click an external link in the chat (e.g. in a reply): it opens once in the system
+    browser and the chat stays put; a page can't open the browser without a click.
+11. **Terminal:** Open in Terminal runs the `kete` TUI in the IDE's terminal.
+12. **Restart:** Restart Server; the chat reloads and keeps working. Close the last project: no
     `kete serve` process is left behind.

@@ -88,6 +88,38 @@ for `ToolWindowFactory`/`StatusBarWidget` interface defaults (`getAnchor`, `getI
 - The diagnostics tool reports open files' highlights only (no project-wide problems for unopened files).
 - Windows terminal command assumes PowerShell (the IDE terminal's default there).
 
+## Security review fixes (2026-10-05)
+
+Merged `origin/main` first (local models, Windsurf, MCP presets; conflicts only in
+`docs/context/modules/kete-tools-ci.md` `verified-at` and `docs/tasks/metrics.md`, both sides kept).
+All findings fixed as recommended:
+
+| # | Finding | Fix | Tests |
+|---|---|---|---|
+| 1 | `cefQuery_*` callable from any frame | `{nonce, message}` envelope; nonce from Kotlin (`Bridge.newNonce`, 256-bit), only in the bridge script's closure, new on every main-frame load start, constant-time compare (`Bridge.open`) | `BridgeTest` (envelopes, stale/guessed/missing nonce, script shape, nonce uniqueness) |
+| 2 | popups open any URL, no gesture, no limit | popups open nothing (JCEF's `onBeforePopup` has no gesture info); `onBeforeBrowse` opens the system browser only for a main-frame http(s) navigation with `userGesture`, ≤ 1/s (`core/ExternalLinks.kt`); the bridge script turns trusted clicks on `target="_blank"` links into navigations | `ExternalLinksTest`; real-IDE behaviour: README checklist item 10 |
+| 3 | lexical-only workspace boundary | `Paths.insideWorkspace` = lexical + `Paths.realInside` (target or nearest existing parent `toRealPath()` inside the real project; dangling links refused); revert confirmation shows the resolved path and re-checks before writing; applies to open-diff and diagnostics too | `PathsTest` with real symlinks in `@TempDir` (dir link, file link, dangling link, missing folders, inside links, project via link) |
+| 4 | `post()` without origin guard | same `showsRuntime()` check as the handler | — (JCEF glue) |
+| 5 | one bearer token for the IDE's life | per-project token, rotated on every registration (every runtime start/restart); unknown path → 401 | — (IDE glue; `EditorTools.authorized` unchanged and tested) |
+| 6 | runtime output in idea.log | `drain` counts lines, logs only the count | — |
+| 7 | JSONC parser ignored `\uXXXX` | JSON escapes decoded (`\u` strictly 4 hex digits) | `KeteConfigTest` (escaped keys found, not duplicated; bad escapes refused) |
+| 8 | non-atomic `kete.jsonc` write | `core/AtomicFile.kt`: temp file in the same folder, `ATOMIC_MOVE` (fallback `REPLACE_EXISTING`), symlink target replaced, POSIX permissions kept; comments kept as before | `AtomicFileTest` |
+| 9 | gone "added" file restored as empty | `ReviewDiff.reviewStatus` keeps "added"; `ReviewDiff.revert` skips (gone added file, or nothing to restore) | `ReviewDiffTest` |
+| 10 | allowlist test hard-coded | `BridgeTest` reads `fromFrame`/`toFrame` from `packages/kete-vscode/src/chat.ts` (path via the `kete.vscodeChat` system property, declared as a test input); the workflow's path filter includes chat.ts | itself |
+| 11 | six verifier IDEs on every PR | PRs: only IC 2024.3.7 (+ build/test); push to main and workflow_dispatch: all six | actionlint |
+| 12 | per-zip `.sha256` | documented (workflow + docs/release.md) that it guards only corruption: the signed `SHA256SUMS` doesn't list the plugin zips | actionlint |
+
+Also recorded in docs/release.md ("Publish the JetBrains plugin") the pre-approved go-live decision for
+the 400 MB limit: the Marketplace build downloads the platform's `kete` from `kete-org/kete-releases` on
+first use, verified against the Ed25519-signed `SHA256SUMS` with the pinned update key (Java's built-in
+Ed25519) before running it. Implementation is a follow-up before the Marketplace publish.
+
+Checks after the fixes: see the PR #5 runs listed in handoff.md; locally `packages/app` typecheck and
+74/74 tests, root lint, `upstream:check`, actionlint on both changed workflows, stale-cards and
+card-check. Still not exercised in a real IDE: the nonce round trip, link handling and revert dialogs
+(README checklist). The symlink check is check-then-write (no lock): a link swapped in between is not
+caught.
+
 ## Cards updated
 New `jetbrains-plugin`; refreshed `vscode-extension` (bridge via `ide-host.ts`), `web-app` (host values,
 tip), `ui-branding` (`tokens.css`, `vscode-host.tsx`), `kete-tools-ci` and `job-image` (release job graph).
