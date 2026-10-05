@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/package",
+  "name": "@ketecode/harness-plugin",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Kete Code step for Harness CI/CD pipelines: a Drone-compatible Plugin step image that runs kete job run in the pipeline or starts a Kete cloud job.",
+  "scripts": {
+    "start": "bun src/main.ts",
+    "compile": "bun build --compile --minify --sourcemap=none src/main.ts --outfile dist/kete-harness-plugin",
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test --timeout 60000"
+  },
+  "dependencies": {
+    "@opencode/util": "workspace:*"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "@typescript/native-preview": "catalog:"
+  }
+}

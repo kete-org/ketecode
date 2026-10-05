@@ -1,0 +1,4 @@
+# Kete-owned. /etc/gitconfig of the Harness step image: the workspace is usually cloned by
+# another user (the pipeline's clone step), so git would otherwise refuse it as "dubious ownership".
+[safe]
+	directory = *
