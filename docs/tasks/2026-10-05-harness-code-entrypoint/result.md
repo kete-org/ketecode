@@ -30,7 +30,7 @@ platforms reject unknown claim fields (`strictObject`), so every job would fail 
   (clean). The copy was already not byte-identical overall (earlier platform edits on 429/503 and
   upload expiry text never copied; there is no sync check in this repo), so only the additive
   hunks were applied; the header comment records the provenance.
-- `docs/context/contracts.md` §6d/§6e, cards `job-entrypoint` (verified-at `2c21f193f7`), `egress`
+- `docs/context/contracts.md` §6d/§6e, cards `job-entrypoint` (verified-at `e2f31003c6`), `egress`
   (allowlist text).
 
 ## Checks
