@@ -58,7 +58,11 @@ the runtime too.
    `--standalone` are always local, so this check doesn't apply to them. A second check compares
    what the server resolves the working directory to against the directory itself (after
    `realpath`); a mismatch (e.g. a loopback tunnel to another host) also refuses.
-3. If the current directory is a git repository with at least one commit: creates a worktree at
+3. Unless `--trust-project-config` (or `KETE_TRUST_PROJECT_CONFIG=1`) is given, refuses (exit `2`)
+   when the repository's own config sets something only you may set for an unattended run — before
+   the server is contacted, so nothing from that config is loaded. See
+   [Repository config in an unattended run](#repository-config-in-an-unattended-run).
+4. If the current directory is a git repository with at least one commit: creates a worktree at
    `<data dir>/worktree/<project id, first 6 chars>/job-<8 hex chars>` (upstream's own worktree
    convention) and a new branch there — `git -C <repo root> worktree add -b <branch> <path>
    <HEAD sha>`, so the job starts from exactly the committed `HEAD`; uncommitted changes in your
@@ -67,20 +71,82 @@ the runtime too.
    branch and no isolation. A repository with no commits, or a `branch` requested outside a git
    repository, refuses (exit `2`). The project's own `commands.start` setup script does **not**
    run for a job (it only runs for `POST /api/worktree`, which jobs bypass) — if your project needs
-   setup, do it in the prompt, under the job's own policy.
-4. Starts a new session at that location with the spec's `agent`/`model` and `kete.unattended`
+   setup, do it in the prompt, under the job's own policy. The worktree's own config is checked
+   again (step 3) before the session starts; a refusal there removes the worktree and branch.
+5. Starts a new session at that location with the spec's `agent`/`model` and `kete.unattended`
    metadata set to the policy, submits the prompt, and waits for the run to finish. Every
    permission that would otherwise ask is denied instead unless the policy's `allow` covers it, and
    the runtime **always** denies editing Kete configuration — `.kete/`, `kete.json`/`kete.jsonc`
    anywhere in the project, or anything in the global config directory — even when the policy or
    the agent would otherwise allow it. A denial doesn't stop the run by itself; the run just
    continues without whatever it was denied. If the runtime ever *asks* during a job, that's a
-   runtime bug (a job's family should never ask) — the CLI declines it and stops the run.
-5. Cleans up before the prompt is submitted only: if worktree creation succeeded but something
+   runtime bug (a job's family should never ask) — the CLI declines it and stops the run. The
+   commands the agent runs don't see credentials from the runtime's environment (see
+   [Secrets in an unattended run](#secrets-in-an-unattended-run)).
+6. Cleans up before the prompt is submitted only: if worktree creation succeeded but something
    later failed before the prompt went out (e.g. the session couldn't be created), the worktree
    and branch are removed — the branch still equals its base, nothing is lost. Once the prompt is
    submitted, the worktree and branch are always kept, whatever the outcome.
-6. Reports the outcome (below) on exit, and to stdout/stderr, or as one `--json` object.
+7. Reports the outcome (below) on exit, and to stdout/stderr, or as one `--json` object.
+
+## Secrets in an unattended run
+
+A command the agent runs (the shell tool) starts with the runtime's environment minus credentials,
+so a command that prints its environment, or a test that dumps `process.env`, can't hand a key to
+the model through its output (`packages/core/src/kete/tool-env.ts`):
+
+- **Always, in every session:** Kete's own credentials are removed — every `KETE_*` variable ending
+  in `_KEY`, `_TOKEN`, `_SECRET` or `_PASSWORD` (`KETE_GATEWAY_KEY`, `KETE_API_KEY`,
+  `KETE_PASSWORD`, `KETE_SERVER_PASSWORD`, …). Interactive sessions otherwise keep your
+  environment: you approve each command there, and your builds expect it.
+- **In an unattended run** (`kete job run`, job mode) provider and other credentials are removed
+  too: names ending in `_API_KEY`, `_APIKEY`, `_KEY`, `_TOKEN`, `_SECRET`, `_SECRET_KEY`,
+  `_PASSWORD`, `_PASSWD`, `_PAT`, `_CREDENTIALS`, `_PRIVATE_KEY` or `_ACCESS_KEY`, and the AWS and
+  Google credential variables that don't follow the pattern (`AWS_ACCESS_KEY_ID`,
+  `AWS_SESSION_TOKEN`, `AWS_CONTAINER_CREDENTIALS_*`, `AWS_WEB_IDENTITY_TOKEN_FILE`,
+  `GOOGLE_APPLICATION_CREDENTIALS`, …). Every credential variable of every provider in the bundled
+  model catalogue is covered (a test checks it). Names are compared without regard to case.
+- **A build that needs one** — a private registry token, say — lists it in your global config:
+
+  ```jsonc
+  { "kete": { "unattended": { "passEnv": ["NPM_TOKEN"] } } }
+  ```
+
+  `passEnv` never passes a Kete credential. On Windows it matches any case, as environment names
+  do there.
+
+What this doesn't cover: secrets in files an allowed command can read (`~/.aws/credentials`, an
+`.npmrc` with a token, key files), and a command that executes repository code can still read
+`kete`'s own memory where the system allows a same-user debugger. Allow only the commands a job
+needs. Language servers, formatters and MCP servers the runtime starts from config are not agent
+commands and keep the runtime's environment; the terminal panels (PTY) are yours.
+
+## Repository config in an unattended run
+
+The runtime loads a repository's own config (`kete.json`, `kete.jsonc`, `.kete/`) as in any session.
+Nobody reviews it in an unattended run, and a pull request can bring one, so `kete job run` refuses
+(exit `2`, outcome `refused`) when that config sets any of:
+
+- `providers` / `provider` — any provider entry (`baseURL`, `apiKey`, headers, options): it could send
+  prompts and keys elsewhere;
+- `mcp` — any MCP server; `plugins` / `plugin`, or plugin code in `.kete/plugin/` or `.kete/plugins/`;
+- `enterprise`, or `share` / `autoshare` other than off;
+- `kete.integrations`, `kete.platform`, `kete.unattended` (so a repository can't widen `passEnv`).
+
+A file that can't be read or parsed refuses too. The message names each file and setting. The
+files read are those in the run's directory and every directory above it up to the repository root
+(only the run's directory outside a git repository); config above the repository, your global
+config (`~/.config/kete/`), `KETE_CONFIG` and `KETE_CONFIG_CONTENT` are yours and aren't checked.
+Organization policy synced from the platform still applies on top.
+
+If you trust the repository's config, pass `--trust-project-config` or set
+`KETE_TRUST_PROJECT_CONFIG=1` (only `1` counts). Otherwise move those settings to your global config
+or `KETE_CONFIG_CONTENT`. Job mode doesn't run this check: its server never loads project config.
+
+Not covered: unattended sessions a client creates through the API itself rather than with
+`kete job run`; `{file:…}`/`{env:…}` substitutions in settings that aren't listed (such as
+`instructions`); and project `formatter`, `lsp` or `commands` settings that run commands — repository
+code a job's allowed build or test commands could run anyway.
 
 ## Output
 
@@ -126,7 +192,7 @@ be added later; existing ones won't change meaning).
 | --- | --- | --- |
 | `0` | `completed` | The run finished on its own. |
 | `1` | `error` | An ordinary failure — a model error, a tool error the agent couldn't recover from, an unexpected disconnect, or the runtime bug case (an unattended run got asked a permission). |
-| `2` | `refused` / `audit_failed` | The run was refused before or without really starting: a bad spec, a non-local `--server`, no git commit to start from, or (rare) the run's own audit log couldn't be written. |
+| `2` | `refused` / `audit_failed` | The run was refused before or without really starting: a bad spec, a non-local `--server`, repository config it doesn't trust, no git commit to start from, or (rare) the run's own audit log couldn't be written. |
 | `3` | `time_limit` | The run reached `policy.timeout`. |
 | `4` | `budget` | The run reached `policy.budget`. |
 | `130` | `interrupted` | `kete job run` was interrupted (Ctrl-C); a second interrupt exits at once without waiting for cleanup. |

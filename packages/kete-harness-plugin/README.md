@@ -75,10 +75,12 @@ protected branch). Output variables (`$DRONE_OUTPUT` and `$HARNESS_OUTPUT`, one 
   key, `DRONE_NETRC_PASSWORD`, any `PLUGIN_*` key setting; values of 8+ characters), then goes
   through `KeteRedact`.
 - The agent's process tree starts without `PLUGIN_*`, `DRONE_NETRC_*` or any secret-looking
-  variable, and **no model key is in its environment**: kete's shell tool hands every command the
-  server's whole environment, so each key goes into its own 0600 file in a 0700 temporary directory
-  outside the workspace, referenced from the provider config as `{file:...}` (`Run.keteEnv`),
-  deleted after the run. On Linux the step makes itself non-dumpable, so the agent's processes
+  variable, and **no model key is in its environment**: each key goes into its own 0600 file in a
+  0700 temporary directory outside the workspace, referenced from the provider config as
+  `{file:...}` (`Run.keteEnv`), deleted after the run. Since 2026-10-05 `kete` itself also strips
+  credentials from the commands an unattended run executes (`docs/jobs.md` "Secrets in an
+  unattended run"); the key files stay as a second layer, so a key never sits in the server's
+  environment at all. On Linux the step makes itself non-dumpable, so the agent's processes
   can't read the step's own environment from `/proc`.
 - Pushes go only to the `remote.origin.url` read and validated **before** the run (https, ssh or a
   local path; no `ext::`, no password in the URL), from a fresh temporary repository with its own
@@ -107,8 +109,13 @@ protected branch). Output variables (`$DRONE_OUTPUT` and `$HARNESS_OUTPUT`, one 
   commands the task needs, use a dedicated key with a spending limit, and don't run untrusted pull
   requests with build or test commands allowed.
 - **A repository's own `.kete/` config is read by `kete`**, as in any kete run: a pull request can
-  bring one. The unattended policy still decides permissions, but its provider settings may apply.
-  Don't point the step at untrusted code with a key you can't afford to have misused.
+  bring one. `kete job run` refuses the run (outcome `refused`, exit `2`) when that config sets
+  providers, MCP servers, plugins, sharing or Kete's integration/platform/unattended settings, before
+  anything from it is loaded (`docs/jobs.md` "Repository config in an unattended run"); the step
+  never passes `--trust-project-config` itself (a pipeline that sets `KETE_TRUST_PROJECT_CONFIG=1`
+  in the step's environment opts in). What remains: the settings that aren't checked (agents,
+  instructions, formatter/LSP commands) still apply, so don't point the step at untrusted code with
+  build or test commands allowed and a key you can't afford to have misused.
 - As root (`runAsUser: 0`), the file modes and the non-dumpable flag protect nothing.
 
 ## Build and test

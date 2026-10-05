@@ -888,3 +888,21 @@ panel.css,composer-controls.tsx}`.
   badges and unreachable rows (tests: `tui/test/kete/local-models.test.tsx`).
 - `app/src/providers/models/select-dialog.tsx`: if the rows or the list container move, keep the badges
   and the unreachable lines next to them.
+
+## Unattended secret hygiene (fix/unattended-secret-hygiene)
+
+Commands the agent runs don't see Kete's own credentials, and in an unattended run no credentials at
+all (`docs/tasks/2026-10-05-unattended-secret-hygiene`, `docs/jobs.md` "Secrets in an unattended run").
+The rules live in the Kete-owned `core/src/kete/tool-env.ts`; `kete.unattended.passEnv` is in the
+Kete-owned `schema/src/config/kete.ts`. `kete job run`'s project-config trust check is Kete-owned
+(`cli/src/kete/job-project-config.ts`, `job-run.ts`, `job.ts`, `commands.ts`) and touches no upstream file.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/shell.ts` | Import; `create`'s `env` spreads `KeteToolEnv.withoutKeteCredentials(sessionEnvironment ?? process.env)` instead of the raw environment (1 marked line) | the `shell.create.before` hook runs after the environment is built but carries no session, and a plugin hook could be removed by config; the always-on part needs no session |
+| `core/src/tool/plugin/shell.ts` | Import; a marked block building the `KeteToolEnv.Lookup` (session getter, `kete` config); one marked line in the `before` callback: `invocation.env = yield* KeteToolEnv.forSession(...)` after `prepare` | only the shell tool knows the session a command belongs to at spawn time (`ShellCreateBefore` has no session ID) |
+
+**Sync checklist:** if upstream renames `Shell.create`'s `env` construction or the shell tool's `before`
+callback, keep both calls: the first on every shell, the second with the tool's `context.sessionID`. If
+upstream adds another agent-driven way to spawn commands (a new tool), route its environment through
+`KeteToolEnv.forSession` too. Test: `core/test/kete/tool-env-shell.test.ts`.
