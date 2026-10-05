@@ -1,7 +1,7 @@
 // Offline mode in the CLI: the startup decision (flag, env, global config; fails closed), the switches
 // it sets for models.dev and update checks, the server-connection rule (private server, no
 // `--server`) and the refusal of commands that need the network.
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { NodeServices } from "@effect/platform-node"
 import { Global } from "@opencode/util/global"
 import { Effect } from "effect"
@@ -191,9 +191,13 @@ describe("offline server connection", () => {
 })
 
 describe("offline refusals", () => {
-  const exitCode = process.exitCode
+  // Restore like the upstream run tests do (`?? 0`): later suites expect exit code 0, not undefined.
+  let exitCode: typeof process.exitCode
+  beforeEach(() => {
+    exitCode = process.exitCode
+  })
   afterEach(() => {
-    process.exitCode = exitCode
+    process.exitCode = exitCode ?? 0
   })
 
   test("a command that needs the network is refused with exit code 2", () => {
