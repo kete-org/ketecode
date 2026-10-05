@@ -39,6 +39,7 @@ platforms reject unknown claim fields (`strictObject`), so every job would fail 
 | CI `kete-job-entrypoint` (gofmt, vet incl. integration/e2e tags, `go test -race ./...`, privileged integration suite) | pass — https://github.com/kete-org/ketecode/actions/runs/37295413332 (first run; `TestHarnessCodeLifecycle`, `TestHarnessCodeWrongCommit` PASS) |
 | CI `kete-build` | pass — https://github.com/kete-org/ketecode/actions/runs/37295413309 |
 | CI `kete-job-image` (image e2e with the real `kete`, call order now includes `clone-done`) | pass — https://github.com/kete-org/ketecode/actions/runs/37295413292 |
+| Final head `a1f21f306b` (code unchanged, README/docs only) | pass — `kete-job-entrypoint` 37295949632, `kete-build` 37295949574, `kete-job-image` 37295949587 |
 | `kete-egress` workflow | not triggered (`packages/kete-egress` unchanged) |
 | root `bun run lint` | pass (0 warnings, 0 errors) |
 | `bun run --cwd packages/kete-tools upstream:check` | pass (no upstream file touched) |
