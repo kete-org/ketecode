@@ -117,6 +117,10 @@ tasks {
 
     test {
         useJUnitPlatform()
+        // BridgeTest checks the bridge allowlists against the VS Code relay's, read from its source.
+        val vscodeChat = layout.projectDirectory.file("../kete-vscode/src/chat.ts")
+        inputs.file(vscodeChat).withPathSensitivity(PathSensitivity.NONE)
+        systemProperty("kete.vscodeChat", vscodeChat.asFile.absolutePath)
         testLogging {
             events("failed")
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

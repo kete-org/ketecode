@@ -1,6 +1,7 @@
 package ai.ketecode.jetbrains
 
 import ai.ketecode.jetbrains.core.Bridge
+import ai.ketecode.jetbrains.core.ExternalLinks
 import ai.ketecode.jetbrains.core.Pairing
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
@@ -31,8 +32,9 @@ import javax.swing.SwingConstants
 // `kete serve` with the pairing password only in the URL fragment. The page talks to the plugin through
 // a JBCefJSQuery (in) and `executeJavaScript` (out), carrying the same typed messages as the VS Code
 // relay (core/Bridge.kt). The bridge is injected only into pages from the runtime's origin, messages are
-// accepted only while the browser shows that origin, and navigation anywhere else opens the system
-// browser instead.
+// accepted only while the browser shows that origin and only with the current load's nonce (so a frame
+// of another origin calling the query function directly is ignored), and navigation anywhere else opens
+// the system browser instead, only on a user gesture and at most once a second (core/ExternalLinks.kt).
 
 class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
     private val log = logger<ChatPanel>()
@@ -42,6 +44,11 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
 
     /** The runtime origin the browser was pointed at; null while showing a message. */
     @Volatile private var origin: String? = null
+
+    /** The current page load's bridge nonce (Bridge.open); a new one on every main-frame load start. */
+    @Volatile private var nonce: String? = null
+
+    private val links = ExternalLinks()
 
     /** Whether the web UI has said hello (its bridge is running) since the last load. */
     @Volatile var ready = false
@@ -55,9 +62,10 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
         Disposer.register(this, query)
         query.addHandler { json ->
             // Only while the page is the runtime's web UI; never from another origin.
-            val expected = origin
-            if (expected == null || Pairing.origin(browser.cefBrowser.url ?: "") != expected) return@addHandler null
-            val message = Bridge.parse(json) ?: return@addHandler null
+            if (!showsRuntime()) return@addHandler null
+            // Only with this load's nonce, which only the injected bridge script knows.
+            val current = nonce ?: return@addHandler null
+            val message = Bridge.open(json, current) ?: return@addHandler null
             ApplicationManager.getApplication().invokeLater {
                 if (!project.isDisposed) {
                     if (message is Bridge.Incoming.Hello) ready = true
@@ -68,14 +76,18 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
         }
         browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
             override fun onLoadStart(cefBrowser: CefBrowser?, frame: CefFrame?, transitionType: CefRequest.TransitionType?) {
-                if (frame?.isMain == true) ready = false
+                if (frame?.isMain == true) {
+                    ready = false
+                    nonce = Bridge.newNonce()
+                }
             }
 
             override fun onLoadEnd(cefBrowser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
                 if (cefBrowser == null || frame == null || !frame.isMain) return
                 val expected = origin ?: return
                 if (Pairing.origin(frame.url ?: "") != expected) return
-                cefBrowser.executeJavaScript(Bridge.bridgeScript { expression -> query.inject(expression) }, frame.url, 0)
+                val current = nonce ?: Bridge.newNonce().also { nonce = it }
+                cefBrowser.executeJavaScript(Bridge.bridgeScript(current) { expression -> query.inject(expression) }, frame.url, 0)
             }
         }, browser.cefBrowser)
         browser.jbCefClient.addRequestHandler(object : CefRequestHandlerAdapter() {
@@ -89,14 +101,18 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
                 val url = request?.url ?: return false
                 val expected = origin ?: return false
                 if (Pairing.origin(url) == expected || url.startsWith("about:") || url.startsWith("data:")) return false
-                // Links to anywhere else open in the system browser, never inside the chat.
-                if (frame?.isMain == true && (url.startsWith("https://") || url.startsWith("http://"))) BrowserUtil.browse(url)
+                // Links to anywhere else open in the system browser (only when the user clicked, at most once
+                // a second), never inside the chat.
+                if (links.shouldOpen(url, frame?.isMain == true, userGesture, System.currentTimeMillis())) BrowserUtil.browse(url)
+                else log.debug("blocked a navigation away from the chat (no user gesture, a subframe, or too soon)")
                 return true
             }
         }, browser.cefBrowser)
         browser.jbCefClient.addLifeSpanHandler(object : CefLifeSpanHandlerAdapter() {
             override fun onBeforePopup(cefBrowser: CefBrowser?, frame: CefFrame?, targetUrl: String?, targetFrameName: String?): Boolean {
-                if (targetUrl != null && (targetUrl.startsWith("https://") || targetUrl.startsWith("http://"))) BrowserUtil.browse(targetUrl)
+                // JCEF doesn't tell whether the user started a popup, so none opens anything. Real clicks on
+                // target="_blank" links become page navigations (Bridge.bridgeScript), handled above.
+                log.debug("blocked a popup from the chat")
                 return true
             }
         }, browser.cefBrowser)
@@ -109,6 +125,7 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
     /** Points the browser at the runtime's web UI. */
     fun load(connection: Connection) {
         ready = false
+        nonce = Bridge.newNonce()
         origin = Pairing.origin(connection.url)
         setContent(browser.component)
         browser.loadURL(Pairing.url(connection.url, connection.password))
@@ -116,7 +133,7 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
 
     /** Sends a message to the web UI if it is ready and the message type is allowed; returns whether it was sent. */
     fun post(message: Map<String, Any?>): Boolean {
-        if (!ready) return false
+        if (!ready || !showsRuntime()) return false
         val script = Bridge.deliverScript(message) ?: run {
             log.warn("not sent to the chat (type not allowed): ${message["type"]}")
             return false
@@ -125,10 +142,17 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
         return true
     }
 
+    /** Whether the browser currently shows the runtime's origin (the only page the bridge talks to). */
+    private fun showsRuntime(): Boolean {
+        val expected = origin ?: return false
+        return Pairing.origin(browser.cefBrowser.url ?: "") == expected
+    }
+
     /** Shows a message instead of the chat (starting, or why the chat isn't available), with optional buttons. */
     fun showMessage(text: String, vararg buttons: Pair<String, () -> Unit>) {
         ready = false
         origin = null
+        nonce = null
         setContent(messagePanel(text, *buttons))
     }
 
@@ -142,6 +166,7 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
     override fun dispose() {
         ready = false
         origin = null
+        nonce = null
     }
 
     companion object {
