@@ -5,6 +5,7 @@ verified-at: 139c15e1b2
 ---
 
 ## Quick answers
+- Why does `upstream:check` accept `docs/integrations/*.md` without markers? `isKeteOwned` (`packages/kete-tools/src/lib.ts`) lists `docs/integrations/` (the MCP preset guides) next to `docs/adr/`; upstream has no `docs/` at the pinned tag. A new top-level Kete doc outside these prefixes needs an entry there too.
 - **How is the CLI distributed publicly, and what publishes what?** ADR 0009. `build` also runs
   `distribute public` (artifact `public-release`: every CLI archive + `install.sh` + `install.ps1` +
   their own `SHA256SUMS`, never a `.vsix`). With repository variable `KETE_PUBLIC_DISTRIBUTION=true`,

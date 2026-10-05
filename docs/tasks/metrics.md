@@ -27,3 +27,4 @@ about 10 tasks, drop any agent that isn't saving calls.
 | 2026-10-05 | local-models | large | planner, implementer, build agents (passes B, C), librarian | 0 | – | – | n/a (~89k librarian tokens in pass C) | ~1 day (3 passes) |
 | 2026-10-05 | windsurf (VS Code forks) | medium | one build agent | 0 | – | – | n/a | ~1 h 30 min |
 | 2026-10-05 | jetbrains-plugin | large | one build agent | 0 | – | – | n/a | ~3 h (7 CI rounds) |
+| 2026-10-05 | mcp-presets (Harness, Slack) | medium | one build agent | 0 | – | – | n/a | ~2 h |

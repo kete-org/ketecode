@@ -1,9 +1,10 @@
 ---
 module: local-models
 paths: [packages/core/src/kete/local-hosts.ts, packages/core/src/kete/local-models.ts, packages/core/src/kete/offline.ts, packages/util/src/kete/offline.ts, packages/util/src/kete/local-picker.ts, packages/schema/src/kete/local-models.ts, packages/cli/src/kete/offline.ts, packages/cli/src/kete/offline-startup.ts, packages/cli/src/kete/models-pull.ts, packages/cli/src/kete/models-list.ts, packages/tui/src/kete/local-models.ts, packages/tui/src/kete/local-offer.tsx, packages/tui/src/kete/local-status.tsx, packages/app/src/kete/local-models.ts, packages/app/src/kete/local-ui.tsx]
-verified-at: 8a2747cd4d
+verified-at: 4e26b57120
 ---
 ## Quick answers
+- Does offline mode touch stdio MCP servers? Only the built-in presets' (`kete mcp add harness`): `KeteOffline.skip` (`core/src/kete/offline.ts:94`) disables remote servers plus any local server `KeteMcpPresets.detect` recognises, and the plugin logs `KeteMcpPresets.offlineMessage` once per distinct set. See the `mcp-presets` card.
 - How does a remote Ollama/LM Studio/vLLM host get in? `KeteLocalHosts.origin(provider)` (`core/src/kete/local-hosts.ts:79`) is passed as the `origin` of the upstream plugins (`core/src/plugin/provider/{ollama.ts:219,lmstudio.ts:151,vllm.ts:137}`); a configured `providers.<id>.settings.baseURL` still wins because upstream's `configured()` checks config first. Variables and order: `local-hosts.ts:27`.
 - How do clients read local server status? Plugin RPC `kete.local-models`, methods `status` and `rediscover` (`schema/src/kete/local-models.ts:58-72`), registered with `ctx.rpc.register` (`core/src/kete/local-models.ts:406`), served by the existing `POST /api/rpc/:rpcID/:method` (no new endpoint). The plugin event stream carries `rpc.*` events (`core/src/plugin/host.ts:256-264`).
 - Why raw `client.rpc.call` plus a decode? The promise client's typed `client.rpc(Definition)` (`client/src/promise/rpc.ts`) only accepts Standard Schema definitions; ours uses Effect Schema, so CLI/TUI/web call `rpc.call` and decode against `KeteLocalModelsRpc.Status` (`tui/src/kete/local-models.ts:19`, `app/src/kete/local-models.ts:19`, `cli/src/kete/models-pull.ts`).

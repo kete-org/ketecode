@@ -13246,6 +13246,21 @@
                 "additionalProperties": {
                   "$ref": "#/components/schemas/ConfigKete.WorkflowEncoded"
                 }
+              },
+              "integrations": {
+                "type": "object",
+                "properties": {
+                  "slack": {
+                    "type": "object",
+                    "properties": {
+                      "clientId": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

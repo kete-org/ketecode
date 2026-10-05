@@ -66,6 +66,13 @@ the same PR.
   anything breaking ships as `/api/v2`. Re-copy from the platform and diff
   `contract.ts` against it on every platform sync-v1 change.
 
+- **Pending field `integrations` (MCP presets task, 2026-10-05):** the runtime already accepts an
+  optional `integrations` object (`packages/util/src/kete/sync/contract.ts:148`, `Schema.Unknown`) and
+  reads `integrations.slack.client_id` for `kete mcp add slack`
+  (`packages/util/src/kete/sync/integrations.ts`); absent or any other shape means "no organization
+  Slack app". kete-code-platform's Slack task adds the field; copy the updated `sync-v1.md` here and
+  tighten the schema once it ships.
+
 ## 3. Runtime registration (`PUT /api/v1/runtimes/{installation_id}`)
 
 - **Client/contract in one file:** `packages/util/src/kete/runtime-registration.ts` — no

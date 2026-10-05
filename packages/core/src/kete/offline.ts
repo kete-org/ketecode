@@ -6,14 +6,18 @@
 // - Only local models stay: Ollama, LM Studio, vLLM, and providers whose base URL is a loopback or
 //   private-network IP literal (or `localhost`). Everything else is removed from the model list, the
 //   only place requests resolve a model from, and refused again by the runner check (run-checks.ts).
-// - Remote (URL) MCP servers, including synced ones, are disabled; stdio servers keep working.
+// - Remote (URL) MCP servers, including synced ones, are disabled; stdio servers keep working, except
+//   the built-in presets' (`kete mcp add harness`), which reach the internet. Skipped presets are logged
+//   with `KeteMcpPresets.offlineMessage`.
 // - `webfetch` and `websearch` are removed from every request and refused if called anyway.
 // Offline never touches a permission rule or policy: it only removes models, servers and tools, so
 // cached organization policy applies exactly as online.
 
 export * as KeteOffline from "./offline.js"
 
+import type { Plugin as PluginContextNamespace } from "@opencode/plugin/effect"
 import { define } from "@opencode/plugin/effect/plugin"
+import { KeteMcpPresets } from "@opencode/schema/kete/mcp-presets"
 import { Tool } from "@opencode/schema/tool"
 import { KeteOffline as OfflineFlag } from "@opencode/util/kete/offline"
 import { Effect, Exit } from "effect"
@@ -84,6 +88,22 @@ export function refusal(providerID: string, modelID: string): string {
 
 export const webRefusal = "Offline mode: web access is off (webfetch and websearch need the network)."
 
+type ServerEditor = Parameters<Parameters<PluginContextNamespace.Context["mcp"]["transform"]>[0]>[0]
+
+/** Disables remote servers and the network-bound presets' stdio servers; returns the presets skipped. */
+export function skip(editor: ServerEditor): string[] {
+  const presets: string[] = []
+  for (const [name, server] of editor.list()) {
+    const preset = KeteMcpPresets.detect(server)
+    if (server.type !== "remote" && preset === undefined) continue
+    if (preset !== undefined && server.disabled !== true) presets.push(name)
+    editor.update(name, (item) => {
+      item.disabled = true
+    })
+  }
+  return presets
+}
+
 export const Plugin = define({
   id,
   effect: Effect.fn("KeteOffline.Plugin")(function* (ctx) {
@@ -114,14 +134,16 @@ export const Plugin = define({
       }
     })
 
+    const log = Effect.runForkWith(yield* Effect.context())
+    const reported = { last: "" }
     yield* ctx.mcp.transform((editor) => {
       if (!current()) return
-      for (const [name, server] of editor.list()) {
-        if (server.type !== "remote") continue
-        editor.update(name, (item) => {
-          item.disabled = true
-        })
-      }
+      const presets = skip(editor)
+      // Rebuilds run often; say it once per distinct set of skipped presets.
+      const key = presets.join("\u0000")
+      if (presets.length === 0 || key === reported.last) return
+      reported.last = key
+      log(Effect.logWarning(KeteMcpPresets.offlineMessage(presets)))
     })
 
     const removeWebTools = (event: { tools: Record<string, unknown> }) =>
