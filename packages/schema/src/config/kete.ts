@@ -79,6 +79,13 @@ export class Integrations extends Schema.Class<Integrations>("ConfigKete.Integra
   slack: SlackIntegration.pipe(optional).annotate({ description: "The Slack MCP preset" }),
 }) {}
 
+export class Unattended extends Schema.Class<Unattended>("ConfigKete.Unattended")({
+  passEnv: Schema.String.pipe(Schema.Array, optional).annotate({
+    description:
+      "Environment variables an unattended run's shell commands keep although they look like credentials (e.g. NPM_TOKEN for a private registry). Kete's own credentials are never passed. kete job run refuses a repository config that sets it unless the run trusts that config (--trust-project-config).",
+  }),
+}) {}
+
 export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   offline: Schema.Boolean.pipe(optional).annotate({
     description:
@@ -93,5 +100,8 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   }),
   integrations: Integrations.pipe(optional).annotate({
     description: "Settings for the built-in MCP presets (`kete mcp presets`)",
+  }),
+  unattended: Unattended.pipe(optional).annotate({
+    description: "Settings for unattended runs (kete job run)",
   }),
 }) {}

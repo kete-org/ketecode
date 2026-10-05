@@ -2175,6 +2175,7 @@ export type ConfigEntry =
             }
           }
           integrations?: { slack?: { clientId?: string } }
+          unattended?: { passEnv?: Array<string> }
         }
       }
     }

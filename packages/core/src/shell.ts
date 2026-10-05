@@ -22,6 +22,7 @@ import { SessionSchema } from "./session/schema.js"
 import { Config } from "./config.js"
 import { ToolOutput } from "./tool-output.js"
 import { ShellResult } from "./shell/result.js"
+import { KeteToolEnv } from "./kete/tool-env.js" // kete_change
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.NotFoundError", {
   id: Shell.ID,
@@ -263,7 +264,7 @@ const layer = () =>
           timeout: input.timeout ?? 0,
           shell: input.shell ?? (yield* shell.resolve({ priority: "config" })),
           env: {
-            ...(sessionEnvironment ?? process.env),
+            ...KeteToolEnv.withoutKeteCredentials(sessionEnvironment ?? process.env), // kete_change: never Kete's own credentials
             TERM: "xterm-256color",
             OPENCODE_TERMINAL: "1",
             [`${Brand.envPrefix}TERMINAL`]: "1", // kete_change
