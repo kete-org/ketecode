@@ -4,15 +4,21 @@
 // step writes the spec, starts it with a minimal environment, copies its (already redacted) audit
 // log into the workspace as an artifact, writes a redacted summary, and optionally commits the
 // worktree and pushes it to a NEW branch.
+//
+// Model keys never go into the agent's environment: kete's shell tool hands every command the whole
+// server environment (core/src/shell.ts), and nothing in `kete job run` outside job mode removes keys
+// from it. Each key goes into its own 0600 file in a 0700 directory outside the workspace, and the
+// provider config (`KETE_CONFIG_CONTENT`) references it with `{file:...}`, which kete reads when it
+// loads its config. The directory is deleted when the run ends.
 
 import { spawn } from "node:child_process"
 import {
   accessSync,
   constants,
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -22,6 +28,7 @@ import path from "node:path"
 import { KeteRedact } from "@opencode/util/kete/redact"
 import { Git } from "./git.js"
 import { Outputs } from "./outputs.js"
+import { Secrets } from "./secrets.js"
 import { Settings } from "./settings.js"
 import { Task } from "./task.js"
 
@@ -38,15 +45,15 @@ export type Deps = {
   readonly env: Env
   /** The `kete` executable (the image's /usr/local/bin/kete, or `kete` on PATH). */
   readonly kete: string
+  /** Prints one line; the caller redacts it (main's logger does). */
   readonly log: (line: string) => void
+  readonly redact: Secrets.Redactor
   /** Extra time after the run's own limit before the step stops `kete` itself. */
   readonly graceMs?: number
 }
 
 /** The provider id the step defines for `PLUGIN_MODEL_URL` (an OpenAI-compatible endpoint). */
 export const endpointProvider = "endpoint"
-// Not KETE_*: kete renames those to its internal names at startup, and the config reference would miss it.
-const endpointKeyVariable = "PIPELINE_MODEL_ENDPOINT_KEY"
 
 /** kete's result v1 (docs/jobs.md "Output"); only the fields this step reads. */
 type JobResult = {
@@ -68,8 +75,19 @@ export function workspace(env: Env): string {
 
 export async function run(settings: Settings.RunSettings, deps: Deps): Promise<Report> {
   const env = deps.env
+  const redact = deps.redact
   const root = realpathSync(workspace(env))
   const targetBranch = env.DRONE_TARGET_BRANCH?.trim() || undefined
+  const gitContext: Git.Context = { env: sanitize(env), redact }
+  const report = (exit: Outputs.ExitCode, outcome: string, summary: string, branch: string): Report => ({
+    exit,
+    values: {
+      KETE_OUTCOME: outcome,
+      KETE_SUMMARY: Outputs.oneLine(summary, redact),
+      KETE_BRANCH: branch,
+      KETE_JOB_URL: "",
+    },
+  })
   const refuse = (message: string): Report => {
     deps.log(`refused: ${message}`)
     return report(2, "refused", message, "")
@@ -89,24 +107,38 @@ export async function run(settings: Settings.RunSettings, deps: Deps): Promise<R
 
   let built: Task.Built
   try {
-    built = Task.build(settings, { workspace: root, targetBranch })
+    const latestTag =
+      settings.preset === "release-notes" && settings.base === undefined ? Git.latestTag(root, gitContext) : undefined
+    built = Task.build(settings, { workspace: root, targetBranch, latestTag, redact })
   } catch (error) {
     if (error instanceof Task.TaskError) return refuse(error.message)
     throw error
   }
 
+  // Everything a push depends on is read before the agent runs and can change the repository.
   let branch: string | undefined
-  if (settings.pushBranch !== undefined && settings.pushBranch !== "generated") {
-    if (Git.protectedBranches(root, env).has(settings.pushBranch))
-      return refuse(
-        `PLUGIN_PUSH_BRANCH names a protected branch (the target, default or current branch); push to a new branch instead.`,
-      )
-    branch = settings.pushBranch
+  let push: { readonly remote: Git.Remote; readonly protected: Set<string> } | undefined
+  if (settings.pushBranch !== undefined) {
+    const protectedNames = Git.protectedBranches(root, gitContext)
+    if (settings.pushBranch !== "generated") {
+      if (Git.isProtected(protectedNames, settings.pushBranch))
+        return refuse(
+          `PLUGIN_PUSH_BRANCH names a protected branch (the target, default or current branch); push to a new branch instead.`,
+        )
+      branch = settings.pushBranch
+    }
+    const origin = Git.originURL(root, gitContext)
+    if (origin.kind === "invalid") return refuse(`PLUGIN_PUSH_BRANCH: ${origin.message}`)
+    push = { remote: origin.remote, protected: protectedNames }
   }
 
   const output = outputDirectory(root, settings.outputDir)
   const temp = mkdtempSync(path.join(tmpdir(), "kete-harness-"))
   try {
+    // The key files must not be reachable from the workspace kete works in.
+    const fromRoot = path.relative(root, realpathSync(temp))
+    if (!fromRoot.startsWith("..") && !path.isAbsolute(fromRoot))
+      return refuse("the temporary directory (TMPDIR) is inside the workspace; point TMPDIR outside it.")
     const specPath = path.join(temp, "job.json")
     const model = settings.access.kind === "endpoint" ? `${endpointProvider}/${settings.model}` : settings.model
     const spec = {
@@ -122,9 +154,9 @@ export async function run(settings: Settings.RunSettings, deps: Deps): Promise<R
       `starting kete job run: budget ${settings.budget} USD, time limit ${settings.timeout} min, ${built.allow.length} allow rule(s)${model ? `, model ${model}` : ""}`,
     )
 
-    const child = await spawnKete(deps.kete, specPath, root, keteEnv(settings, env), {
+    const child = await spawnKete(deps.kete, specPath, root, keteEnv(settings, env, path.join(temp, "keys")), {
       limitMs: settings.timeout * 60_000 + (deps.graceMs ?? 5 * 60_000),
-      log: deps.log,
+      log: (line) => deps.log(redact(line)),
     })
     const result = parseResult(child.stdout)
     if (!result) {
@@ -132,24 +164,22 @@ export async function run(settings: Settings.RunSettings, deps: Deps): Promise<R
         ? "kete job run didn't finish within its time limit"
         : `kete job run exited ${child.code} without a result`
       deps.log(`error: ${why}`)
-      writeSummary(output, `## Kete Code: error\n\n${why}\n`)
+      Outputs.writeArtifact(output, "summary.md", `## Kete Code: error\n\n${why}\n`)
       return report(1, child.timedOut ? "time_limit" : "error", why, "")
     }
 
     const outcome = typeof result.outcome === "string" ? result.outcome : "error"
     const text =
       typeof result.text === "string" ? result.text : typeof result.message === "string" ? result.message : ""
-    const auditCopied = copyAudit(result, output)
-    writeFileSync(path.join(output, "result.json"), JSON.stringify(KeteRedact.deep(result), null, 2) + "\n", {
-      mode: 0o644,
-    })
+    const auditCopied = copyAudit(result, output, redact)
+    Outputs.writeArtifact(output, "result.json", Secrets.json(result, redact) + "\n")
 
     let exit = Outputs.exitCode(outcome)
     let finalOutcome = outcome
     let pushed = ""
     const notes: string[] = []
     if (!auditCopied) notes.push("No audit log was available to copy.")
-    if (settings.pushBranch !== undefined) {
+    if (push !== undefined) {
       const wt = typeof result.worktree === "string" ? result.worktree : undefined
       const runBranch = typeof result.branch === "string" ? result.branch : undefined
       if (outcome !== "completed") notes.push("Nothing was pushed: the run didn't complete.")
@@ -159,13 +189,17 @@ export async function run(settings: Settings.RunSettings, deps: Deps): Promise<R
         notes.push("Nothing was pushed: the run had no worktree and branch (is the workspace a git repository?).")
       } else {
         const target = branch ?? runBranch
-        const push = commitAndPush(settings, wt, target, root, env, built.prompt)
-        notes.push(push.note)
-        if (push.kind === "pushed") pushed = target
-        else if (push.kind === "refused") {
+        const published = commitAndPush(
+          settings,
+          { worktree: wt, branch: target, root, push, env, prompt: built.prompt },
+          gitContext,
+        )
+        notes.push(published.note)
+        if (published.kind === "pushed") pushed = target
+        else if (published.kind === "refused") {
           finalOutcome = "push_refused"
           exit = 2
-        } else if (push.kind === "failed") {
+        } else if (published.kind === "failed") {
           finalOutcome = "push_failed"
           exit = 1
         }
@@ -174,8 +208,9 @@ export async function run(settings: Settings.RunSettings, deps: Deps): Promise<R
 
     const cost = typeof result.cost_usd === "number" ? result.cost_usd : undefined
     const denied = Array.isArray(result.denied) ? result.denied.length : 0
-    writeSummary(
+    Outputs.writeArtifact(
       output,
+      "summary.md",
       [
         `## Kete Code: ${finalOutcome}`,
         "",
@@ -183,7 +218,7 @@ export async function run(settings: Settings.RunSettings, deps: Deps): Promise<R
         ...(pushed ? [`- Pushed to new branch \`${pushed}\``] : []),
         ...notes.map((n) => `- ${n}`),
         "",
-        KeteRedact.text(text),
+        redact(text),
         "",
       ].join("\n"),
     )
@@ -193,13 +228,6 @@ export async function run(settings: Settings.RunSettings, deps: Deps): Promise<R
     return report(exit, finalOutcome, text, pushed)
   } finally {
     rmSync(temp, { recursive: true, force: true })
-  }
-}
-
-function report(exit: Outputs.ExitCode, outcome: string, summary: string, branch: string): Report {
-  return {
-    exit,
-    values: { KETE_OUTCOME: outcome, KETE_SUMMARY: Outputs.oneLine(summary), KETE_BRANCH: branch, KETE_JOB_URL: "" },
   }
 }
 
@@ -214,13 +242,11 @@ export function outputDirectory(root: string, relative: string): string {
   return real
 }
 
-function writeSummary(output: string, text: string) {
-  writeFileSync(path.join(output, "summary.md"), text, { mode: 0o644 })
-}
-
-function copyAudit(result: JobResult, output: string): boolean {
+/** Copies kete's audit log (already redacted by the runtime) through the step's redactor as well. */
+function copyAudit(result: JobResult, output: string, redact: Secrets.Redactor): boolean {
   if (typeof result.audit_log !== "string" || result.audit_local !== true || !existsSync(result.audit_log)) return false
-  copyFileSync(result.audit_log, path.join(output, "audit.jsonl"))
+  const text = readFileSync(result.audit_log, "utf8")
+  Outputs.writeArtifact(output, "audit.jsonl", text.split("\n").map(redact).join("\n"))
   return true
 }
 
@@ -228,32 +254,42 @@ type PushOutcome = { kind: "pushed" | "no_changes" | "refused" | "failed"; note:
 
 function commitAndPush(
   settings: Settings.RunSettings,
-  worktree: string,
-  branch: string,
-  root: string,
-  env: Env,
-  prompt: string,
+  input: {
+    readonly worktree: string
+    readonly branch: string
+    readonly root: string
+    readonly push: { readonly remote: Git.Remote; readonly protected: Set<string> }
+    readonly env: Env
+    readonly prompt: string
+  },
+  ctx: Git.Context,
 ): PushOutcome {
-  if (Git.protectedBranches(root, env).has(branch))
-    return { kind: "refused", note: `Not pushed: ${branch} is a protected branch.` }
-  const gitEnv = sanitize(env)
-  const title = settings.preset ? `kete: ${settings.preset}` : `kete: ${prompt.split("\n")[0]!.slice(0, 60)}`
-  const commit = Git.commitAll(
-    worktree,
-    `${title}\n\nMade by Kete Code in a Harness pipeline step.`,
-    { name: settings.authorName, email: settings.authorEmail },
-    gitEnv,
+  // The names read before the run, plus any the workspace has now (more protection, never less).
+  if (
+    Git.isProtected(input.push.protected, input.branch) ||
+    Git.isProtected(Git.protectedBranches(input.root, ctx), input.branch)
   )
-  if (commit.kind === "no_changes") return { kind: "no_changes", note: "Nothing was pushed: the run changed no files." }
-  if (commit.kind === "failed") return { kind: "failed", note: `Not pushed: ${commit.message}` }
-  const push = Git.pushNew(worktree, branch, gitEnv, env)
-  if (push.kind === "pushed") return { kind: "pushed", note: `Commit ${commit.sha.slice(0, 12)}.` }
-  if (push.kind === "exists")
+    return { kind: "refused", note: `Not pushed: ${input.branch} is a protected branch.` }
+  const title = settings.preset ? `kete: ${settings.preset}` : `kete: ${input.prompt.split("\n")[0]!.slice(0, 60)}`
+  const result = Git.publish(
+    {
+      worktree: input.worktree,
+      branch: input.branch,
+      remote: input.push.remote,
+      message: `${title}\n\nMade by Kete Code in a Harness pipeline step.`,
+      author: { name: settings.authorName, email: settings.authorEmail },
+      credentials: input.env,
+    },
+    ctx,
+  )
+  if (result.kind === "no_changes") return { kind: "no_changes", note: "Nothing was pushed: the run changed no files." }
+  if (result.kind === "pushed") return { kind: "pushed", note: `Commit ${result.sha.slice(0, 12)}.` }
+  if (result.kind === "exists")
     return {
       kind: "refused",
-      note: `Not pushed: branch ${branch} already exists on the remote; the step only creates new branches.`,
+      note: `Not pushed: branch ${input.branch} already exists on the remote; the step only creates new branches.`,
     }
-  return { kind: "failed", note: `Not pushed: ${push.message}` }
+  return { kind: "failed", note: `Not pushed: ${result.message}` }
 }
 
 /**
@@ -271,29 +307,40 @@ export function sanitize(env: Env): Record<string, string> {
   return out
 }
 
-export function keteEnv(settings: Settings.RunSettings, env: Env): Record<string, string> {
+/**
+ * The agent's environment: `sanitize`d, plus the model access as config whose keys are `{file:...}`
+ * references to 0600 files written into `keyDir` (created 0700; the caller deletes it). No key value
+ * is in the returned environment.
+ */
+export function keteEnv(settings: Settings.RunSettings, env: Env, keyDir: string): Record<string, string> {
   const out = sanitize(env)
   // Never self-update inside a pipeline step; the image pins its kete.
   out.KETE_DISABLE_AUTOUPDATE = "1"
-  out.KETE_PLATFORM_URL = settings.platformURL
+  if (settings.platformURL !== undefined) out.KETE_PLATFORM_URL = settings.platformURL
+  mkdirSync(keyDir, { recursive: true, mode: 0o700 })
+  const keyFile = (name: string, key: string) => {
+    const file = path.join(keyDir, name)
+    writeFileSync(file, key, { mode: 0o600, flag: "wx" })
+    // Forward slashes: kete's `{file:}` reference is config text (and Windows accepts them).
+    return `{file:${file.replace(/\\/g, "/")}}`
+  }
   const access = settings.access
+  const providers: Record<string, unknown> = {}
   if (access.kind === "gateway") {
     out.KETE_GATEWAY_URL = access.gatewayURL
-    out.KETE_GATEWAY_KEY = access.key
+    providers.kete = { settings: { apiKey: keyFile("kete", access.key) } }
   } else if (access.kind === "providers") {
-    Object.assign(out, access.env)
+    for (const [id, key] of Object.entries(access.keys)) providers[id] = { settings: { apiKey: keyFile(id, key) } }
   } else {
-    // An OpenAI-compatible endpoint as a custom provider (docs/local-models.md); the key, if any, is
-    // referenced from the environment rather than written into the config text.
-    const provider: Record<string, unknown> = {
+    // An OpenAI-compatible endpoint as a custom provider (docs/local-models.md).
+    providers[endpointProvider] = {
       name: "Pipeline model endpoint",
       package: "aisdk:@ai-sdk/openai-compatible",
-      settings: { baseURL: access.url, ...(access.key ? { apiKey: `{env:${endpointKeyVariable}}` } : {}) },
+      settings: { baseURL: access.url, ...(access.key ? { apiKey: keyFile(endpointProvider, access.key) } : {}) },
       models: { [settings.model ?? ""]: {} },
     }
-    out.KETE_CONFIG_CONTENT = JSON.stringify({ providers: { [endpointProvider]: provider } })
-    if (access.key) out[endpointKeyVariable] = access.key
   }
+  out.KETE_CONFIG_CONTENT = JSON.stringify({ providers })
   return out
 }
 
@@ -326,7 +373,7 @@ function spawnKete(
       pending += chunk
       const lines = pending.split("\n")
       pending = lines.pop() ?? ""
-      for (const line of lines) opts.log(`kete: ${KeteRedact.text(line)}`)
+      for (const line of lines) opts.log(`kete: ${line}`)
     })
     const stop = () => {
       child.kill("SIGTERM")
@@ -352,7 +399,7 @@ function spawnKete(
     })
     child.on("close", (code) => {
       done()
-      if (pending) opts.log(`kete: ${KeteRedact.text(pending)}`)
+      if (pending) opts.log(`kete: ${pending}`)
       resolve({ code, stdout, timedOut })
     })
   })

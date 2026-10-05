@@ -2,14 +2,17 @@
 // (`POST /api/v1/jobs`, docs/platform/jobs-v1.md) on a repository connected to a Kete project, then
 // polls `GET /api/v1/jobs/{id}` with backoff until the job is terminal or the step's own wait limit
 // (the job's time limit plus a grace period for provisioning and finishing) passes, in which case
-// it asks the platform to cancel the job. The Kete API key goes only into the Authorization header.
+// it asks the platform to cancel the job. A cancelled step (SIGTERM from the runner, or Ctrl-C:
+// `abort`) and a step that loses the job's status both ask the platform to cancel the job too, so
+// no cloud job outlives the step that started it. The Kete API key goes only into the Authorization
+// header.
 
 import { randomUUID } from "node:crypto"
-import { realpathSync, writeFileSync } from "node:fs"
-import path from "node:path"
-import { KeteRedact } from "@opencode/util/kete/redact"
+import { realpathSync } from "node:fs"
+import { Git } from "./git.js"
 import { Outputs } from "./outputs.js"
 import { Run } from "./run.js"
+import type { Secrets } from "./secrets.js"
 import { Settings } from "./settings.js"
 import { Task } from "./task.js"
 
@@ -18,7 +21,11 @@ export * as Cloud from "./cloud.js"
 export type Deps = {
   readonly env: Readonly<Record<string, string | undefined>>
   readonly fetch: typeof fetch
+  /** Prints one line; the caller redacts it (main's logger does). */
   readonly log: (line: string) => void
+  readonly redact: Secrets.Redactor
+  /** Aborted when the step is cancelled (SIGTERM, SIGINT): the job is cancelled and the step ends. */
+  readonly abort?: AbortSignal
   readonly sleep?: (ms: number) => Promise<void>
   readonly now?: () => number
   /** Poll backoff: first wait, multiplier and cap. */
@@ -26,6 +33,8 @@ export type Deps = {
   /** Wait beyond the job's time limit for provisioning and finishing. */
   readonly graceMs?: number
   readonly requestTimeoutMs?: number
+  /** The cancel request's own, shorter limit: a cancelled step has little time left. */
+  readonly cancelTimeoutMs?: number
 }
 
 export const terminal = ["succeeded", "failed", "cancelled", "timed_out"] as const
@@ -54,8 +63,29 @@ class ApiError extends Error {
   }
 }
 
+/** A platform error code goes into the outputs only when it looks like one. */
+export function errorCode(raw: unknown, status: number): string {
+  return typeof raw === "string" && /^[a-z0-9_]{1,60}$/.test(raw) ? raw : `http_${status}`
+}
+
 export async function run(settings: Settings.CloudSettings, deps: Deps): Promise<Report> {
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  const redact = deps.redact
+  const abort = deps.abort
+  const baseSleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  // Sleeps end early when the step is cancelled.
+  const sleep = (ms: number) =>
+    abort === undefined
+      ? baseSleep(ms)
+      : abort.aborted
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            const done = () => {
+              abort.removeEventListener("abort", done)
+              resolve()
+            }
+            abort.addEventListener("abort", done)
+            baseSleep(ms).then(done, done)
+          })
   const now = deps.now ?? Date.now
   const poll = deps.poll ?? { initialMs: 5_000, factor: 1.5, maxMs: 30_000 }
   const root = realpathSync(Run.workspace(deps.env))
@@ -66,23 +96,20 @@ export async function run(settings: Settings.CloudSettings, deps: Deps): Promise
     summary: string,
     extra: { url?: string; branch?: string; lines?: string[] } = {},
   ): Report => {
-    writeFileSync(
-      path.join(output, "summary.md"),
-      [
-        `## Kete Code cloud job: ${outcome}`,
-        "",
-        ...(extra.lines ?? []).map((l) => `- ${l}`),
-        "",
-        KeteRedact.text(summary),
-        "",
-      ].join("\n"),
-      { mode: 0o644 },
+    Outputs.writeArtifact(
+      output,
+      "summary.md",
+      redact(
+        [`## Kete Code cloud job: ${outcome}`, "", ...(extra.lines ?? []).map((l) => `- ${l}`), "", summary, ""].join(
+          "\n",
+        ),
+      ),
     )
     return {
       exit,
       values: {
         KETE_OUTCOME: outcome,
-        KETE_SUMMARY: Outputs.oneLine(summary),
+        KETE_SUMMARY: Outputs.oneLine(summary, redact),
         KETE_BRANCH: extra.branch ?? "",
         KETE_JOB_URL: extra.url ?? "",
       },
@@ -91,7 +118,16 @@ export async function run(settings: Settings.CloudSettings, deps: Deps): Promise
 
   let built: Task.Built
   try {
-    built = Task.build(settings, { workspace: root, targetBranch: deps.env.DRONE_TARGET_BRANCH?.trim() || undefined })
+    const latestTag =
+      settings.preset === "release-notes" && settings.base === undefined
+        ? Git.latestTag(root, { env: Run.sanitize(deps.env), redact })
+        : undefined
+    built = Task.build(settings, {
+      workspace: root,
+      targetBranch: deps.env.DRONE_TARGET_BRANCH?.trim() || undefined,
+      latestTag,
+      redact,
+    })
   } catch (error) {
     if (error instanceof Task.TaskError) {
       deps.log(`refused: ${error.message}`)
@@ -100,6 +136,10 @@ export async function run(settings: Settings.CloudSettings, deps: Deps): Promise
     throw error
   }
 
+  if (abort?.aborted) {
+    deps.log("the step was cancelled before the job was started")
+    return finish(1, "step_cancelled", "The step was cancelled before the cloud job was started.")
+  }
   const api = client(settings, deps, sleep)
   const body = {
     project_id: settings.project,
@@ -134,26 +174,42 @@ export async function run(settings: Settings.CloudSettings, deps: Deps): Promise
       )
     }
     const message = error instanceof Error ? error.message : String(error)
-    deps.log(`error: couldn't reach the Kete platform: ${KeteRedact.text(message)}`)
-    return finish(1, "error", `Couldn't reach the Kete platform: ${KeteRedact.text(message)}`)
+    deps.log(`error: couldn't reach the Kete platform: ${message}`)
+    return finish(1, "error", `Couldn't reach the Kete platform: ${message}`)
   }
 
   const url = `${settings.baseURL}/jobs/${job.id}`
   deps.log(`started cloud job ${job.id}: ${url}`)
+  /** Best effort, bounded by `cancelTimeoutMs`: a failure is logged, never thrown. */
+  const cancel = async (why: string) => {
+    deps.log(`${why}; asking the platform to cancel job ${job.id}`)
+    try {
+      await api.cancel(job.id)
+      return true
+    } catch (error) {
+      deps.log(`cancel failed: ${error instanceof Error ? error.message : String(error)}`)
+      return false
+    }
+  }
+  const cancelled = async () => {
+    const ok = await cancel("the step was cancelled")
+    return finish(
+      1,
+      "step_cancelled",
+      ok
+        ? "The step was cancelled; cancellation of the cloud job was requested."
+        : `The step was cancelled; cancelling the cloud job failed, so it may still be running: ${url}`,
+      { url, lines: [`Job: ${url}`] },
+    )
+  }
   const deadline = now() + settings.timeout * 60_000 + (deps.graceMs ?? 15 * 60_000)
   let wait = poll.initialMs
   let failures = 0
   let lastStatus = job.status
   while (!(terminal as readonly string[]).includes(job.status)) {
+    if (abort?.aborted) return cancelled()
     if (now() >= deadline) {
-      deps.log(
-        `the job didn't finish within ${settings.timeout} min plus the grace period; asking the platform to cancel it`,
-      )
-      await api
-        .cancel(job.id)
-        .catch((error: unknown) =>
-          deps.log(`cancel failed: ${KeteRedact.text(error instanceof Error ? error.message : String(error))}`),
-        )
+      await cancel(`the job didn't finish within ${settings.timeout} min plus the grace period`)
       return finish(
         1,
         "time_limit",
@@ -165,6 +221,7 @@ export async function run(settings: Settings.CloudSettings, deps: Deps): Promise
       )
     }
     await sleep(Math.min(wait, Math.max(0, deadline - now())))
+    if (abort?.aborted) return cancelled()
     wait = Math.min(Math.round(wait * poll.factor), poll.maxMs)
     try {
       job = await api.get(job.id)
@@ -180,13 +237,18 @@ export async function run(settings: Settings.CloudSettings, deps: Deps): Promise
         })
       }
       if (failures >= 6) {
-        deps.log(`error: status requests keep failing: ${KeteRedact.text(message)}`)
-        return finish(1, "error", `Status requests kept failing; the job may still be running: ${url}`, {
-          url,
-          lines: [`Job: ${url}`],
-        })
+        deps.log(`error: status requests keep failing: ${message}`)
+        const ok = await cancel("the step can't follow the job any more")
+        return finish(
+          1,
+          "error",
+          ok
+            ? "Status requests kept failing; cancellation of the cloud job was requested."
+            : `Status requests kept failing and cancelling failed; the job may still be running: ${url}`,
+          { url, lines: [`Job: ${url}`] },
+        )
       }
-      deps.log(`status request failed (${failures}), retrying: ${KeteRedact.text(message)}`)
+      deps.log(`status request failed (${failures}), retrying: ${message}`)
       continue
     }
     if (job.status !== lastStatus) {
@@ -213,17 +275,24 @@ export async function run(settings: Settings.CloudSettings, deps: Deps): Promise
 
 function client(settings: Settings.CloudSettings, deps: Deps, sleep: (ms: number) => Promise<void>) {
   const timeoutMs = deps.requestTimeoutMs ?? 30_000
+  const cancelTimeoutMs = deps.cancelTimeoutMs ?? 10_000
   const headers = {
     authorization: `Bearer ${settings.key}`,
     accept: "application/json",
     "user-agent": "kete-harness-plugin",
   }
-  const call = async (method: string, route: string, body?: unknown, extra: Record<string, string> = {}) => {
+  const call = async (
+    method: string,
+    route: string,
+    body?: unknown,
+    extra: Record<string, string> = {},
+    limitMs = timeoutMs,
+  ) => {
     const response = await deps.fetch(`${settings.baseURL}${route}`, {
       method,
       headers: { ...headers, ...(body !== undefined ? { "content-type": "application/json" } : {}), ...extra },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(limitMs),
       redirect: "error",
     })
     const text = await response.text()
@@ -235,8 +304,8 @@ function client(settings: Settings.CloudSettings, deps: Deps, sleep: (ms: number
     }
     if (!response.ok) {
       const error = (json as { error?: { code?: unknown; message?: unknown } } | undefined)?.error
-      const code = typeof error?.code === "string" ? error.code.slice(0, 60) : `http_${response.status}`
-      const message = typeof error?.message === "string" ? KeteRedact.text(error.message).slice(0, 500) : "no details"
+      const code = errorCode(error?.code, response.status)
+      const message = typeof error?.message === "string" ? deps.redact(error.message).slice(0, 500) : "no details"
       throw new ApiError(response.status, code, message)
     }
     return json
@@ -259,7 +328,7 @@ function client(settings: Settings.CloudSettings, deps: Deps, sleep: (ms: number
     create: (body: unknown, idempotencyKey: string) =>
       retrying(() => call("POST", "/api/v1/jobs", body, { "idempotency-key": idempotencyKey })).then(parseJob),
     get: (id: string) => call("GET", `/api/v1/jobs/${id}`).then(parseJob),
-    cancel: (id: string) => call("POST", `/api/v1/jobs/${id}/cancel`),
+    cancel: (id: string) => call("POST", `/api/v1/jobs/${id}/cancel`, undefined, {}, cancelTimeoutMs),
   }
 }
 

@@ -12,10 +12,11 @@ export type AllowRule = { readonly action: string; readonly resource: string }
 export type Preset = "fix-build" | "review" | "release-notes"
 export const presets: readonly Preset[] = ["fix-build", "review", "release-notes"]
 
-/** Where `run` mode's model access comes from. Keys are kept here only to hand to `kete`'s environment. */
+/** Where `run` mode's model access comes from. Keys are kept here only to hand to `kete` in private files (`Run.keteEnv`). */
 export type ModelAccess =
   | { readonly kind: "gateway"; readonly key: string; readonly gatewayURL: string }
-  | { readonly kind: "providers"; readonly env: Readonly<Record<string, string>> }
+  /** Provider id → key. */
+  | { readonly kind: "providers"; readonly keys: Readonly<Record<string, string>> }
   | { readonly kind: "endpoint"; readonly url: string; readonly key: string | undefined }
 
 type Common = {
@@ -42,7 +43,8 @@ export type RunSettings = Common & {
   readonly access: ModelAccess
   /** A new branch to push the result to, or "generated" for the run's own `kete/job/<hex>`. */
   readonly pushBranch: string | undefined
-  readonly platformURL: string
+  /** The Kete platform (`PLUGIN_BASE_URL`): required with the gateway, else only passed on when set. */
+  readonly platformURL: string | undefined
   readonly authorName: string
   readonly authorEmail: string
 }
@@ -67,9 +69,6 @@ export class SettingsError extends Error {
   override readonly name = "SettingsError"
 }
 
-/** The Kete platform's address when `PLUGIN_BASE_URL` isn't set. */
-export const defaultBaseURL = "https://app.ketecode.ai"
-
 export const limits = {
   /** The cloud API's maximum (`JOB_BUDGET_MAX_MICROS`, docs/platform/jobs-v1.md). */
   cloudBudgetUSD: 25,
@@ -81,14 +80,38 @@ export const limits = {
   allowRules: 50,
 } as const
 
-/** BYOK settings and the environment variables `kete` reads them from (models.dev `env` names). */
-export const providerKeys: Readonly<Record<string, readonly string[]>> = {
-  PLUGIN_ANTHROPIC_API_KEY: ["ANTHROPIC_API_KEY"],
-  PLUGIN_OPENAI_API_KEY: ["OPENAI_API_KEY"],
-  PLUGIN_GEMINI_API_KEY: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
-  PLUGIN_OPENROUTER_API_KEY: ["OPENROUTER_API_KEY"],
-  PLUGIN_DEEPSEEK_API_KEY: ["DEEPSEEK_API_KEY"],
+/** BYOK settings and the `kete` provider each one configures (models.dev provider ids). */
+export const providerKeys: Readonly<Record<string, string>> = {
+  PLUGIN_ANTHROPIC_API_KEY: "anthropic",
+  PLUGIN_OPENAI_API_KEY: "openai",
+  PLUGIN_GEMINI_API_KEY: "google",
+  PLUGIN_OPENROUTER_API_KEY: "openrouter",
+  PLUGIN_DEEPSEEK_API_KEY: "deepseek",
 }
+
+/** Settings only one mode reads: a setting of the other mode is refused, not ignored. */
+export const runOnly: readonly string[] = [
+  "PLUGIN_GATEWAY_URL",
+  ...Object.keys(providerKeys),
+  "PLUGIN_MODEL",
+  "PLUGIN_MODEL_URL",
+  "PLUGIN_MODEL_API_KEY",
+  "PLUGIN_GIT_AUTHOR_NAME",
+  "PLUGIN_GIT_AUTHOR_EMAIL",
+]
+export const cloudOnly: readonly string[] = [
+  "PLUGIN_PROJECT",
+  "PLUGIN_REPO",
+  "PLUGIN_BASE_REF",
+  "PLUGIN_OPEN_PR",
+  "PLUGIN_IDEMPOTENCY_KEY",
+]
+
+/**
+ * Actions that reach outside the run's worktree or the network. `PLUGIN_ALLOW` may name them only
+ * with `PLUGIN_ALLOW_UNSAFE=true`.
+ */
+export const unsafeActions: readonly string[] = ["external_directory", "webfetch", "websearch"]
 
 const fail = (message: string): never => {
   throw new SettingsError(message)
@@ -162,9 +185,12 @@ export function timeout(raw: string | undefined, max: number): number {
 /**
  * `PLUGIN_ALLOW`: rules the run may proceed on without asking (ADR 0008), as a JSON array of
  * `{action, resource}` objects, or `action:resource` items separated by newlines or commas
- * (Harness joins a YAML list with commas). `question` and `budget` can never be allowed.
+ * (Harness joins a YAML list with commas). `question` and `budget` can never be allowed; `shell`
+ * needs real commands, not a bare `*`; actions that reach outside the worktree or the network
+ * (`unsafeActions`) need `PLUGIN_ALLOW_UNSAFE=true`. The rules decide what the agent may run, so they
+ * must come from the pipeline's own definition, never from untrusted pull request data.
  */
-export function allow(raw: string | undefined): AllowRule[] {
+export function allow(raw: string | undefined, options: { unsafe?: boolean } = {}): AllowRule[] {
   if (raw === undefined) return []
   const rules: AllowRule[] = []
   if (raw.startsWith("[")) {
@@ -184,7 +210,7 @@ export function allow(raw: string | undefined): AllowRule[] {
       const { action, resource } = item as { action?: unknown; resource?: unknown }
       if (typeof action !== "string" || typeof resource !== "string")
         return fail(`PLUGIN_ALLOW[${index}] needs string action and resource.`)
-      rules.push(rule(action, resource, `PLUGIN_ALLOW[${index}]`))
+      rules.push(rule(action, resource, `PLUGIN_ALLOW[${index}]`, options.unsafe === true))
     })
   } else {
     raw
@@ -195,20 +221,31 @@ export function allow(raw: string | undefined): AllowRule[] {
         const at = item.indexOf(":")
         if (at <= 0)
           return fail(`PLUGIN_ALLOW item ${index + 1} must look like action:resource (for example shell:bun test*).`)
-        rules.push(rule(item.slice(0, at), item.slice(at + 1), `PLUGIN_ALLOW item ${index + 1}`))
+        rules.push(
+          rule(item.slice(0, at), item.slice(at + 1), `PLUGIN_ALLOW item ${index + 1}`, options.unsafe === true),
+        )
       })
   }
   if (rules.length > limits.allowRules) return fail(`PLUGIN_ALLOW has more than ${limits.allowRules} rules.`)
   return rules
 }
 
-function rule(action: string, resource: string, where: string): AllowRule {
+function rule(action: string, resource: string, where: string, unsafe: boolean): AllowRule {
   const a = action.trim()
   const r = resource.trim()
   if (!/^[a-z][a-z0-9_.-]{0,199}$/i.test(a))
     return fail(`${where}: the action must be a permission name such as edit or shell.`)
-  if (a === "question" || a === "budget") return fail(`${where}: "${a}" can never be allowed in an unattended run.`)
+  // kete matches rules case-insensitively on Windows: compare names the same way.
+  const lower = a.toLowerCase()
+  if (lower === "question" || lower === "budget")
+    return fail(`${where}: "${a}" can never be allowed in an unattended run.`)
+  if (unsafeActions.includes(lower) && !unsafe)
+    return fail(
+      `${where}: "${a}" reaches outside the run's worktree or the network; it needs PLUGIN_ALLOW_UNSAFE=true.`,
+    )
   if (r === "" || r.length > 500) return fail(`${where}: the resource must be 1 to 500 characters.`)
+  if (lower === "shell" && /^[*\s]+$/.test(r))
+    return fail(`${where}: shell needs the commands it allows (such as bun test*), not a bare *.`)
   return { action: a, resource: r }
 }
 
@@ -252,23 +289,29 @@ export function parse(env: Env): Settings {
     return fail("PLUGIN_AGENT must be an agent name such as build.")
 
   const cloud = mode === "cloud"
+  const other = (cloud ? runOnly : cloudOnly).find((name) => value(env, name) !== undefined)
+  if (other !== undefined)
+    return fail(`${other} is a ${cloud ? "run" : "cloud"} mode setting; remove it from this ${mode} mode step.`)
   const common: Common = {
     task,
     preset,
     log,
     base,
-    allow: allow(value(env, "PLUGIN_ALLOW")),
+    allow: allow(value(env, "PLUGIN_ALLOW"), { unsafe: bool(env, "PLUGIN_ALLOW_UNSAFE") }),
     budget: budget(value(env, "PLUGIN_BUDGET"), cloud ? limits.cloudBudgetUSD : undefined),
     timeout: timeout(value(env, "PLUGIN_TIMEOUT"), cloud ? limits.cloudTimeoutMinutes : limits.runTimeoutMinutes),
     agent,
     outputDir: relativePath("PLUGIN_OUTPUT_DIR", value(env, "PLUGIN_OUTPUT_DIR") ?? "kete-output"),
   }
-  const baseURL = httpURL("PLUGIN_BASE_URL", value(env, "PLUGIN_BASE_URL") ?? defaultBaseURL)
+  // No default platform address (CLAUDE.md §5): cloud mode and the gateway need it set.
+  const baseRaw = value(env, "PLUGIN_BASE_URL")
+  const baseURL = baseRaw === undefined ? undefined : httpURL("PLUGIN_BASE_URL", baseRaw)
   const pushRaw = value(env, "PLUGIN_PUSH_BRANCH")
   const key = secret(env, "PLUGIN_KETE_API_KEY")
 
   if (cloud) {
     if (key === undefined) return fail("Cloud mode needs PLUGIN_KETE_API_KEY (a Kete API key, from a Harness secret).")
+    if (baseURL === undefined) return fail("Cloud mode needs PLUGIN_BASE_URL: your Kete platform's address.")
     const project = value(env, "PLUGIN_PROJECT")
     if (project === undefined || !GUID.test(project))
       return fail("Cloud mode needs PLUGIN_PROJECT: the Kete project id.")
@@ -298,6 +341,8 @@ export function parse(env: Env): Settings {
   if (model !== undefined && !/^[A-Za-z0-9][\w.:@/+-]{0,200}(#[\w.-]+)?$/.test(model))
     return fail("PLUGIN_MODEL must be provider/model (or the model id at PLUGIN_MODEL_URL).")
   const access = modelAccess(env, key, model)
+  if (access.kind === "gateway" && baseURL === undefined)
+    return fail("PLUGIN_KETE_API_KEY needs PLUGIN_BASE_URL: your Kete platform's address (with PLUGIN_GATEWAY_URL).")
   let pushBranch: string | undefined
   if (pushRaw !== undefined && pushRaw.toLowerCase() !== "false") {
     pushBranch = pushRaw.toLowerCase() === "true" ? "generated" : pushRaw
@@ -323,9 +368,9 @@ export function parse(env: Env): Settings {
 function modelAccess(env: Env, key: string | undefined, model: string | undefined): ModelAccess {
   const endpoint = value(env, "PLUGIN_MODEL_URL")
   const providers: Record<string, string> = {}
-  for (const [setting, names] of Object.entries(providerKeys)) {
+  for (const [setting, provider] of Object.entries(providerKeys)) {
     const v = secret(env, setting)
-    if (v !== undefined) for (const name of names) providers[name] = v
+    if (v !== undefined) providers[provider] = v
   }
   const chosen = [key !== undefined, endpoint !== undefined, Object.keys(providers).length > 0].filter(Boolean).length
   if (chosen === 0)
@@ -348,7 +393,7 @@ function modelAccess(env: Env, key: string | undefined, model: string | undefine
       key: secret(env, "PLUGIN_MODEL_API_KEY"),
     }
   }
-  return { kind: "providers", env: providers }
+  return { kind: "providers", keys: providers }
 }
 
 /**

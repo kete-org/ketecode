@@ -4,14 +4,15 @@
 
 export type FakeModel = {
   readonly url: string
-  readonly requests: { path: string; authorization: string | null; tools: string[] }[]
+  readonly requests: { path: string; authorization: string | null; tools: string[]; body: string }[]
   stop(): void
 }
 
 export const fakeSecret = "sk-fakeharnesssecret0123456789"
 export const finalAnswer = `Fixed the build: the missing file is restored. (debug token ${fakeSecret})`
 
-export function startFakeModel(options: { file?: string; content?: string } = {}): FakeModel {
+/** By default the first turn writes a file; with `shell`, it runs that command with the shell tool instead. */
+export function startFakeModel(options: { file?: string; content?: string; shell?: string } = {}): FakeModel {
   const requests: FakeModel["requests"] = []
   let n = 0
   const server = Bun.serve({
@@ -23,15 +24,22 @@ export function startFakeModel(options: { file?: string; content?: string } = {}
         return Response.json({ object: "list", data: [{ id: "fake-model", object: "model", owned_by: "test" }] })
       if (req.method !== "POST" || !url.pathname.endsWith("/chat/completions"))
         return new Response("not found", { status: 404 })
-      const body = (await req.json()) as { tools?: { function?: { name?: string } }[]; messages?: { role: string }[] }
+      const text = await req.text()
+      const body = JSON.parse(text) as { tools?: { function?: { name?: string } }[]; messages?: { role: string }[] }
       const tools = (body.tools ?? []).map((t) => t.function?.name ?? "")
-      requests.push({ path: url.pathname, authorization: req.headers.get("authorization"), tools })
+      requests.push({ path: url.pathname, authorization: req.headers.get("authorization"), tools, body: text })
       n++
       const base = { id: `chatcmpl-${n}`, object: "chat.completion.chunk", created: 1, model: "fake-model" }
       const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
       const answered = (body.messages ?? []).some((m) => m.role === "tool")
+      const call = options.shell
+        ? { name: "shell", arguments: JSON.stringify({ command: options.shell }) }
+        : {
+            name: "write",
+            arguments: JSON.stringify({ path: options.file ?? "FIXED.md", content: options.content ?? "fixed\n" }),
+          }
       const chunks =
-        !answered && tools.includes("write")
+        !answered && tools.includes(call.name)
           ? [
               {
                 ...base,
@@ -45,13 +53,7 @@ export function startFakeModel(options: { file?: string; content?: string } = {}
                           index: 0,
                           id: `call_${n}`,
                           type: "function",
-                          function: {
-                            name: "write",
-                            arguments: JSON.stringify({
-                              path: options.file ?? "FIXED.md",
-                              content: options.content ?? "fixed\n",
-                            }),
-                          },
+                          function: call,
                         },
                       ],
                     },
@@ -68,8 +70,8 @@ export function startFakeModel(options: { file?: string; content?: string } = {}
               },
               { ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage },
             ]
-      const text = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n"
-      return new Response(text, { headers: { "content-type": "text/event-stream" } })
+      const stream = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n"
+      return new Response(stream, { headers: { "content-type": "text/event-stream" } })
     },
   })
   return { url: `http://127.0.0.1:${server.port}/v1`, requests, stop: () => server.stop(true) }

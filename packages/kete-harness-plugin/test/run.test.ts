@@ -35,9 +35,17 @@ async function step(env: Record<string, string>) {
   return { code, stderr, drone: read(env.DRONE_OUTPUT!), harness: read(env.HARNESS_OUTPUT!) }
 }
 
-function settings(p: ReturnType<typeof pipeline>, extra: Record<string, string>) {
+// No key shape and no secret-looking variable name would give it away: only keeping it out of the
+// agent's environment (and literal masking) can.
+const endpointKey = "plainendpointvalue0123"
+
+function settings(
+  p: ReturnType<typeof pipeline>,
+  extra: Record<string, string>,
+  fake: Parameters<typeof startFakeModel>[0] = {},
+) {
   dirs.push(p.dir)
-  model = startFakeModel()
+  model = startFakeModel(fake)
   return {
     ...p.env,
     KETE_HARNESS_KETE_BIN: keteBinary(p.dir),
@@ -47,7 +55,7 @@ function settings(p: ReturnType<typeof pipeline>, extra: Record<string, string>)
     PLUGIN_TIMEOUT: "5",
     PLUGIN_MODEL_URL: model.url,
     PLUGIN_MODEL: "fake-model",
-    PLUGIN_MODEL_API_KEY: "endpoint-key-0123456789",
+    PLUGIN_MODEL_API_KEY: endpointKey,
     ...extra,
   }
 }
@@ -68,8 +76,8 @@ describe("run mode", () => {
 
     // The model got the endpoint key; the log's secret never reached it or the outputs.
     expect(model!.requests.length).toBeGreaterThanOrEqual(2)
-    expect(model!.requests[0]!.authorization).toBe("Bearer endpoint-key-0123456789")
-    expect(r.stderr).not.toContain("endpoint-key-0123456789")
+    expect(model!.requests[0]!.authorization).toBe(`Bearer ${endpointKey}`)
+    expect(r.stderr).not.toContain(endpointKey)
     expect(r.stderr).not.toContain(fakeSecret)
 
     // Artifacts in the workspace: the audit log (the run's policy, the allowed edit), result, summary.
@@ -100,9 +108,27 @@ describe("run mode", () => {
     expect(() => sh(p.remote, ["show", "main:FIXED.md"])).toThrow()
   }, 180_000)
 
+  test("an allowed shell command can't print the model key: it isn't in the agent's environment", async () => {
+    const p = pipeline()
+    const r = await step(settings(p, { PLUGIN_ALLOW: "shell:printenv" }, { shell: "printenv" }))
+    if (r.code !== 0) console.error(r.stderr)
+    expect(r.code).toBe(0)
+    // The command ran and its output went back to the model...
+    const toolTurn = model!.requests.find((q) => q.body.includes('"role":"tool"'))
+    expect(toolTurn?.body).toContain("DRONE_WORKSPACE=")
+    // ...without the key, the step's settings or the clone credentials.
+    for (const q of model!.requests) {
+      expect(q.body).not.toContain(endpointKey)
+      expect(q.body).not.toContain("PLUGIN_")
+    }
+    const out = path.join(p.workspace, "kete-output")
+    for (const file of ["audit.jsonl", "result.json", "summary.md"])
+      expect(readFileSync(path.join(out, file), "utf8")).not.toContain(endpointKey)
+  }, 180_000)
+
   test("never pushes to the target branch: refused (exit 2) before the run starts", async () => {
     const p = pipeline()
-    const r = await step(settings(p, { PLUGIN_PUSH_BRANCH: "main" }))
+    const r = await step(settings(p, { PLUGIN_PUSH_BRANCH: "MAIN" }))
     expect(r.code).toBe(2)
     expect(r.drone.KETE_OUTCOME).toBe("refused")
     expect(model!.requests).toHaveLength(0)

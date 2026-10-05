@@ -97,7 +97,8 @@ docker run --rm --platform "linux/$arch" --network host --user "$uid" -v "$w:$w"
   -e HOME="$w/home" -e DRONE_WORKSPACE="$w/harness" -e DRONE_OUTPUT="$w/out.env" -e DRONE_TARGET_BRANCH=main \
   -e KETE_DISABLE_MODELS_FETCH=1 \
   -e PLUGIN_PRESET=fix-build -e PLUGIN_LOG=build.log -e PLUGIN_BUDGET=1 -e PLUGIN_TIMEOUT=5 \
-  -e PLUGIN_MODEL_URL="$model" -e PLUGIN_MODEL=fake-model -e PLUGIN_PUSH_BRANCH=kete/smoke-fix \
+  -e PLUGIN_MODEL_URL="$model" -e PLUGIN_MODEL=fake-model -e PLUGIN_MODEL_API_KEY=plainendpointvalue0123 \
+  -e PLUGIN_PUSH_BRANCH=kete/smoke-fix \
   "$image" || fail "run mode failed"
 outputs "$w/out.env"
 grep -qx "KETE_OUTCOME=completed" "$w/out.env" || fail "run outcome"
@@ -105,5 +106,5 @@ grep -qx "KETE_BRANCH=kete/smoke-fix" "$w/out.env" || fail "run branch"
 grep -q '"event":"started"' "$w/harness/kete-output/audit.jsonl" || fail "no audit artifact"
 [ "$(git -C "$w/remote.git" show kete/smoke-fix:FIXED.md)" = fixed ] || fail "the change isn't on the new branch"
 [ "$(git -C "$w/remote.git" rev-list --count main)" = 1 ] || fail "main changed"
-if grep -rq "sk-fakeharnesssecret" "$w/out.env" "$w/harness/kete-output"; then fail "a secret reached the outputs"; fi
+if grep -rqE "sk-fakeharnesssecret|plainendpointvalue0123" "$w/out.env" "$w/harness/kete-output"; then fail "a secret reached the outputs"; fi
 echo "smoke: ok"

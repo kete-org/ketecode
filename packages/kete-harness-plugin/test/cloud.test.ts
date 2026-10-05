@@ -3,18 +3,25 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { Cloud } from "../src/cloud"
 import { main } from "../src/main"
 import { apiKey, jobID, startFakePlatform, type FakePlatform, type Scenario } from "./fixtures/fake-platform"
 
 let platform: FakePlatform | undefined
 afterEach(() => platform?.stop())
 
-async function step(scenario: Scenario, extra: Record<string, string> = {}) {
+async function step(
+  scenario: Scenario,
+  extra: Record<string, string> = {},
+  options: { abortAfterSleeps?: number } = {},
+) {
   platform = startFakePlatform(scenario)
   const ws = mkdtempSync(path.join(tmpdir(), "kete-harness-cloud-"))
   const out = path.join(ws, "drone-output.env")
   const logs: string[] = []
   let clock = 0
+  let sleeps = 0
+  const abort = new AbortController()
   const code = await main({
     env: {
       DRONE_WORKSPACE: ws,
@@ -35,7 +42,11 @@ async function step(scenario: Scenario, extra: Record<string, string> = {}) {
     cloud: {
       sleep: async (ms) => {
         clock += ms
+        sleeps++
+        // As if the runner sent SIGTERM while the step waits.
+        if (options.abortAfterSleeps !== undefined && sleeps >= options.abortAfterSleeps) abort.abort()
       },
+      abort: abort.signal,
       now: () => clock,
       poll: { initialMs: 5_000, factor: 2, maxMs: 30_000 },
       graceMs: 60_000,
@@ -69,7 +80,7 @@ describe("cloud mode", () => {
       repository_id: "22222222-2222-4222-8222-222222222222",
       agent: "build",
       prompt: expect.stringContaining("Review the changes"),
-      allow: expect.arrayContaining([{ action: "shell", resource: "git diff*" }]),
+      allow: expect.arrayContaining([{ action: "shell", resource: "git diff HEAD~1" }]),
       budget_micros: 1_500_000,
       timeout_minutes: 10,
       push: true,
@@ -151,5 +162,50 @@ describe("cloud mode", () => {
     expect(code).toBe(2)
     expect(readFileSync(out, "utf8")).toContain("KETE_OUTCOME=refused")
     expect(platform.creates).toHaveLength(0)
+  })
+
+  test("a cancelled step (SIGTERM, SIGINT) cancels its job before exiting", async () => {
+    const r = await step({ statuses: ["running"] }, {}, { abortAfterSleeps: 2 })
+    expect(r.code).toBe(1)
+    expect(r.outputs.KETE_OUTCOME).toBe("step_cancelled")
+    expect(r.outputs.KETE_JOB_URL).toBe(`${platform!.url}/jobs/${jobID}`)
+    expect(platform!.cancels).toBe(1)
+    expect(r.logs.join("\n")).toContain("the step was cancelled; asking the platform to cancel job")
+    expect(r.summary).toContain("cancellation of the cloud job was requested")
+  })
+
+  test("a step that can't follow its job any more cancels it (best effort)", async () => {
+    const r = await step({ statuses: ["running"], getFailures: 100 })
+    expect(r.code).toBe(1)
+    expect(r.outputs.KETE_OUTCOME).toBe("error")
+    expect(platform!.cancels).toBe(1)
+    expect(r.outputs.KETE_SUMMARY).toContain("cancellation of the cloud job was requested")
+  })
+
+  test("a failed cancel is reported, never hidden", async () => {
+    const r = await step({ statuses: ["running"], cancelError: true }, {}, { abortAfterSleeps: 1 })
+    expect(r.code).toBe(1)
+    expect(platform!.cancels).toBe(1)
+    expect(r.outputs.KETE_SUMMARY).toContain("may still be running")
+    expect(r.logs.join("\n")).toContain("cancel failed")
+  })
+
+  test("only code-shaped platform error codes reach the outputs", async () => {
+    const r = await step({
+      statuses: ["queued"],
+      createError: { status: 422, code: "x\nKETE_BRANCH=main $(id)", message: "nope" },
+    })
+    expect(r.code).toBe(2)
+    expect(r.outputs.KETE_OUTCOME).toBe("http_422")
+    expect(Cloud.errorCode("not_permitted", 422)).toBe("not_permitted")
+    expect(Cloud.errorCode("Not-Permitted", 422)).toBe("http_422")
+    expect(Cloud.errorCode(42, 500)).toBe("http_500")
+  })
+
+  test("a summary carrying a known secret with no key shape is masked everywhere", async () => {
+    const r = await step({ statuses: ["succeeded"], outcome: "completed", summary: `echoed ${apiKey} done` })
+    expect(r.outputs.KETE_SUMMARY).not.toContain(apiKey)
+    expect(r.summary).not.toContain(apiKey)
+    expect(r.logs.join("\n")).not.toContain(apiKey)
   })
 })

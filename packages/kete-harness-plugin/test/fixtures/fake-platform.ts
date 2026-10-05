@@ -18,6 +18,8 @@ export type Scenario = {
   createFailures?: number
   /** Fail this many GETs with 503 first. */
   getFailures?: number
+  /** Answer every cancel with 500. */
+  cancelError?: boolean
 }
 
 export type FakePlatform = {
@@ -99,6 +101,8 @@ export function startFakePlatform(scenario: Scenario): FakePlatform {
       }
       if (req.method === "POST" && url.pathname === `/api/v1/jobs/${jobID}/cancel`) {
         state.cancels++
+        if (scenario.cancelError)
+          return Response.json({ error: { code: "internal", message: "down", request_id: "r" } }, { status: 500 })
         return Response.json(job("cancelling"), { status: 202 })
       }
       return Response.json({ error: { code: "not_found", message: "no route", request_id: "r" } }, { status: 404 })

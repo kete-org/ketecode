@@ -3,8 +3,10 @@
 // are single lines: newlines are folded to spaces and long values cut, so a summary can never
 // inject another variable.
 
-import { appendFileSync } from "node:fs"
+import { appendFileSync, rmSync, writeFileSync } from "node:fs"
+import path from "node:path"
 import { KeteRedact } from "@opencode/util/kete/redact"
+import { Secrets } from "./secrets.js"
 
 export * as Outputs from "./outputs.js"
 
@@ -38,8 +40,8 @@ export function exitCode(outcome: string): ExitCode {
 }
 
 /** One line, redacted, at most `summaryMaxBytes` bytes. */
-export function oneLine(text: string, max = summaryMaxBytes): string {
-  const flat = KeteRedact.text(text)
+export function oneLine(text: string, redact: Secrets.Redactor, max = summaryMaxBytes): string {
+  const flat = redact(text)
     .replace(/[\r\n\t\u2028\u2029]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim()
@@ -47,8 +49,8 @@ export function oneLine(text: string, max = summaryMaxBytes): string {
   return cut.length < flat.length ? `${KeteRedact.truncate(flat, max - 3)}...` : cut
 }
 
-export function format(values: Values): string {
-  return (Object.keys(values) as (keyof Values)[]).map((key) => `${key}=${oneLine(values[key])}\n`).join("")
+export function format(values: Values, redact: Secrets.Redactor): string {
+  return (Object.keys(values) as (keyof Values)[]).map((key) => `${key}=${oneLine(values[key], redact)}\n`).join("")
 }
 
 /** The output files Harness and Drone name; the same path once. */
@@ -57,7 +59,22 @@ export function targets(env: Readonly<Record<string, string | undefined>>): stri
   return [...new Set(paths)]
 }
 
-export function write(env: Readonly<Record<string, string | undefined>>, values: Values): void {
-  const text = format(values)
-  for (const path of targets(env)) appendFileSync(path, text, { mode: 0o600 })
+export function write(
+  env: Readonly<Record<string, string | undefined>>,
+  values: Values,
+  redact: Secrets.Redactor,
+): void {
+  const text = format(values, redact)
+  for (const file of targets(env)) appendFileSync(file, text, { mode: 0o600 })
+}
+
+/**
+ * Writes `name` in the output directory as a new file: whatever was there (a file, or a symlink
+ * planted to redirect the write) is removed first, and the create fails rather than follow a
+ * symlink that appears in between (`wx` is O_CREAT|O_EXCL, which never follows one).
+ */
+export function writeArtifact(dir: string, name: string, text: string): void {
+  const file = path.join(dir, name)
+  rmSync(file, { force: true })
+  writeFileSync(file, text, { flag: "wx", mode: 0o644 })
 }

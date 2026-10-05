@@ -17,6 +17,7 @@ const cloud = (extra: Record<string, string>) => ({
   PLUGIN_PROJECT: "11111111-1111-4111-8111-111111111111",
   PLUGIN_REPO: "22222222-2222-4222-8222-222222222222",
   PLUGIN_AGENT: "build",
+  PLUGIN_BASE_URL: "https://app.example.com",
   ...extra,
 })
 
@@ -37,9 +38,10 @@ describe("run mode", () => {
     if (s.mode !== "run") return
     expect(s.budget).toBe(2)
     expect(s.timeout).toBe(30)
-    expect(s.access).toEqual({ kind: "providers", env: { ANTHROPIC_API_KEY: "sk-ant-secretvalue0123456789" } })
+    expect(s.access).toEqual({ kind: "providers", keys: { anthropic: "sk-ant-secretvalue0123456789" } })
     expect(s.outputDir).toBe("kete-output")
-    expect(s.platformURL).toBe(Settings.defaultBaseURL)
+    // No hard-coded platform address: unset stays unset.
+    expect(s.platformURL).toBeUndefined()
     expect(s.pushBranch).toBeUndefined()
   })
 
@@ -81,11 +83,20 @@ describe("run mode", () => {
     expect(refusal({ ...run({}), PLUGIN_ANTHROPIC_API_KEY: undefined, PLUGIN_KETE_API_KEY: "kete_x" })).toContain(
       "PLUGIN_GATEWAY_URL",
     )
+    expect(
+      refusal({
+        ...run({}),
+        PLUGIN_ANTHROPIC_API_KEY: undefined,
+        PLUGIN_KETE_API_KEY: "kete_x",
+        PLUGIN_GATEWAY_URL: "https://gateway.example.com/",
+      }),
+    ).toContain("needs PLUGIN_BASE_URL")
     const gw = Settings.parse({
       ...run({}),
       PLUGIN_ANTHROPIC_API_KEY: undefined,
       PLUGIN_KETE_API_KEY: "kete_x",
       PLUGIN_GATEWAY_URL: "https://gateway.example.com/",
+      PLUGIN_BASE_URL: "https://app.example.com",
     })
     expect(gw.mode === "run" && gw.access).toEqual({
       kind: "gateway",
@@ -111,10 +122,7 @@ describe("run mode", () => {
       }),
     ).toContain("https")
     const gemini = Settings.parse({ ...run({}), PLUGIN_ANTHROPIC_API_KEY: undefined, PLUGIN_GEMINI_API_KEY: "AIzaKey" })
-    expect(gemini.mode === "run" && gemini.access).toEqual({
-      kind: "providers",
-      env: { GEMINI_API_KEY: "AIzaKey", GOOGLE_GENERATIVE_AI_API_KEY: "AIzaKey" },
-    })
+    expect(gemini.mode === "run" && gemini.access).toEqual({ kind: "providers", keys: { google: "AIzaKey" } })
   })
 
   test("a malformed key is refused without echoing it", () => {
@@ -148,6 +156,27 @@ describe("run mode", () => {
     expect(refusal(run({ PLUGIN_ALLOW: '[{"action":"edit","resource":"*","extra":1}]' }))).toContain("unknown field")
     expect(refusal(run({ PLUGIN_ALLOW: "[not json" }))).toContain("not valid JSON")
     expect(refusal(run({ PLUGIN_ALLOW: "justtext" }))).toContain("action:resource")
+    expect(refusal(run({ PLUGIN_ALLOW: "Question:*" }))).toContain("can never be allowed")
+  })
+
+  test("workspace-escape and network actions need PLUGIN_ALLOW_UNSAFE; shell needs real commands", () => {
+    for (const action of ["external_directory", "webfetch", "websearch", "WebFetch"]) {
+      expect(refusal(run({ PLUGIN_ALLOW: `${action}:*` }))).toContain("PLUGIN_ALLOW_UNSAFE=true")
+      expect(refusal(run({ PLUGIN_ALLOW: `[{"action":"${action}","resource":"*"}]` }))).toContain("PLUGIN_ALLOW_UNSAFE")
+    }
+    const unsafe = Settings.parse(
+      run({ PLUGIN_ALLOW: "webfetch:https://docs.example.com/*", PLUGIN_ALLOW_UNSAFE: "true" }),
+    )
+    expect(unsafe.allow).toEqual([{ action: "webfetch", resource: "https://docs.example.com/*" }])
+    expect(refusal(run({ PLUGIN_ALLOW: "webfetch:*", PLUGIN_ALLOW_UNSAFE: "false" }))).toContain("PLUGIN_ALLOW_UNSAFE")
+    for (const resource of ["*", "**", " * ", "* *"])
+      expect(refusal(run({ PLUGIN_ALLOW: JSON.stringify([{ action: "shell", resource }]) }))).toContain("not a bare *")
+    expect(Settings.parse(run({ PLUGIN_ALLOW: "edit:*" })).allow).toEqual([{ action: "edit", resource: "*" }])
+  })
+
+  test("cloud-only settings are refused in run mode, not ignored", () => {
+    for (const name of Settings.cloudOnly)
+      expect(refusal(run({ [name]: "x" }))).toContain(`${name} is a cloud mode setting`)
   })
 
   test("base and output paths are validated", () => {
@@ -155,6 +184,7 @@ describe("run mode", () => {
     expect(refusal(run({ PLUGIN_BASE_URL: "https://user:pw@app.example.com" }))).toContain("credentials")
     expect(refusal(run({ PLUGIN_OUTPUT_DIR: "../out" }))).toContain("PLUGIN_OUTPUT_DIR")
     const local = Settings.parse(run({ PLUGIN_BASE_URL: "http://127.0.0.1:8080" }))
+    // Set without the gateway: passed on to kete as given.
     expect(local.mode === "run" && local.platformURL).toBe("http://127.0.0.1:8080")
   })
 })
@@ -164,7 +194,7 @@ describe("cloud mode", () => {
     const s = Settings.parse(cloud({ PLUGIN_PUSH_BRANCH: "true", PLUGIN_OPEN_PR: "true", PLUGIN_BASE_REF: "develop" }))
     expect(s.mode).toBe("cloud")
     if (s.mode !== "cloud") return
-    expect(s.baseURL).toBe("https://app.ketecode.ai")
+    expect(s.baseURL).toBe("https://app.example.com")
     expect(s.push).toEqual({ suffix: undefined })
     expect(s.openPR).toBe(true)
     expect(s.baseRef).toBe("develop")
@@ -175,6 +205,13 @@ describe("cloud mode", () => {
     expect(refusal(cloud({ PLUGIN_PROJECT: "nope" }))).toContain("PLUGIN_PROJECT")
     expect(refusal({ ...cloud({}), PLUGIN_REPO: undefined })).toContain("PLUGIN_REPO")
     expect(refusal({ ...cloud({}), PLUGIN_AGENT: undefined })).toContain("PLUGIN_AGENT")
+    // No default platform address.
+    expect(refusal({ ...cloud({}), PLUGIN_BASE_URL: undefined })).toContain("needs PLUGIN_BASE_URL")
+  })
+
+  test("run-only settings are refused in cloud mode, not ignored", () => {
+    for (const name of Settings.runOnly)
+      expect(refusal(cloud({ [name]: "value-12345" }))).toContain(`${name} is a run mode setting`)
   })
 
   test("the API's limits apply", () => {
