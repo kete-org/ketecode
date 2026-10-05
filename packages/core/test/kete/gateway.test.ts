@@ -616,6 +616,39 @@ describe("KeteGateway", () => {
     ),
   )
 
+  it.live("kete.offline turned on in config while running stops model, price and balance requests from the next tick", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(gateway),
+      ({ requests, server }) =>
+        Effect.gen(function* () {
+          const config = yield* Config.Test
+          yield* seedCatalog()
+          const online = settings({ baseURL: `${server.url.origin}/`, apiKey: key }, server.url.origin)
+          yield* config.setEntries([online])
+          const plugin = yield* Plugin.Service
+          const host = yield* PluginHost.make(plugin)
+          yield* KeteGateway.make({ interval: "40 millis", balanceInterval: "40 millis", environment: {} }).effect(host)
+          yield* eventually(
+            Effect.sync(() => requests.filter((request) => request.path === "/api/v1/me").length),
+            (count) => count >= 2,
+          )
+          yield* config.setEntries([offlineDocument(`${server.url.origin}/`)])
+          // Let a tick already in flight finish; after that nothing is sent.
+          yield* Effect.promise(() => Bun.sleep(120))
+          const paused = requests.length
+          yield* Effect.promise(() => Bun.sleep(300))
+          expect(requests.length).toBe(paused)
+          // Turned off again: the next tick resumes.
+          yield* config.setEntries([online])
+          yield* eventually(
+            Effect.sync(() => requests.length),
+            (count) => count > paused,
+          )
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
   it.live("offline (config kete.offline): makes no requests", () =>
     Effect.acquireUseRelease(
       Effect.sync(gateway),

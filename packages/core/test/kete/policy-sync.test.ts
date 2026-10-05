@@ -128,6 +128,9 @@ const start = (
     entries?: Entry[]
     environment?: Record<string, string | undefined>
     job?: { key?: () => string | undefined; organization?: () => string | undefined }
+    interval?: Duration.Input
+    /** Receives the test config, so a test can change `kete.offline` while the plugin runs. */
+    config?: (config: Config.TestInterface) => void
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -143,9 +146,16 @@ const start = (
       app: { name: "kete", version: "0.2.0-test", channel: "test" },
     })
     yield* AgentPlugin.Plugin.effect(pluginHost)
-    yield* KeteAgentSync.make({ registration, interval: "1 hour", account: options, environment: extra.environment, job: extra.job })
-      .effect(pluginHost)
-      .pipe(Effect.provide(Config.testLayer(extra.entries ?? [])))
+    yield* Effect.gen(function* () {
+      extra.config?.(yield* Config.Test)
+      yield* KeteAgentSync.make({
+        registration,
+        interval: extra.interval ?? "1 hour",
+        account: options,
+        environment: extra.environment,
+        job: extra.job,
+      }).effect(pluginHost)
+    }).pipe(Effect.provide(Config.testLayer(extra.entries ?? [])))
     return permission
   })
 
@@ -304,6 +314,43 @@ describe("organization policies in offline mode", () => {
       yield* Effect.promise(() => Bun.sleep(200))
       expect(fake.authorizations).toEqual([])
       expect(fake.registrations).toEqual([])
+    }),
+  )
+
+  it.live("kete.offline turned on in config while running pauses sync from the next tick; turned off resumes it", () =>
+    Effect.gen(function* () {
+      const fake = platform()
+      const options = yield* account(fake.url)
+      const handle: { config?: Config.TestInterface } = {}
+      yield* start(options, false, { interval: "40 millis", config: (config) => void (handle.config = config) })
+      yield* eventually(Effect.sync(() => fake.authorizations.length), (count) => count >= 2)
+      const offlineConfig = new Document({ type: "document", info: decodeInfo({ kete: { offline: true } }) })
+      yield* handle.config!.setEntries([offlineConfig])
+      // Let a tick that was already in flight finish, then nothing more is sent.
+      yield* Effect.promise(() => Bun.sleep(120))
+      const paused = fake.authorizations.length
+      yield* Effect.promise(() => Bun.sleep(300))
+      expect(fake.authorizations.length).toBe(paused)
+      yield* handle.config!.setEntries([])
+      yield* eventually(Effect.sync(() => fake.authorizations.length), (count) => count > paused)
+    }),
+  )
+
+  it.live("runtime registration re-checks kete.offline on every tick", () =>
+    Effect.gen(function* () {
+      const fake = platform()
+      const options = yield* account(fake.url)
+      const handle: { config?: Config.TestInterface } = {}
+      const offlineConfig = new Document({ type: "document", info: decodeInfo({ kete: { offline: true } }) })
+      yield* start(options, { every: "40 millis" }, {
+        entries: [offlineConfig],
+        config: (config) => void (handle.config = config),
+      })
+      yield* Effect.promise(() => Bun.sleep(200))
+      expect(fake.registrations).toEqual([])
+      // Offline turned off in config: the next tick registers, with no restart.
+      yield* handle.config!.setEntries([])
+      yield* eventually(Effect.sync(() => fake.registrations.length), (count) => count > 0)
     }),
   )
 })

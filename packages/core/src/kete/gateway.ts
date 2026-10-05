@@ -160,9 +160,11 @@ export function make(
     effect: Effect.fn(function* (ctx) {
       const http = yield* HttpClient.HttpClient
       const config = yield* Config.Service
-      // Offline mode: no gateway models, balance or price requests (docs/local-models.md). Decided at
-      // activation; the models would be removed by KeteOffline anyway, this keeps the network quiet.
-      if (KeteOffline.enabled(environment, Config.latest(yield* config.entries(), "kete"))) return
+      // Offline mode: no gateway models, balance or price requests (docs/local-models.md). Checked on
+      // every refresh and balance tick (env flag or the config as loaded now), so turning `kete.offline`
+      // on pauses the gateway from its next tick and turning it off resumes it. Models already loaded
+      // are removed by KeteOffline's model filter.
+      const offline = () => KeteOffline.active(config, environment)
       const signedIn = Effect.fn("KeteGateway.signedIn")(function* () {
         const account = yield* Effect.tryPromise(() => KeteAccount.read(accountOptions))
         if (!account) return undefined
@@ -325,6 +327,7 @@ export function make(
 
       // The balance changes with every request, so it refreshes more often than the model list.
       const balance = Effect.fn("KeteGateway.balance")(function* () {
+        if (yield* offline()) return
         const platform = source.current.platform
         const apiKey = yield* key()
         const next = platform && apiKey ? yield* me(platform, apiKey) : undefined
@@ -335,6 +338,7 @@ export function make(
       })
 
       const refresh = Effect.fn("KeteGateway.refresh")(function* () {
+        if (yield* offline()) return
         const url = source.current.url
         const platform = source.current.platform
         const apiKey = yield* key()

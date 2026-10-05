@@ -15,7 +15,9 @@ import { ConfigPolicy } from "@opencode/schema/config/policy"
 import { ConfigProvider } from "@opencode/schema/config/provider"
 import { Money } from "@opencode/schema/money"
 import { KeteHosted } from "../../kete/hosted.js" // kete_change
-import { KeteOffline } from "@opencode/util/kete/offline" // kete_change
+import { Config } from "../../config.js" // kete_change
+import { KeteOffline } from "../../kete/offline.js" // kete_change
+import { Option } from "effect" // kete_change
 
 const defaultServer = "https://opencode.ai/console"
 const clientID = "opencode-cli"
@@ -130,6 +132,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | Bus.Service | Manag
     // and whether it evaluates the policies it is being sent.
     const http = HttpClient.mapRequest(client, HttpClientRequest.setHeader("User-Agent", App.useragent(ctx.app)))
     const managed = yield* ManagedPolicy.Service
+    const config = yield* Effect.serviceOption(Config.Service) // kete_change: offline mode reads kete.offline when config is there
     const loading = Semaphore.makeUnsafe(1)
     type ActiveConnection = Effect.Success<ReturnType<typeof ctx.integration.connection.active>>
     let snapshot: {
@@ -141,11 +144,12 @@ export const OpencodePlugin = define<HttpClient.HttpClient | Bus.Service | Manag
     const load = Effect.fn("OpencodePlugin.load")(function* () {
       const connection = yield* ctx.integration.connection.active("opencode")
       if (!connection) return { config: undefined, connection, organization: undefined }
+      const offline = Option.isSome(config) ? yield* KeteOffline.active(config.value) : KeteOffline.enabled() // kete_change
       return yield* ctx.integration.connection.resolve(connection).pipe(
         Effect.flatMap((credential) => {
           if (!credential) return Effect.succeed({ config: undefined, connection, organization: undefined })
           // kete_change start: offline mode makes no Console request; the config stays as it was, as when a fetch fails
-          if (KeteOffline.enabled())
+          if (offline)
             return Effect.succeed({ config: snapshot.config, connection, organization: snapshot.organization })
           // kete_change end
           return fetchConfig(http, credential).pipe(
