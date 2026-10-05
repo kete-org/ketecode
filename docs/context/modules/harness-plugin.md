@@ -1,7 +1,7 @@
 ---
 module: harness-plugin
 paths: [packages/kete-harness-plugin/**, .github/workflows/kete-harness-plugin.yml]
-verified-at: 3d489dad3d
+verified-at: 4e44ac2eba
 ---
 
 ## Quick answers

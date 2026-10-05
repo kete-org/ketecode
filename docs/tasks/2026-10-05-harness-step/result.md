@@ -21,7 +21,7 @@
 | actionlint (new + changed workflows) | pass |
 | shellcheck `scripts/*.sh` | pass |
 | `stale-cards` / `card-check` | pass |
-| CI `kete-harness-plugin` / `kete-build` on PR #7 | see the PR |
+| CI on PR #7: `kete-harness-plugin` (tests on the built kete, amd64 image both modes end to end, arm64 image smoke) and `kete-build` | pass (runs 37265625224, 37265625186) |
 
 ## Acceptance criteria
 - [x] AC1 — `test/settings.test.ts`: missing budget/timeout/task, invalid modes/presets/limits/keys, allow rules, push names.
