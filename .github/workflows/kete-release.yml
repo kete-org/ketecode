@@ -10,6 +10,9 @@
 #              always; manual runs only with all_platforms (macOS and Windows minutes count
 #              multiplied against the free allowance)
 #   extension  checks every platform .vsix: target, version, bundled binary
+#   extension-e2e  the extension's end-to-end suite (packages/kete-vscode/script/e2e.ts --assert) on
+#              the linux-x64 .vsix in VS Code and in VSCodium (the Open VSX forks' stand-in), under
+#              xvfb, each editor a pinned archive checked against a pinned SHA-256
 #   image      the cloud job image (packages/kete-job-image) for linux/amd64 and linux/arm64 from
 #              the released linux-x64 and linux-arm64 kete, with read-only permissions: builds both
 #              (arm64 under QEMU), runs the full end-to-end test (scripts/e2e.sh) on amd64 and only a
@@ -28,7 +31,7 @@
 #   cloudvm-images  tags only, after image-publish: the provider images for VM-per-job hosts
 #              (kete-cloudvm-images.yml: cloudvm kernel, base disks, per-provider imports where an
 #              image-builder credential is configured); publish doesn't wait for it
-#   publish    tags only, after smoke, extension, image and kernel pass: this repository's GitHub
+#   publish    tags only, after smoke, extension, extension-e2e, image and kernel pass: this repository's GitHub
 #              Release, first as a DRAFT with every archive, .vsix and SHA256SUMS, plus the job
 #              image's digests and signing identity in the notes, kete-job-image.digest (the
 #              linux/amd64 digest Fly pins today) and kete-job-image.digests (index, per-arch
@@ -234,9 +237,82 @@ jobs:
           HOME="$home" vsix/extension/bin/kete --version | tee version.txt
           grep -F "kete v$version" version.txt
 
+  # The extension's end-to-end suite (packages/kete-vscode/script/e2e.ts --assert: install the
+  # linux-x64 .vsix, sign-in state, chat, editor context, sessions, review, MCP view, restart) in a
+  # real editor under xvfb: VS Code, and VSCodium for the forks that install from Open VSX. Windsurf
+  # and Cursor can't be downloaded headlessly; packages/kete-vscode/README.md has their manual
+  # checklist. Each editor is a pinned linux-x64 archive checked against a pinned SHA-256 (VS Code:
+  # the sha256hash of update.code.visualstudio.com/api/versions/<version>/linux-x64/stable; VSCodium:
+  # the release asset's .sha256 and GitHub digest). Bump both together, in this file only.
+  extension-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - editor: vscode
+            archive: https://update.code.visualstudio.com/1.140.0/linux-x64/stable
+            sha256: d32031e9e213d59532af3cf32fcb8b357a1cdd10417967b4f5b5ba30436dc0dc
+            cli: VSCode-linux-x64/bin/code
+          - editor: vscodium
+            archive: https://github.com/VSCodium/vscodium/releases/download/1.135.06055/VSCodium-linux-x64-1.135.06055.tar.gz
+            sha256: c09d8ac8dd7f52b09ee159ee24b440541dfd8f937a0f6f88cc428c78e48ee1f2
+            cli: bin/codium
+    name: extension-e2e (${{ matrix.editor }})
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      # The runner imports @opencode/util and bundles the in-editor suite with Bun.
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      - name: Download the editor
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+          SHA256: ${{ matrix.sha256 }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --max-time 600 -o "$RUNNER_TEMP/editor.tar.gz" "$ARCHIVE"
+          echo "$SHA256  $RUNNER_TEMP/editor.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/editor"
+          tar -xzf "$RUNNER_TEMP/editor.tar.gz" -C "$RUNNER_TEMP/editor"
+          rm "$RUNNER_TEMP/editor.tar.gz"
+
+      # Electron's sandbox needs unprivileged user namespaces, which Ubuntu 24.04 restricts through
+      # AppArmor; allow them on this throwaway runner (the editor keeps its sandbox on).
+      - name: Prepare the display
+        run: |
+          set -euo pipefail
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          command -v xvfb-run >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q xvfb; }
+
+      - name: End-to-end test in ${{ matrix.editor }}
+        env:
+          EDITOR_CLI: ${{ runner.temp }}/editor/${{ matrix.cli }}
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          vsix="$GITHUB_WORKSPACE/release/kete-code-$version-linux-x64.vsix"
+          test -f "$vsix" || { echo "::error::missing $vsix"; exit 1; }
+          cd packages/kete-vscode
+          xvfb-run -a bun script/e2e.ts "$vsix" --code "$EDITOR_CLI" --assert -- --disable-gpu
+
   image:
     # After the extension too, so a failed release never leaves a pushed image behind.
-    needs: [build, smoke, extension]
+    needs: [build, smoke, extension, extension-e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 75
     # Builds and tests only: no registry or signing permission (image-publish has those).
@@ -554,7 +630,7 @@ jobs:
       job_image: ghcr.io/kete-org/kete-job@${{ needs.image-publish.outputs.index }}
 
   publish:
-    needs: [smoke, extension, image, image-publish, kernel-publish]
+    needs: [smoke, extension, extension-e2e, image, image-publish, kernel-publish]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/kete-v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
