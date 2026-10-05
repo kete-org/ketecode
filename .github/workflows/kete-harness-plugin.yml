@@ -45,11 +45,12 @@ jobs:
       - name: Lint the scripts
         run: shellcheck packages/kete-harness-plugin/scripts/*.sh
 
+      # Each build empties its --outdir, so the two targets go to separate directories.
       - name: Build the Linux x64 and arm64 kete
         working-directory: packages/cli
         run: |
           bun run build --target=kete-linux-x64 --skip-web-ui
-          bun run build --target=kete-linux-arm64 --skip-web-ui --skip-install
+          bun run build --target=kete-linux-arm64 --skip-web-ui --skip-install --outdir=dist-arm64
 
       - name: Typecheck
         working-directory: packages/kete-harness-plugin
@@ -73,7 +74,9 @@ jobs:
           platforms: arm64
 
       - name: Build the linux/arm64 image
-        run: bash packages/kete-harness-plugin/scripts/build.sh --arch arm64 --tag kete-harness-plugin:arm64
+        run: |
+          bash packages/kete-harness-plugin/scripts/build.sh --arch arm64 --tag kete-harness-plugin:arm64 \
+            --kete packages/cli/dist-arm64/cli-linux-arm64/bin/kete
 
       - name: Smoke test the linux/arm64 image
         run: bash packages/kete-harness-plugin/scripts/smoke.sh kete-harness-plugin:arm64 --arch arm64
