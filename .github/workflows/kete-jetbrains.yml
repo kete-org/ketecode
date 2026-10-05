@@ -96,9 +96,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # <product code>:<version>. IC 2024.3 is the oldest supported (sinceBuild 243); IC 2025.3 is
-        # the last IntelliJ IDEA Community; the rest are the current releases.
-        ide: ["IC:2024.3.7", "IC:2025.3", "IU:2026.2.3", "PY:2026.2.3", "WS:2026.2.3", "GO:2026.2.3"]
+        # <product code>:<version>. IC 2024.3 is the oldest supported (sinceBuild 243); IC 2025.2 is
+        # the last IntelliJ IDEA Community with Linux builds; the rest are the current releases.
+        ide: ["IC:2024.3.7", "IC:2025.2.6", "IU:2026.2.3", "PY:2026.2.3", "WS:2026.2.3", "GO:2026.2.3"]
     steps:
       # An IDE download plus its extracted copy outgrow the runner's free disk with the preinstalled toolchains.
       - name: Free disk space
