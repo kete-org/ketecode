@@ -821,9 +821,11 @@ Remote and LAN Ollama / LM Studio / vLLM hosts, a status RPC, models without too
 `util/src/kete/offline.ts`, `schema/src/kete/local-models.ts`, `core/src/kete/{local-hosts,
 local-models,offline}.ts`, and the offline no-ops in `core/src/kete/{gateway,run-checks}.ts` and
 `core/src/kete/sync/plugin.ts`. `schema/src/config/kete.ts` (`kete.offline`) is Kete-owned too.
-Pass A (core) and pass B (CLI) rows are below; the TUI and web UI rows are added by a later pass.
 Kete-owned CLI code: `cli/src/kete/{offline,offline-startup,models-pull,models-list}.ts` and the offline
-refusals in `cli/src/kete/{login,sync,upgrade,updater}.ts`.
+refusals in `cli/src/kete/{login,sync,upgrade,updater}.ts`. Kete-owned client code: the shared picker
+rules `util/src/kete/local-picker.ts`, TUI `tui/src/kete/{local-models.ts,local-offer.tsx,local-status.tsx}`,
+web `app/src/kete/{local-models.ts,local-ui.tsx}` and the panel wiring in `app/src/kete/{panel.tsx,
+panel.css,composer-controls.tsx}`.
 
 | File | Change | Why no seam |
 | --- | --- | --- |
@@ -838,6 +840,12 @@ refusals in `cli/src/kete/{login,sync,upgrade,updater}.ts`.
 | `cli/src/commands/commands.ts` | `models` spec gains `commands: [KeteCommands.modelsPull]` (1 line) | the command tree has no extension point for a subcommand of an upstream command |
 | `cli/src/services/server-connection.ts` | Import; `resolve` runs its input through `KeteCliOffline.connection` first (offline: private server; `--server` refused) | the connection choice is made only here; the background service may have been started online and a remote server's mode can't be checked |
 | `cli/src/commands/handlers/models.ts` | Import; the output lines come from `KeteModelsList.lines(models, isTTY)` (local models get `tools:/vision:/ctx:` on a TTY; piped output unchanged) | the handler builds its lines inline; no hook |
+| `tui/src/component/dialog-model.tsx` | Imports; `useKeteLocalStatus()`; each model's category/provider name/description/footer go through `dialogFields` (local models: "Local" group, "no tools" and context badges); the options end with `unreachableOptions(...)` (one row per unreachable local server; selecting shows the hint) | the dialog builds its options inline; no slot or hook adds rows or badges |
+| `tui/src/plugin/builtins.ts` | Import and register `KeteLocalStatus` after `KeteBalance` (the "Offline" footer indicator) | built-in TUI plugins are registered only here |
+| `tui/src/app.tsx` | Import; `useKeteLocalModels()` once in `App` (first-run offer; once-per-session no-tools notice) | the offer needs the app's model selection, dialog and toast, which no plugin API exposes |
+| `tui/test/fixture/tui-client.ts` | Answers `POST /api/rpc/kete.local-models/status` with an empty status | the fixture fails on any unexpected request, and the model dialog now asks for status |
+| `app/src/providers/models/select-dialog.tsx` | Imports; `<KeteLocalBadges>` after the Latest badge in the dialog rows and menu rows; local group titles in the menu via `groupTitle`; `<KeteLocalUnreachable />` above the dialog's model list | the picker has no extension point for badges, group titles or extra rows |
+| `app/src/providers/models/provider-group.tsx` | Import; a group's title goes through `groupTitle` ("Local · Ollama") | the section header builds the title inline |
 
 **Sync checklist**, on top of the usual one:
 
@@ -850,3 +858,7 @@ refusals in `cli/src/kete/{login,sync,upgrade,updater}.ts`.
 - `cli/src/index.ts`: `./kete/offline-startup` must stay the import right after `./kete/env-bridge`.
 - `cli/src/services/server-connection.ts`: every connection must still go through `resolve` (offline
   forces `--standalone` there).
+- `tui/src/component/dialog-model.tsx`: if upstream restructures the options, keep the Local group,
+  badges and unreachable rows (tests: `tui/test/kete/local-models.test.tsx`).
+- `app/src/providers/models/select-dialog.tsx`: if the rows or the list container move, keep the badges
+  and the unreachable lines next to them.
