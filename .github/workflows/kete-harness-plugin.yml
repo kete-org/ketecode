@@ -1,0 +1,79 @@
+# Kete-owned. The Kete Code step for Harness pipelines (packages/kete-harness-plugin/README.md):
+# typecheck and tests (settings, outputs, cloud mode against a fake platform, run mode driving the
+# built Linux kete against a fake model endpoint), then the step image for linux/amd64 (smoke test
+# plus both modes end to end inside the image) and linux/arm64 (built under QEMU, smoke test only).
+# Pushes nothing and uses no secrets; the release workflow publishes the image (kete-release.yml,
+# harness-plugin-image and harness-plugin-publish). Path-filtered, protecting the shared CI minutes.
+name: kete-harness-plugin
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/kete-harness-plugin/**"
+      - "packages/util/src/kete/redact.ts"
+      - "packages/cli/src/kete/job*.ts"
+      - ".github/workflows/kete-harness-plugin.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/kete-harness-plugin/**"
+      - "packages/util/src/kete/redact.ts"
+      - "packages/cli/src/kete/job*.ts"
+      - ".github/workflows/kete-harness-plugin.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      # shellcheck is preinstalled on ubuntu-latest.
+      - name: Lint the scripts
+        run: shellcheck packages/kete-harness-plugin/scripts/*.sh
+
+      - name: Build the Linux x64 and arm64 kete
+        working-directory: packages/cli
+        run: |
+          bun run build --target=kete-linux-x64 --skip-web-ui
+          bun run build --target=kete-linux-arm64 --skip-web-ui --skip-install
+
+      - name: Typecheck
+        working-directory: packages/kete-harness-plugin
+        run: bun run typecheck
+
+      - name: Tests (run mode drives the built kete)
+        working-directory: packages/kete-harness-plugin
+        env:
+          KETE_TEST_BIN: ${{ github.workspace }}/packages/cli/dist/cli-linux-x64/bin/kete
+        run: bun run test
+
+      - name: Build the linux/amd64 image
+        run: bash packages/kete-harness-plugin/scripts/build.sh --arch amd64 --tag kete-harness-plugin:amd64
+
+      - name: Test the linux/amd64 image (both modes end to end)
+        run: bash packages/kete-harness-plugin/scripts/smoke.sh kete-harness-plugin:amd64 --arch amd64 --full
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Build the linux/arm64 image
+        run: bash packages/kete-harness-plugin/scripts/build.sh --arch arm64 --tag kete-harness-plugin:arm64
+
+      - name: Smoke test the linux/arm64 image
+        run: bash packages/kete-harness-plugin/scripts/smoke.sh kete-harness-plugin:arm64 --arch arm64
