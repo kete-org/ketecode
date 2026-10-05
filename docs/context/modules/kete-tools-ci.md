@@ -1,10 +1,11 @@
 ---
 module: kete-tools-ci
 paths: [packages/kete-tools/src/*, packages/kete-tools/distribution/*, .github/workflows/kete-extension-publish.yml, .github/workflows/kete-installer-smoke.yml, .github/workflows/kete-job-image.yml, packages/kete-tools/leak-allowlist.txt, .github/workflows/kete-build.yml, .github/workflows/kete-release.yml, .github/workflows/kete-root-helper.yml, .github/workflows/kete-egress.yml, .github/workflows/kete-job-entrypoint.yml, .github/workflows/kete-job-host.yml, .opencode-version]
-verified-at: 42d29ce9bb
+verified-at: 3d489dad3d
 ---
 
 ## Quick answers
+- **Where is the Harness step image built and published?** `kete-harness-plugin.yml` (path-filtered PR/push/dispatch, no secrets: shellcheck, typecheck, tests against the built linux-x64 kete, amd64 image + `scripts/smoke.sh --full`, arm64 image under QEMU + smoke) and, in `kete-release.yml`, `harness-plugin-image` (same `needs` as `image`, `contents: read`, builds from the release's linux kete, saves `kete-harness-plugin-images` on tags with its SHA-256) → `harness-plugin-publish` (tags only, `packages: write` + `id-token: write`, no checkout: push, index `ghcr.io/kete-org/kete-harness-plugin:<tag>`, cosign sign + verify, same pattern as `image-publish`). `publish` needs it and appends the index digest to the notes. `kete-build` runs the package's tests (`suite kete-harness-plugin test`). One-time: grant the GHCR package Actions access (`docs/release.md`). See the `harness-plugin` card.
 - Why does `upstream:check` accept `docs/integrations/*.md` without markers? `isKeteOwned` (`packages/kete-tools/src/lib.ts`) lists `docs/integrations/` (the MCP preset guides) next to `docs/adr/`; upstream has no `docs/` at the pinned tag. A new top-level Kete doc outside these prefixes needs an entry there too.
 - **How is the CLI distributed publicly, and what publishes what?** ADR 0009. `build` also runs
   `distribute public` (artifact `public-release`: every CLI archive + `install.sh` + `install.ps1` +
