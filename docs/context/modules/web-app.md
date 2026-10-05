@@ -1,7 +1,7 @@
 ---
 module: web-app
 paths: [packages/app/src/kete/panel.tsx, packages/app/src/kete/panel.css, packages/app/src/kete/panel-layout.tsx, packages/app/src/kete/panel-state.ts, packages/app/src/kete/mode.ts, packages/app/src/kete/composer-controls.tsx, packages/app/src/new-session/view.tsx, packages/app/src/composer/composer.tsx, packages/app/src/composer/editor/editor.tsx, packages/app/src/new-session/composer-adapter.ts]
-verified-at: 604889ab32
+verified-at: 139c15e1b2
 ---
 
 ## Quick answers
@@ -43,8 +43,9 @@ verified-at: 604889ab32
   `panel-state.ts:70-73`, `tipVisible`) — Alt+K is an editor keybinding, the CLI hint doesn't make
   sense from a browser already served by the CLI, and there's no notice source yet for the browser.
   `panel-state.ts`'s default `PanelState` (`host: "browser"`) has empty notices, no CLI hint, no tip;
-  only `vscode-host.tsx`'s `kete.panel` listener sets `host: "vscode"` and fills the rest in — see the
-  `vscode-extension` card for that side of the bridge.
+  only `vscode-host.tsx`'s `kete.panel` listener sets `host` (`"vscode"` or `"jetbrains"`, from
+  `ide-host.ts`'s `currentHost()`) and fills the rest in; `tipVisible` is true in either editor host — see
+  the `vscode-extension` and `jetbrains-plugin` cards for that side of the bridge.
 - Why does notice/CLI-hint text render through `segments()` instead of `innerHTML`? Extension-sourced
   (eventually server-sourced) text must never become markup. `panel-state.ts`'s `segments()` splits on
   backtick pairs into text/code spans; an odd backtick count (ambiguous) renders the whole string as
@@ -114,11 +115,11 @@ evaluation time.
 ## Data flow
 
 **Empty state / notices / CLI hint:** `panel-state.ts`'s module-level `panelState` signal starts with
-browser defaults → in the VS Code host, `vscode-host.tsx`'s message listener calls
-`updatePanelState({host: "vscode", ...panelMessage(event.data)})` on every `kete.panel` message →
+browser defaults → in an editor host (VS Code or JetBrains), `vscode-host.tsx`'s message listener calls
+`updatePanelState({host: currentHost(), ...panelMessage(data)})` on every `kete.panel` message →
 `panel.tsx` reads `panelState()` reactively. Dismissing a notice/hint calls both a local optimistic
 hide (`dismiss*Locally()`, so the UI updates immediately) and, when embedded, posts
-`kete.dismissNotice`/`kete.dismissCliHint` to the extension (`vscode-host.tsx`'s exported
+`kete.dismissNotice`/`kete.dismissCliHint` to the editor (`vscode-host.tsx`'s exported
 `dismissNotice`/`dismissCliHint`) — the extension's next `kete.panel` broadcast is authoritative.
 
 **Permission mode toggle:** `composer-controls.tsx`'s `KeteModeToggle` derives its displayed state

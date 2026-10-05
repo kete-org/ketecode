@@ -1,7 +1,7 @@
 ---
 module: vscode-extension
 paths: [packages/kete-vscode/**, packages/app/src/kete/vscode-*.ts, packages/app/src/kete/vscode-*.tsx]
-verified-at: a29457ec43
+verified-at: 139c15e1b2
 ---
 
 ## Quick answers
@@ -123,7 +123,11 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
   (mounted once; opens the workspace, applies the VS Code theme, listens for `kete.panel` and calls
   `panel-state.ts`'s `updatePanelState`) and `KeteVSCodeBridge` (mounted per composer; adds context
   items); also exports `dismissNotice(id)`/`dismissCliHint()`, which post `kete.dismissNotice`/
-  `kete.dismissCliHint` to the parent only when `embedded()` (`vscode-host.tsx:66-76`).
+  `kete.dismissCliHint` to the editor only when `embedded()`. Since the JetBrains plugin, every post
+  and listener goes through `ide-host.ts` (`postToHost`/`onHostMessage`/`currentHost`): in VS Code that
+  is still `window.parent.postMessage(…, "*")` and `message` events whose source is the parent window,
+  detected by the frame name `kete-vscode` inside a parent (see the `jetbrains-plugin` card for the
+  JetBrains transport). `data-kete-host` and the panel's `host` are `currentHost()`.
 - `packages/app/src/kete/vscode-messages.ts` (88) — validates every message the extension posts in,
   including `panelMessage()` for `kete.panel` (platform, `defaultMode`, `cliHint`, ≤10 notices with
   `id`/`title`/`body` length limits; anything malformed drops the whole message rather than

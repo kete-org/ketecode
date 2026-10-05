@@ -66,7 +66,7 @@
 ## Verification
 | Criterion | Command (narrowest first) |
 |---|---|
-| AC1 | CI `kete-jetbrains.yml`: `./gradlew buildPlugin test` then `./gradlew verifyPlugin -PverifyIde=<code>:<version>` per IDE (IC 2024.3, IC 2025.3, IU/PY/WS/GO 2026.2) |
+| AC1 | CI `kete-jetbrains.yml`: `./gradlew buildPlugin test` then `./gradlew verifyPlugin -PverifyIde=<code>:<version>` per IDE (IC 2024.3, IC 2025.2, IU/PY/WS/GO 2026.2) |
 | AC2 | CI `./gradlew test` (JUnit 5 reports) |
 | AC3 | `cd packages/app && bun test --conditions=solid --preload ./happydom.ts ./src/kete`; `bun run typecheck` |
 | AC4 | actionlint on `kete-release.yml`, `kete-jetbrains-publish.yml`; review the tag checks |

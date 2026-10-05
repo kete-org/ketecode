@@ -12,12 +12,13 @@ upstream OpenCode version the source is synced to (`.opencode-version`).
 
 | Channel | What | When |
 | --- | --- | --- |
-| GitHub Release on `kete-org/ketecode` (private) | CLI archives, every `.vsix`, `SHA256SUMS`, job image digests, guest kernels, generated notes | every tag |
+| GitHub Release on `kete-org/ketecode` (private) | CLI archives, every `.vsix`, the JetBrains plugin zips, `SHA256SUMS`, job image digests, guest kernels, generated notes | every tag |
 | GHCR `ghcr.io/kete-org/kete-job` | the cloud job image: a signed linux/amd64 + linux/arm64 index tagged with the release tag (per-arch tags `<tag>-linux-<arch>`) | every tag |
 | GitHub Release on `kete-org/kete-releases` (public) | CLI archives, `install.sh`, `install.ps1`, their `SHA256SUMS`, `SHA256SUMS.sig` (Ed25519), `SHA256SUMS.sigstore.json` (cosign), public notes | every tag, once public distribution is on |
 | Homebrew `kete-org/tap/kete` (`kete-org/homebrew-tap`) | `Formula/kete.rb`: per-platform URLs into `kete-releases` and their SHA-256 | stable tags, once public distribution is on |
 | npm `@ketecode/cli` + `@ketecode/cli-<platform>` | launcher + one package per platform | every tag (pre-releases under the npm tag `next`), once public distribution is on |
 | VS Code Marketplace and Open VSX (`ketecode.kete-code`) | the 8 platform `.vsix` files of a released stable tag | **only** when `kete-extension-publish` is run on that tag ([Publish the extension](#publish-the-extension)) |
+| JetBrains Marketplace (`ai.ketecode.kete-code`) | the all-platform plugin zip of a released stable tag, if it fits the 400 MB limit | **only** when `kete-jetbrains-publish` is run on that tag ([Publish the JetBrains plugin](#publish-the-jetbrains-plugin)) |
 
 "Once public distribution is on" means the repository variable `KETE_PUBLIC_DISTRIBUTION` is `true`
 (see [Public distribution](#public-distribution-one-time-setup)); until then a release publishes only
@@ -145,6 +146,36 @@ check its Open VSX page (<https://open-vsx.org/extension/ketecode/kete-code>) sh
 every platform. The extension's fork support (no hard-coded `vscode://` scheme or product name, no
 proposed API, `engines.vscode` floor) is tested in `packages/kete-vscode/test/fork.test.ts`.
 
+## Publish the JetBrains plugin
+
+```sh
+gh workflow run kete-jetbrains-publish.yml --repo kete-org/ketecode --ref kete-v0.3.0 -f confirm=kete-v0.3.0
+```
+
+**One-time setup:** a JetBrains Marketplace vendor (`Kete Code`) and the plugin listing
+(`ai.ketecode.kete-code`), created by hand with the first upload of a released zip
+(<https://plugins.jetbrains.com/plugin/add>); a Marketplace permanent token
+(<https://plugins.jetbrains.com/author/me/tokens>); and the GitHub environment
+**`jetbrains-marketplace`**, limited to the tag pattern `kete-v*` like `registries`, holding the
+secret `JETBRAINS_MARKETPLACE_TOKEN`. Only `kete-jetbrains-publish.yml` uses it.
+
+The workflow mirrors the extension's: run it on the release tag; it refuses any other ref, a
+pre-release, a mismatched `confirm`, or a missing, draft or pre-release GitHub Release. It downloads
+the release's `kete-code-jetbrains-<v>.zip` and `kete-code-jetbrains-<v>.sha256` (it builds nothing),
+verifies the checksum, the 400 MB limit, the plugin id and version, and uploads the zip through the
+Marketplace upload API (the token reaches curl on stdin). A version the Marketplace already has is
+reported and skipped. New versions appear after JetBrains' review.
+
+**Open decision: one Marketplace file for every platform.** The Marketplace takes a single file of at
+most 400 MB per version, and one `kete` binary is ~80–93 MB compressed, so a zip with all six
+platforms (~520 MB) doesn't fit. Releases therefore attach one zip per OS (installable with
+**Settings → Plugins → ⚙ → Install Plugin from Disk…**) and the all-platform zip only when it fits;
+until it does, `kete-jetbrains-publish` stops with that explanation. Getting the plugin onto the
+Marketplace needs a choice before go-live: download the platform binary on first use (verified
+against the release's signed checksums), or a smaller binary. Run the
+[manual smoke checklist](../packages/kete-jetbrains/README.md#manual-smoke-checklist) before
+publishing.
+
 ## What CI does (`.github/workflows/kete-release.yml`)
 
 1. **build**: cross-compiles every CLI target on Linux, archives each with `LICENSE` and
@@ -162,6 +193,12 @@ proposed API, `engines.vscode` floor) is tested in `packages/kete-vscode/test/fo
    under xvfb (`packages/kete-vscode/script/e2e.ts --assert`: sign-in state, chat, editor context,
    sessions, review, MCP view, server restart, no server left behind). VSCodium stands in for the
    Open VSX forks; Windsurf and Cursor are covered by the manual checklist.
+   **jetbrains**: builds the JetBrains plugin (`packages/kete-jetbrains`, Gradle wrapper validated)
+   with the released binaries bundled: one zip per OS with both architectures, plus the all-platform
+   zip if it is at most 400 MB; checks each zip's plugin id, version and executable binaries, runs
+   the linux zip's `linux-x64` binary, and writes `kete-code-jetbrains-<v>.sha256`. The plugin's own
+   build, unit tests and Plugin Verifier run on every pull request that touches it
+   (`kete-jetbrains.yml`), not here.
 4. **image**: the cloud job image (`packages/kete-job-image`) for `linux/amd64` and `linux/arm64`
    from the released `linux-x64` and `linux-arm64` archives (checksums verified first):
    `scripts/build.sh --arch amd64` builds the amd64 image and `scripts/e2e.sh` runs it end to end
@@ -232,6 +269,9 @@ proposed API, `engines.vscode` floor) is tested in `packages/kete-vscode/test/fo
 | ------------------------------------------------------------------ | --------------------------------------------------------- |
 | `kete-<version>-<target>.tar.gz` (Linux) / `.zip` (macOS, Windows) | The `kete` binary with `LICENSE` and `NOTICE`             |
 | `kete-code-<version>-<vscode target>.vsix`                         | The VS Code extension for one platform, with its binary   |
+| `kete-code-jetbrains-<version>-<macos\|linux\|windows>.zip`         | The JetBrains plugin for one OS, with its arm64 and x64 binaries |
+| `kete-code-jetbrains-<version>.zip` (only if ≤ 400 MB)              | The JetBrains plugin with every platform's binary          |
+| `kete-code-jetbrains-<version>.sha256`                              | SHA-256 of the JetBrains plugin zips                       |
 | `SHA256SUMS`                                                       | SHA-256 of every file above (`sha256sum -c SHA256SUMS`)  |
 | `kete-job-image.digest`                                            | `ghcr.io/kete-org/kete-job@sha256:…`: the linux/amd64 job image Fly pins |
 | `kete-job-image.digests`                                           | `index`, `linux/amd64`, `linux/arm64` image refs by digest and the cosign identity and issuer |
@@ -264,6 +304,12 @@ Extension targets and the binary each bundles: `darwin-arm64` (`darwin-arm64`), 
 platform (on a remote host, the remote's). There is deliberately no universal package: the
 extension never falls back to a `kete` on the `PATH`. The mapping lives in
 `packages/kete-vscode/src/binary.ts`.
+
+JetBrains plugin folders and the binary each bundles: `bin/darwin-arm64` (`darwin-arm64`),
+`bin/darwin-x64` (`darwin-x64-baseline`), `bin/linux-x64` (`linux-x64-baseline`), `bin/linux-arm64`,
+`bin/windows-x64` (`windows-x64-baseline`), `bin/windows-arm64`; the plugin picks the folder for the
+IDE's OS and architecture (`packages/kete-jetbrains/src/main/kotlin/ai/ketecode/jetbrains/core/Binary.kt`)
+and, like the extension, never runs a `kete` from the `PATH`. No musl build: JetBrains IDEs need glibc.
 
 ## Build locally
 

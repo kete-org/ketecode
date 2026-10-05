@@ -1,7 +1,7 @@
 # Knowledge base index
 
 Read this first. `kete-code` is Kete Code's **execution plane**: the agent runtime, the `kete`
-CLI, the SDK, the web UI and the VS Code extension. It is a fork of OpenCode v2 (pin in
+CLI, the SDK, the web UI, the VS Code extension and the JetBrains plugin. It is a fork of OpenCode v2 (pin in
 `.opencode-version`); Kete-owned code lives in `packages/*/src/kete/`, `packages/kete-*` and any
 path containing `kete`. The control plane (portal, platform API, gateway, database) is the
 `kete-code-platform` repo; what the two share is in `contracts.md` — read that instead of opening
@@ -58,6 +58,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | ui-branding | web UI and TUI branding and themes |
 | web-app | the web app's Kete chat panel: empty state, composer controls, the permission-mode toggle |
 | vscode-extension | the extension and the web UI's side of its bridge |
+| jetbrains-plugin | the IntelliJ-platform plugin (`packages/kete-jetbrains`): bundled runtime, JCEF chat and its bridge, context, review, diagnostics tool, CI/release/publish workflows, the web UI's `ide-host.ts` |
 | kete-tools-ci | upstream sync, upstream:check, verify, release, role-check, CI |
 
 Card template (`node scripts/agent/card-check.mjs` enforces it): front matter `module`, `paths`,
