@@ -24,11 +24,28 @@ export type Environment = Record<string, string | undefined>
 /** What the global config says about `kete.offline`: unset, a boolean, or something else (fails closed). */
 export type ConfigValue = "unset" | "on" | "off"
 
-/** Whether `--offline` is among the arguments, ignoring everything after a `--`. */
+/** The values the CLI parser (effect/unstable/cli `Flag.boolean`) reads as true and false: case-sensitive. */
+export const truthy: readonly string[] = ["true", "yes", "on", "1", "y"]
+export const falsy: readonly string[] = ["false", "no", "off", "0", "n"]
+
+/**
+ * Whether `--offline` turns offline mode on, read the way the CLI parser reads the flag, ignoring
+ * everything after a `--`: `--offline`, `--offline=<truthy>` and `--offline <truthy>` are on;
+ * `--offline=false` and `--offline false` (any of `falsy`) are off. Fails closed: an occurrence that
+ * isn't explicitly false (`--offline=maybe`, which the parser then rejects) counts as on.
+ */
 export function flagged(argv: readonly string[]): boolean {
-  for (const argument of argv) {
+  for (const [index, argument] of argv.entries()) {
     if (argument === "--") return false
-    if (argument === "--offline" || argument === "--offline=true") return true
+    if (argument === "--offline") {
+      const next = argv[index + 1]
+      if (next !== undefined && falsy.includes(next)) continue
+      return true
+    }
+    if (argument.startsWith("--offline=")) {
+      if (falsy.includes(argument.slice("--offline=".length))) continue
+      return true
+    }
   }
   return false
 }

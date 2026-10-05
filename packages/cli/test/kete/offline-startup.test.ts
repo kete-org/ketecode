@@ -5,9 +5,11 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { NodeServices } from "@effect/platform-node"
 import { Global } from "@opencode/util/global"
 import { Effect } from "effect"
+import { Argument, Command } from "effect/unstable/cli"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { KeteCommands } from "../../src/kete/commands"
 import { KeteCliOffline } from "../../src/kete/offline"
 import { ServerConnection } from "../../src/services/server-connection"
 
@@ -33,6 +35,60 @@ describe("offline startup", () => {
   test("--offline after `--` is an argument, not the flag", () => {
     expect(KeteCliOffline.flagged(["run", "--", "--offline"])).toBe(false)
     expect(KeteCliOffline.flagged(["run", "--offline", "--", "x"])).toBe(true)
+  })
+
+  // The startup check runs before the CLI parser, so it must read `--offline=<value>` and
+  // `--offline <value>` exactly as the parser does: "false" never turns offline on, a truthy value
+  // always does, and anything the parser would reject counts as on (fail closed).
+  test("--offline=false and --offline false are off; truthy values are on; unknown values fail closed", () => {
+    for (const value of KeteCliOffline.falsy) {
+      expect(KeteCliOffline.flagged([`--offline=${value}`, "run"])).toBe(false)
+      expect(KeteCliOffline.flagged(["--offline", value, "run"])).toBe(false)
+    }
+    for (const value of KeteCliOffline.truthy) {
+      expect(KeteCliOffline.flagged([`--offline=${value}`])).toBe(true)
+      expect(KeteCliOffline.flagged(["--offline", value])).toBe(true)
+    }
+    expect(KeteCliOffline.flagged(["--offline=maybe"])).toBe(true)
+    expect(KeteCliOffline.flagged(["--offline=FALSE"])).toBe(true)
+    expect(KeteCliOffline.flagged(["--offline", "hello"])).toBe(true)
+    expect(KeteCliOffline.flagged(["--offline=false", "--offline"])).toBe(true)
+    const env: KeteCliOffline.Environment = {}
+    expect(KeteCliOffline.apply(env, ["--offline=false", "models"], () => [])).toBe(false)
+    expect(env).toEqual({})
+  })
+
+  test("the startup check agrees with the CLI parser's reading of --offline", async () => {
+    const cases = [
+      ["--offline"],
+      ["--offline=true"],
+      ["--offline=false"],
+      ["--offline", "false"],
+      ["--offline", "true"],
+      ["--offline=0"],
+      ["--offline=no"],
+      ["--offline=off"],
+      ["--offline=yes"],
+      ["--offline=1"],
+      ["--offline", "0"],
+      ["--offline", "hello"],
+      ["hello"],
+    ]
+    for (const argv of cases) {
+      const parsed = await Effect.runPromise(
+        Effect.gen(function* () {
+          const seen: { offline?: boolean } = {}
+          const command = Command.make("probe", { rest: Argument.string("rest").pipe(Argument.variadic()) }, () =>
+            Effect.gen(function* () {
+              seen.offline = yield* KeteCommands.Offline
+            }),
+          ).pipe(Command.withGlobalFlags([KeteCommands.Offline]))
+          yield* Command.runWith(command, { version: "0", renderErrors: false })(argv)
+          return seen.offline
+        }).pipe(Effect.provide(NodeServices.layer)),
+      )
+      expect({ argv, offline: KeteCliOffline.flagged(argv) }).toEqual({ argv, offline: parsed === true })
+    }
   })
 
   test("KETE_OFFLINE (bridged): on, and an invalid value fails closed and is kept as it is", () => {
