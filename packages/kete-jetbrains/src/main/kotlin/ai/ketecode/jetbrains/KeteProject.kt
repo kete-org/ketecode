@@ -76,13 +76,15 @@ class KeteProject(private val project: Project) : Disposable {
         sessions.remove(chat)
     }
 
-    /** Loads (or reloads, after a restart: new port and password) the chat. */
+    /** Loads (or reloads, after a restart: new port and password) the chat; a chat already on this server run is left alone. */
     fun show(chat: ChatPanel) {
+        KeteRuntime.get().running()?.let { if (chat.shows(it)) return }
         chat.showMessage("Starting $DISPLAY_NAME…")
         KeteRuntime.get().connection().whenComplete { connection, error ->
             ApplicationManager.getApplication().invokeLater({
-                if (connection != null) chat.load(connection)
-                else chat.showMessage(
+                if (connection != null) {
+                    if (!chat.shows(connection)) chat.load(connection)
+                } else chat.showMessage(
                     "$DISPLAY_NAME isn't available: ${error?.cause?.message ?: error?.message ?: "unknown error"}",
                     "Restart Server" to { KeteRuntime.get().restart() },
                     "Open in Terminal" to { KeteTerminal.open(project) },

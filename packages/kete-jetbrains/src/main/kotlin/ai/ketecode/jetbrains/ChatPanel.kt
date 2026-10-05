@@ -103,6 +103,9 @@ class ChatPanel(private val project: Project, parent: Disposable) : Disposable {
         showMessage("Starting $DISPLAY_NAME…")
     }
 
+    /** Whether the browser already shows this runtime's web UI (same origin: same port, so same server run). */
+    fun shows(connection: Connection): Boolean = origin != null && origin == Pairing.origin(connection.url)
+
     /** Points the browser at the runtime's web UI. */
     fun load(connection: Connection) {
         ready = false
