@@ -14,7 +14,7 @@ import ai.ketecode.jetbrains.core.KeteConfig
 import ai.ketecode.jetbrains.core.Pairing
 import ai.ketecode.jetbrains.core.RuntimeStatus
 import ai.ketecode.jetbrains.core.StartLine
-import com.intellij.ide.plugins.PluginManager
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -319,10 +319,13 @@ class KeteRuntime : Disposable {
 
     /** The binary to run: the CLI path setting, else the one bundled for this OS/architecture. */
     fun binary(): String {
-        val plugin = PluginManager.getPluginByClass(KeteRuntime::class.java)
+        // The plugin's folder: its jar is <plugin>/lib/kete-jetbrains-<version>.jar.
+        val jar = PathManager.getJarPathForClass(KeteRuntime::class.java)
+            ?: throw KeteRuntimeException("The Kete Code plugin's files were not found")
+        val pluginPath = java.nio.file.Path.of(jar).parent?.parent
             ?: throw KeteRuntimeException("The Kete Code plugin's files were not found")
         val resolved = Binary.resolve(
-            plugin.pluginPath.toString(),
+            pluginPath.toString(),
             KeteSettingsService.get().state.cliPath,
             System.getProperty("os.name"),
             System.getProperty("os.arch"),
