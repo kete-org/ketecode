@@ -1,0 +1,32 @@
+{
+  "description": "A Harness Code claim (jobs-v1, additive 2026-10-05; ADR 0024). The request announces clone_revoke_callback; the response's clone carries provider and username. The entrypoint authenticates the clone with Basic base64(username:token) and calls clone-done instead of GitHub's revoke endpoint. Values are examples, not secrets.",
+  "request": {
+    "claim_token": "4f9c2a7e1b8d3f6a0c5e9b2d7f1a4c8e6b3d0f9a2c7e5b1d8f4a6c0e3b9d2f7a",
+    "features": ["clone_revoke_callback"]
+  },
+  "response": {
+    "spec": {
+      "version": 1,
+      "prompt": "Fix the failed pipeline deploy_shop",
+      "agent": "developer",
+      "model": "kete/claude-sonnet-4-5",
+      "policy": { "version": 1, "allow": [], "budget": 2, "timeout": 30 },
+      "branch": "kete/job/9c1e4a2b"
+    },
+    "gateway_key": "kete_live_example",
+    "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+    "clone": {
+      "url": "https://git.harness.io/acct_Example1/default/shop/web.git",
+      "token": "sat.acct_Example1.kete_job_6f9619ff8b86_1a2b3c4d.EXAMPLEexampleEXAMPLE",
+      "ref": "main",
+      "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b",
+      "provider": "harness_code",
+      "username": "kete_code_clone"
+    },
+    "gateway_url": "https://gateway.kete.example",
+    "platform_url": "https://portal.kete.example",
+    "deadline": "2026-10-05T10:40:00Z"
+  },
+  "basic_authorization": "Basic a2V0ZV9jb2RlX2Nsb25lOnNhdC5hY2N0X0V4YW1wbGUxLmtldGVfam9iXzZmOTYxOWZmOGI4Nl8xYTJiM2M0ZC5FWEFNUExFZXhhbXBsZUVYQU1QTEU=",
+  "clone_done": { "method": "POST", "path": "/api/v1/jobs/{id}/clone-done", "authorization": "Bearer <callback_token>", "body": {}, "status": 204 }
+}

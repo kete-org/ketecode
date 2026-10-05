@@ -1,7 +1,7 @@
 ---
 module: job-entrypoint
 paths: [packages/kete-job-entrypoint/**, .github/workflows/kete-job-entrypoint.yml]
-verified-at: 372482f656
+verified-at: e2f31003c6
 ---
 
 ## Quick answers
@@ -57,17 +57,33 @@ verified-at: 372482f656
   whether one of Fly's own `FLY_MACHINE_ID`/`FLY_ALLOC_ID`/`FLY_APP_NAME`/`FLY_REGION`/
   `FLY_PRIVATE_IP` is set crosses the re-exec as one bit (`Values.OnFly`, `bootenv.FlyVars`; never
   a value) for the Fly guard. Invalid → exit 2, no callback. `KETE_JOB_STORAGE_HOST` is the **only** host signed upload URLs may name
-  (`internal/platform/claim.go:194`), and the claim is refused (`storage_host`) if it equals the
-  gateway, clone or clone-API host (`claim.go:146-150`).
+  (`internal/platform/claim.go:245`), and the claim is refused (`storage_host`) if it equals the
+  gateway or clone host, or (GitHub only) the clone-API host (`claim.go:199`).
+- How are Harness Code repositories cloned (jobs-v1 additive, 2026-10-05; platform ADR 0024,
+  kete-org/ketecode-portal#68)? The claim request sends `features: ["clone_revoke_callback"]`
+  (`platform.go:195`); the response's optional `clone.provider` (absent = `github`; else
+  `harness_code`; anything else, `null` included, → `clone.provider`) and `clone.username` (absent
+  = `x-access-token`; printable, no `:`, ≤ 128 → `clone.username`) are read raw
+  (`claim.go:137`, `Claim.CloneProvider`, `CloneUsername`, `CloneAPIHost` = GitHub's revoke host,
+  empty for Harness). The clone header is `gitops.BasicHeader(username, token)`; `gitops.Scrub`
+  redacts the token, `base64(username:token)` (claim's and default username) and any
+  `Authorization` line. GitHub: `Revoke` as before, then `CloneDone` best effort. Harness: **no**
+  git-host API call; `CloneDone` (`POST …/clone-done`, `{}`, ≤ 3 tries, `platform.go:296`) after
+  verify, and `failClone` (`job.go:447`) calls it on a refused branch, clone failure and verify
+  failure (HEAD ≠ `base_sha` included) before finalising; a failure is the events message "clone
+  token revoke failed", a 404 = gone (`job.go:425`). Clone-phase root allowlist = `uniq(platform,
+  clone host, CloneAPIHost)` (`job.go:458`), so exactly `{platform, clone host}` for Harness; no
+  later phase lists the git host. Phase step `clone_done`. **Release order:** platforms before #68
+  reject `features`, so an image with this entrypoint ships only after #68 is deployed.
 - Step order? Boot (validate env, re-exec `/proc/self/exe __run` with only `PATH`, so the claim
   token leaves `/proc/<pid>/environ`) → `setup_host` → users, sysctls, `/proc hidepid=2`, **Fly
   guard** (fly) or **host-boundary probe** (others), dirs,
   cgroups → firewall (`kete-egress nft | nft -f -`) → proxy instance 1 (root → platform only) →
   helper → **isolation check** → **claim** → proxy instance 2 (full allowlists) → clone, verify `base_sha`, revoke the
-  clone token, agent copy → agent (`kete job run`) → stop agents (helper SIGTERM, `cgroup.kill`,
+  clone token (GitHub revoke + `clone-done`; Harness Code `clone-done` only), agent copy → agent (`kete job run`) → stop agents (helper SIGTERM, `cgroup.kill`,
   `/proc` uid scan) → result → bundle → uploads → proxy instance 3 (adds the storage host) → PUTs →
   finish. Any failure before claim exits 1 **with no claim**. Code: `internal/entry/entry_linux.go:40`
-  (machine setup and starts), `internal/job/job.go:175` (`run`), `:419` (`afterClaim`), `:614`
+  (machine setup and starts), `internal/job/job.go:175` (`run`), `:458` (`afterClaim`), `:666`
   (`finalize`).
 - How does the Fly guard fail closed (security review, 2026-10-03)? `setup.LockFly(dir, onFly)`
   (`internal/setup/setup_linux.go`): on Fly (`boot.OnFly` or `/.fly` exists) a missing `/.fly` or
@@ -115,7 +131,8 @@ verified-at: 372482f656
   platform only), nothing is uploaded; with no such instance, nothing is reported and it exits 1
   (sweeper marks it lost) (`job.go:639-655`). Security-review fix 1.
 - Where does each credential live? Claim token: handover pipe → heap until claim. Callback token:
-  heap only. Clone token: heap → the clone's `GIT_CONFIG_VALUE_n` → dropped after revoke. Gateway
+  heap only. Clone token: heap → the clone's `GIT_CONFIG_VALUE_n` → dropped after revoke (GitHub)
+  or before `clone-done` (Harness Code; the platform deletes it). Gateway
   key (since piece A1): heap → a pipe that becomes `kete`'s **fd 3**, with
   `KETE_JOB_GATEWAY_KEY_FD=3` in its env and no `KETE_GATEWAY_KEY` (`StartKete`,
   `internal/entry/entry_linux.go:219,281-310`: empty key refused, written ≤ 4096 bytes so it can't
@@ -138,14 +155,21 @@ verified-at: 372482f656
   worktree parent. `--env-allow` = terminal/pager names only, never `KETE_*`
   (`internal/layout/layout.go:173`; `entry_linux.go:265`).
 - What routes does the fake platform serve (`internal/fakeplatform`)? Platform host:
-  `POST /api/v1/jobs/<id>/<kind>` (callbacks, callback token), and since PR 2 the GETs
+  `POST /api/v1/jobs/<id>/<kind>` (callbacks, callback token; the claim accepts `features` and
+  refuses a Harness claim without `clone_revoke_callback`; `clone-done` in `running`, `{}` or
+  empty, `Knobs.CloneDoneFailures` 500s first, `fakeplatform.go:512`), and since PR 2 the GETs
   `/api/v1/sync` (job key as Bearer; a wrong key is 401, the callback token here is recorded as a
   leak), `/api/v1/sync/skills/{id}/files`, `/api/v1/models`, `/api/v1/me`
   (`fakeplatform.go:391-395`, `sync.go:86-115`). A gateway host (`gateway.go`) answers scripted
   model calls: it checks the key header (`x-api-key` for Anthropic) and `x-kete-agent-id` /
   `x-kete-agent-version`, else 403 (`kete_agent_not_found`, a contract error). It holds **one job
   per run** (`NewJob`, `fakeplatform.go:260`; no control port); knobs `Scenario`, `OmitAgent`,
-  `UnknownAgent`, `SyncStatus`. `Leaks()`/`ContractErrors()` feed the e2e asserter.
+  `UnknownAgent`, `SyncStatus`, `Provider` (`harness_code`: the claim names provider and
+  username; `HarnessGitHost` `git.harness.kete.test` serves the repository at `HarnessRepoPath`
+  behind basic auth with the claim's username, refuses it after clone-done, and records any
+  `/api/` request as `harness-api` plus a contract error; `harnessGit`, `fakeplatform.go:720`).
+  The shared vector is `testdata/jobs-v1/claim-harness-code.json` (+ `SHA256SUMS`;
+  `TestHarnessVectorChecksum`). `Leaks()`/`ContractErrors()` feed the e2e asserter.
 - How does the entrypoint get the audit log (piece A3)? `StartKete` (`internal/entry/entry_linux.go`)
   creates the root file `/var/log/kete-job/kete.audit.jsonl` (0600, `layout.Config.KeteAudit`,
   `layout.go`) and a pipe; the write end becomes `kete job run`'s fd 4 (`layout.KeteAuditFD`,
@@ -227,12 +251,12 @@ closed with a fixed, message-free phase log at each step (ADR 0019 rule 8).
 | `internal/launch/*` | Stage 1 `Start` (`launch_linux.go:40`) and stage 2 (`stage2_linux.go:21`): oom, umask, groups/ids, NNP, chdir, `close_range`, `execve`; failures on a status pipe |
 | `internal/egress/*` | Config v1 builder (`config.go:101`), `ApplyFirewall` (`proxy_linux.go:24`), `Manager` keeps listeners and log across instances (`:56-122`), control client |
 | `internal/helper/*` | Helper flags and start/stop/kill |
-| `internal/platform/{platform,claim}.go` | Callback client (claim, events, result, uploads, finish, PUT, revoke), claim no-retry-after-write, strict claim and uploads validation |
-| `internal/gitops/*` | Hardened git env built from scratch (`gitops.go:44-83`), clone/verify/agent copy, `ChownWalk`, stderr scrub |
+| `internal/platform/{platform,claim}.go` | Callback client (claim with `features`, events, result, uploads, finish, clone-done, PUT, GitHub revoke), claim no-retry-after-write, strict claim (incl. `clone.provider`/`clone.username`) and uploads validation |
+| `internal/gitops/*` | Hardened git env built from scratch (`gitops.go:44-83`), clone (`BasicHeader(username, token)`)/verify/agent copy, `ChownWalk`, stderr scrub (token, basic-auth value, Authorization lines) |
 | `internal/bundle/*` | The safe reader and tar writer |
 | `internal/job/job.go` | Phases, heartbeats, backstop, deadline, outcome mapping, uploads |
 | `internal/phaselog/phaselog.go` | Fixed steps/codes; `FailErr` adds only `class` + number (`:113`) |
-| `internal/fakeplatform/*` | Test support (non-`_test`, reused by the image e2e): callbacks, sync/models/me GETs (`sync.go`), scripted gateway (`gateway.go`), job state (`state.go`), own CA, DNS with forwarding (`dns.go`), git smart HTTP, GHES revoke, uploads |
+| `internal/fakeplatform/*` | Test support (non-`_test`, reused by the image e2e): callbacks incl. clone-done, sync/models/me GETs (`sync.go`), scripted gateway (`gateway.go`), job state (`state.go`), own CA, DNS with forwarding (`dns.go`), git smart HTTP on a GHES-style host (+ revoke) and a Harness-style host, uploads; `testdata/jobs-v1/` the shared Harness claim vector |
 | `cmd/kete-job-fake-platform`, `internal/e2e` | The fake as a container process, and the `e2e`-tagged asserter (call order, heartbeats, proxy log, audit log, export token scan) run by `kete-job-image/scripts/e2e.sh` |
 | `internal/itest/*` (+ `itest/fakekete`) | `integration && linux` suite and the fake `kete` (asserts uid, NNP, oom 0, env, `KETE_JOB_GATEWAY_KEY_FD=3` with a printable key on fd 3 and **no** `KETE_GATEWAY_KEY`; `KETE_JOB_AUDIT_FD=4` is a pipe it writes audit lines to; spawns via the real helper); `TestAuditOverLimit` covers the 20 MB stop |
 | `scripts/integration.sh` | Installs tools, builds helper/proxy/entrypoint/fakekete, creates users, runs in a fresh netns on `198.51.100.0/24`, restores `user.max_user_namespaces` |
@@ -245,8 +269,9 @@ closed with a fixed, message-free phase log at each step (ADR 0019 rule 8).
    0600) within 10 s.
 3. `POST /api/v1/jobs/{id}/claim` through port R trusting only the proxy CA; retried ≤ 5 in 2 min
    only while no request byte was written; strict validation (`claim.go:98`).
-4. Proxy instance 2; clone (`events {clone}`); verify; revoke (D8: failure → events note); agent
-   copy at `/srv/kete-job/work/repo` on `spec.branch`, owned tool:kete-job.
+4. Proxy instance 2; clone (`events {clone}`); verify; revoke (GitHub: revoke then `clone-done`
+   best effort; Harness Code: `clone-done` only, also on clone/verify failure; D8: failure →
+   events note); agent copy at `/srv/kete-job/work/repo` on `spec.branch`, owned tool:kete-job.
 5. Agent: effective timeout; `spec.json` (policy.timeout replaced); `kete job run --json spec.json`
    as `kete` in cgroup `kete`, cwd = the working copy; heartbeats every 30 s from claim to done
    (first agent event carries `effective_timeout_minutes`; agent-phase ones `kete_cgroup_extra`, or
@@ -257,8 +282,9 @@ closed with a fixed, message-free phase log at each step (ADR 0019 rule 8).
 
 ## Data and APIs used
 - Platform callbacks (kete-code-platform `docs/jobs.md` §2): claim (200), events (204), result
-  (204), uploads (200), finish (202), signed-URL PUT; 404 = gone (`internal/platform/platform.go:183-300`).
-- GitHub (or GHES `/api/v3`) `DELETE /installation/token` (`platform.go:327-335`).
+  (204), uploads (200), finish (202), clone-done (204), signed-URL PUT; 404 = gone
+  (`internal/platform/platform.go:181-345`).
+- GitHub (or GHES `/api/v3`) `DELETE /installation/token` (`platform.go:347-377`), GitHub jobs only.
 - `kete-egress` config/fds/control v1 and `kete-root-helper` flags (their READMEs; `egress`,
   `root-helper` cards). `kete job run`'s job-mode contract (`contracts.md` §6d, `cli` card).
 - `golang.org/x/sys` v0.48.0, `golang.org/x/net` v0.59.0 (fake DNS) — the same pins as the helper
@@ -274,6 +300,8 @@ closed with a fixed, message-free phase log at each step (ADR 0019 rule 8).
 - No credential in any child's env (the gateway key goes to `kete` on fd 3, piece A1), and the clone
   token only in the clone's git env; never in argv, URLs, files or logs. Phase lines never carry
   free text (`phaselog`).
+- A Harness Code job never sends a request to its git host's API and its clone phase reaches only
+  the platform and the clone host; its token is released only through `clone-done`.
 - The proxy is restarted only while no job-user process exists (D2).
 - Every root git call uses the constructed env (no system/global config, hooks/fsmonitor off) and
   never runs against the agent's `.git`.
@@ -289,15 +317,16 @@ closed with a fixed, message-free phase log at each step (ADR 0019 rule 8).
   `packages/`, not the module (the integration suite builds the sibling modules).
 - Integration (privileged, cgroup v2): `docker run --rm --privileged --cgroupns=private -v
   "$PWD/packages:/src" -w /src/kete-job-entrypoint golang:1.26-bookworm bash
-  scripts/integration.sh` (append `-test.run <Name>`). 22 top-level tests, ~30 s:
+  scripts/integration.sh` (append `-test.run <Name>`). The tests, ~30 s:
   TestLifecycle, TestAuditOverLimit, TestRefuseClaimWithout{Firewall,Proxy,Helper}, TestCloneWrongCommit,
+  TestHarnessCodeLifecycle, TestHarnessCodeWrongCommit,
   TestProcessesAlive, TestKeteCgroupStray, TestProxyFailed, TestHardDeadline, TestCancelled, TestDeadlineTooShort,
   TestBundleRefusals/{symlink,fifo,oversize}, TestCredentials, TestBinaryBoot, and
   (`itest/isolation_test.go`) TestIsolationProbeDetects, TestFlyGuardMissingAPISocket,
   TestFlyGuardLocks, TestIsolationStraySocket/{path,abstract}, TestIsolationReadableKeteDir,
   TestIsolationFirewallRefuses, TestBinaryBootOnFly, and (`itest/profiles_test.go`, self-hosted P1)
   TestProfileMismatch, TestHostBoundaryMicrovm, TestCloudvmMetadataDrop, TestBinaryBootDedicated,
-  TestBinaryBootDedicatedStdin, TestBinaryBootRefusals — 28 top-level tests. `defaultProfile` (main_test.go) gives in-process
+  TestBinaryBootDedicatedStdin, TestBinaryBootRefusals — 30 top-level tests. `defaultProfile` (main_test.go) gives in-process
   runs with no profile `fly` (a Fly signal) or `dedicated`; `guestTree` (profiles_test.go) fakes PID
   1, virtio, DMI, block devices and the route file through `layout.Config` paths; `localAddr` puts
   a listener on a sample address on `lo` (IPv6 with `nodad`). TestBinaryBoot now has a world-open
@@ -306,12 +335,23 @@ closed with a fixed, message-free phase log at each step (ADR 0019 rule 8).
 - CI: `.github/workflows/kete-job-entrypoint.yml` — PR/push to `main` path-filtered to the
   entrypoint, helper and egress modules and itself, plus dispatch; `ubuntu-latest`, 15 min:
   gofmt, vet (+integration tag), `go test -race`, then the integration suite in a privileged
-  `golang:1.26-bookworm` container with `--cgroupns=private`. **Not yet run** at `verified-at`:
+  `golang:1.26-bookworm` container with `--cgroupns=private`. Runs on PRs touching the module
+  (passed on PR #9, 2026-10-05, with the Harness scenarios); manual:
   `gh workflow run kete-job-entrypoint.yml --repo kete-org/ketecode --ref <branch>`.
+- Harness Code (2026-10-05): units `TestValidateClaimProvider`, `TestHarnessCodeVector`,
+  `TestCloneDone` (platform), `TestBasicHeader`, `TestCloneUsername`, `TestScrubBasicValue`
+  (gitops), `TestHarness{Lifecycle,CloneFailed,WrongCommit,CloneDoneFails,CloneDoneGone}`,
+  `TestGitHubCloneDoneBestEffort` (job), `TestHarnessVector{Checksum,Shape}`,
+  `TestHarnessClaimAndCloneDone`, `TestGitHubClaimUnchanged` (fakeplatform); integration
+  `TestHarnessCodeLifecycle`, `TestHarnessCodeWrongCommit`.
 - Orchestrator units with fake deps: `internal/job/job_test.go` (outcome table, timeout math,
   processes_alive with and without a live proxy, storage-host clash, signal abort order, backstop).
 
 ## Changes
+- `docs/tasks/2026-10-05-harness-code-entrypoint/` (platform ADR 0024, #68's runtime handover):
+  claim `features`, `clone.provider`/`clone.username`, basic auth with the claim's username,
+  `clone-done` (GitHub best effort; Harness Code the only revoke, also on clone/verify failure),
+  the narrowed Harness clone allowlist, step `clone_done`, the fake's Harness host and vector.
 - `docs/tasks/2026-10-03-job-host-cloudvm-images/` (self-hosted P7): `internal/dhcp`,
   `guestinit/cmdline.go`, `Machine.Network` choosing DHCP or the kernel's `ip=` (microvm unchanged);
   README "kete-job-init" steps 1, 3, 6 and "Not verified without a real host".

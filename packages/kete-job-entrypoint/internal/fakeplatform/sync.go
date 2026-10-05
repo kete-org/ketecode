@@ -42,7 +42,7 @@ func (s *Server) headerLeaks(j *Job, r *http.Request) {
 		}
 	case GatewayHost:
 		forbidden = map[string]string{"claim token": j.ClaimToken, "callback token": j.CallbackToken, "clone token": j.CloneToken}
-	case GitHost:
+	case GitHost, HarnessGitHost:
 		forbidden = map[string]string{"gateway key": j.GatewayKey, "callback token": j.CallbackToken, "claim token": j.ClaimToken}
 	case StorageHost:
 		forbidden = map[string]string{"gateway key": j.GatewayKey, "callback token": j.CallbackToken, "claim token": j.ClaimToken, "clone token": j.CloneToken}

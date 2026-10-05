@@ -1,6 +1,7 @@
 // Package platform is root's client for the platform's container callbacks (kete-code-platform
 // docs/jobs.md §2 "Container callbacks"; the in-repo mirror is docs/context/contracts.md §6d):
-// claim, events, result, uploads, finish, the signed-URL uploads and the clone-token revoke. Every
+// claim, events, result, uploads, finish, clone-done, the signed-URL uploads and GitHub's
+// clone-token revoke. Every
 // request goes through the proxy's port R and trusts only the proxy's CA. Nothing here logs a
 // body, a header, a URL's query or a token.
 package platform
@@ -178,10 +179,21 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// FeatureCloneRevokeCallback is the one feature this entrypoint announces in the claim request
+// (jobs-v1 additive, 2026-10-05): it calls clone-done after the clone and on clone or verify
+// failure. The platform refuses a Harness Code claim without it.
+const FeatureCloneRevokeCallback = "clone_revoke_callback"
+
+// ClaimRequest is claim's body.
+type ClaimRequest struct {
+	ClaimToken string   `json:"claim_token"`
+	Features   []string `json:"features"`
+}
+
 // Claim posts the claim token. It is retried only while no byte of a request was written
 // (dial, TLS and proxy errors): a second claim fails the job (claim_replayed).
 func (c *Client) Claim(ctx context.Context, token string) (*ClaimResponse, error) {
-	body, err := json.Marshal(map[string]string{"claim_token": token})
+	body, err := json.Marshal(ClaimRequest{ClaimToken: token, Features: []string{FeatureCloneRevokeCallback}})
 	if err != nil {
 		return nil, err
 	}
@@ -278,6 +290,13 @@ func (c *Client) Finish(ctx context.Context, pushError string) error {
 	return c.expect(ctx, "finish", body, http.StatusAccepted, 3)
 }
 
+// CloneDone tells the platform the clone is over (`POST …/clone-done`, body `{}`, 204), so it
+// deletes a Harness Code job's clone token; for a GitHub job it is a no-op. ≤ 3 tries on network
+// errors and 5xx; 404 is ErrGone.
+func (c *Client) CloneDone(ctx context.Context) error {
+	return c.expect(ctx, "clone-done", []byte(`{}`), http.StatusNoContent, 3)
+}
+
 // Uploads asks for the signed upload URLs.
 func (c *Client) Uploads(ctx context.Context, bundle bool) (*UploadURLs, error) {
 	body, err := json.Marshal(map[string]bool{"bundle": bundle})
@@ -322,8 +341,9 @@ func (c *Client) Put(ctx context.Context, u, contentType string, r io.Reader, si
 	return nil
 }
 
-// RevokeURL is the installation-token revoke endpoint for a clone host: api.github.com for
-// github.com, else the GHES convention https://<host>/api/v3/installation/token.
+// RevokeURL is the installation-token revoke endpoint for a GitHub clone host: api.github.com for
+// github.com, else the GHES convention https://<host>/api/v3/installation/token. Only for
+// provider github: a Harness Code job never calls its git host's API (CloneDone instead).
 func RevokeURL(cloneHost string) (host, u string) {
 	if cloneHost == "github.com" {
 		return "api.github.com", "https://api.github.com/installation/token"

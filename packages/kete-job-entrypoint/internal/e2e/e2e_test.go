@@ -140,7 +140,7 @@ type event struct {
 
 // common: the container exited 0 after a finish without push_error; the fake saw no contract
 // error and no credential where it must not be; stdout holds phase lines only; every heartbeat gap
-// is at most 60 s; claim → events(clone) → revoke → … → result → events(report) → uploads → the
+// is at most 60 s; claim → events(clone) → revoke → clone-done → … → result → events(report) → uploads → the
 // PUTs → events(done) → finish.
 func common(t *testing.T, s *state, puts ...string) {
 	t.Helper()
@@ -177,7 +177,7 @@ func common(t *testing.T, s *state, puts ...string) {
 		}
 	}
 	// Order.
-	want := append(append([]string{"claim", "events(clone)", "revoke", "result", "events(report)", "uploads"}, puts...), "events(done)", "finish")
+	want := append(append([]string{"claim", "events(clone)", "revoke", "clone-done", "result", "events(report)", "uploads"}, puts...), "events(done)", "finish")
 	interesting := append([]string{"put:audit", "put:bundle", "put:proxy_log"}, want...)
 	var seq []string
 	for _, k := range s.kinds() {

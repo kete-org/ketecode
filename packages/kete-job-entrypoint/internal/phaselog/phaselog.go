@@ -39,6 +39,7 @@ const (
 	StepClone      Step = "clone"
 	StepVerify     Step = "verify"
 	StepRevoke     Step = "revoke"
+	StepCloneDone  Step = "clone_done" // POST …/clone-done: the platform deletes a Harness Code clone token
 	StepAgentCopy  Step = "agent_copy"
 	StepAgent      Step = "agent"
 	StepStop       Step = "stop_agents"

@@ -124,23 +124,34 @@ launch stage-2 failure, plus its errno), `timeout`, `cancelled`, or `other`.
    (terminal and pager names only, never `KETE_*`) and `--env-set` (the tool user's environment,
    below). Its socket must appear (owner kete, 0600) within 10 s, else exit 1 **before claim**.
    Then the **isolation check** (below), as the tool user; any failure exits 1 **before claim**.
-5. **Claim** through port R, trusting only the proxy's CA. Retried (≤ 5 tries in 2 minutes) only
+5. **Claim** through port R, trusting only the proxy's CA. The body is `{"claim_token": …,
+   "features": ["clone_revoke_callback"]}` (jobs-v1 additive, 2026-10-05: this entrypoint calls
+   `clone-done`; platforms before kete-org/ketecode-portal#68 reject the field). Retried (≤ 5 tries in 2 minutes) only
    while no byte of the request was written: a second claim fails the job. Every field of the
    response is validated (below). An invalid response with a usable callback token reports
    `error` "invalid claim response: <field>"; without one, exit 1. The claim's `deadline` is the
    **hard deadline** of every later step.
 6. **Proxy instance 2** (decision D2: hosts arrive after the proxy has to run, and config v1 can't
    change them, so the proxy is restarted between phases, only while no job-user process exists,
-   with the same listeners and log): clone root → platform, clone host, its API host; agent kete →
+   with the same listeners and log): clone root → platform, clone host and, for GitHub only, its
+   revoke API host (Harness Code: exactly platform and clone host); agent kete →
    gateway, platform; agent tool → the built-in registry hosts (D7); agent and report root →
    platform.
 7. **Clone** (proxy phase `clone`, an `events {phase:"clone"}` first): `git clone --bare
    --depth=1 --single-branch --no-tags --branch <ref>` into `/var/lib/kete-root/pristine.git`, the
-   token only in an `http.extraHeader` (never in the URL, argv or on disk); then `refs/heads/<ref>`
-   must equal `base_sha` (SHA-1, no alternates, no other shallow boundary), else `refused` (2);
-   then the token is revoked (`DELETE https://api.github.com/installation/token`, or
-   `https://<host>/api/v3/installation/token` for any other host; a failure is an events message,
-   D8) and dropped; then the agent copy (`git clone --no-hardlinks --no-checkout`, branch
+   credentials only in an `http.extraHeader` `Authorization: Basic base64(clone.username + ":" +
+   token)` (never in the URL, argv or on disk); then `refs/heads/<ref>` must equal `base_sha`
+   (SHA-1, no alternates, no other shallow boundary), else `refused` (2); then the token is
+   released and dropped. **GitHub** (`clone.provider` absent or `github`): revoked
+   (`DELETE https://api.github.com/installation/token`, or `https://<host>/api/v3/installation/token`
+   for any other host; a failure is an events message, D8), then `POST …/clone-done` best effort
+   (step `clone_done`; a no-op on the platform). **Harness Code** (`harness_code`): no request to
+   the git host's API; `POST {platform_url}/api/v1/jobs/{id}/clone-done` with the callback token
+   and body `{}` (≤ 3 tries on network errors and 5xx; 404 = the job is gone; another failure is
+   the events message "clone token revoke failed") and the platform deletes the token. A Harness
+   Code job also calls `clone-done` when the clone or its verification fails (or the claim's
+   branch is refused), before the result. After the clone no phase reaches the git host. Then
+   the agent copy (`git clone --no-hardlinks --no-checkout`, branch
    `spec.branch` at `base_sha`, no remote), handed to the tool user and the job group.
 8. **Agent** (proxy phase `agent`): effective timeout = floor(min(`policy.timeout`, (deadline −
    now − 5 min) / 1 min)); below 1 → `deadline` (1) without starting `kete`. The claim's spec, with
@@ -273,7 +284,11 @@ is a reject).
 
 `callback_token` printable; `platform_url` equal to the machine configuration's; `deadline` RFC 3339
 in the future; `gateway_key` printable; `gateway_url` and `clone.url` `https://` with a plain DNS
-host and port 443; `clone.ref` a branch name; `clone.base_sha` 40 lowercase hex; `spec` an object
+host and port 443; `clone.ref` a branch name; `clone.base_sha` 40 lowercase hex; `clone.provider`
+absent (= `github`), `github` or `harness_code` (anything else, `null` included, is refused as
+`clone.provider`); `clone.username` absent (= `x-access-token`) or 1-128 printable ASCII without
+`:` (`clone.username`); the machine's storage host differs from the gateway host, the clone host
+and (GitHub only) the revoke API host (`storage_host`); `spec` an object
 with `version` 1, an integer `policy.timeout` ≥ 1, and a `branch` (also checked with `git
 check-ref-format --branch`).
 
@@ -311,7 +326,8 @@ root's own `HOME`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_
 `http.extraHeader`. `GIT_INDEX_FILE` is set only for the bundle's listing (a fresh file); the agent
 copy uses its own index. A timeout per call (10 min for the clone, 60 s otherwise), killed as a
 process group; stdout ≤ 64 MiB, stderr ≤ 64 KiB, and stderr reaches a message only scrubbed of the
-token and any `Authorization` line, cut to 300 bytes.
+token, `base64(username:token)` (for the claim's username and `x-access-token`) and any line
+naming `Authorization`, cut to 300 bytes.
 
 ### Credentials
 
@@ -319,7 +335,7 @@ token and any `Authorization` line, cut to 300 bytes.
 |---|---|---|---|
 | Claim token | the boot environment | the handover pipe → memory until `claim` returns | a child's environment, a file, argv, a log |
 | Callback token | `claim` | memory (a Bearer header per request) | `kete`, the tool user, files, logs, argv |
-| Clone token | `claim` | memory → the clone's `GIT_CONFIG_VALUE_n` (root-only: `hidepid`, ptrace) → dropped after the revoke | disk, a URL, argv, logs, `kete` |
+| Clone token | `claim` | memory → the clone's `GIT_CONFIG_VALUE_n` (root-only: `hidepid`, ptrace) → dropped after the revoke (GitHub) or `clone-done` (Harness Code) | disk, a URL, argv, logs, `kete`, the git host's API (Harness Code) |
 | Gateway key | `claim` | memory → a pipe that is `kete`'s fd 3 (`KETE_JOB_GATEWAY_KEY_FD=3`; `kete` reads it once and closes it, then holds it in memory and hands it to its server child the same way; both are non-dumpable) | any environment (`kete`'s included), the tool user, the helper, files, argv |
 | Signed URLs | `uploads` | memory | logs (a failed PUT never reports its URL) |
 
@@ -484,7 +500,10 @@ platform on `198.51.100.10` and its DNS on `198.51.100.53`. It restores
 
 The integration tests: `TestLifecycle` (AC1 with the fake `kete`: a tool call through the real
 helper as the tool user, an edit, the bundle holds exactly that edit), `TestRefuseClaimWithout
-{Firewall,Proxy,Helper}`, `TestCloneWrongCommit`, `TestProcessesAlive`, `TestProxyFailed`,
+{Firewall,Proxy,Helper}`, `TestCloneWrongCommit`, `TestHarnessCodeLifecycle` (a `harness_code` claim
+in the shared test vector's shape: basic auth with the claim's username on a Harness-style git host
+with no API, `clone-done` retried once after a 500 before the agent phase, no git request after it),
+`TestHarnessCodeWrongCommit` (`clone-done` before the refused result), `TestProcessesAlive`, `TestProxyFailed`,
 `TestHardDeadline`, `TestCancelled`, `TestDeadlineTooShort`, `TestBundleRefusals`,
 `TestCredentials` (a 10 ms `/proc` poller over every cmdline and non-root environment, then a
 search of the disk, the logs and stdout for the tokens), `TestBinaryBoot` (the built binary: no
@@ -542,7 +561,9 @@ v2 mount and delegation in the guest, and whether Fly's init owns the root cgrou
 real path and permissions, and whether Fly exposes any other socket or API path in the guest
 (staging runbook below); the machine-config variables reaching the entrypoint; the entrypoint's
 exit stopping the machine; Fly's init keeping the claim token in its own memory; the real GitHub
-`DELETE /installation/token` and a shallow `--branch` clone from github.com; Supabase's signed
+`DELETE /installation/token` and a shallow `--branch` clone from github.com; a real Harness Code
+git host (the username a service-account token needs, the HTTPS host per cluster; platform
+staging list, kete-code-platform `docs/tasks/2026-10-05-harness-code-repos/handoff.md`); Supabase's signed
 upload method (PUT assumed, D15); the real platform's callback behaviour. The real `kete` runs only in the image's end-to-end
 test (`packages/kete-job-image`, piece D), against this module's fake platform
 (`cmd/kete-job-fake-platform`, `internal/e2e`).

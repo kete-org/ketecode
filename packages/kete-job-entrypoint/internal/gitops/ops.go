@@ -12,12 +12,12 @@ import (
 	"strings"
 )
 
-// Clone makes the pristine copy: a bare, shallow, single-branch clone of ref with the token in an
-// http.extraHeader (never in the URL, argv or on disk).
-func (r Runner) Clone(ctx context.Context, url, ref, token, dest string) error {
+// Clone makes the pristine copy: a bare, shallow, single-branch clone of ref with username and
+// token in an http.extraHeader (never in the URL, argv or on disk).
+func (r Runner) Clone(ctx context.Context, url, ref, username, token, dest string) error {
 	_, err := r.Run(ctx, Call{
 		Args:    []string{"clone", "--bare", "--depth=1", "--single-branch", "--no-tags", "--branch", ref, "--", url, dest},
-		Config:  [][2]string{{"http.extraHeader", BasicHeader(token)}},
+		Config:  [][2]string{{"http.extraHeader", BasicHeader(username, token)}},
 		Timeout: r.CloneTimeout,
 	})
 	return err

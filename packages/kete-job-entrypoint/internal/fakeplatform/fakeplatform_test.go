@@ -2,9 +2,13 @@ package fakeplatform
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -241,5 +245,168 @@ func TestNotAgentTurnGetsText(t *testing.T) {
 	rec := do(s, "POST", "https://"+GatewayHost+"/anthropic/v1/messages", b, hdr)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"text"`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+// harnessVector is the shared test vector (kete-code-platform
+// docs/contracts/test-vectors/jobs-v1/claim-harness-code.json, copied byte for byte; SHA256SUMS
+// beside it catches drift).
+type harnessVector struct {
+	Request struct {
+		ClaimToken string   `json:"claim_token"`
+		Features   []string `json:"features"`
+	} `json:"request"`
+	Response struct {
+		Clone struct {
+			URL      string `json:"url"`
+			Token    string `json:"token"`
+			Provider string `json:"provider"`
+			Username string `json:"username"`
+		} `json:"clone"`
+	} `json:"response"`
+	BasicAuthorization string `json:"basic_authorization"`
+	CloneDone          struct {
+		Method        string         `json:"method"`
+		Path          string         `json:"path"`
+		Authorization string         `json:"authorization"`
+		Body          map[string]any `json:"body"`
+		Status        int            `json:"status"`
+	} `json:"clone_done"`
+}
+
+func readVector(t *testing.T) (harnessVector, []byte) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", "jobs-v1", "claim-harness-code.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v harnessVector
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	return v, data
+}
+
+func TestHarnessVectorChecksum(t *testing.T) {
+	_, data := readVector(t)
+	sums, err := os.ReadFile(filepath.Join("testdata", "jobs-v1", "SHA256SUMS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if want := hex.EncodeToString(sum[:]) + "  claim-harness-code.json\n"; string(sums) != want {
+		t.Errorf("SHA256SUMS = %q, want %q (the vector drifted from the platform's copy)", sums, want)
+	}
+}
+
+// The fake's Harness Code job has the vector's shape: provider, username, repository path, the
+// basic-auth value and the clone-done call.
+func TestHarnessVectorShape(t *testing.T) {
+	v, _ := readVector(t)
+	if v.Response.Clone.Provider != ProviderHarnessCode || v.Response.Clone.Username != HarnessUsername {
+		t.Errorf("vector clone %+v", v.Response.Clone)
+	}
+	if !strings.HasSuffix(v.Response.Clone.URL, HarnessRepoPath) {
+		t.Errorf("vector url %s, fake path %s", v.Response.Clone.URL, HarnessRepoPath)
+	}
+	if "Basic "+basic(v.Response.Clone.Username, v.Response.Clone.Token) != v.BasicAuthorization {
+		t.Error("the fake's basic auth differs from the vector's basic_authorization")
+	}
+	if len(v.Request.Features) != 1 || v.Request.Features[0] != FeatureCloneRevokeCallback || !validFeatures(v.Request.Features) {
+		t.Errorf("vector features %v", v.Request.Features)
+	}
+	cd := v.CloneDone
+	if cd.Method != "POST" || cd.Path != "/api/v1/jobs/{id}/clone-done" || cd.Authorization != "Bearer <callback_token>" || len(cd.Body) != 0 || cd.Status != 204 {
+		t.Errorf("vector clone_done %+v", cd)
+	}
+}
+
+func claimBody(token string, features ...string) []byte {
+	b, _ := json.Marshal(map[string]any{"claim_token": token, "features": features})
+	return b
+}
+
+func TestHarnessClaimAndCloneDone(t *testing.T) {
+	s := &Server{BaseSHA: strings.Repeat("a", 40)}
+	j := s.NewJob(Knobs{Provider: ProviderHarnessCode, CloneDoneFailures: 1})
+	base := "https://" + PlatformHost + "/api/v1/jobs/" + j.ID
+	// Without clone_revoke_callback: refused before any credential (and a contract error).
+	if rec := do(s, "POST", base+"/claim", claimBody(j.ClaimToken), nil); rec.Code != 404 || len(s.ContractErrors()) != 1 {
+		t.Fatalf("claim without the feature: %d %v", rec.Code, s.ContractErrors())
+	}
+	j = s.NewJob(Knobs{Provider: ProviderHarnessCode, CloneDoneFailures: 1})
+	base = "https://" + PlatformHost + "/api/v1/jobs/" + j.ID
+	if rec := do(s, "POST", base+"/claim", claimBody(j.ClaimToken, "x", "BAD"), nil); rec.Code != 400 {
+		t.Fatalf("bad feature name: %d", rec.Code)
+	}
+	j = s.NewJob(Knobs{Provider: ProviderHarnessCode, CloneDoneFailures: 1})
+	base = "https://" + PlatformHost + "/api/v1/jobs/" + j.ID
+	rec := do(s, "POST", base+"/claim", claimBody(j.ClaimToken, FeatureCloneRevokeCallback, "later_feature"), nil)
+	if rec.Code != 200 {
+		t.Fatalf("claim: %d", rec.Code)
+	}
+	var claim struct {
+		Clone map[string]string `json:"clone"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &claim)
+	if claim.Clone["provider"] != ProviderHarnessCode || claim.Clone["username"] != HarnessUsername || claim.Clone["url"] != "https://"+HarnessGitHost+HarnessRepoPath {
+		t.Fatalf("clone %v", claim.Clone)
+	}
+	gitURL := "https://" + HarnessGitHost + HarnessRepoPath + "/info/refs?service=git-upload-pack"
+	// The git host's API doesn't exist for Harness Code, and calling it is a contract error.
+	if rec := do(s, "DELETE", "https://"+HarnessGitHost+"/api/v3/installation/token", nil, map[string]string{"Authorization": "token " + j.CloneToken}); rec.Code != 404 || len(s.ContractErrors()) != 1 {
+		t.Fatalf("api: %d %v", rec.Code, s.ContractErrors())
+	}
+	// GitHub's username is refused.
+	if rec := do(s, "GET", gitURL, nil, map[string]string{"Authorization": "Basic " + basic("x-access-token", j.CloneToken)}); rec.Code != 401 {
+		t.Fatalf("x-access-token: %d", rec.Code)
+	}
+	cb := map[string]string{"Authorization": "Bearer " + j.CallbackToken}
+	if rec := do(s, "POST", base+"/clone-done", []byte(`{"x":1}`), cb); rec.Code != 400 {
+		t.Fatalf("clone-done with a field: %d", rec.Code)
+	}
+	if rec := do(s, "POST", base+"/clone-done", []byte(`{}`), cb); rec.Code != 500 {
+		t.Fatalf("first clone-done (knob): %d", rec.Code)
+	}
+	if rec := do(s, "POST", base+"/clone-done", []byte(`{}`), cb); rec.Code != 204 || !j.CloneDeleted {
+		t.Fatalf("clone-done: %d deleted=%v", rec.Code, j.CloneDeleted)
+	}
+	if rec := do(s, "POST", base+"/clone-done", nil, cb); rec.Code != 204 {
+		t.Fatalf("repeated empty clone-done: %d", rec.Code)
+	}
+	// After clone-done the token no longer opens the repository.
+	if rec := do(s, "GET", gitURL, nil, map[string]string{"Authorization": "Basic " + basic(HarnessUsername, j.CloneToken)}); rec.Code != 401 {
+		t.Fatalf("git after clone-done: %d", rec.Code)
+	}
+	// The GitHub host is never contacted for a Harness Code job.
+	if rec := do(s, "GET", "https://"+GitHost+"/org/repo.git/info/refs", nil, nil); rec.Code != 404 {
+		t.Fatalf("github host: %d", rec.Code)
+	}
+	if n := len(s.ContractErrors()); n != 3 {
+		t.Errorf("contract errors %v", s.ContractErrors())
+	}
+}
+
+// A GitHub claim is unchanged: no provider or username in clone; clone-done is a no-op 204.
+func TestGitHubClaimUnchanged(t *testing.T) {
+	s := &Server{BaseSHA: strings.Repeat("a", 40)}
+	j := s.NewJob(Knobs{})
+	base := "https://" + PlatformHost + "/api/v1/jobs/" + j.ID
+	rec := do(s, "POST", base+"/claim", claimBody(j.ClaimToken, FeatureCloneRevokeCallback), nil)
+	if rec.Code != 200 {
+		t.Fatalf("claim: %d", rec.Code)
+	}
+	var claim struct {
+		Clone map[string]string `json:"clone"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &claim)
+	if _, ok := claim.Clone["provider"]; ok || claim.Clone["username"] != "" || len(claim.Clone) != 4 {
+		t.Errorf("clone %v", claim.Clone)
+	}
+	if rec := do(s, "POST", base+"/clone-done", []byte(`{}`), map[string]string{"Authorization": "Bearer " + j.CallbackToken}); rec.Code != 204 || j.CloneDeleted {
+		t.Errorf("github clone-done: %d", rec.Code)
+	}
+	if len(s.ContractErrors()) != 0 {
+		t.Errorf("contract errors %v", s.ContractErrors())
 	}
 }

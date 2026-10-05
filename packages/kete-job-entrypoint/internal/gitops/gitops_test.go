@@ -37,7 +37,7 @@ func TestCloneEnvironment(t *testing.T) {
 	git, log := fakeGit(t, 0)
 	r := runner(git)
 	token := "SECRETTOKEN0123456789"
-	if err := r.Clone(context.Background(), "https://github.com/org/repo.git", "main", token, "/var/lib/kete-root/pristine.git"); err != nil {
+	if err := r.Clone(context.Background(), "https://github.com/org/repo.git", "main", "x-access-token", token, "/var/lib/kete-root/pristine.git"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(log)
@@ -71,11 +71,11 @@ func TestScrubAndError(t *testing.T) {
 	if !ok || ge.ExitCode != 3 {
 		t.Fatalf("err = %v", err)
 	}
-	s := Scrub(ge.Stderr, "SECRETTOKEN0123456789")
+	s := Scrub(ge.Stderr, "", "SECRETTOKEN0123456789")
 	if strings.Contains(s, "SECRETTOKEN") || strings.Contains(s, "Basic") || !strings.Contains(s, "[redacted]") {
 		t.Errorf("scrubbed = %q", s)
 	}
-	if len(Scrub([]byte(strings.Repeat("x", 1000)))) != 300 {
+	if len(Scrub([]byte(strings.Repeat("x", 1000)), "")) != 300 {
 		t.Error("not cut to 300")
 	}
 }
@@ -118,5 +118,51 @@ func TestCapAndTimeout(t *testing.T) {
 	}
 	if time.Since(start) > 5*time.Second {
 		t.Errorf("timeout took %v", time.Since(start))
+	}
+}
+
+// The test vector's basic_authorization (kete-code-platform
+// docs/contracts/test-vectors/jobs-v1/claim-harness-code.json).
+func TestBasicHeader(t *testing.T) {
+	got := BasicHeader("kete_code_clone", "sat.acct_Example1.kete_job_6f9619ff8b86_1a2b3c4d.EXAMPLEexampleEXAMPLE")
+	want := "Authorization: Basic a2V0ZV9jb2RlX2Nsb25lOnNhdC5hY2N0X0V4YW1wbGUxLmtldGVfam9iXzZmOTYxOWZmOGI4Nl8xYTJiM2M0ZC5FWEFNUExFZXhhbXBsZUVYQU1QTEU="
+	if got != want {
+		t.Errorf("BasicHeader = %q", got)
+	}
+	if BasicHeader("x-access-token", "t") != "Authorization: Basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:t")) {
+		t.Error("GitHub header")
+	}
+}
+
+// The clone's username reaches the header.
+func TestCloneUsername(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	git, log := fakeGit(t, 0)
+	if err := runner(git).Clone(context.Background(), "https://git.harness.io/a/b/c/d.git", "main", "kete_code_clone", "TOK", "/tmp/p.git"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(log)
+	if !strings.Contains(string(data), "Authorization: Basic "+base64.StdEncoding.EncodeToString([]byte("kete_code_clone:TOK"))) {
+		t.Errorf("extraHeader for the claim's username missing")
+	}
+}
+
+// Scrub redacts the token, base64(username:token) for the claim's username and the default one,
+// and drops every line naming Authorization, whatever its case.
+func TestScrubBasicValue(t *testing.T) {
+	tok := "sat.acct.kete_job_SECRET"
+	b64 := base64.StdEncoding.EncodeToString([]byte("kete_code_clone:" + tok))
+	gh := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + tok))
+	in := "fatal: unable to access: " + tok + "\nsent " + b64 + "\nalso " + gh + "\n> AUTHORIZATION: Basic " + b64 + "\nauthorization: bearer x\nremote: done\n"
+	s := Scrub([]byte(in), "kete_code_clone", tok)
+	for _, bad := range []string{tok, b64, gh, "AUTHORIZATION", "bearer", "SECRET"} {
+		if strings.Contains(s, bad) {
+			t.Errorf("scrubbed output still holds %q: %q", bad, s)
+		}
+	}
+	if !strings.Contains(s, "remote: done") || strings.Count(s, "[redacted]") != 3 {
+		t.Errorf("scrubbed = %q", s)
 	}
 }

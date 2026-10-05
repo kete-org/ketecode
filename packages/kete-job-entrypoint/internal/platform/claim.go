@@ -21,6 +21,11 @@ type ClaimResponse struct {
 		Token   string `json:"token"`
 		Ref     string `json:"ref"`
 		BaseSHA string `json:"base_sha"`
+
+		// Provider and Username are optional (jobs-v1 additive, 2026-10-05): absent means GitHub
+		// and x-access-token. Raw, so an explicit null or a non-string is refused, not defaulted.
+		Provider json.RawMessage `json:"provider"`
+		Username json.RawMessage `json:"username"`
 	} `json:"clone"`
 	GatewayURL  string `json:"gateway_url"`
 	PlatformURL string `json:"platform_url"`
@@ -48,6 +53,13 @@ type Claim struct {
 	GatewayHost   string
 	CloneURL      string
 	CloneHost     string
+
+	// CloneProvider is ProviderGitHub or ProviderHarnessCode.
+	CloneProvider string
+	// CloneAPIHost is GitHub's revoke host (RevokeURL); empty for Harness Code, whose token the
+	// platform deletes on clone-done, so the job never reaches the git host's API.
+	CloneAPIHost  string
+	CloneUsername string
 	CloneToken    string
 	Ref           string
 	BaseSHA       string
@@ -55,6 +67,33 @@ type Claim struct {
 }
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// Clone providers (claim `clone.provider`).
+const (
+	ProviderGitHub      = "github"
+	ProviderHarnessCode = "harness_code"
+)
+
+// DefaultCloneUsername is the basic-auth username when the claim names none (GitHub's).
+const DefaultCloneUsername = "x-access-token"
+
+// optionalString decodes an optional JSON string: absent → def; a string → it; anything else
+// (null, a number, an object) → ok false.
+func optionalString(raw json.RawMessage, def string) (string, bool) {
+	if raw == nil {
+		return def, true
+	}
+	var s string
+	if string(raw) == "null" || json.Unmarshal(raw, &s) != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// validUsername is the contract's `^[\x21-\x39\x3B-\x7E]{1,128}$`: printable, no `:`.
+func validUsername(s string) bool {
+	return printable(s, 128) && !strings.Contains(s, ":")
+}
 
 // ValidRefName is the conservative branch-name subset `kete job run` checks (job-run.ts).
 func ValidRefName(name string) bool {
@@ -134,6 +173,19 @@ func (c *ClaimResponse) Validate(machinePlatformURL, storageHost string, now tim
 		return nil, "clone.token"
 	}
 	out.CloneToken = c.Clone.Token
+	provider, ok := optionalString(c.Clone.Provider, ProviderGitHub)
+	if !ok || provider != ProviderGitHub && provider != ProviderHarnessCode {
+		return nil, "clone.provider"
+	}
+	out.CloneProvider = provider
+	username, ok := optionalString(c.Clone.Username, DefaultCloneUsername)
+	if !ok || !validUsername(username) {
+		return nil, "clone.username"
+	}
+	out.CloneUsername = username
+	if provider == ProviderGitHub {
+		out.CloneAPIHost, _ = RevokeURL(out.CloneHost)
+	}
 	if !ValidRefName(c.Clone.Ref) {
 		return nil, "clone.ref"
 	}
@@ -143,9 +195,8 @@ func (c *ClaimResponse) Validate(machinePlatformURL, storageHost string, now tim
 	}
 	out.BaseSHA = c.Clone.BaseSHA
 	// The storage host (machine configuration) must not be a host the job's users or the clone
-	// reach: root alone gets it, in the report phase only.
-	apiHost, _ := RevokeURL(out.CloneHost)
-	if storageHost == "" || storageHost == out.GatewayHost || storageHost == out.CloneHost || storageHost == apiHost {
+	// reach: root alone gets it, in the report phase only. (Harness Code has no API host.)
+	if storageHost == "" || storageHost == out.GatewayHost || storageHost == out.CloneHost || out.CloneAPIHost != "" && storageHost == out.CloneAPIHost {
 		return nil, "storage_host"
 	}
 
