@@ -39,6 +39,29 @@ export const modelsPull = Spec.make("pull", {
   },
 })
 
+/** Flags for the built-in presets on upstream's `kete mcp add` (commands/commands.ts); see ./mcp-preset.ts. */
+export const mcpPresetParams = {
+  write: Flag.boolean("write").pipe(
+    Flag.withDescription("Preset harness: turn read-only mode off (write and execute tools still ask first)"),
+    Flag.withDefault(false),
+  ),
+  org: Flag.string("org").pipe(Flag.withDescription("Preset harness: default Harness organization"), Flag.optional),
+  project: Flag.string("project").pipe(Flag.withDescription("Preset harness: default Harness project"), Flag.optional),
+  baseUrl: Flag.string("base-url").pipe(
+    Flag.withDescription("Preset harness: Harness URL for self-managed Harness (default https://app.harness.io)"),
+    Flag.optional,
+  ),
+  clientId: Flag.string("client-id").pipe(
+    Flag.withDescription("Preset slack: client ID of the approved Slack app to sign in with"),
+    Flag.optional,
+  ),
+}
+
+/** `kete mcp presets`: a subcommand of upstream's `mcp` command. */
+export const mcpPresets = Spec.make("presets", {
+  description: "List the built-in MCP server presets (add one with `kete mcp add <preset>`)",
+})
+
 export const specs = [
   Spec.make("login", {
     description: `Sign in to your ${Brand.displayName} account in the browser (for model provider keys, use \`${Brand.cliName} auth login\`)`,

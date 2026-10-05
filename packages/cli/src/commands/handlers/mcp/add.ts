@@ -7,6 +7,10 @@ import { Global } from "@opencode/util/global"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { Commands } from "../../commands"
 import { Runtime } from "../../../framework/runtime"
+// kete_change start
+import { KeteMcpPreset } from "../../../kete/mcp-preset"
+import { KeteMcpPresetIO } from "../../../kete/mcp-preset-io"
+// kete_change end
 
 export default Runtime.handler(
   Commands.commands.mcp.commands.add,
@@ -20,6 +24,22 @@ export default Runtime.handler(
     const command = dash === -1 ? [...input.command] : process.argv.slice(dash + 1)
 
     const hasCommand = command.length > 0
+    // kete_change start: built-in presets (`kete mcp add harness|slack`), see kete/mcp-preset.ts
+    const preset = KeteMcpPreset.route(input.name, Boolean(url) || hasCommand, KeteMcpPreset.presetFlags(presetInput(input)))
+    if (preset.kind === "error") return yield* Effect.fail(new Error(preset.message))
+    if (preset.kind === "preset") {
+      if (environment || headers)
+        return yield* Effect.fail(new Error(`--env and --header don't apply to the ${preset.name} preset`))
+      const directory = input.global ? (yield* Global.Service).config : process.cwd()
+      const configPath = yield* Effect.promise(() => resolveConfigPath(directory))
+      const io = yield* KeteMcpPresetIO.make()
+      process.exitCode = yield* Effect.tryPromise({
+        try: () => KeteMcpPreset.add(io, { name: preset.name, configPath, ...presetInput(input) }),
+        catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+      })
+      return
+    }
+    // kete_change end
     if (url && hasCommand)
       return yield* Effect.fail(new Error("Provide either --url <url> or a command after --, not both"))
     if (!url && !hasCommand) return yield* Effect.fail(new Error("Provide either --url <url> or a command after --"))
@@ -67,3 +87,21 @@ async function write(configPath: string, name: string, server: unknown) {
   })
   await writeFile(configPath, applyEdits(text, edits))
 }
+
+// kete_change start
+function presetInput(input: {
+  readonly write: boolean
+  readonly org: Option.Option<string>
+  readonly project: Option.Option<string>
+  readonly baseUrl: Option.Option<string>
+  readonly clientId: Option.Option<string>
+}) {
+  return {
+    write: input.write,
+    org: Option.getOrUndefined(input.org),
+    project: Option.getOrUndefined(input.project),
+    baseUrl: Option.getOrUndefined(input.baseUrl),
+    clientId: Option.getOrUndefined(input.clientId),
+  }
+}
+// kete_change end

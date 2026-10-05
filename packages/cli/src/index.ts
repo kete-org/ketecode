@@ -53,6 +53,7 @@ const Handlers = Runtime.handlers(Commands, {
   mcp: {
     list: () => import("./commands/handlers/mcp/list"),
     add: () => import("./commands/handlers/mcp/add"),
+    presets: () => import("./kete/mcp-presets-command"), // kete_change
     auth: () => import("./commands/handlers/mcp/auth"),
     logout: () => import("./commands/handlers/mcp/logout"),
   },
