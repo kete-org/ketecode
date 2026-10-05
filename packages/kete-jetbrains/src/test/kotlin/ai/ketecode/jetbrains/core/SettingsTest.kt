@@ -42,7 +42,7 @@ class KeteConfigTest {
     }
 
     @Test
-    fun `empty settings leave the file alone; a non-object in the way is replaced`() {
+    fun `empty settings leave the file alone and a non-object in the way is replaced`() {
         val text = "{ \"kete\": { \"budget\": 3 } }"
         assertEquals(text, KeteConfig.applySettings(text, KeteSettings()))
         assertEquals(text, KeteConfig.applySettings(text, KeteSettings(gatewayUrl = "", sessionBudget = -1.0)))

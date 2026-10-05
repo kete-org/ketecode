@@ -23,7 +23,7 @@ class EventsTest {
     }
 
     @Test
-    fun `replies clear prompts; idle without busy is not a finish; other events change nothing`() {
+    fun `replies clear prompts, idle without busy is not a finish, other events change nothing`() {
         val state = Attention(pending = mapOf("p1" to "s1"))
         assertEquals(Attention(), Events.reduce(state, Event("permission.replied", mapOf("requestID" to "p1"))).state)
         assertEquals(state, Events.reduce(state, Event("permission.replied", mapOf("requestID" to "other"))).state)
@@ -56,7 +56,7 @@ class EditorToolsTest {
     }
 
     private fun call(path: String?) = EditorTools.handle(
-        mapOf("jsonrpc" to "2.0", "id" to 7L, "method" to "tools/call", "params" to mapOf("name" to "diagnostics", "arguments" to (if (path == null) emptyMap() else mapOf("path" to path)))),
+        mapOf("jsonrpc" to "2.0", "id" to 7L, "method" to "tools/call", "params" to mapOf("name" to "diagnostics", "arguments" to (if (path == null) emptyMap<String, Any?>() else mapOf<String, Any?>("path" to path)))),
         tools,
     )
 
@@ -77,7 +77,7 @@ class EditorToolsTest {
     }
 
     @Test
-    fun `notifications get no reply; bad requests get errors`() {
+    fun `notifications get no reply and bad requests get errors`() {
         assertNull(EditorTools.handle(mapOf("jsonrpc" to "2.0", "method" to "notifications/initialized"), tools))
         assertEquals(-32600, ((EditorTools.handle("x", tools)!!["error"]) as Map<*, *>)["code"])
         assertEquals(-32601, ((EditorTools.handle(mapOf("jsonrpc" to "2.0", "id" to 1L, "method" to "nope"), tools)!!["error"]) as Map<*, *>)["code"])
