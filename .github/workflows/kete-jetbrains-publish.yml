@@ -66,6 +66,9 @@ jobs:
             exit 1
           }
 
+      # The per-zip .sha256 comes from the same GitHub Release as the zip, so it guards only against a
+      # corrupted download, not a tampered release: the release's signed SHA256SUMS (Ed25519, on the
+      # public kete-releases) lists the CLI archives, not the plugin zips. See docs/release.md.
       - name: Verify the plugin
         run: |
           set -euo pipefail
