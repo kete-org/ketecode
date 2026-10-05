@@ -1,10 +1,10 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: 604889ab32
+verified-at: 8a2747cd4d
 ---
 ## Quick answers
-- How does `--offline` work? `kete/offline-startup.ts` (imported at `index.ts:5`, right after the env bridge) calls `KeteCliOffline.apply` (`kete/offline.ts:55`): env, `--offline` in argv, or `kete.offline` in the global config files turns it on and sets `OPENCODE_OFFLINE`, `OPENCODE_DISABLE_MODELS_FETCH` and `OPENCODE_DISABLE_AUTOUPDATE` before any module reads env. The flag is also a registered global flag (`kete/commands.ts:24`, `framework/runtime.ts:86`) so the parser accepts it. See the `local-models` card.
+- How does `--offline` work? `kete/offline-startup.ts` (imported at `index.ts:5`, right after the env bridge) calls `KeteCliOffline.apply` (`kete/offline.ts:55`): env, `--offline` in argv, or `kete.offline` in the global config files turns it on (`flagged`, `kete/offline.ts:37`, reads `--offline=<v>`/`--offline <v>` with the parser's truthy/falsy values: `--offline=false` and `--offline false` are off, an unknown value is on; `offline-startup.test.ts` pins it against the real parser) and sets `OPENCODE_OFFLINE`, `OPENCODE_DISABLE_MODELS_FETCH` and `OPENCODE_DISABLE_AUTOUPDATE` before any module reads env. The flag is also a registered global flag (`kete/commands.ts:24`, `framework/runtime.ts:86`) so the parser accepts it. See the `local-models` card.
 - Which commands refuse offline? `login`, `sync` (not `--status`/`--approve`), `upgrade`, `models pull`: `KeteCliOffline.refused` (`kete/offline.ts:84`) prints the refusal and sets exit code 2. `updater.ts` `isDisabled` and `check()` also honour it.
 - What changes in the server connection offline? `services/server-connection.ts` calls `KeteCliOffline.connection` (`kete/offline.ts:72`): always a private (`standalone`) server, `--server` refused.
 - How does a command with subcommands get its handlers? A `{ $, sub }` map: `index.ts:67` (`models: { $, pull }`), `framework/runtime.ts:43-76`; the spec side is `commands: [KeteCommands.modelsPull]` at `commands/commands.ts:288`.
@@ -129,7 +129,7 @@ Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` agains
 | `packages/cli/src/kete/account-io.ts` | 35 | Real stdout/stderr + account store + background-service reload, implementing `account-flow.ts`'s `IO` |
 | `packages/cli/src/kete/cli-login.ts` | 364 | PKCE + loopback callback listener + `/api/v1/cli/*` calls (platform's CLI login protocol) |
 | `packages/cli/src/kete/{login,logout,whoami,sync}.ts` | 25/18/18/21 | `Runtime.handler` wiring each command spec to `account-flow.ts` |
-| `packages/cli/src/kete/offline.ts` | 89 | Pure offline rules: `flagged`, `configValue`/`fromConfig`, `apply`, `connection`, `refused` |
+| `packages/cli/src/kete/offline.ts` | 110 | Pure offline rules: `flagged`, `configValue`/`fromConfig`, `apply`, `connection`, `refused` |
 | `packages/cli/src/kete/offline-startup.ts` | 27 | Side effect only: reads global config files and calls `apply` at startup |
 | `packages/cli/src/kete/models-pull.ts` | 371 | `kete models pull`: injectable `Deps`, `pull`, timeouts, progress, exit codes |
 | `packages/cli/src/kete/models-list.ts` | 35 | `kete models` TTY detail lines for local providers |
