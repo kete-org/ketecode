@@ -9,6 +9,9 @@ import { KeteLocalPicker } from "@opencode/util/kete/local-picker"
 import { Schema } from "effect"
 
 export { KeteLocalPicker }
+export const { firstRunOffer, noToolsTracker, offlineFrom, hasLocalModels } = KeteLocalPicker
+export type OfferDeps = KeteLocalPicker.OfferDeps
+export type OfferResult = KeteLocalPicker.OfferResult
 
 const decode = Schema.decodeUnknownPromise(KeteLocalModelsRpc.Status)
 
@@ -80,73 +83,4 @@ export function unreachableOptions(
     category: KeteLocalPicker.group,
     onSelect: () => onSelect(line),
   }))
-}
-
-export type OfferDeps = {
-  readonly hasModel: boolean
-  readonly offered: boolean
-  readonly status: () => Promise<KeteLocalPicker.Status>
-  /** Records that the offer was made (persisted), before it is shown, so it never repeats. */
-  readonly markOffered: () => Promise<void> | void
-  /** Shows the offer; resolves true when the user accepts. */
-  readonly confirm: (offer: KeteLocalPicker.Offer) => Promise<boolean>
-  readonly models: () => readonly { readonly providerID: string; readonly id: string; readonly tools: boolean }[]
-  /** Selects the model the same way the model dialog does (the TUI's persisted selection; no config write). */
-  readonly select: (model: { readonly providerID: string; readonly modelID: string }) => void
-}
-
-export type OfferResult =
-  | { readonly kind: "skipped" }
-  | { readonly kind: "declined" }
-  | { readonly kind: "selected"; readonly providerID: string; readonly modelID: string }
-  | { readonly kind: "no_model"; readonly providerID: KeteLocalPicker.ProviderID }
-
-/**
- * The first-run offer: when the user has no model yet and has never been offered, ask the runtime
- * for the local servers' status; with a reachable server that has models, record the offer and ask
- * once. Accepting selects that server's first model (one that can call tools if any can).
- */
-export async function firstRunOffer(deps: OfferDeps): Promise<OfferResult> {
-  if (deps.offered || deps.hasModel) return { kind: "skipped" }
-  const offer = KeteLocalPicker.offer({ status: await deps.status(), hasModel: deps.hasModel, offered: deps.offered })
-  if (!offer) return { kind: "skipped" }
-  await deps.markOffered()
-  if (!(await deps.confirm(offer))) return { kind: "declined" }
-  const model = KeteLocalPicker.pick(deps.models(), offer.providerID)
-  if (!model) return { kind: "no_model", providerID: offer.providerID }
-  deps.select({ providerID: model.providerID, modelID: model.id })
-  return { kind: "selected", providerID: model.providerID, modelID: model.id }
-}
-
-/**
- * Tracks the once-per-session "this model can only answer" notice: `check` returns the message the
- * first time a session runs with a model that can't call tools, and nothing after that.
- */
-export function noToolsTracker() {
-  const seen = new Set<string>()
-  return {
-    check(sessionID: string, model: { readonly tools: boolean } | undefined): string | undefined {
-      const message = KeteLocalPicker.noToolsNotice({ sessionKey: sessionID, model, seen })
-      if (message) seen.add(sessionID)
-      return message
-    },
-  }
-}
-
-type ConfigEntry = { readonly type: string; readonly info?: { readonly kete?: { readonly offline?: boolean } } }
-
-/**
- * Whether offline mode is on for this location, as the runtime decides it: the process flag (on or
- * invalid; the CLI sets it before the TUI starts) or `kete.offline` in the highest-priority config
- * document that has a `kete` block (core's `Config.latest`).
- */
-export function offlineFrom(flag: boolean, entries: readonly ConfigEntry[] | undefined): boolean {
-  if (flag) return true
-  const kete = entries?.findLast((entry) => entry.type === "document" && entry.info?.kete !== undefined)?.info?.kete
-  return kete?.offline === true
-}
-
-/** Whether the catalog lists any model from a local server: the first-run offer asks for status only then. */
-export function hasLocalModels(models: readonly { readonly providerID: string }[] | undefined): boolean {
-  return (models ?? []).some((model) => KeteLocalPicker.isLocal(model.providerID))
 }
