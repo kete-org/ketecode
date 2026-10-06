@@ -18,3 +18,22 @@
 - Open: the README smoke checklist items 13–16 in a real IDE (consent, progress/cancel, error
   balloons, proxy) before the first Marketplace publish; `kete-tools-ci` card is stale for an
   unrelated earlier change (`kete-extension-publish.yml`), left to the librarian.
+
+## 2026-10-06 build agent (security review follow-ups)
+- Done:
+  - `kete-jetbrains-publish.yml` now verifies the public release instead of checking asset names. It
+    checks `SHA256SUMS.sig` against the update keys inside the plugin zip, then the SHA-256 of each of
+    the six archives (`packages/kete-jetbrains/script/verify-public-release.ts`, which reuses
+    `release-verify.ts`). `ArchiveTargetsTest` keeps the script's target list equal to `Binary.targets`.
+  - The final atomic move is retried up to 5 times (200/400/800/1600 ms, cancellable) on a
+    `FileSystemException` such as Windows' "file in use".
+  - Links and duplicate names are refused anywhere in the archive.
+  - `deleteTree` and old-version removal never descend into symlinks or Windows junctions.
+  - New test: the streaming size cap with an unknown length.
+  - The download task is queued with `ModalityState.any()`, and the EDT never waits on it.
+  - Ticking consent in Settings clears `lastFailure`.
+  - README notes the copies per IDE and per IDE version.
+- Disk note (§11): each IDE and each major IDE version has its own system folder and so its own copy
+  (~180–210 MB unpacked). A plugin update removes the previous plugin version's copy in the same
+  folder. Copies in the system folders of old IDE versions are not cleaned, because the plugin can't
+  know which of them are still in use.

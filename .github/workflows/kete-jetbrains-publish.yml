@@ -33,12 +33,23 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     # JETBRAINS_MARKETPLACE_TOKEN lives here; the environment admits kete-v* tags only.
     environment: jetbrains-marketplace
     env:
       TAG: ${{ github.ref_name }}
     steps:
+      # Only for the release check's script (packages/kete-jetbrains/script); nothing is built.
+      - name: Checkout the tag
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
       - name: Check the tag
         env:
           CONFIRM: ${{ inputs.confirm }}
@@ -85,21 +96,25 @@ jobs:
           grep -q "<version>$version</version>" <<<"$xml" || { echo "::error::$zip is not version $version"; exit 1; }
 
       # The Marketplace zip downloads its kete from the tag's public release on first use, so that
-      # release must exist with its signature and every archive the plugin picks (core/Binary.kt targets).
-      - name: Check the public release the plugin downloads from
+      # release must exist and verify exactly as the plugin will verify it: SHA256SUMS.sig against the
+      # update keys inside this plugin zip, and every archive the plugin picks against the signed
+      # SHA256SUMS (packages/kete-jetbrains/script/verify-public-release.ts, release-verify.ts's checks).
+      - name: Verify the public release the plugin downloads from
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version="${TAG#kete-v}"
-          assets="$(gh release view "$TAG" --repo kete-org/kete-releases --json assets -q '.assets[].name')" \
+          gh release view "$TAG" --repo kete-org/kete-releases --json tagName >/dev/null \
             || { echo "::error::kete-org/kete-releases has no $TAG release: the plugin couldn't download its kete. Publish the CLI first (public distribution)."; exit 1; }
-          for file in SHA256SUMS SHA256SUMS.sig \
-            "kete-$version-darwin-arm64.zip" "kete-$version-darwin-x64-baseline.zip" \
-            "kete-$version-linux-x64-baseline.tar.gz" "kete-$version-linux-arm64.tar.gz" \
-            "kete-$version-windows-x64-baseline.zip" "kete-$version-windows-arm64.zip"; do
-            grep -qxF "$file" <<<"$assets" || { echo "::error::kete-org/kete-releases $TAG has no $file"; exit 1; }
+          patterns=(--pattern SHA256SUMS --pattern SHA256SUMS.sig)
+          for target in darwin-arm64 darwin-x64-baseline linux-x64-baseline linux-arm64 windows-x64-baseline windows-arm64; do
+            case "$target" in linux-*) patterns+=(--pattern "kete-$version-$target.tar.gz") ;; *) patterns+=(--pattern "kete-$version-$target.zip") ;; esac
           done
+          gh release download "$TAG" --repo kete-org/kete-releases --dir public "${patterns[@]}"
+          ls -la public
+          unzip -p plugin.jar ai/ketecode/jetbrains/update-keys.json > plugin-update-keys.json
+          bun packages/kete-jetbrains/script/verify-public-release.ts "$version" public plugin-update-keys.json
 
       # The Marketplace upload API (https://plugins.jetbrains.com/docs/marketplace/plugin-upload.html).
       # The token goes to curl on stdin, never on a command line.

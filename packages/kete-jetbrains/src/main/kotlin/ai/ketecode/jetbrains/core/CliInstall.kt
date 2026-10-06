@@ -30,9 +30,11 @@ import java.util.zip.GZIPInputStream
 //      against the pinned keys (CliRelease), then find the archive's line;
 //   3. stream the archive (≤ 300 MB) into a staging folder inside the root, hashing as it goes, and
 //      compare with the signed SHA-256;
-//   4. extract only kete/kete.exe (no absolute paths, `..`, links or duplicates anywhere in the
-//      archive; ≤ 1 GiB), make it executable and check it reports the release's version;
-//   5. move the platform folder into <root>/<version>/ in one atomic rename, and remove every other
+//   4. extract only kete/kete.exe (the archive is refused if any entry has an absolute name, `..`,
+//      or is a link, or if a name appears twice; kete ≤ 1 GiB), make it executable and check it
+//      reports the release's version;
+//   5. move the platform folder into <root>/<version>/ in one atomic rename (retried briefly when
+//      Windows reports the fresh kete.exe busy, e.g. an antivirus scan), and remove every other
 //      downloaded version.
 //
 // Nothing reaches <root>/<version>/<platform>/ unless every check passed, so Binary.resolve can trust
@@ -47,6 +49,9 @@ class CliInstall(
     /** Runs `<binary> --version` and returns its output; null skips the check (tests of other steps). */
     private val probe: ((Path) -> String)?,
     private val limits: Limits = Limits(),
+    /** The final rename; injectable so tests can simulate Windows' "file in use". */
+    private val move: (Path, Path) -> Unit = { from, to -> Files.move(from, to, StandardCopyOption.ATOMIC_MOVE) },
+    private val sleep: (Long) -> Unit = Thread::sleep,
 ) {
     data class Limits(
         val checksums: Int = CliRelease.MAX_CHECKSUMS_BYTES,
@@ -130,16 +135,36 @@ class CliInstall(
                     val destination = versionDir.resolve(download.platform)
                     // A leftover without a binary (checked above) from an interrupted older layout.
                     if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) deleteTree(destination)
-                    try {
-                        Files.move(platformDir, destination, StandardCopyOption.ATOMIC_MOVE)
-                    } catch (error: AtomicMoveNotSupportedException) {
-                        throw IOException("the file system can't move $platformDir into place atomically", error)
-                    }
+                    moveIntoPlace(platformDir, destination, progress)
                 }
                 removeOtherVersions(version)
                 final
             } finally {
                 runCatching { deleteTree(staging) }
+            }
+        }
+    }
+
+    /**
+     * The atomic rename, retried up to [MOVE_ATTEMPTS] times with a growing pause when the file system
+     * says the files are busy (Windows: an antivirus scanner or the indexer holding the kete.exe we just
+     * ran). Never falls back to a non-atomic copy.
+     */
+    private fun moveIntoPlace(from: Path, to: Path, progress: Progress) {
+        var attempt = 1
+        while (true) {
+            try {
+                move(from, to)
+                return
+            } catch (error: AtomicMoveNotSupportedException) {
+                throw IOException("the file system can't move $from into place atomically", error)
+            } catch (error: java.nio.file.FileSystemException) {
+                if (attempt >= MOVE_ATTEMPTS) throw error
+                progress.step("Waiting for the downloaded kete to be released (attempt $attempt of $MOVE_ATTEMPTS)")
+                progress.checkCanceled()
+                sleep(200L shl (attempt - 1))
+                progress.checkCanceled()
+                attempt++
             }
         }
     }
@@ -183,7 +208,7 @@ class CliInstall(
     private fun removeOtherVersions(keep: String) {
         val others = runCatching {
             Files.list(root).use { list ->
-                list.filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) && CliRelease.isVersion(it.fileName.toString()) && it.fileName.toString() != keep }.toList()
+                list.filter { isPlainDirectory(it) && CliRelease.isVersion(it.fileName.toString()) && it.fileName.toString() != keep }.toList()
             }
         }.getOrDefault(emptyList())
         for (path in others) runCatching { deleteTree(path) }
@@ -242,11 +267,33 @@ class CliInstall(
     companion object {
         const val STAGING_PREFIX = ".download-"
         const val LOCK_FILE = ".lock"
+        const val MOVE_ATTEMPTS = 5
 
-        /** Deletes a folder tree without following links (a link is removed, never its target). */
+        private fun attributes(path: Path): BasicFileAttributes? =
+            runCatching { Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS) }.getOrNull()
+
+        /** A real directory: not a symlink, and not a Windows junction (which the JDK reports as a directory that is also "other"). */
+        private fun isPlainDirectory(path: Path): Boolean = attributes(path)?.let { it.isDirectory && !it.isSymbolicLink && !it.isOther } == true
+
+        /**
+         * Deletes a folder tree without following links: a symlink or Windows junction is removed itself,
+         * never descended into, so its target is never touched.
+         */
         fun deleteTree(path: Path) {
-            if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return
+            val top = attributes(path) ?: return
+            if (top.isSymbolicLink || top.isOther || !top.isDirectory) {
+                Files.delete(path)
+                return
+            }
             Files.walkFileTree(path, object : SimpleFileVisitor<Path>() {
+                override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (attrs.isSymbolicLink || attrs.isOther) {
+                        Files.delete(dir)
+                        return FileVisitResult.SKIP_SUBTREE
+                    }
+                    return FileVisitResult.CONTINUE
+                }
+
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
                     Files.delete(file)
                     return FileVisitResult.CONTINUE
@@ -289,10 +336,13 @@ object Archives {
     private fun extractZip(archive: Path, member: String, out: Path, limit: Long, checkCanceled: () -> Unit) {
         ZipFile(archive).use { zip ->
             var found: org.apache.commons.compress.archivers.zip.ZipArchiveEntry? = null
+            val names = HashSet<String>()
             for (entry in zip.entries) {
-                if (safeName(entry.name) != member) continue
-                if (found != null) throw UnsafeArchive("$member appears twice")
-                if (entry.isDirectory || entry.isUnixSymlink) throw UnsafeArchive("$member is not a regular file")
+                val name = safeName(entry.name)
+                if (entry.isUnixSymlink) throw UnsafeArchive("the archive contains a link (\"${entry.name.take(120)}\")")
+                if (name.isNotEmpty() && !names.add(name.removeSuffix("/"))) throw UnsafeArchive("\"${name.take(120)}\" appears twice")
+                if (name != member) continue
+                if (entry.isDirectory) throw UnsafeArchive("$member is not a regular file")
                 if (entry.size > limit) throw UnsafeArchive("$member is larger than $limit bytes")
                 found = entry
             }
@@ -304,12 +354,15 @@ object Archives {
     private fun extractTarGz(archive: Path, member: String, out: Path, limit: Long, checkCanceled: () -> Unit) {
         TarArchiveInputStream(GZIPInputStream(BufferedInputStream(Files.newInputStream(archive)))).use { tar ->
             var found = false
+            val names = HashSet<String>()
             while (true) {
                 checkCanceled()
                 val entry = tar.nextEntry ?: break
-                if (safeName(entry.name) != member) continue
-                if (found) throw UnsafeArchive("$member appears twice")
-                if (!entry.isFile || entry.isSymbolicLink || entry.isLink) throw UnsafeArchive("$member is not a regular file")
+                val name = safeName(entry.name)
+                if (entry.isSymbolicLink || entry.isLink) throw UnsafeArchive("the archive contains a link (\"${entry.name.take(120)}\")")
+                if (name.isNotEmpty() && !names.add(name)) throw UnsafeArchive("\"${name.take(120)}\" appears twice")
+                if (name != member) continue
+                if (!entry.isFile) throw UnsafeArchive("$member is not a regular file")
                 if (entry.size > limit) throw UnsafeArchive("$member is larger than $limit bytes")
                 copy(tar, out, limit, member, checkCanceled)
                 found = true

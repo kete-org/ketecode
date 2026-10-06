@@ -101,6 +101,11 @@ class CliInstallTest {
         assertThrows(Archives.UnsafeArchive::class.java) { extract("a.zip", zip(Entry("kete", ByteArray(2048))), limit = 1024) }
         assertThrows(Archives.UnsafeArchive::class.java) { extract("a.tar.gz", tarGz(Entry("kete", ByteArray(2048))), limit = 1024) }
         assertThrows(Archives.UnsafeArchive::class.java) { extract("a.rar", ByteArray(10)) }
+        // Links and duplicate names anywhere in the archive, not only for kete.
+        assertThrows(Archives.UnsafeArchive::class.java) { extract("a.zip", zip(Entry("kete", binary), Entry("LICENSE", symlink = "/etc/passwd"))) }
+        assertThrows(Archives.UnsafeArchive::class.java) { extract("a.tar.gz", tarGz(Entry("kete", binary), Entry("NOTICE", symlink = "../x"))) }
+        assertThrows(Archives.UnsafeArchive::class.java) { extract("a.zip", zip(Entry("kete", binary), Entry("LICENSE"), Entry("./LICENSE"))) }
+        assertThrows(Archives.UnsafeArchive::class.java) { extract("a.tar.gz", tarGz(Entry("LICENSE"), Entry("LICENSE"), Entry("kete", binary))) }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -111,13 +116,18 @@ class CliInstallTest {
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     /** A fake release host: URL → body (or an HTTP status). Records what was fetched. */
-    private class FakeFetcher(val files: MutableMap<String, ByteArray>, val status: Map<String, Int> = emptyMap()) : CliInstall.Fetcher {
+    private class FakeFetcher(
+        val files: MutableMap<String, ByteArray>,
+        val status: Map<String, Int> = emptyMap(),
+        /** Like a chunked response: no Content-Length. */
+        val unknownLength: Boolean = false,
+    ) : CliInstall.Fetcher {
         val fetched = ArrayList<String>()
         override fun <T> get(url: String, read: (InputStream, Long) -> T): T {
             fetched.add(url)
             status[url]?.let { throw CliInstall.FetchException("$url returned HTTP $it", it) }
             val body = files[url] ?: throw CliInstall.FetchException("$url returned HTTP 404", 404)
-            return read(body.inputStream(), body.size.toLong())
+            return read(body.inputStream(), if (unknownLength) -1 else body.size.toLong())
         }
     }
 
@@ -144,8 +154,13 @@ class CliInstallTest {
         override fun makeExecutable(path: String) = false
     }
 
-    private fun installer(fetcher: CliInstall.Fetcher, probe: ((Path) -> String)? = { "kete v0.2.4\n" }, limits: CliInstall.Limits = CliInstall.Limits()) =
-        CliInstall(root, listOf(signer.pinned), fetcher, windows = false, probe = probe, limits = limits)
+    private fun installer(
+        fetcher: CliInstall.Fetcher,
+        probe: ((Path) -> String)? = { "kete v0.2.4\n" },
+        limits: CliInstall.Limits = CliInstall.Limits(),
+        move: (Path, Path) -> Unit = { from, to -> Files.move(from, to, java.nio.file.StandardCopyOption.ATOMIC_MOVE) },
+        sleep: (Long) -> Unit = {},
+    ) = CliInstall(root, listOf(signer.pinned), fetcher, windows = false, probe = probe, limits = limits, move = move, sleep = sleep)
 
     private fun leftovers(): List<String> =
         if (!Files.exists(root)) emptyList() else Files.walk(root).use { walk -> walk.map { root.relativize(it).toString() }.filter { it.isNotEmpty() && it != ".lock" }.toList() }
@@ -236,6 +251,81 @@ class CliInstallTest {
         }
         assertEquals(CliInstall.Failure.VERIFY, error.failure)
         assertEquals(emptyList<String>(), leftovers())
+    }
+
+    @Test
+    fun `the size cap holds while streaming when the length is unknown`() {
+        for (limits in listOf(CliInstall.Limits(archive = 10), CliInstall.Limits(checksums = 10))) {
+            val error = assertThrows(CliInstall.InstallException::class.java) {
+                installer(FakeFetcher(release(), unknownLength = true), limits = limits).install(need(), object : CliInstall.Progress {})
+            }
+            assertEquals(CliInstall.Failure.VERIFY, error.failure, error.message)
+            assertTrue(error.message!!.contains("larger than"), error.message)
+            assertEquals(emptyList<String>(), leftovers())
+        }
+        // And a normal install works without a length.
+        installer(FakeFetcher(release(), unknownLength = true)).install(need(), object : CliInstall.Progress {})
+    }
+
+    @Test
+    fun `the final move is retried while Windows reports the files busy, then gives up`() {
+        var failures = 3
+        val pauses = ArrayList<Long>()
+        val flaky: (Path, Path) -> Unit = { from, to ->
+            if (failures-- > 0) throw java.nio.file.AccessDeniedException(from.toString())
+            Files.move(from, to, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        }
+        val path = installer(FakeFetcher(release()), move = flaky, sleep = { pauses.add(it) }).install(need(), object : CliInstall.Progress {})
+        assertArrayEquals(binary, Files.readAllBytes(path))
+        assertEquals(listOf(200L, 400L, 800L), pauses)
+
+        CliInstall.deleteTree(root)
+        var attempts = 0
+        val stuck: (Path, Path) -> Unit = { from, _ ->
+            attempts++
+            throw java.nio.file.FileSystemException(from.toString(), null, "The process cannot access the file because it is being used by another process")
+        }
+        val error = assertThrows(CliInstall.InstallException::class.java) {
+            installer(FakeFetcher(release()), move = stuck).install(need(), object : CliInstall.Progress {})
+        }
+        assertEquals(CliInstall.Failure.IO, error.failure)
+        assertEquals(CliInstall.MOVE_ATTEMPTS, attempts)
+        assertFalse(Files.exists(Path.of(need().path)), "no binary where resolve would find it")
+
+        // Cancelling while it waits stops it.
+        class Cancelled : RuntimeException()
+        CliInstall.deleteTree(root)
+        assertThrows(Cancelled::class.java) {
+            installer(FakeFetcher(release()), move = stuck, sleep = { throw Cancelled() }).install(need(), object : CliInstall.Progress {})
+        }
+    }
+
+    @Test
+    fun `deleting a tree never follows a link into its target`() {
+        val outside = Files.createDirectories(temp.resolve("outside"))
+        Files.write(outside.resolve("keep.txt"), "keep".toByteArray())
+        val tree = Files.createDirectories(temp.resolve("tree").resolve("a"))
+        Files.write(tree.resolve("file"), "x".toByteArray())
+        Files.createSymbolicLink(tree.resolve("link-to-dir"), outside)
+        Files.createSymbolicLink(tree.resolve("link-to-file"), outside.resolve("keep.txt"))
+        CliInstall.deleteTree(temp.resolve("tree"))
+        assertFalse(Files.exists(temp.resolve("tree"), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        assertEquals("keep", Files.readString(outside.resolve("keep.txt")))
+        // A link given as the tree itself is removed, not its target.
+        val link = Files.createSymbolicLink(temp.resolve("top-link"), outside)
+        CliInstall.deleteTree(link)
+        assertFalse(Files.exists(link, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        assertTrue(Files.exists(outside.resolve("keep.txt")))
+    }
+
+    @Test
+    fun `a version folder that is a link is never removed as an old version`() {
+        val outside = Files.createDirectories(temp.resolve("elsewhere").resolve("darwin-arm64"))
+        Files.write(outside.resolve("kete"), binary)
+        Files.createDirectories(root)
+        Files.createSymbolicLink(root.resolve("0.2.3"), outside.parent)
+        installer(FakeFetcher(release())).install(need(), object : CliInstall.Progress {})
+        assertTrue(Files.exists(outside.resolve("kete")))
     }
 
     @Test

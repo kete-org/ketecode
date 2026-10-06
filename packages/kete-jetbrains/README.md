@@ -15,7 +15,11 @@ folder (`<system>/kete-code/cli/<version>/<os>-<arch>/`). Before anything runs, 
 trusts, copied from `packages/cli/src/kete/update-keys.json` at build time) and the archive's SHA-256
 against that signed `SHA256SUMS`; any mismatch, and nothing is installed. The answer is remembered
 (**Settings → Tools → Kete Code → Download the kete CLI when the plugin needs it**), so later versions
-download with a progress bar and no question. It never falls back to a `kete` on the `PATH`.
+download with a progress bar and no question. It never falls back to a `kete` on the `PATH`. Each
+IDE (and each major IDE version, which has its own system folder) keeps its own downloaded copy, about
+180–210 MB unpacked; a new plugin version removes the previous version's copy, but the copies left in
+the system folders of IDE versions you no longer use stay until you delete them (or that IDE's system
+folder).
 
 ## Features
 

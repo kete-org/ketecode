@@ -9,6 +9,7 @@ import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -64,11 +65,19 @@ class KeteCliDownloads {
         }
         lastFailure?.let { throw KeteCliMissingException(it) }
         val future = start(need, null)
+        // The EDT never waits for a download (the task reports progress through it).
+        if (ApplicationManager.getApplication().isDispatchThread && !future.isDone)
+            throw KeteCliMissingException("$DISPLAY_NAME is downloading its kete CLI ${need.version}; try again when it finishes.")
         return try {
             future.get()
         } catch (error: java.util.concurrent.ExecutionException) {
             throw KeteCliMissingException(error.cause?.message ?: "The kete download failed.")
         }
+    }
+
+    /** Consent given in Settings: a failed download may be tried again the next time the CLI is needed. */
+    fun resetFailure() {
+        lastFailure = null
     }
 
     /** "Download" chosen in the chat or a notification: remembers consent and starts (or joins) the download. */
@@ -159,8 +168,9 @@ class KeteCliDownloads {
                     failed(error.message ?: "The kete download failed.", project)
                 }
             }
-            // queue() from any thread: the task itself runs on a pooled thread with a progress indicator.
-            ApplicationManager.getApplication().invokeLater { task.queue() }
+            // Queued from the EDT in any modality: a modal dialog (Settings → Apply) must not hold it back
+            // while callers wait. The task itself runs on a pooled thread with a progress indicator.
+            ApplicationManager.getApplication().invokeLater({ task.queue() }, ModalityState.any())
             return future
         }
     }

@@ -40,9 +40,10 @@ verified-at: 9ae84d36f0
   lock in the root; `SHA256SUMS` (≤ 64 KB) + `SHA256SUMS.sig` (exactly 64 bytes) from
   `kete-org/kete-releases` `kete-v<pluginVersion>`, Ed25519-verified (`core/CliRelease.kt`, JDK
   `Signature("Ed25519")`) against the jar's `ai/ketecode/jetbrains/update-keys.json`; archive (≤ 300 MB)
-  hashed while streaming; only `kete[.exe]` extracted (Commons Compress from the platform; no absolute,
-  `..`, links, duplicates, ≤ 1 GiB); `--version` must report the version; one `ATOMIC_MOVE` into place;
-  other versions removed. HTTP: `HttpRequests` with a tuner refusing non-HTTPS on every redirect hop. A
+  hashed while streaming; only `kete[.exe]` extracted (Commons Compress from the platform; any absolute name,
+  `..`, link or duplicate in the archive refuses it; ≤ 1 GiB); `--version` must report the version; one
+  `ATOMIC_MOVE` into place (retried 5× on `FileSystemException`, e.g. Windows AV); other versions removed
+  (links/junctions never followed). Each IDE (major version) has its own copy in its system folder. HTTP: `HttpRequests` with a tuner refusing non-HTTPS on every redirect hop. A
   failed download isn't retried until Retry/Download (`lastFailure`).
 - **Where do the pinned keys come from?** Gradle's `generateUpdateKeys` copies
   `packages/cli/src/kete/update-keys.json` (validated: ≥ 1 key, 32-byte base64) into the jar's resources;
@@ -50,8 +51,10 @@ verified-at: 9ae84d36f0
 - **What does a release attach?** `kete-release.yml`'s `jetbrains` job: the Marketplace zip
   `kete-code-jetbrains-<v>.zip` (no `-PketeBinaries`; checked: no `bin/`, < 400 MB) and
   `kete-code-jetbrains-<v>-{macos,linux,windows}.zip` with binaries, plus the `.sha256`.
-  `kete-jetbrains-publish.yml` uploads the Marketplace zip after checking it and that kete-releases has the
-  tag's `SHA256SUMS(.sig)` and the six archives the plugin picks.
+  `kete-jetbrains-publish.yml` uploads the Marketplace zip after checking it and verifying the tag's
+  kete-releases release with `script/verify-public-release.ts` (bun, `release-verify.ts`): signature
+  against the zip's own keys, SHA-256 of the six archives the plugin picks (`ArchiveTargetsTest` keeps the
+  list equal to `Binary.targets`).
 - **Why does revert refuse a path inside the project?** `Paths.insideWorkspace` is lexical and then
   `Paths.realInside`: the target (or its nearest existing parent) after `toRealPath()` must be inside the
   real project folder, and a dangling link is refused. `confirmRevert` shows the resolved path and checks

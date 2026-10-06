@@ -185,8 +185,10 @@ The workflow mirrors the extension's: run it on the release tag; it refuses any 
 pre-release, a mismatched `confirm`, or a missing, draft or pre-release GitHub Release. It downloads
 the release's `kete-code-jetbrains-<v>.zip` and `kete-code-jetbrains-<v>.sha256` (it builds nothing),
 verifies the checksum, the 400 MB limit, that the zip bundles no binary, the plugin id and version, and
-that `kete-org/kete-releases` has the tag's public release with `SHA256SUMS`, `SHA256SUMS.sig` and every
-archive the plugin downloads (without it the plugin couldn't start), and uploads the zip through the
+that the tag's public release on `kete-org/kete-releases` verifies as the plugin will verify it
+(`SHA256SUMS.sig` against the update keys inside the zip, then every archive the plugin downloads against
+the signed `SHA256SUMS`; `packages/kete-jetbrains/script/verify-public-release.ts`, without which the plugin
+couldn't start), and uploads the zip through the
 Marketplace upload API (the token reaches curl on stdin). A version the Marketplace already has is
 reported and skipped. New versions appear after JetBrains' review.
 
@@ -216,7 +218,7 @@ a plugin version only trusts the keys it was built with. Code: `packages/kete-je
 `docs/tasks/2026-10-06-jetbrains-first-use-download`.
 
 So a Marketplace version works only once its public release exists on `kete-org/kete-releases`
-(public distribution on); `kete-jetbrains-publish` checks that. The per-OS zips with bundled binaries
+(public distribution on); `kete-jetbrains-publish` verifies it. The per-OS zips with bundled binaries
 (`kete-code-jetbrains-<v>-{macos,linux,windows}.zip`) stay on the GitHub Release for offline installs
 (**Settings → Plugins → ⚙ → Install Plugin from Disk…**). Run the
 [manual smoke checklist](../packages/kete-jetbrains/README.md#manual-smoke-checklist) before

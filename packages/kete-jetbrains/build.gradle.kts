@@ -188,6 +188,10 @@ tasks {
         // UpdateKeysResourceTest compares the generated resource with the CLI's file.
         inputs.file(updateKeys).withPathSensitivity(PathSensitivity.NONE)
         systemProperty("kete.updateKeys", updateKeys.asFile.absolutePath)
+        // ArchiveTargetsTest: kete-jetbrains-publish.yml's release check covers Binary.targets.
+        val verifyScript = layout.projectDirectory.file("script/verify-public-release.ts")
+        inputs.file(verifyScript).withPathSensitivity(PathSensitivity.NONE)
+        systemProperty("kete.verifyScript", verifyScript.asFile.absolutePath)
         // The opt-in live test (CliLiveReleaseTest) downloads a real release: KETE_LIVE_RELEASE=<version>.
         providers.environmentVariable("KETE_LIVE_RELEASE").orNull?.let { systemProperty("kete.liveRelease", it) }
         providers.environmentVariable("KETE_LIVE_TARGET").orNull?.let { systemProperty("kete.liveTarget", it) }

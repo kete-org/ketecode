@@ -155,8 +155,10 @@ class KeteConfigurable : BoundConfigurable("Kete Code") {
 
     override fun apply() {
         val before = KeteSettingsService.get().current()
+        val consentBefore = settings.cliDownloadConsent
         super.apply()
         val after = KeteSettingsService.get().current()
+        if (settings.cliDownloadConsent && !consentBefore) KeteCliDownloads.get().resetFailure()
         restartNeeded = before.cliPath != after.cliPath || before.defaultMode != after.defaultMode
         val runtime = KeteRuntime.get()
         val restart = restartNeeded
