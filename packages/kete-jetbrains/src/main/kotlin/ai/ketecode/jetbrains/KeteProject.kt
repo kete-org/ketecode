@@ -28,6 +28,7 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileTypes.FileTypeManager
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.ui.Messages
@@ -99,7 +100,12 @@ class KeteProject(private val project: Project) : Disposable {
             EditorToolsServer.get().register(project)
         }
         if (status is RuntimeStatus.Failed) chats.forEach { chat ->
-            chat.showMessage(
+            if (status.download) chat.showMessage(
+                "$DISPLAY_NAME isn't available yet: ${status.reason}",
+                "Download" to { KeteCliDownloads.get().consentAndDownload(project) },
+                "Open Settings" to { ShowSettingsUtil.getInstance().showSettingsDialog(project, KeteConfigurable::class.java) },
+            )
+            else chat.showMessage(
                 "$DISPLAY_NAME isn't available: ${status.reason}",
                 "Restart Server" to { KeteRuntime.get().restart() },
                 "Open in Terminal" to { KeteTerminal.open(project) },

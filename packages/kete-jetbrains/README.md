@@ -2,8 +2,24 @@
 
 Kete Code in IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, RubyMine, CLion, Rider, RustRover and
 Android Studio (2024.3 and later, build 243+). Like the VS Code extension, the plugin is a thin client
-of the Kete Code runtime bundled with it: it starts its own `kete serve`, shows the runtime's web UI,
-and never contains agent logic (CLAUDE.md §3, §6). Plugin ID `ai.ketecode.kete-code`, vendor Kete Code.
+of the Kete Code runtime: it starts its own `kete serve`, shows the runtime's web UI, and never
+contains agent logic (CLAUDE.md §3, §6). Plugin ID `ai.ketecode.kete-code`, vendor Kete Code.
+
+**Where its `kete` comes from.** The per-OS zips on the GitHub Release bundle it. The JetBrains
+Marketplace build doesn't (one zip with every platform's binary is ~520 MB; the Marketplace takes
+400 MB): the first time it needs `kete`, the plugin asks, then downloads the `kete` of its own version
+for this OS and architecture (about 80–95 MB) from
+[github.com/kete-org/kete-releases](https://github.com/kete-org/kete-releases) into the IDE's system
+folder (`<system>/kete-code/cli/<version>/<os>-<arch>/`). Before anything runs, it checks the release's
+`SHA256SUMS.sig` (Ed25519) against the update keys pinned in the plugin (the ones `kete upgrade`
+trusts, copied from `packages/cli/src/kete/update-keys.json` at build time) and the archive's SHA-256
+against that signed `SHA256SUMS`; any mismatch, and nothing is installed. The answer is remembered
+(**Settings → Tools → Kete Code → Download the kete CLI when the plugin needs it**), so later versions
+download with a progress bar and no question. It never falls back to a `kete` on the `PATH`. Each
+IDE (and each major IDE version, which has its own system folder) keeps its own downloaded copy, about
+180–210 MB unpacked; a new plugin version removes the previous version's copy, but the copies left in
+the system folders of IDE versions you no longer use stay until you delete them (or that IDE's system
+folder).
 
 ## Features
 
@@ -37,7 +53,9 @@ and never contains agent logic (CLAUDE.md §3, §6). Plugin ID `ai.ketecode.kete
 | Piece | File |
 | --- | --- |
 | Runtime: `kete serve --stdio`, start line, restart backoff, account, event stream | `KeteRuntime.kt`, `core/Runtime.kt`, `core/Events.kt` |
-| Which binary: `bin/<os>-<arch>/kete[.exe]` or the CLI path setting, never the `PATH` | `core/Binary.kt` |
+| Which binary: the CLI path setting, `bin/<os>-<arch>/kete[.exe]`, the downloaded one, else download; never the `PATH` | `core/Binary.kt` |
+| First-use download: consent, background task, IDE HTTP stack (proxy, HTTPS only) | `KeteCliDownload.kt` |
+| Download verification (Ed25519 `SHA256SUMS.sig`, SHA-256), safe extraction, atomic install | `core/CliRelease.kt`, `core/CliInstall.kt` |
 | Chat: JCEF browser, pairing password only in the URL fragment, JS ↔ Kotlin bridge | `ChatPanel.kt`, `core/Bridge.kt` |
 | Per project: chats, editor context, review, notifications | `KeteProject.kt`, `core/ContextFilter.kt`, `core/ReviewDiff.kt` |
 | Web UI side of the bridge | `packages/app/src/kete/ide-host.ts`, `vscode-host.tsx`, `vscode-messages.ts` |
@@ -67,10 +85,15 @@ With a JDK 21 locally:
 ./gradlew verifyPlugin -PverifyIde=IU:2026.2.3      # one IDE through the Plugin Verifier
 ./gradlew runIde                                    # a sandbox IDE with the plugin (set a CLI path in its settings)
 ./gradlew buildPlugin -PpluginVersion=0.3.0 -PketeBinaries=/path/to/bins   # bundle <bins>/<os>-<arch>/kete[.exe]
+KETE_LIVE_RELEASE=0.2.4 ./gradlew test --tests '*CliLiveReleaseTest*'       # opt-in: download and verify a real release
 ```
 
-A development build has no bundled binary: set **Settings → Tools → Kete Code → CLI path** to a `kete`
-you built (`bun run build --single --skip-install --skip-web-ui` in `packages/cli`).
+A development build (version `0.0.0`) has no bundled binary and no public release to download: set
+**Settings → Tools → Kete Code → CLI path** to a `kete` you built (`bun run build --single
+--skip-install --skip-web-ui` in `packages/cli`). The build copies `packages/cli/src/kete/update-keys.json`
+into the jar and fails if it is missing or has no keys. The live test also takes
+`KETE_LIVE_TARGET=linux-arm64` (any `core/Binary.kt` folder) to check another platform's archive
+without running it.
 
 **Gradle wrapper:** Gradle 9.8.0. `gradle/wrapper/gradle-wrapper.jar` was extracted from the official
 `gradle-9.8.0-bin.zip` (`lib/plugins/gradle-wrapper-main-9.8.0.jar`) and matches the published
@@ -81,18 +104,19 @@ you built (`bun run build --single --skip-install --skip-web-ui` in `packages/cl
 
 ## Releases
 
-`kete-release.yml` builds one plugin zip per OS (`kete-code-jetbrains-<v>-{macos,linux,windows}.zip`,
-both architectures each) with the released binaries, plus an all-platform zip only if it fits the
-JetBrains Marketplace's 400 MB limit, and attaches them to the GitHub Release. Install one with
+`kete-release.yml` builds the Marketplace zip `kete-code-jetbrains-<v>.zip` (no binary; checked to
+have no `bin/` and to fit the Marketplace's 400 MB limit) and one plugin zip per OS
+(`kete-code-jetbrains-<v>-{macos,linux,windows}.zip`, both architectures each) with the released
+binaries for offline installs, and attaches them to the GitHub Release. Install a per-OS zip with
 **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Publishing to the Marketplace is a separate,
-manual step (`kete-jetbrains-publish.yml`); see `docs/release.md` ("Publish the JetBrains plugin"),
-including the size-limit decision (the Marketplace build will download a verified `kete` on first
-use; a follow-up before the first Marketplace publish).
+manual step (`kete-jetbrains-publish.yml`, which uploads the Marketplace zip); see `docs/release.md`
+("Publish the JetBrains plugin").
 
 ## Manual smoke checklist
 
 CI can't drive a real IDE. Before publishing a version to the Marketplace, a maintainer installs the
-release's zip for their OS into a clean IDE (and ideally one other product, e.g. PyCharm) and checks:
+release's zip for their OS into a clean IDE (and ideally one other product, e.g. PyCharm) and checks
+1–12; then the Marketplace zip (`kete-code-jetbrains-<v>.zip`) into another clean IDE and checks 13–16:
 
 1. **Tool window:** View → Tool Windows → Kete Code opens on the right; the chat loads (no error page),
    in the IDE's light or dark theme; switching the IDE theme restyles it.
@@ -118,3 +142,16 @@ release's zip for their OS into a clean IDE (and ideally one other product, e.g.
 11. **Terminal:** Open in Terminal runs the `kete` TUI in the IDE's terminal.
 12. **Restart:** Restart Server; the chat reloads and keeps working. Close the last project: no
     `kete serve` process is left behind.
+13. **First-use download, consent:** open the tool window. A notification says the plugin needs its
+    kete CLI (version, OS, about 80–95 MB, github.com/kete-org/kete-releases, verified with the signing
+    key) with Download / Open Settings, and the chat says so with Download. Nothing is downloaded
+    before you choose Download (no traffic to github.com in a proxy log).
+14. **Download:** choose Download. A background task shows progress and can be cancelled (cancel once:
+    the chat offers Download again and `<system>/kete-code/cli` holds no version folder). Download
+    again: the chat starts; `<system>/kete-code/cli/<version>/<os>-<arch>/kete` exists (Help → Show
+    Log in Finder/Explorer → the `system` folder is its sibling, or `idea.system.path`).
+15. **Failures are honest:** with the network off (or a bad proxy), the error names the URL and points
+    at the proxy settings, with Retry and Open Settings; no binary is left behind. A plugin build
+    whose version has no public release reports HTTP 404 and suggests the per-OS zip or a CLI path.
+16. **Later versions:** after consenting once, a newer plugin version downloads its own kete with a
+    progress bar and no question, and removes the old version's folder.

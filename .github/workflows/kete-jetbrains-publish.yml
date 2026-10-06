@@ -7,12 +7,12 @@
 #
 #   gh workflow run kete-jetbrains-publish.yml --repo kete-org/ketecode --ref kete-v0.3.0 -f confirm=kete-v0.3.0
 #
-# It uploads the all-platform plugin zip already attached to that tag's published GitHub Release
-# (built and checked by kete-release.yml's jetbrains job), after verifying it against the release's
-# kete-code-jetbrains-<v>.sha256; it builds nothing. The JetBrains Marketplace takes one file of at
-# most 400 MB per version, so a release whose all-platform zip didn't fit (kete-release.yml then
-# attaches only the per-OS zips) can't be published here; the run says so and fails. Stable versions
-# only. The plugin must already exist on the Marketplace (the first upload is made by hand, under the
+# It uploads the Marketplace plugin zip (kete-code-jetbrains-<v>.zip) already attached to that tag's
+# published GitHub Release (built and checked by kete-release.yml's jetbrains job), after verifying it
+# against the release's kete-code-jetbrains-<v>.sha256; it builds nothing. That zip carries no kete
+# binary: the plugin downloads its version's kete from kete-releases on first use and verifies it
+# against the pinned update keys, which keeps it far below the Marketplace's 400 MB per-file limit
+# (still checked here, with the absence of bundled binaries). Stable versions only. The plugin must already exist on the Marketplace (the first upload is made by hand, under the
 # vendor account). Re-running is safe: a version the Marketplace already has is reported and skipped.
 name: kete-jetbrains-publish
 
@@ -33,12 +33,23 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     # JETBRAINS_MARKETPLACE_TOKEN lives here; the environment admits kete-v* tags only.
     environment: jetbrains-marketplace
     env:
       TAG: ${{ github.ref_name }}
     steps:
+      # Only for the release check's script (packages/kete-jetbrains/script); nothing is built.
+      - name: Checkout the tag
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
       - name: Check the tag
         env:
           CONFIRM: ${{ inputs.confirm }}
@@ -61,10 +72,7 @@ jobs:
           [ "$state" = "false false" ] || { echo "::error::$TAG's release is a draft or a pre-release ($state)"; exit 1; }
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "kete-code-jetbrains-$version*" --dir release
           ls -la release
-          test -f "release/kete-code-jetbrains-$version.zip" || {
-            echo "::error::$TAG has no all-platform plugin zip (kete-code-jetbrains-$version.zip): it was over the Marketplace's 400 MB limit, so the release carries only per-OS zips. Publishing to the Marketplace needs a decision first (see docs/release.md)."
-            exit 1
-          }
+          test -f "release/kete-code-jetbrains-$version.zip" || { echo "::error::$TAG's release has no Marketplace plugin zip (kete-code-jetbrains-$version.zip)"; exit 1; }
 
       # The per-zip .sha256 comes from the same GitHub Release as the zip, so it guards only against a
       # corrupted download, not a tampered release: the release's signed SHA256SUMS (Ed25519, on the
@@ -79,11 +87,34 @@ jobs:
             || { echo "::error::$zip is not in kete-code-jetbrains-$version.sha256"; exit 1; }
           size="$(stat -c %s "$zip")"
           [ "$size" -le 400000000 ] || { echo "::error::$zip is $((size / 1000000)) MB, over the Marketplace's 400 MB limit"; exit 1; }
+          listing="$(unzip -Z1 "$zip")"
+          if grep -q '^kete-jetbrains/bin/' <<<"$listing"; then echo "::error::$zip bundles binaries (bin/); the Marketplace zip must not"; exit 1; fi
           jar="$(unzip -Z1 "$zip" | grep -E '^kete-jetbrains/lib/kete-jetbrains-.*\.jar$' | head -1)"
           unzip -p "$zip" "$jar" > plugin.jar
           xml="$(unzip -p plugin.jar META-INF/plugin.xml)"
           grep -q '<id>ai.ketecode.kete-code</id>' <<<"$xml" || { echo "::error::$zip has the wrong plugin id"; exit 1; }
           grep -q "<version>$version</version>" <<<"$xml" || { echo "::error::$zip is not version $version"; exit 1; }
+
+      # The Marketplace zip downloads its kete from the tag's public release on first use, so that
+      # release must exist and verify exactly as the plugin will verify it: SHA256SUMS.sig against the
+      # update keys inside this plugin zip, and every archive the plugin picks against the signed
+      # SHA256SUMS (packages/kete-jetbrains/script/verify-public-release.ts, release-verify.ts's checks).
+      - name: Verify the public release the plugin downloads from
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${TAG#kete-v}"
+          gh release view "$TAG" --repo kete-org/kete-releases --json tagName >/dev/null \
+            || { echo "::error::kete-org/kete-releases has no $TAG release: the plugin couldn't download its kete. Publish the CLI first (public distribution)."; exit 1; }
+          patterns=(--pattern SHA256SUMS --pattern SHA256SUMS.sig)
+          for target in darwin-arm64 darwin-x64-baseline linux-x64-baseline linux-arm64 windows-x64-baseline windows-arm64; do
+            case "$target" in linux-*) patterns+=(--pattern "kete-$version-$target.tar.gz") ;; *) patterns+=(--pattern "kete-$version-$target.zip") ;; esac
+          done
+          gh release download "$TAG" --repo kete-org/kete-releases --dir public "${patterns[@]}"
+          ls -la public
+          unzip -p plugin.jar ai/ketecode/jetbrains/update-keys.json > plugin-update-keys.json
+          bun packages/kete-jetbrains/script/verify-public-release.ts "$version" public plugin-update-keys.json
 
       # The Marketplace upload API (https://plugins.jetbrains.com/docs/marketplace/plugin-upload.html).
       # The token goes to curl on stdin, never on a command line.

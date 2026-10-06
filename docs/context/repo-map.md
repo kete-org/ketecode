@@ -26,7 +26,7 @@ CLAUDE.md §2). Kete-owned code is in bold. Module cards are in `modules/`.
 | Path | Holds | Card |
 |---|---|---|
 | **`packages/kete-vscode/`** | VS Code extension (`ketecode.kete-code`): bundled binary, own local server, chat, sessions, review, MCP view | vscode-extension |
-| **`packages/kete-jetbrains/`** | JetBrains plugin (`ai.ketecode.kete-code`, Kotlin/Gradle, built in CI): bundled binary, own local server, JCEF chat, context, review, diagnostics tool | jetbrains-plugin |
+| **`packages/kete-jetbrains/`** | JetBrains plugin (`ai.ketecode.kete-code`, Kotlin/Gradle): bundled or first-use-downloaded (verified) binary, own local server, JCEF chat, context, review, diagnostics tool | jetbrains-plugin |
 | **`packages/kete-tools/`** | upstream sync, upstream:check, verify, release, role-check | kete-tools-ci |
 | **`packages/kete-harness-plugin/`** | the Kete Code step for Harness pipelines: Plugin step image (`ghcr.io/kete-org/kete-harness-plugin`), its TypeScript entrypoint (Bun-compiled), `run`/`cloud` modes, fakes and tests, `scripts/build.sh`/`smoke.sh` | harness-plugin |
 | **`packages/kete-root-helper/`** | Go module: the cloud-job root helper (second-user tool spawner, protocol v1) and its scripts/tests; Linux-only, not shipped in the CLI or VS Code binaries — ships in the (future) job container image | root-helper |

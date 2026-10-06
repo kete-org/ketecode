@@ -2,9 +2,13 @@ package ai.ketecode.jetbrains.core
 
 import java.io.File
 
-// Which `kete` binary the plugin runs (mirrors packages/kete-vscode/src/binary.ts). Release builds
-// bundle one binary per platform under bin/<os>-<arch>/ (kete-release.yml); the `cliPath` setting
-// overrides it for development. The PATH is never searched: the plugin runs the binary it was built with.
+// Which `kete` binary the plugin runs (mirrors packages/kete-vscode/src/binary.ts), in this order:
+//   1. the `cliPath` setting (development);
+//   2. the binary bundled under bin/<os>-<arch>/ (the per-OS zips on the GitHub Release, kete-release.yml);
+//   3. the binary downloaded earlier for this plugin version into the IDE's system directory
+//      (<system>/kete-code/cli/<version>/<os>-<arch>/kete[.exe]; the Marketplace build carries none);
+//   4. otherwise it must be downloaded first (CliInstall.kt verifies it before it lands there).
+// The PATH is never searched: the plugin runs the binary of its own version.
 
 object Binary {
     /** The bundled folder for each OS/architecture → the CLI build target it holds (packages/cli/script/build.ts). */
@@ -25,8 +29,11 @@ object Binary {
     )
 
     sealed interface Resolved {
+        /** `source`: "setting", "bundled" or "downloaded". */
         data class Ok(val path: String, val source: String) : Resolved
         data class Error(val message: String) : Resolved
+        /** No binary yet: `target` of release `version` must be downloaded and verified into `directory` (the version folder). */
+        data class Download(val version: String, val platform: String, val target: String, val directory: String, val path: String) : Resolved
     }
 
     /** `os.name`/`os.arch` → the bundled folder name, or null for a platform without a bundled binary. */
@@ -62,8 +69,23 @@ object Binary {
         override fun makeExecutable(path: String) = File(path).setExecutable(true, false)
     }
 
-    /** The binary to run: the `cliPath` setting when set, else the one bundled with the plugin. */
-    fun resolve(pluginPath: String, setting: String?, osName: String, osArch: String, files: Files = RealFiles): Resolved {
+    /** Where downloaded binaries live: `<root>/<version>/<platform>/kete[.exe]`. */
+    fun downloadedPath(root: String, version: String, platform: String, windows: Boolean) =
+        listOf(root, version, platform, executableName(windows)).joinToString(File.separator)
+
+    /**
+     * The binary to run (see the order at the top). `downloadRoot` is `<IDE system dir>/kete-code/cli`
+     * and `version` the plugin's own version; either may be null when unknown, and then no download is offered.
+     */
+    fun resolve(
+        pluginPath: String,
+        setting: String?,
+        osName: String,
+        osArch: String,
+        files: Files = RealFiles,
+        downloadRoot: String? = null,
+        version: String? = null,
+    ): Resolved {
         val windows = osName.lowercase().startsWith("windows")
         val configured = setting?.trim().orEmpty()
         if (configured.isNotEmpty()) {
@@ -73,13 +95,30 @@ object Binary {
             return if (problem == null) Resolved.Ok(configured, "setting") else Resolved.Error("CLI path: $problem")
         }
         val platform = platform(osName, osArch)
-            ?: return Resolved.Error("Kete Code has no bundled kete binary for $osName ($osArch). Set a CLI path in Settings → Tools → Kete Code.")
+            ?: return Resolved.Error("Kete Code has no kete binary for $osName ($osArch). Set a CLI path in Settings → Tools → Kete Code.")
         val bundled = listOf(pluginPath, "bin", platform, executableName(windows)).joinToString(File.separator)
-        val problem = usable(bundled, windows, files)
-        if (problem == null) return Resolved.Ok(bundled, "bundled")
-        return Resolved.Error(
-            "This build of the Kete Code plugin has no kete binary for this platform ($platform). Install the plugin zip for your " +
-                "operating system from the Kete Code release, or set a CLI path in Settings → Tools → Kete Code (for development).",
+        // A bundled file that exists but can't be made executable is an error, not a reason to download.
+        if (files.isFile(bundled)) {
+            val problem = usable(bundled, windows, files)
+            return if (problem == null) Resolved.Ok(bundled, "bundled") else Resolved.Error("Bundled kete: $problem")
+        }
+        if (downloadRoot == null || version == null || !CliRelease.isVersion(version))
+            return Resolved.Error(
+                "This build of the Kete Code plugin has no kete binary for this platform ($platform) and can't download one " +
+                    "(plugin version ${version ?: "unknown"}). Install the plugin zip for your operating system from the Kete Code " +
+                    "release, or set a CLI path in Settings → Tools → Kete Code.",
+            )
+        val downloaded = downloadedPath(downloadRoot, version, platform, windows)
+        if (files.isFile(downloaded)) {
+            val problem = usable(downloaded, windows, files)
+            return if (problem == null) Resolved.Ok(downloaded, "downloaded") else Resolved.Error("Downloaded kete: $problem")
+        }
+        return Resolved.Download(
+            version = version,
+            platform = platform,
+            target = targets.getValue(platform),
+            directory = listOf(downloadRoot, version).joinToString(File.separator),
+            path = downloaded,
         )
     }
 

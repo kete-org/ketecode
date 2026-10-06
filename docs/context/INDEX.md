@@ -59,7 +59,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | ui-branding | web UI and TUI branding and themes |
 | web-app | the web app's Kete chat panel: empty state, composer controls, the permission-mode toggle |
 | vscode-extension | the extension and the web UI's side of its bridge |
-| jetbrains-plugin | the IntelliJ-platform plugin (`packages/kete-jetbrains`): bundled runtime, JCEF chat and its bridge, context, review, diagnostics tool, CI/release/publish workflows, the web UI's `ide-host.ts` |
+| jetbrains-plugin | the IntelliJ-platform plugin (`packages/kete-jetbrains`): bundled or first-use-downloaded (signature-verified) runtime, JCEF chat and its bridge, context, review, diagnostics tool, CI/release/publish workflows, the web UI's `ide-host.ts` |
 | harness-plugin | the Kete Code step for Harness pipelines (`packages/kete-harness-plugin`): `PLUGIN_*` settings, `run` mode (`kete job run`, artifacts, new-branch push), `cloud` mode (`POST /api/v1/jobs`, polling), outputs and exit codes, the image, its workflow and release jobs |
 | kete-tools-ci | upstream sync, upstream:check, verify, release, role-check, CI |
 

@@ -161,7 +161,7 @@ class KeteRuntime : Disposable {
             binary()
         } catch (error: Exception) {
             synchronized(lock) { if (pending === future) pending = null }
-            set(RuntimeStatus.Failed(error.message ?: "no kete binary"))
+            set(RuntimeStatus.Failed(error.message ?: "no kete binary", download = error is KeteCliMissingException))
             future.completeExceptionally(error)
             return
         }
@@ -323,23 +323,32 @@ class KeteRuntime : Disposable {
     // -------------------------------------------------------------------------------------------
     // Binary and CLI
 
-    /** The binary to run: the CLI path setting, else the one bundled for this OS/architecture. */
-    fun binary(): String {
+    /** Which binary would run (core/Binary.kt): the CLI path setting, the bundled one, the downloaded one, or "download first". */
+    fun resolveBinary(): Binary.Resolved {
         // The plugin's folder: its jar is <plugin>/lib/kete-jetbrains-<version>.jar.
         val jar = PathManager.getJarPathForClass(KeteRuntime::class.java)
             ?: throw KeteRuntimeException("The Kete Code plugin's files were not found")
         val pluginPath = java.nio.file.Path.of(jar).parent?.parent
             ?: throw KeteRuntimeException("The Kete Code plugin's files were not found")
-        val resolved = Binary.resolve(
+        val downloads = KeteCliDownloads.get()
+        return Binary.resolve(
             pluginPath.toString(),
             KeteSettingsService.get().state.cliPath,
             System.getProperty("os.name"),
             System.getProperty("os.arch"),
+            downloadRoot = downloads.root.toString(),
+            version = downloads.version,
         )
-        return when (resolved) {
-            is Binary.Resolved.Ok -> resolved.path
-            is Binary.Resolved.Error -> throw KeteRuntimeException(resolved.message)
-        }
+    }
+
+    /**
+     * The binary to run. When it still has to be downloaded, waits for the download if the user agreed to
+     * it earlier, else asks and throws [KeteCliMissingException]. Never on the EDT.
+     */
+    fun binary(): String = when (val resolved = resolveBinary()) {
+        is Binary.Resolved.Ok -> resolved.path
+        is Binary.Resolved.Error -> throw KeteRuntimeException(resolved.message)
+        is Binary.Resolved.Download -> KeteCliDownloads.get().binary(resolved)
     }
 
     data class CliResult(val exit: Int, val stdout: String, val stderr: String)

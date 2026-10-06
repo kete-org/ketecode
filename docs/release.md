@@ -19,7 +19,7 @@ upstream OpenCode version the source is synced to (`.opencode-version`).
 | Homebrew `kete-org/tap/kete` (`kete-org/homebrew-tap`) | `Formula/kete.rb`: per-platform URLs into `kete-releases` and their SHA-256 | stable tags, once public distribution is on |
 | npm `@ketecode/cli` + `@ketecode/cli-<platform>` | launcher + one package per platform | every tag (pre-releases under the npm tag `next`), once public distribution is on |
 | VS Code Marketplace and Open VSX (`ketecode.kete-code`) | the 8 platform `.vsix` files of a released stable tag | **only** when `kete-extension-publish` is run on that tag ([Publish the extension](#publish-the-extension)) |
-| JetBrains Marketplace (`ai.ketecode.kete-code`) | the all-platform plugin zip of a released stable tag, if it fits the 400 MB limit | **only** when `kete-jetbrains-publish` is run on that tag ([Publish the JetBrains plugin](#publish-the-jetbrains-plugin)) |
+| JetBrains Marketplace (`ai.ketecode.kete-code`) | the Marketplace plugin zip (no binary; downloads its verified `kete` on first use) of a released stable tag | **only** when `kete-jetbrains-publish` is run on that tag ([Publish the JetBrains plugin](#publish-the-jetbrains-plugin)) |
 
 "Once public distribution is on" means the repository variable `KETE_PUBLIC_DISTRIBUTION` is `true`
 (see [Public distribution](#public-distribution-one-time-setup)); until then a release publishes only
@@ -184,7 +184,11 @@ secret `JETBRAINS_MARKETPLACE_TOKEN`. Only `kete-jetbrains-publish.yml` uses it.
 The workflow mirrors the extension's: run it on the release tag; it refuses any other ref, a
 pre-release, a mismatched `confirm`, or a missing, draft or pre-release GitHub Release. It downloads
 the release's `kete-code-jetbrains-<v>.zip` and `kete-code-jetbrains-<v>.sha256` (it builds nothing),
-verifies the checksum, the 400 MB limit, the plugin id and version, and uploads the zip through the
+verifies the checksum, the 400 MB limit, that the zip bundles no binary, the plugin id and version, and
+that the tag's public release on `kete-org/kete-releases` verifies as the plugin will verify it
+(`SHA256SUMS.sig` against the update keys inside the zip, then every archive the plugin downloads against
+the signed `SHA256SUMS`; `packages/kete-jetbrains/script/verify-public-release.ts`, without which the plugin
+couldn't start), and uploads the zip through the
 Marketplace upload API (the token reaches curl on stdin). A version the Marketplace already has is
 reported and skipped. New versions appear after JetBrains' review.
 
@@ -195,22 +199,28 @@ scripts, not the plugin zips, so the workflow can't check the zips against a sig
 integrity rests on who can write to this repository's releases; listing them in the signed
 `SHA256SUMS` is a possible follow-up.
 
-**The 400 MB Marketplace limit: decided, not built yet.** The Marketplace takes a single file of at
-most 400 MB per version, and one `kete` binary is ~80–93 MB compressed, so a zip with all six
-platforms (~520 MB) doesn't fit. Releases therefore attach one zip per OS (installable with
-**Settings → Plugins → ⚙ → Install Plugin from Disk…**) and the all-platform zip only when it fits;
-until it does, `kete-jetbrains-publish` stops with that explanation.
+**The 400 MB Marketplace limit: built (2026-10-06).** The Marketplace takes a single file of at most
+400 MB per version, and one `kete` binary is ~80–93 MB compressed, so a zip with all six platforms
+(~520 MB) doesn't fit. As decided by the maintainer (2026-10-05), the **Marketplace zip
+`kete-code-jetbrains-<v>.zip` carries no binary and downloads the platform's `kete` on first use**
+from the public release matching the plugin's version
+(`https://github.com/kete-org/kete-releases/releases/download/kete-v<v>/…`, pre-release versions from
+their pre-release tag), after the user agrees once (remembered; Settings → Tools → Kete Code). Before
+anything runs, the plugin verifies the release's `SHA256SUMS.sig` (64 raw bytes, Ed25519 over the
+exact bytes of `SHA256SUMS`) against the pinned update keys with Java's built-in Ed25519, then the
+archive's SHA-256 against its line in that `SHA256SUMS`, extracts only `kete`/`kete.exe` (no
+absolute paths, `..` or links), checks that it reports the version, and only then moves it into
+`<IDE system dir>/kete-code/cli/<version>/<os>-<arch>/` in one rename; any failure installs nothing.
+The keys are `kete upgrade`'s: the plugin build copies `packages/cli/src/kete/update-keys.json` into
+the jar and fails without it, so rotating the key (see "Update signing key") needs no plugin edit, but
+a plugin version only trusts the keys it was built with. Code: `packages/kete-jetbrains/src/main/kotlin/ai/ketecode/jetbrains/`
+`core/CliRelease.kt`, `core/CliInstall.kt`, `KeteCliDownload.kt`; task
+`docs/tasks/2026-10-06-jetbrains-first-use-download`.
 
-Go-live decision (pre-approved by the maintainer, 2026-10-05): the **Marketplace build carries no
-binary and downloads the platform's `kete` on first use** from the public releases
-(`kete-org/kete-releases`, the release matching the plugin's version). Before running it the plugin
-verifies the release's `SHA256SUMS.sig` (Ed25519) against the pinned update key
-(`packages/cli/src/kete/update-keys.json`, the key `kete upgrade` trusts) with Java's built-in
-Ed25519 (`java.security.Signature`, `Ed25519`), then the archive's SHA-256 against that
-`SHA256SUMS`, and refuses on any mismatch; no unverified binary ever runs. The per-OS zips with
-bundled binaries stay on the GitHub Release for offline installs. **Implementation is a follow-up
-that must land before the first Marketplace publish** (not part of the plugin's first PR); until
-then `kete-jetbrains-publish` has nothing it can upload. Run the
+So a Marketplace version works only once its public release exists on `kete-org/kete-releases`
+(public distribution on); `kete-jetbrains-publish` verifies it. The per-OS zips with bundled binaries
+(`kete-code-jetbrains-<v>-{macos,linux,windows}.zip`) stay on the GitHub Release for offline installs
+(**Settings → Plugins → ⚙ → Install Plugin from Disk…**). Run the
 [manual smoke checklist](../packages/kete-jetbrains/README.md#manual-smoke-checklist) before
 publishing.
 
@@ -231,10 +241,11 @@ publishing.
    under xvfb (`packages/kete-vscode/script/e2e.ts --assert`: sign-in state, chat, editor context,
    sessions, review, MCP view, server restart, no server left behind). VSCodium stands in for the
    Open VSX forks; Windsurf and Cursor are covered by the manual checklist.
-   **jetbrains**: builds the JetBrains plugin (`packages/kete-jetbrains`, Gradle wrapper validated)
-   with the released binaries bundled: one zip per OS with both architectures, plus the all-platform
-   zip if it is at most 400 MB; checks each zip's plugin id, version and executable binaries, runs
-   the linux zip's `linux-x64` binary, and writes `kete-code-jetbrains-<v>.sha256`. The plugin's own
+   **jetbrains**: builds the JetBrains plugin (`packages/kete-jetbrains`, Gradle wrapper validated):
+   the Marketplace zip without binaries (checked: no `bin/`, under 400 MB) and one zip per OS with
+   both architectures' released binaries; checks each zip's plugin id, version, pinned update keys
+   (equal to `packages/cli/src/kete/update-keys.json`) and, in the per-OS zips, executable binaries;
+   runs the linux zip's `linux-x64` binary, and writes `kete-code-jetbrains-<v>.sha256`. The plugin's own
    build, unit tests and Plugin Verifier run on every pull request that touches it
    (`kete-jetbrains.yml`), not here.
 4. **image**: the cloud job image (`packages/kete-job-image`) for `linux/amd64` and `linux/arm64`
@@ -315,7 +326,7 @@ publishing.
 | `kete-<version>-<target>.tar.gz` (Linux) / `.zip` (macOS, Windows) | The `kete` binary with `LICENSE` and `NOTICE`             |
 | `kete-code-<version>-<vscode target>.vsix`                         | The VS Code extension for one platform, with its binary   |
 | `kete-code-jetbrains-<version>-<macos\|linux\|windows>.zip`         | The JetBrains plugin for one OS, with its arm64 and x64 binaries |
-| `kete-code-jetbrains-<version>.zip` (only if ≤ 400 MB)              | The JetBrains plugin with every platform's binary          |
+| `kete-code-jetbrains-<version>.zip`                                 | The JetBrains plugin for the Marketplace: no binary, downloads its verified `kete` on first use |
 | `kete-code-jetbrains-<version>.sha256`                              | SHA-256 of the JetBrains plugin zips                       |
 | `SHA256SUMS`                                                       | SHA-256 of every file above (`sha256sum -c SHA256SUMS`)  |
 | `kete-job-image.digest`                                            | `ghcr.io/kete-org/kete-job@sha256:…`: the linux/amd64 job image Fly pins |

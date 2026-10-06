@@ -13,10 +13,12 @@
 #   extension-e2e  the extension's end-to-end suite (packages/kete-vscode/script/e2e.ts --assert) on
 #              the linux-x64 .vsix in VS Code and in VSCodium (the Open VSX forks' stand-in), under
 #              xvfb, each editor a pinned archive checked against a pinned SHA-256
-#   jetbrains  the JetBrains plugin (packages/kete-jetbrains) with the released binaries bundled: one
-#              zip per OS (kete-code-jetbrains-<v>-{macos,linux,windows}.zip, both architectures
-#              each), plus one zip with every platform only if it fits the JetBrains Marketplace's
-#              400 MB limit, and kete-code-jetbrains-<v>.sha256 listing them
+#   jetbrains  the JetBrains plugin (packages/kete-jetbrains): the Marketplace zip
+#              kete-code-jetbrains-<v>.zip with no binary (it downloads and verifies its version's
+#              kete from kete-releases on first use; checked to have no bin/ and to fit the
+#              Marketplace's 400 MB limit), one zip per OS with the released binaries bundled for
+#              offline installs (kete-code-jetbrains-<v>-{macos,linux,windows}.zip, both
+#              architectures each), and kete-code-jetbrains-<v>.sha256 listing them
 #   image      the cloud job image (packages/kete-job-image) for linux/amd64 and linux/arm64 from
 #              the released linux-x64 and linux-arm64 kete, with read-only permissions: builds both
 #              (arm64 under QEMU), runs the full end-to-end test (scripts/e2e.sh) on amd64 and only a
@@ -324,11 +326,12 @@ jobs:
           cd packages/kete-vscode
           xvfb-run -a bun script/e2e.ts "$vsix" --code "$EDITOR_CLI" --assert -- --disable-gpu
 
-  # The JetBrains plugin with the released binaries bundled (packages/kete-jetbrains/README.md). One
-  # binary is ~80-93 MB compressed, so all six don't fit the JetBrains Marketplace's 400 MB upload
-  # limit: the release carries one zip per OS (both architectures each, installable with "Install
-  # Plugin from Disk"), and a zip with every platform only when it fits. The folder names and the
-  # CLI target each one bundles are packages/kete-jetbrains/src/main/kotlin/ai/ketecode/jetbrains/core/Binary.kt's.
+  # The JetBrains plugin (packages/kete-jetbrains/README.md). One binary is ~80-93 MB compressed, so
+  # all six don't fit the JetBrains Marketplace's 400 MB upload limit: the Marketplace zip carries none
+  # and downloads its version's kete from kete-releases on first use, verified against the pinned
+  # update keys (core/CliInstall.kt). The per-OS zips (both architectures each, installable with
+  # "Install Plugin from Disk") bundle the binaries for offline installs. The folder names and the CLI
+  # target each one bundles are packages/kete-jetbrains/src/main/kotlin/ai/ketecode/jetbrains/core/Binary.kt's.
   jetbrains:
     needs: build
     runs-on: ubuntu-latest
@@ -374,9 +377,16 @@ jobs:
           # Plugin zip -> the folders it bundles (core/Binary.kt bundles).
           declare -A bundle=(
             [macos]="darwin-arm64 darwin-x64" [linux]="linux-x64 linux-arm64" [windows]="windows-x64 windows-arm64"
-            [all]="darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64"
           )
-          for name in macos linux windows all; do
+          build() {
+            built=(packages/kete-jetbrains/build/distributions/*.zip)
+            [ "${#built[@]}" -eq 1 ] || { echo "::error::expected one plugin zip"; exit 1; }
+            mv "${built[0]}" "$out/$1"
+          }
+          # The Marketplace zip: no -PketeBinaries, so no bin/ (the plugin downloads its kete on first use).
+          (cd packages/kete-jetbrains && ./gradlew clean buildPlugin -PpluginVersion="$version")
+          build "kete-code-jetbrains-$version.zip"
+          for name in macos linux windows; do
             bins="$RUNNER_TEMP/bins-$name"
             rm -rf "$bins"
             for folder in ${bundle[$name]}; do
@@ -388,21 +398,13 @@ jobs:
               test -f "$bins/$folder/kete" || test -f "$bins/$folder/kete.exe" || { echo "::error::no kete binary in $archive"; exit 1; }
             done
             (cd packages/kete-jetbrains && ./gradlew clean buildPlugin -PpluginVersion="$version" -PketeBinaries="$bins")
-            built=(packages/kete-jetbrains/build/distributions/*.zip)
-            [ "${#built[@]}" -eq 1 ] || { echo "::error::expected one plugin zip"; exit 1; }
-            if [ "$name" = all ]; then file="kete-code-jetbrains-$version.zip"; else file="kete-code-jetbrains-$version-$name.zip"; fi
-            mv "${built[0]}" "$out/$file"
+            build "kete-code-jetbrains-$version-$name.zip"
             rm -rf "$bins"
           done
-          # The all-platform zip only goes out if the JetBrains Marketplace would accept it.
-          size="$(stat -c %s "$out/kete-code-jetbrains-$version.zip")"
-          if [ "$size" -gt 400000000 ]; then
-            echo "::notice::The all-platform plugin zip is $((size / 1000000)) MB, over the JetBrains Marketplace's 400 MB limit: not attached. Releases carry the per-OS zips."
-            rm "$out/kete-code-jetbrains-$version.zip"
-          fi
           (cd "$out" && sha256sum kete-code-jetbrains-*.zip > "kete-code-jetbrains-$version.sha256" && cat "kete-code-jetbrains-$version.sha256")
 
-      # Each zip: the right version and id, and an executable binary for each of its platforms.
+      # Each zip: the right version and id and the pinned update keys; an executable binary for each of
+      # a per-OS zip's platforms; no binary at all in the Marketplace zip, which must fit its 400 MB limit.
       - name: Check the plugin zips
         run: |
           set -euo pipefail
@@ -416,6 +418,8 @@ jobs:
             xml="$(unzip -p "$RUNNER_TEMP/plugin.jar" META-INF/plugin.xml)"
             grep -q '<id>ai.ketecode.kete-code</id>' <<<"$xml" || { echo "::error::$zip: wrong plugin id"; exit 1; }
             grep -q "<version>$version</version>" <<<"$xml" || { echo "::error::$zip: not version $version"; exit 1; }
+            unzip -p "$RUNNER_TEMP/plugin.jar" ai/ketecode/jetbrains/update-keys.json | cmp - packages/cli/src/kete/update-keys.json \
+              || { echo "::error::$zip: its update keys aren't packages/cli/src/kete/update-keys.json"; exit 1; }
             for folder in "$@"; do
               case "$folder" in
                 windows-*) unzip -Z1 "$zip" | grep -qx "kete-jetbrains/bin/$folder/kete.exe" || { echo "::error::$zip: no $folder/kete.exe"; exit 1; } ;;
@@ -427,9 +431,14 @@ jobs:
           check "kete-code-jetbrains-$version-macos.zip" darwin-arm64 darwin-x64
           check "kete-code-jetbrains-$version-linux.zip" linux-x64 linux-arm64
           check "kete-code-jetbrains-$version-windows.zip" windows-x64 windows-arm64
-          if [ -f "$out/kete-code-jetbrains-$version.zip" ]; then
-            check "kete-code-jetbrains-$version.zip" darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64
+          check "kete-code-jetbrains-$version.zip"
+          marketplace="$out/kete-code-jetbrains-$version.zip"
+          listing="$(unzip -Z1 "$marketplace")"
+          if grep -q '^kete-jetbrains/bin/' <<<"$listing"; then
+            echo "::error::$marketplace has bundled binaries (bin/); the Marketplace zip must download its kete instead"; exit 1
           fi
+          size="$(stat -c %s "$marketplace")"
+          [ "$size" -lt 400000000 ] || { echo "::error::$marketplace is $((size / 1000000)) MB, over the JetBrains Marketplace's 400 MB limit"; exit 1; }
           (cd "$out" && sha256sum -c "kete-code-jetbrains-$version.sha256")
 
       - name: Run the binary bundled in the linux zip

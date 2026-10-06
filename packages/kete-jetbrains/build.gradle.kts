@@ -1,7 +1,8 @@
-// Kete Code for JetBrains IDEs: a thin client of the plugin's own bundled `kete serve` (CLAUDE.md §3,
-// §6). Builds run in CI (.github/workflows/kete-jetbrains.yml); see README.md.
+// Kete Code for JetBrains IDEs: a thin client of the plugin's own `kete serve` (CLAUDE.md §3, §6),
+// bundled in the per-OS release zips or downloaded and verified on first use (the Marketplace build).
+// Builds run in CI (.github/workflows/kete-jetbrains.yml); see README.md.
 //
-//   ./gradlew buildPlugin test                     plugin zip (build/distributions) and unit tests
+//   ./gradlew buildPlugin test                     plugin zip without binaries (build/distributions) and unit tests
 //   ./gradlew verifyPlugin -PverifyIde=IU:2026.2.3 the Plugin Verifier against one IDE
 //   ./gradlew buildPlugin -PpluginVersion=0.3.0 -PketeBinaries=<dir>
 //                                                  a release build bundling <dir>/<os>-<arch>/kete[.exe]
@@ -11,6 +12,7 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+import java.util.Base64
 
 plugins {
     id("java")
@@ -64,9 +66,17 @@ intellijPlatform {
         description =
             """
             <p>Kete Code is an AI coding agent that runs next to your code. This plugin is a thin client of the
-            Kete Code runtime bundled with it: chat in a tool window, your current file and selection as context,
-            the agent's changes in the IDE's diff viewer, approvals and notifications, and your Kete account.</p>
+            Kete Code runtime (the <code>kete</code> CLI): chat in a tool window, your current file and selection as
+            context, the agent's changes in the IDE's diff viewer, approvals and notifications, and your Kete account.</p>
             <p>Bring your own model keys, run local models, or sign in to the Kete Model Gateway.</p>
+            <p><b>First use downloads the Kete Code CLI.</b> This plugin doesn't include the <code>kete</code> binary.
+            The first time it's needed, the plugin asks, then downloads the <code>kete</code> of its own version for your
+            operating system (about 80&ndash;95 MB) from
+            <a href="https://github.com/kete-org/kete-releases">github.com/kete-org/kete-releases</a>, checks it against
+            Kete Code's Ed25519 release signing key and the signed SHA-256 checksums, and refuses to run it if anything
+            doesn't match. It is stored in the IDE's system folder. For offline installs, the GitHub Release also has
+            per-OS plugin zips with the binary included; you can also point the plugin at your own <code>kete</code> in
+            Settings &rarr; Tools &rarr; Kete Code.</p>
             """.trimIndent()
         vendor {
             name = "Kete Code"
@@ -101,9 +111,52 @@ intellijPlatform {
     }
 }
 
-// Release builds bundle the per-platform `kete` binaries: <keteBinaries>/<os>-<arch>/kete[.exe] lands
-// in the plugin's bin/ folder (see src/main/kotlin/ai/ketecode/jetbrains/core/Binary.kt).
+// The per-OS release zips bundle the per-platform `kete` binaries: <keteBinaries>/<os>-<arch>/kete[.exe]
+// lands in the plugin's bin/ folder (see src/main/kotlin/ai/ketecode/jetbrains/core/Binary.kt). Without
+// -PketeBinaries (the Marketplace zip) the plugin downloads its version's binary on first use.
 val keteBinaries = providers.gradleProperty("keteBinaries")
+
+// The Ed25519 keys a downloaded release must be signed with are `kete upgrade`'s, copied from the CLI's
+// source at build time so a key rotation is one edit (packages/cli/src/kete/update-keys.json, ADR 0009).
+val updateKeys = layout.projectDirectory.file("../cli/src/kete/update-keys.json")
+
+abstract class GenerateUpdateKeys : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val source: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val file = source.get().asFile
+        if (!file.isFile) throw GradleException("${file.path} is missing: the plugin can't verify downloads without the pinned update keys")
+        val keys = ((groovy.json.JsonSlurper().parse(file) as? Map<*, *>)?.get("keys") as? List<*>).orEmpty()
+        if (keys.isEmpty()) throw GradleException("${file.path} has no keys: the plugin can't verify downloads without a pinned update key")
+        keys.forEachIndexed { index, entry ->
+            val key = entry as? Map<*, *>
+            val id = key?.get("id") as? String
+            val publicKey = key?.get("publicKey") as? String
+            val size = publicKey?.let { runCatching { Base64.getDecoder().decode(it).size }.getOrNull() }
+            if (id.isNullOrEmpty() || size != 32) throw GradleException("${file.path} key $index is not { id, publicKey: <32-byte base64> }")
+        }
+        val target = output.get().file("ai/ketecode/jetbrains/update-keys.json").asFile
+        target.parentFile.mkdirs()
+        file.copyTo(target, overwrite = true)
+    }
+}
+
+val generateUpdateKeys = tasks.register<GenerateUpdateKeys>("generateUpdateKeys") {
+    source = updateKeys
+    output = layout.buildDirectory.dir("generated/update-keys")
+}
+
+sourceSets {
+    main {
+        resources.srcDir(generateUpdateKeys)
+    }
+}
 
 tasks {
     prepareSandbox {
@@ -132,6 +185,16 @@ tasks {
         val vscodeChat = layout.projectDirectory.file("../kete-vscode/src/chat.ts")
         inputs.file(vscodeChat).withPathSensitivity(PathSensitivity.NONE)
         systemProperty("kete.vscodeChat", vscodeChat.asFile.absolutePath)
+        // UpdateKeysResourceTest compares the generated resource with the CLI's file.
+        inputs.file(updateKeys).withPathSensitivity(PathSensitivity.NONE)
+        systemProperty("kete.updateKeys", updateKeys.asFile.absolutePath)
+        // ArchiveTargetsTest: kete-jetbrains-publish.yml's release check covers Binary.targets.
+        val verifyScript = layout.projectDirectory.file("script/verify-public-release.ts")
+        inputs.file(verifyScript).withPathSensitivity(PathSensitivity.NONE)
+        systemProperty("kete.verifyScript", verifyScript.asFile.absolutePath)
+        // The opt-in live test (CliLiveReleaseTest) downloads a real release: KETE_LIVE_RELEASE=<version>.
+        providers.environmentVariable("KETE_LIVE_RELEASE").orNull?.let { systemProperty("kete.liveRelease", it) }
+        providers.environmentVariable("KETE_LIVE_TARGET").orNull?.let { systemProperty("kete.liveTarget", it) }
         testLogging {
             events("failed")
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
