@@ -18,6 +18,8 @@
                                 order="first"/>
         <postStartupActivity implementation="ai.ketecode.jetbrains.KeteStartup"/>
         <notificationGroup id="Kete Code" displayType="BALLOON"/>
+        <!-- Asks before the first download of the kete CLI (KeteCliDownload.kt); stays until answered. -->
+        <notificationGroup id="Kete Code CLI download" displayType="STICKY_BALLOON"/>
     </extensions>
 
     <applicationListeners>

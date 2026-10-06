@@ -7,7 +7,8 @@ sealed interface RuntimeStatus {
     data object Starting : RuntimeStatus
     data class Running(val url: String) : RuntimeStatus
     data class Restarting(val attempt: Int, val delay: Long, val reason: String) : RuntimeStatus
-    data class Failed(val reason: String) : RuntimeStatus
+    /** `download`: no kete yet; the user can download it (KeteCliDownload.kt) instead of restarting. */
+    data class Failed(val reason: String, val download: Boolean = false) : RuntimeStatus
 }
 
 /** The account as last read: null while checking, or the error from `kete whoami`. */
@@ -47,7 +48,7 @@ object StatusText {
         is RuntimeStatus.Starting -> "Server: starting…"
         is RuntimeStatus.Running -> "Server: running on ${server.url}"
         is RuntimeStatus.Restarting -> "Server: restarting in ${Math.round(server.delay / 1000.0)} s (attempt ${server.attempt}): ${server.reason}"
-        is RuntimeStatus.Failed -> "Server: stopped after repeated failures: ${server.reason}"
+        is RuntimeStatus.Failed -> "Server: stopped: ${server.reason}"
     }
 
     fun accountLine(account: AccountState): String = when (account) {

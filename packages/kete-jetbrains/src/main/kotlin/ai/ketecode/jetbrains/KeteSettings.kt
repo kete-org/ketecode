@@ -41,6 +41,8 @@ class KeteSettingsService : SimplePersistentStateComponent<KeteSettingsService.S
         /** The chat panel's dismissed notices (core/Panel.kt) and CLI hint. */
         var dismissedNotices by list<String>()
         var cliHintDismissed by property(false)
+        /** The user agreed to download the plugin version's kete from the public releases (KeteCliDownload.kt). */
+        var cliDownloadConsent by property(false)
     }
 
     fun current(): PluginSettings = PluginSettings(
@@ -103,7 +105,16 @@ class KeteConfigurable : BoundConfigurable("Kete Code") {
                 textField()
                     .columns(COLUMNS_LARGE)
                     .bindText({ settings.cliPath.orEmpty() }, { settings.cliPath = it.trim().ifEmpty { null } })
-                    .comment("For development only: an absolute path to a kete binary. Leave empty to use the one bundled with the plugin.")
+                    .comment("For development only: an absolute path to a kete binary. Leave empty to use the one bundled with or downloaded for the plugin.")
+            }
+            row {
+                checkBox("Download the kete CLI when the plugin needs it")
+                    .bindSelected({ settings.cliDownloadConsent }, { settings.cliDownloadConsent = it })
+                    .comment(
+                        "The plugin from the JetBrains Marketplace carries no kete binary. With this on, it downloads the kete of its own " +
+                            "version (about 80–95 MB) from github.com/kete-org/kete-releases and verifies it with Kete Code's release " +
+                            "signing key before running it. Off: you're asked first.",
+                    )
             }
             row("New sessions:") {
                 comboBox(listOf("default", "ask"))
