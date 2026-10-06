@@ -9,7 +9,8 @@
 #           minutes; pushes to main and manual runs check all six (adding recent IntelliJ IDEA
 #           Community, IntelliJ IDEA, PyCharm, WebStorm and GoLand)
 #
-# Path-filtered: only plugin changes and the web UI's IDE bridge files run it. No secrets.
+# Path-filtered: only plugin changes, the web UI's IDE bridge files and the pinned update keys (copied
+# into the plugin at build time) run it. No secrets.
 name: kete-jetbrains
 
 on:
@@ -22,6 +23,7 @@ on:
       - "packages/app/src/kete/vscode-messages*.ts"
       - "packages/app/src/kete/vscode-theme*.ts"
       - "packages/kete-vscode/src/chat.ts"
+      - "packages/cli/src/kete/update-keys.json"
       - ".github/workflows/kete-jetbrains.yml"
   push:
     branches: [main]
@@ -32,6 +34,7 @@ on:
       - "packages/app/src/kete/vscode-messages*.ts"
       - "packages/app/src/kete/vscode-theme*.ts"
       - "packages/kete-vscode/src/chat.ts"
+      - "packages/cli/src/kete/update-keys.json"
       - ".github/workflows/kete-jetbrains.yml"
   workflow_dispatch:
 
