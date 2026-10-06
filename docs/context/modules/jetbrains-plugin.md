@@ -1,7 +1,7 @@
 ---
 module: jetbrains-plugin
 paths: [packages/kete-jetbrains/**, packages/app/src/kete/ide-host.ts, packages/app/src/kete/ide-host.test.ts, .github/workflows/kete-jetbrains.yml, .github/workflows/kete-jetbrains-publish.yml]
-verified-at: 9ae84d36f0
+verified-at: 370606839e
 ---
 
 ## Quick answers

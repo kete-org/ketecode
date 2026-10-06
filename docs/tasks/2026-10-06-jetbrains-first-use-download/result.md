@@ -58,3 +58,15 @@ Built on `feature/jetbrains-first-use-download`, PR kete-org/ketecode#13 (not me
 - Scout lookups: 0.
 - Tokens / cost: not available to the agent.
 - Time: ~1.5 h including CI.
+
+## Security review follow-ups (2026-10-06, commit 370606839e)
+| Check | Result |
+|---|---|
+| `./gradlew test` | 98 tests: 97 passed, 1 skipped (live, opt-in), 0 failed |
+| Live test, darwin-arm64 / linux-arm64 / windows-x64 (stricter archive checks) | all passed; darwin ran `--version` → `kete v0.2.4` |
+| `verify-public-release.ts` dry run against kete-v0.2.4 (keys from a locally built plugin jar) | passed: signature (key `kete-update-2026`) + 6 archives |
+| Same with a tampered archive / tampered sig / wrong key / wrong version / missing archive | each refused with an `::error::` line; exit code 1 confirmed |
+| `upstream:check`, `bun run lint`, `card-check` | pass |
+
+The publish workflow itself can't run off a tag (it refuses non-tag refs), so it was validated by the
+dry run above using the same `gh release download` patterns and script invocation.
