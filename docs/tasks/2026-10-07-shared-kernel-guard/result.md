@@ -33,3 +33,17 @@ PR: kete-org/ketecode#19 (not merged).
 - [x] AC6: all triggered workflows green.
 
 Not run: real dedicated host / Firecracker guest with the real image (`kvm-test.sh`).
+
+## Review round (commits c377dd3136, 50ee2cb272)
+- Fixed: fly presence check before any write; kete-job-host `internal/hostguard` in both drivers'
+  `Init` and `doctor`; `initarg_test.go` coupling test (+ kete-job-host.yml path trigger); nits
+  (ppid 1, PID 1 not self, `container=` in PID 1's environment, systemd markers, nsfs statfs,
+  console before `init_kernel`).
+- CI at 50ee2cb272: kete-build, kete-job-entrypoint (unit + integration incl.
+  `TestFlyGuardMissingAPISocket`, `TestBinaryBootSharedKernel`), kete-job-host (incl. `hostguard`,
+  `driver/dedicated`), kete-job-image e2e: all pass. A first run failed on the unprivileged unit
+  test reading `/proc/1/environ` (permission denied as non-root); the test now reads its own
+  environment when not root (the entrypoint runs as root).
+- Still not run: fly's own guard (follow-up), real dedicated host / Firecracker (`kvm-test.sh`).
+- Card `kete-tools-ci` is stale against `.github/workflows/kete-job-host.yml` (this PR) and two
+  workflows changed before it; not updated here.
