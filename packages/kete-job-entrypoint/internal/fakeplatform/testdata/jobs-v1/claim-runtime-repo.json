@@ -1,0 +1,204 @@
+{
+  "description": "A runtime repository claim (jobs-v1, additive 2026-10-07; ADR 0025). The request announces runtime_repo and runtime_publish (a runtime repository's claim is refused without both); the response is JobRuntimeClaimResponse: no clone, the repository's logical name instead. The entrypoint clones with the credential and base commit its runner gave it locally, never calls uploads, and finishes with JobRuntimeFinishRequest. refused_without lists feature sets the platform must refuse (404, outcome refused) for this job. kubevm: the entrypoint's own fail-closed check (parseRuntimeClaimResponse): it sends the runtime features, knows the repository name its runner resolved (local_repository_name), accepts only `response`, and must refuse every entry of `refusals` before cloning (and never calls uploads). Values are examples, not secrets.",
+  "request": {
+    "claim_token": "4f9c2a7e1b8d3f6a0c5e9b2d7f1a4c8e6b3d0f9a2c7e5b1d8f4a6c0e3b9d2f7a",
+    "features": [
+      "clone_revoke_callback",
+      "runtime_repo",
+      "runtime_publish"
+    ]
+  },
+  "response": {
+    "spec": {
+      "version": 1,
+      "prompt": "Fix the flaky settlement test",
+      "agent": "developer",
+      "model": "kete/claude-sonnet-4-5",
+      "policy": {
+        "version": 1,
+        "allow": [],
+        "budget": 2,
+        "timeout": 30
+      },
+      "branch": "kete/job/5d2e8a41"
+    },
+    "gateway_key": "kete_live_example",
+    "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+    "gateway_url": "https://gateway.kete.example",
+    "platform_url": "https://portal.kete.example",
+    "deadline": "2026-10-07T10:40:00Z",
+    "repository": {
+      "provider": "runtime",
+      "name": "gitlab:payments/api"
+    }
+  },
+  "refused_without": [
+    [],
+    [
+      "runtime_repo"
+    ],
+    [
+      "runtime_publish"
+    ],
+    [
+      "clone_revoke_callback"
+    ]
+  ],
+  "finish": {
+    "method": "POST",
+    "path": "/api/v1/jobs/{id}/finish",
+    "authorization": "Bearer <callback_token>",
+    "body": {
+      "outbox": true
+    },
+    "status": 202
+  },
+  "kubevm": {
+    "local_repository_name": "gitlab:payments/api",
+    "refusals": [
+      {
+        "name": "a JobClaimResponse (clone from the platform, no repository)",
+        "response": {
+          "spec": {
+            "version": 1,
+            "prompt": "Fix the flaky settlement test",
+            "agent": "developer",
+            "model": "kete/claude-sonnet-4-5",
+            "policy": {
+              "version": 1,
+              "allow": [],
+              "budget": 2,
+              "timeout": 30
+            },
+            "branch": "kete/job/5d2e8a41"
+          },
+          "gateway_key": "kete_live_example",
+          "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+          "gateway_url": "https://gateway.kete.example",
+          "platform_url": "https://portal.kete.example",
+          "deadline": "2026-10-07T10:40:00Z",
+          "clone": {
+            "url": "https://github.com/acme/shop.git",
+            "token": "ghs_example",
+            "ref": "main",
+            "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+          }
+        }
+      },
+      {
+        "name": "repository and clone both",
+        "response": {
+          "spec": {
+            "version": 1,
+            "prompt": "Fix the flaky settlement test",
+            "agent": "developer",
+            "model": "kete/claude-sonnet-4-5",
+            "policy": {
+              "version": 1,
+              "allow": [],
+              "budget": 2,
+              "timeout": 30
+            },
+            "branch": "kete/job/5d2e8a41"
+          },
+          "gateway_key": "kete_live_example",
+          "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+          "gateway_url": "https://gateway.kete.example",
+          "platform_url": "https://portal.kete.example",
+          "deadline": "2026-10-07T10:40:00Z",
+          "repository": {
+            "provider": "runtime",
+            "name": "gitlab:payments/api"
+          },
+          "clone": {
+            "url": "https://github.com/acme/shop.git",
+            "token": "ghs_example",
+            "ref": "main",
+            "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+          }
+        }
+      },
+      {
+        "name": "another repository name than the runner resolved",
+        "response": {
+          "spec": {
+            "version": 1,
+            "prompt": "Fix the flaky settlement test",
+            "agent": "developer",
+            "model": "kete/claude-sonnet-4-5",
+            "policy": {
+              "version": 1,
+              "allow": [],
+              "budget": 2,
+              "timeout": 30
+            },
+            "branch": "kete/job/5d2e8a41"
+          },
+          "gateway_key": "kete_live_example",
+          "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+          "gateway_url": "https://gateway.kete.example",
+          "platform_url": "https://portal.kete.example",
+          "deadline": "2026-10-07T10:40:00Z",
+          "repository": {
+            "provider": "runtime",
+            "name": "gitlab:payments/ledger"
+          }
+        }
+      },
+      {
+        "name": "another provider",
+        "response": {
+          "spec": {
+            "version": 1,
+            "prompt": "Fix the flaky settlement test",
+            "agent": "developer",
+            "model": "kete/claude-sonnet-4-5",
+            "policy": {
+              "version": 1,
+              "allow": [],
+              "budget": 2,
+              "timeout": 30
+            },
+            "branch": "kete/job/5d2e8a41"
+          },
+          "gateway_key": "kete_live_example",
+          "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+          "gateway_url": "https://gateway.kete.example",
+          "platform_url": "https://portal.kete.example",
+          "deadline": "2026-10-07T10:40:00Z",
+          "repository": {
+            "provider": "github",
+            "name": "gitlab:payments/api"
+          }
+        }
+      },
+      {
+        "name": "repository name as a URL",
+        "response": {
+          "spec": {
+            "version": 1,
+            "prompt": "Fix the flaky settlement test",
+            "agent": "developer",
+            "model": "kete/claude-sonnet-4-5",
+            "policy": {
+              "version": 1,
+              "allow": [],
+              "budget": 2,
+              "timeout": 30
+            },
+            "branch": "kete/job/5d2e8a41"
+          },
+          "gateway_key": "kete_live_example",
+          "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+          "gateway_url": "https://gateway.kete.example",
+          "platform_url": "https://portal.kete.example",
+          "deadline": "2026-10-07T10:40:00Z",
+          "repository": {
+            "provider": "runtime",
+            "name": "https://evil.example/payments/api.git"
+          }
+        }
+      }
+    ]
+  }
+}

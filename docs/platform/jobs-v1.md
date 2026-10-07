@@ -1,4 +1,4 @@
-<!-- Copied from kete-code-platform docs/contracts/jobs-v1.md at commit a2e3fbf (2026-10-02; unchanged through bc95a41; the 2026-10-05 Harness Code additions applied byte for byte from feature/harness-code-repos d282821, kete-org/ketecode-portal#68). The platform copy is the source of truth; update both together. -->
+<!-- Copied from kete-code-platform docs/contracts/jobs-v1.md at commit e5e32ee (kete-org/ketecode-portal#73, 2026-10-07: the runtime repository features, ADR 0025). The platform copy is the source of truth; update both together, and re-copy the test vectors into packages/kete-job-entrypoint/internal/fakeplatform/testdata/jobs-v1/ with them. -->
 
 # Job API contract — v1
 
@@ -23,8 +23,8 @@ USD micros as a JSON number. Times are RFC 3339 with an offset.
   ignored there.
 - **Responses only gain fields** within v1. Ignore unknown fields; anything breaking ships as
   `/api/v2`.
-- The job API adds three error codes to the platform's set: `insufficient_balance` (402),
-  `conflict` (409) and `not_permitted` (422).
+- The job API adds four error codes to the platform's set: `insufficient_balance` (402),
+  `conflict` (409), `not_permitted` (422) and `unavailable` (503, ADR 0022).
 
 ## User routes
 
@@ -43,11 +43,13 @@ key is refused (`403 forbidden`, ADR 0020 rule 3).
 | Status | Code | When |
 |---|---|---|
 | 400 | `invalid_request` | validation failed |
-| 402 | `insufficient_balance` | credit-billed model and balance < `budget_micros` (ADR 0020 rule 12) |
+| 402 | `insufficient_balance` | credit-billed model and balance < `budget_micros` + the outstanding budgets (`budget − spent`) of the organization's open credit-billed jobs (ADR 0020 rule 12, ADR 0022) |
 | 403 | `forbidden` | missing `agents.run`, or `jobs.push` for `push`/`open_pr`, or jobs not enabled for the organization, or a job key |
 | 404 | `not_found` | project, repository or agent not in the organization; `jobs` flag off |
 | 409 | `conflict` | organization or platform concurrency limit; an `Idempotency-Key` already used by another member of the organization |
 | 422 | `not_permitted` | an `allow` rule the agent or an organization policy doesn't permit; a repository the GitHub App installation doesn't cover; an unprotected default branch or `base_ref` when `push` is set |
+| 429 | `rate_limited` | more than 10 jobs created by the member, or 30 in the organization, in the last hour; `Retry-After` (seconds) |
+| 503 | `unavailable` | job creation is paused: Kete's job supervisor (the sweeper) hasn't run in 15 minutes; retry later |
 
 `GET` answers `404 not_found` for another organization's job. `cancel` answers `409 conflict`
 for a terminal job or one whose branch creation has begun.
@@ -80,7 +82,7 @@ everything and make no more callbacks.
 | `POST /api/v1/jobs/{id}/claim` | `provisioning`, before the deadline; once | `JobClaimRequest` | `200 JobClaimResponse`. A second claim is `409 conflict` and fails the job. |
 | `POST /api/v1/jobs/{id}/events` | `running`, `finalizing` | `JobEventRequest` | `204`. At least every 60 s; `effective_timeout_minutes` once, with the first `agent` event, 1 ≤ it ≤ `timeout_minutes` (else 400). |
 | `POST /api/v1/jobs/{id}/result` | `running`; once | `JobRunResult` | `204`; the job moves to `finalizing`. |
-| `POST /api/v1/jobs/{id}/uploads` | `finalizing`; once | `JobUploadsRequest` | `200 JobUploadsResponse`: single-use signed `PUT` URLs, 10 minutes. |
+| `POST /api/v1/jobs/{id}/uploads` | `finalizing`; once | `JobUploadsRequest` | `200 JobUploadsResponse`: single-use signed `PUT` URLs, valid until each `expires_at`. |
 | `POST /api/v1/jobs/{id}/finish` | `finalizing`; once | `JobFinishRequest` | `202`; the platform validates the bundle and creates the branch afterwards. |
 | `POST /api/v1/jobs/{id}/clone-done` | `running` | `JobCloneDoneRequest` (`{}` or empty) | `204`. The platform deletes the job's Harness Code clone token (once; later calls are no-ops). For a GitHub job it does nothing. Added 2026-10-05 (additive). |
 
@@ -115,6 +117,43 @@ everything and make no more callbacks.
     clone phase may reach only the platform and the clone host.
 
   Example: `docs/contracts/test-vectors/jobs-v1/claim-harness-code.json` (request and response).
+- **Runtime repositories (additive, 2026-10-07; ADR 0025; enterprise runtime spec §3–§5).** A
+  project repository with `provider = 'runtime'` is served by the organization's own runner
+  (job-host-v2): the platform holds only its logical name (`JobRuntimeRepoName`, e.g.
+  `gitlab:payments/api` — a label, never a URL) and never a clone credential, bundle or diff.
+  Two claim features, negotiated exactly like `clone_revoke_callback`:
+  - `runtime_repo`: the claim response is `JobRuntimeClaimResponse` — no `clone`, and
+    `repository: { provider: "runtime", name }`. The entrypoint clones with the credential and base
+    commit its runner gave it locally.
+  - **Fail closed (`kubevm`).** Only the `kubevm` profile sends these features, and it accepts
+    nothing but a `JobRuntimeClaimResponse` whose `repository.name` equals the name its runner
+    looked up and resolved for this machine (`parseRuntimeClaimResponse`). A response with `clone`
+    (a `JobClaimResponse`, or both), another name or another provider is refused before anything is
+    cloned: the entrypoint stops, as on a 404. A `kubevm` entrypoint never calls `uploads` and never
+    puts the machine configuration's `storage_host` in an egress allowlist, so a compromised
+    platform can neither redirect the clone nor receive the bundle, audit or proxy log. Other
+    profiles don't send the features, and a runner never starts a job without a repository
+    (job-host-v2 `JobHostV2KubernetesRunMachine`). `gateway_key` may be a job key that authorises job-scoped
+    sync only, when the organization disabled the gateway for enterprise jobs.
+  - `runtime_publish`: `uploads` is never called; `finish` is `JobRuntimeFinishRequest`
+    (`{ "outbox": true }`, never `push_error`); the bundle, audit and proxy log go to the runner's
+    outbox and the runner reports the push outcome in its job-host-v2 poll (`machines[].publish`),
+    which the platform records as `push_status`. The `result` is `JobRuntimeRunResult`, bounded by
+    the runner's data boundary (`boundJobRunResult` with `JobDataBoundary`): under `summary: none`
+    there is no `text`, `message`, `worktree`, `directory` or `audit_log`; under `denials: actions`
+    each denial is `{ action, resources: [], count }` (one per action, in order of first
+    appearance) and under `count` `denied` is empty, both with `denied_count`. Resources are sent
+    as an empty array, not omitted, so every result v1 parser still accepts the body.
+  - A `runtime` repository's claim is refused (`404`, the job fails `refused`,
+    `entrypoint_outdated`) unless `features` contains **both**, before anything is minted. A claim
+    for any other repository is unchanged whatever `features` says: an entrypoint that doesn't send
+    these names gets byte-identical responses, and the existing `JobClaimResponse`,
+    `JobFinishRequest` and `JobRunResult` schemas are untouched.
+  - The platform applies the stricter of the runner's reported boundary and the organization's
+    (`narrowJobDataBoundary`) to the result again before storing; it never asks a runner for more.
+
+  Examples: `docs/contracts/test-vectors/jobs-v1/claim-runtime-repo.json` (claim request and
+  response, finish, and the responses a `kubevm` entrypoint must refuse) and `result-boundary.json` (one result and its bounded forms).
 - **Push reasons** (`Job.push_reason`, text) gain, for Harness Code jobs: `harness_<code>`
   (an API or git error code), `harness_rule_violation` (a branch/push rule or hook refused the
   push), `harness_git_host_mismatch` (the repository's git URL isn't on the cluster's git host),
@@ -359,7 +398,10 @@ export const JobClaimRequest = z.strictObject({
   /**
    * What the entrypoint supports (additive; names the platform doesn't know are ignored).
    * `clone_revoke_callback`: it calls `POST …/clone-done` after the clone and on clone or verify
-   * failure. A Harness Code repository's claim is refused without it.
+   * failure. A Harness Code repository's claim is refused without it. `runtime_repo` and
+   * `runtime_publish` (ADR 0025): it clones from a repository its runner serves and publishes
+   * through the runner's outbox (`JobRuntimeClaimResponse`, `JobRuntimeFinishRequest`). A
+   * `runtime` repository's claim is refused unless both are present.
    */
   features: z.array(z.string().regex(/^[a-z0-9_]{1,40}$/)).max(16).optional(),
 })
@@ -481,7 +523,7 @@ export const JobUploadsRequest = z.strictObject({
 })
 export type JobUploadsRequest = z.infer<typeof JobUploadsRequest>
 
-/** A single-use signed upload URL (PUT), valid for 10 minutes. */
+/** A single-use signed upload URL (PUT), valid until `expires_at`. */
 export const JobSignedUpload = z.object({ url: HttpsSignedUrl, expires_at: Timestamp })
 export type JobSignedUpload = z.infer<typeof JobSignedUpload>
 
@@ -513,6 +555,148 @@ export type JobFinishRequest = z.infer<typeof JobFinishRequest>
  */
 export const JobCloneDoneRequest = z.strictObject({})
 export type JobCloneDoneRequest = z.infer<typeof JobCloneDoneRequest>
+
+// ---------------------------------------------------------------- enterprise runtime (additive, ADR 0025)
+
+/** Claim features the platform knows (`JobClaimRequest.features`); other names are ignored. */
+export const JOB_CLAIM_FEATURES = ['clone_revoke_callback', 'runtime_repo', 'runtime_publish'] as const
+export type JobClaimFeature = (typeof JOB_CLAIM_FEATURES)[number]
+/** A `runtime` repository's claim is refused (404, outcome `refused`) unless the request names all of these. */
+export const JOB_RUNTIME_CLAIM_FEATURES = ['runtime_repo', 'runtime_publish'] as const satisfies readonly JobClaimFeature[]
+
+/**
+ * A repository the organization's runner serves, by its logical name (`project_repositories.full_name`
+ * with `provider = 'runtime'`): `<kind>:<path>`, e.g. `gitlab:payments/api`. A label, never a URL:
+ * no scheme, host, port, userinfo, query or empty, `.` or `..` segment.
+ */
+export const JobRuntimeRepoName = z
+  .string()
+  .max(200)
+  // Every segment starts with a letter, digit or `_`, so no segment can be empty, `.` or `..`.
+  .regex(/^[a-z][a-z0-9-]{0,19}:[A-Za-z0-9_][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/)
+export type JobRuntimeRepoName = z.infer<typeof JobRuntimeRepoName>
+
+/**
+ * POST …/claim → 200 for a job on a `runtime` repository (features `runtime_repo` and
+ * `runtime_publish`): the claim response without `clone` — the runner holds the clone credential and
+ * resolved the base commit — and with the repository's name. Fail closed: only the `kubevm` profile
+ * sends `runtime_repo`/`runtime_publish`, and it accepts only this response, through
+ * `parseRuntimeClaimResponse` with the name its runner resolved locally — a `JobClaimResponse`
+ * (a `clone` from the platform) or another name is refused, and it never calls `uploads`. `gateway_key` may be a job key that
+ * authorises job-scoped sync only (no model access) when the organization disabled the gateway.
+ */
+export const JobRuntimeClaimResponse = JobClaimResponse.omit({ clone: true }).extend({
+  repository: z.object({ provider: z.literal('runtime'), name: JobRuntimeRepoName }),
+  /** Never both: a response with `repository` and `clone` is refused. */
+  clone: z.never().optional(),
+})
+export type JobRuntimeClaimResponse = z.infer<typeof JobRuntimeClaimResponse>
+
+/**
+ * The `kubevm` entrypoint's claim check: the response must be a `JobRuntimeClaimResponse` (no
+ * `clone`) naming exactly `localName`, the repository its runner looked up and resolved for this
+ * machine. Anything else is null: the entrypoint stops before cloning (a compromised platform can't
+ * redirect the clone or the outputs).
+ */
+export function parseRuntimeClaimResponse(value: unknown, localName: string): JobRuntimeClaimResponse | null {
+  const parsed = JobRuntimeClaimResponse.safeParse(value)
+  return parsed.success && parsed.data.repository.name === localName ? parsed.data : null
+}
+
+/**
+ * POST …/finish body → 202 for a `runtime` repository's job: the bundle, audit and proxy log are in
+ * the runner's outbox, never uploaded (`uploads` is never called), and the runner reports the push
+ * outcome (job-host-v2 `publish`). Accepted once, in `finalizing`.
+ */
+export const JobRuntimeFinishRequest = z.strictObject({ outbox: z.literal(true) })
+export type JobRuntimeFinishRequest = z.infer<typeof JobRuntimeFinishRequest>
+
+/**
+ * What a runner lets leave the enterprise (spec §3). `summary`: the result's free text (`text`,
+ * `message`) and local paths (`worktree`, `directory`, `audit_log`) — `none` drops them, `redacted`
+ * keeps `text`/`message` redacted and drops the paths, `full` keeps all. `denials`: `count` only the
+ * number, `actions` action names with counts, `full` as reported. `publish_refs`: whether the
+ * publish outcome carries branch, commit SHAs and the merge request reference. Every setting only
+ * narrows: the stricter of the runner's and the organization's applies.
+ */
+export const JobDataBoundary = z.strictObject({
+  summary: z.enum(['none', 'redacted', 'full']),
+  denials: z.enum(['count', 'actions', 'full']),
+  publish_refs: z.enum(['omit', 'send']),
+})
+export type JobDataBoundary = z.infer<typeof JobDataBoundary>
+
+/** The runner's default (spec Q7). */
+export const JOB_DATA_BOUNDARY_DEFAULT: JobDataBoundary = { summary: 'none', denials: 'actions', publish_refs: 'send' }
+
+const stricter = <T extends string>(options: readonly T[], x: T, y: T): T => (options.indexOf(x) <= options.indexOf(y) ? x : y)
+
+/** The stricter of two boundaries, setting by setting (each enum is ordered strictest first). */
+export function narrowJobDataBoundary(a: JobDataBoundary, b: JobDataBoundary): JobDataBoundary {
+  return {
+    summary: stricter(JobDataBoundary.shape.summary.options, a.summary, b.summary),
+    denials: stricter(JobDataBoundary.shape.denials.options, a.denials, b.denials),
+    publish_refs: stricter(JobDataBoundary.shape.publish_refs.options, a.publish_refs, b.publish_refs),
+  }
+}
+
+/**
+ * A denial as a runtime-side job reports it: `count` when denials of one action were aggregated.
+ * `action` is a permission name (`edit`, `shell`, `external_directory`, `mcp:server.tool`…), never
+ * free text, so it can cross under every boundary.
+ */
+export const JobRuntimeRunDenial = JobRunDenial.extend({
+  action: z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/),
+  count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+})
+export type JobRuntimeRunDenial = z.infer<typeof JobRuntimeRunDenial>
+
+/**
+ * POST …/result body for a `runtime` repository's job: the result v1, bounded by
+ * `boundJobRunResult` before it is sent. `denied_count`: the number of denials when `denied` was
+ * aggregated or emptied. Additive and lenient like `JobRunResult`.
+ */
+export const JobRuntimeRunResult = JobRunResult.extend({
+  /** Fixed codes only (the runtime's, the entrypoint's), never free text. */
+  outcome: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
+  session_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+  /** The job's branch, which the platform assigned. */
+  branch: JobBranch.optional(),
+  denied: z.array(JobRuntimeRunDenial),
+  denied_count: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+})
+export type JobRuntimeRunResult = z.infer<typeof JobRuntimeRunResult>
+
+/**
+ * Applies a boundary to a result (the `kubevm` entrypoint before sending; the platform again, with
+ * the stricter of the runner's and the organization's boundary, before storing). Pure, and
+ * idempotent when `redact` is (`redact(redact(x)) === redact(x)`): bounding a bounded result then
+ * changes nothing. `redact` is the caller's redactor (only
+ * used for `summary: 'redacted'`). Denials under `actions` become one entry per action, in order of
+ * first appearance, `{ action, resources: [], count }`; under `count`, `denied` is empty. Both set
+ * `denied_count`.
+ */
+export function boundJobRunResult(result: JobRuntimeRunResult, boundary: JobDataBoundary, redact: (text: string) => string): JobRuntimeRunResult {
+  const out: JobRuntimeRunResult = { ...result }
+  if (boundary.summary !== 'full') {
+    delete out.worktree
+    delete out.directory
+    delete out.audit_log
+  }
+  for (const key of ['text', 'message'] as const) {
+    const value = out[key]
+    if (value === undefined) continue
+    if (boundary.summary === 'none') delete out[key]
+    else if (boundary.summary === 'redacted') out[key] = redact(value)
+  }
+  if (boundary.denials === 'full') return out
+  const total = result.denied_count ?? result.denied.reduce((n, d) => n + (d.count ?? 1), 0)
+  if (boundary.denials === 'count') return { ...out, denied: [], denied_count: total }
+  const byAction = new Map<string, number>()
+  for (const d of result.denied) byAction.set(d.action, (byAction.get(d.action) ?? 0) + (d.count ?? 1))
+  const denied = [...byAction].map(([action, count]) => ({ action, resources: [], count }))
+  return { ...out, denied, denied_count: total }
+}
 ```
 
 ## Examples

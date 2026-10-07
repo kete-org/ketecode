@@ -1,0 +1,76 @@
+{
+  "description": "job-host-v2 sealed configuration: job-host-v1's HPKE suite and envelope with the info label \"kete-job-host-v2 sealed-config\" (docs/contracts/job-host-v2.md \"Sealed configuration\"). The recipient is job-host-v1's. Each refusal applies `override` to the kubevm case and must fail to open (`undecryptable`); `info` replaces the whole info string (a v1-labelled info must not open a v2 seal, nor the reverse).",
+  "suite": {
+    "mode": 0,
+    "kem_id": 32,
+    "kdf_id": 1,
+    "aead_id": 1
+  },
+  "recipient": {
+    "sk_hex": "de9fe71743178987e36609f578b8912979c353fb6a6f9a5ac873c785e154343b",
+    "pk_hex": "f6c4f4f1d2b7d9c402e78f79a709602e5c32452d489bd7a587c5247e0271a671",
+    "public": "9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE"
+  },
+  "cases": [
+    {
+      "name": "kubevm",
+      "binding": {
+        "host_id": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c",
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+        "generation": "k8s-2026-10-07.1"
+      },
+      "info": "kete-job-host-v2 sealed-config\nhost_id=c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c\nmachine_id=2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e\njob_id=5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b\ngeneration=k8s-2026-10-07.1",
+      "info_hex": "6b6574652d6a6f622d686f73742d7632207365616c65642d636f6e6669670a686f73745f69643d63326137653964342d336235662d346131382d396336302d3765316432663361346235630a6d616368696e655f69643d32623363346435652d366637612d346238632d396430652d3166326133623463356436650a6a6f625f69643d35653666376138622d396330642d346531662d386132622d3363346435653666376138620a67656e65726174696f6e3d6b38732d323032362d31302d30372e31",
+      "aad_hex": "",
+      "plaintext": "{\"job_id\":\"5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b\",\"platform_url\":\"https://portal.kete.example\",\"claim_token\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\",\"storage_host\":\"storage.kete.example\",\"host_profile\":\"kubevm\"}",
+      "ikm_e_hex": "4e7ab47a31917e3e7d886cf3002a99987602d8f9289e24793df40a05d921c0ec",
+      "sk_e_hex": "1242dc241d9d19324116b1337f1b2a481a78f17faa886cc2c4b48b12921ed06a",
+      "pk_e_hex": "47337950175fccd5734c5350250314a071582bc0faa05991d0493c19328a576d",
+      "ciphertext_hex": "76d8c466b9da6dd650084c73492586eb9ff311e4285493f003100be9ccc5e96f62489ca91be83da01b76274a617db83c15c339ad64274454c760be5225862794e7073a2fd7c836f4c8f8803f5dfb1d8ea68d425e76cf6d34a98f7ff1ddb673ecddf4fe807b82ec5950751c47d4680f16df4005b0db1ea66e303270d810c216b6e6c9d78a0e515bd08c61303d95fba4cd64166ff4cabe75f3ccd2ea04fa61cf277d3bf985da5bfd053599caecc4af44f65568969319ee6932c02147a5c725d4c169c0f9409668d8e5a81351f537401f26ff1d1879ab0db829047c2888763baa011b596a62c01531d101415959aa4c6c0ee814b7b2f8cd7f71b7b60a34e3",
+      "sealed": {
+        "kem_id": 32,
+        "kdf_id": 1,
+        "aead_id": 1,
+        "enc": "RzN5UBdfzNVzTFNQJQMUoHFYK8D6oFmR0Ek8GTKKV20",
+        "ciphertext": "dtjEZrnabdZQCExzSSWG65_zEeQoVJPwAxAL6czF6W9iSJypG-g9oBt2J0phfbg8FcM5rWQnRFTHYL5SJYYnlOcHOi_XyDb0yPiAP137HY6mjUJeds9tNKmPf_HdtnPs3fT-gHuC7FlQdRxH1GgPFt9ABbDbHqZuMDJw2BDCFrbmydeKDlFb0IxhMD2V-6TNZBZv9Mq-dfPM0uoE-mHPJ307-YXaW_0FNZnK7MSvRPZVaJaTGe5pMsAhR6XHJdTBacD5QJZo2OWoE1H1N0AfJv8dGHmrDbgpBHwoiHY7qgEbWWpiwBUx0QFBWVmqTGwO6BS3svjNf3G3tgo04w"
+      }
+    }
+  ],
+  "refusals": [
+    {
+      "name": "opened under the v1 info label",
+      "override": {
+        "info": "kete-job-host-v1 sealed-config\nhost_id=c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c\nmachine_id=2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e\njob_id=5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b\ngeneration=k8s-2026-10-07.1"
+      }
+    },
+    {
+      "name": "other machine id",
+      "override": {
+        "binding": {
+          "machine_id": "00000000-0000-4000-8000-000000000000"
+        }
+      }
+    },
+    {
+      "name": "other generation",
+      "override": {
+        "binding": {
+          "generation": "k8s-2026-10-07.2"
+        }
+      }
+    },
+    {
+      "name": "ciphertext bit flipped",
+      "override": {
+        "ciphertext_hex": "76d8c466b9da6dd650084c73492586eb9ff311e4285493f003100be9ccc5e96f62489ca91be83da01b76274a617db83c15c339ad64274454c760be5225862794e7073a2fd7c836f4c8f8803f5dfb1d8ea68d425e76cf6d34a98f7ff1ddb673ecddf4fe807b82ec5950751c47d4680f16df4005b0db1ea66e303270d810c216b6e6c9d78a0e515bd08c61303d95fba4cd64166ff4cabe75f3ccd2ea04fa61cf277d3bf985da5bfd053599caecc4af44f65568969319ee6932c02147a5c725d4c169c0f9409668d8e5a81351f537401f26ff1d1879ab0db829047c2888763baa011b596a62c01531d101415959aa4c6c0ee814b7b2f8cd7f71b7b60a34e2"
+      }
+    },
+    {
+      "name": "other recipient key",
+      "override": {
+        "recipient_sk_hex": "12fef9c9ae959e48f4a7ad600c4b3774e2783a3aa271a626f896e732a9df0e96"
+      }
+    }
+  ]
+}

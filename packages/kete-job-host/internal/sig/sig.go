@@ -1,5 +1,7 @@
-// Package sig is the job-host-v1 request signature profile (RFC 9421 with `ed25519`, RFC 9530
-// `Content-Digest`; `docs/platform/job-host-v1.md` "Signatures"). The profile is fixed — one
+// Package sig is the job-host request signature profile (RFC 9421 with `ed25519`, RFC 9530
+// `Content-Digest`; `docs/platform/job-host-v1.md` "Signatures"). job-host-v2 uses the same profile
+// with another `tag` (`docs/platform/job-host-v2.md` "Version negotiation and signatures"): V1 and
+// V2 are the two Profiles, and the package-level functions are V1's. The profile is fixed — one
 // label, one component list, one parameter order — so signing is string building and
 // verification is one regular expression, never a general structured-field parser. The agent
 // only signs; Verify exists for the fake platform and the shared test vectors, and follows the
@@ -24,12 +26,34 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
 )
 
-// Profile constants.
+// Profile constants. Tag is v1's; TagV2 is v2's (the tag is the contract version).
 const (
 	Label = "kete"
 	Alg   = "ed25519"
 	Tag   = "kete-job-host-v1"
+	TagV2 = "kete-job-host-v2"
 )
+
+// Profile is one signature profile: v1's components and parameters under one tag. The tag is
+// covered by the signature, and each profile's verifier refuses the other's tag
+// (signature_malformed), so a request is verified under exactly the contract it names.
+type Profile struct {
+	tag     string
+	inputRe *regexp.Regexp
+}
+
+func newProfile(tag string) Profile {
+	return Profile{tag: tag, inputRe: regexp.MustCompile(`^kete=\("@method" "@authority" "@path" "content-type" "content-digest"\);created=([1-9][0-9]{0,15});expires=([1-9][0-9]{0,15});nonce="([0-9a-f]{32})";keyid="([0-9a-f-]{36}|[0-9a-f]{64})";alg="ed25519";tag="` + regexp.QuoteMeta(tag) + `"$`)}
+}
+
+// V1 and V2 are the job-host-v1 and job-host-v2 profiles.
+var (
+	V1 = newProfile(Tag)
+	V2 = newProfile(TagV2)
+)
+
+// Tag is the profile's `tag` parameter.
+func (pr Profile) Tag() string { return pr.tag }
 
 // Params are the signature parameters (`created`, `expires`, `nonce`, `keyid`).
 type Params struct {
@@ -47,21 +71,29 @@ func (p Params) Valid() bool {
 		(contract.ValidUUID(p.KeyID) || contract.ValidFingerprint(p.KeyID))
 }
 
-// ParamsValue is the `@signature-params` value (also the `Signature-Input` member's value).
-func (p Params) ParamsValue() string {
+// ParamsValue is the v1 `@signature-params` value (also the `Signature-Input` member's value).
+func (p Params) ParamsValue() string { return V1.ParamsValue(p) }
+
+// SignatureInput is the v1 `Signature-Input` header value.
+func (p Params) SignatureInput() string { return V1.SignatureInput(p) }
+
+// ParamsValue is the `@signature-params` value under the profile.
+func (pr Profile) ParamsValue(p Params) string {
 	return `("@method" "@authority" "@path" "content-type" "content-digest");created=` + strconv.FormatInt(p.Created, 10) +
 		`;expires=` + strconv.FormatInt(p.Expires, 10) + `;nonce="` + p.Nonce + `";keyid="` + p.KeyID +
-		`";alg="` + Alg + `";tag="` + Tag + `"`
+		`";alg="` + Alg + `";tag="` + pr.tag + `"`
 }
 
-// SignatureInput is the `Signature-Input` header value.
-func (p Params) SignatureInput() string { return Label + "=" + p.ParamsValue() }
+// SignatureInput is the `Signature-Input` header value under the profile.
+func (pr Profile) SignatureInput(p Params) string { return Label + "=" + pr.ParamsValue(p) }
 
-var signatureInputRe = regexp.MustCompile(`^kete=\("@method" "@authority" "@path" "content-type" "content-digest"\);created=([1-9][0-9]{0,15});expires=([1-9][0-9]{0,15});nonce="([0-9a-f]{32})";keyid="([0-9a-f-]{36}|[0-9a-f]{64})";alg="ed25519";tag="kete-job-host-v1"$`)
+// ParseSignatureInput parses the header under the v1 profile, or reports false (signature_malformed).
+func ParseSignatureInput(h string) (Params, bool) { return V1.ParseSignatureInput(h) }
 
-// ParseSignatureInput parses the header under the profile, or reports false (signature_malformed).
-func ParseSignatureInput(h string) (Params, bool) {
-	m := signatureInputRe.FindStringSubmatch(h)
+// ParseSignatureInput parses the header under the profile (exactly its tag), or reports false
+// (signature_malformed).
+func (pr Profile) ParseSignatureInput(h string) (Params, bool) {
+	m := pr.inputRe.FindStringSubmatch(h)
 	if m == nil {
 		return Params{}, false
 	}
@@ -110,15 +142,19 @@ type Components struct {
 	ContentDigest string
 }
 
-// Base is the RFC 9421 signature base: one line per component, `\n`-joined, no trailing newline.
-func Base(c Components, p Params) string {
+// Base is the v1 RFC 9421 signature base.
+func Base(c Components, p Params) string { return V1.Base(c, p) }
+
+// Base is the RFC 9421 signature base under the profile: one line per component, `\n`-joined, no
+// trailing newline.
+func (pr Profile) Base(c Components, p Params) string {
 	return strings.Join([]string{
 		`"@method": POST`,
 		`"@authority": ` + c.Authority,
 		`"@path": ` + c.Path,
 		`"content-type": ` + contract.ContentType,
 		`"content-digest": ` + c.ContentDigest,
-		`"@signature-params": ` + p.ParamsValue(),
+		`"@signature-params": ` + pr.ParamsValue(p),
 	}, "\n")
 }
 
@@ -130,18 +166,23 @@ type Headers struct {
 	Signature      string
 }
 
-// Sign signs body for authority and path with key under p.
+// Sign signs body for authority and path with key under p and the v1 profile.
 func Sign(key ed25519.PrivateKey, authority, path string, body []byte, p Params) (Headers, string, error) {
+	return V1.Sign(key, authority, path, body, p)
+}
+
+// Sign signs body for authority and path with key under p and the profile.
+func (pr Profile) Sign(key ed25519.PrivateKey, authority, path string, body []byte, p Params) (Headers, string, error) {
 	if !p.Valid() {
 		return Headers{}, "", errors.New("sig: invalid signature parameters")
 	}
 	digest := ContentDigest(body)
-	base := Base(Components{Authority: authority, Path: path, ContentDigest: digest}, p)
+	base := pr.Base(Components{Authority: authority, Path: path, ContentDigest: digest}, p)
 	s := ed25519.Sign(key, []byte(base))
 	return Headers{
 		ContentType:    contract.ContentType,
 		ContentDigest:  digest,
-		SignatureInput: p.SignatureInput(),
+		SignatureInput: pr.SignatureInput(p),
 		Signature:      Label + "=:" + base64.StdEncoding.EncodeToString(s) + ":",
 	}, base, nil
 }
@@ -291,8 +332,12 @@ func mustDecodeKey(s string) []byte {
 // Verify checks a request in the contract's order: content type (malformed_request), digest
 // header (signature_malformed) and value (digest_mismatch), signature headers
 // (signature_malformed), window (clock_skew), key and signature (signature_invalid). keyFor
-// returns the base64url public key for a keyid, or "" when none is known.
-func Verify(r Request, keyFor func(keyid string) string) (Params, error) {
+// returns the base64url public key for a keyid, or "" when none is known. This is the v1 profile.
+func Verify(r Request, keyFor func(keyid string) string) (Params, error) { return V1.Verify(r, keyFor) }
+
+// Verify is the package Verify under the profile: a request signed under another tag is
+// signature_malformed.
+func (pr Profile) Verify(r Request, keyFor func(keyid string) string) (Params, error) {
 	if r.Method != "POST" || r.Headers.ContentType != contract.ContentType {
 		return Params{}, Failure(contract.ErrMalformedRequest)
 	}
@@ -302,7 +347,7 @@ func Verify(r Request, keyFor func(keyid string) string) (Params, error) {
 	if ContentDigest(r.Body) != r.Headers.ContentDigest {
 		return Params{}, Failure(contract.ErrDigestMismatch)
 	}
-	p, ok := ParseSignatureInput(r.Headers.SignatureInput)
+	p, ok := pr.ParseSignatureInput(r.Headers.SignatureInput)
 	s := ParseSignature(r.Headers.Signature)
 	if !ok || s == nil {
 		return Params{}, Failure(contract.ErrSignatureMalformed)
@@ -314,7 +359,7 @@ func Verify(r Request, keyFor func(keyid string) string) (Params, error) {
 	if k, ok := DecodeKey(keyFor(p.KeyID)); ok && AcceptablePublicKey(k) {
 		key, real = k, true
 	}
-	base := Base(Components{Authority: r.Authority, Path: r.Path, ContentDigest: r.Headers.ContentDigest}, p)
+	base := pr.Base(Components{Authority: r.Authority, Path: r.Path, ContentDigest: r.Headers.ContentDigest}, p)
 	valid := ed25519.Verify(ed25519.PublicKey(key), []byte(base), s)
 	if !valid || !real || !CanonicalS(s) {
 		return Params{}, Failure(contract.ErrSignatureInvalid)
@@ -325,8 +370,11 @@ func Verify(r Request, keyFor func(keyid string) string) (Params, error) {
 // VerifyEnrollment verifies an enroll request: the key is the body's `signing_key`, and `keyid`
 // must equal the fingerprint of the body's two keys (proof of possession); anything else is
 // signature_invalid (kete-code-platform `verifyJobHostEnrollment`). It returns the fingerprint.
-// The caller then parses the body strictly (malformed_request).
-func VerifyEnrollment(r Request) (Params, string, error) {
+// The caller then parses the body strictly (malformed_request). This is the v1 profile.
+func VerifyEnrollment(r Request) (Params, string, error) { return V1.VerifyEnrollment(r) }
+
+// VerifyEnrollment is the package VerifyEnrollment under the profile.
+func (pr Profile) VerifyEnrollment(r Request) (Params, string, error) {
 	var keys struct {
 		SigningKey any `json:"signing_key"`
 		SealingKey any `json:"sealing_key"`
@@ -340,7 +388,7 @@ func VerifyEnrollment(r Request) (Params, string, error) {
 			fp = Fingerprint(sk, xk)
 		}
 	}
-	p, err := Verify(r, func(keyid string) string {
+	p, err := pr.Verify(r, func(keyid string) string {
 		if fp != "" && keyid == fp {
 			return signing
 		}

@@ -31,6 +31,13 @@ vectors are copied byte for byte into `testdata/job-host-v1/` with a `SHA256SUMS
 `internal/vectors` fails if either drifts. A change to them is a contract change: re-copy all three
 files from the platform and regenerate `SHA256SUMS` together.
 
+job-host-v2 (the enterprise runner's contract, `docs/platform/job-host-v2.md`) is mirrored the same
+way: vectors in `testdata/job-host-v2/` (`hpke.json`, `messages.json`, `signatures.json`,
+`SHA256SUMS`), types in `internal/contract/v2.go` (bodies decoded with `contract.Decode`, which
+applies the schemas' required fields, nulls and strict objects), the v2 signature profile
+`sig.V2` and the v2 sealing `seal.OpenV2`/`SealV2`. Nothing in the agent uses v2 yet: the
+`kubernetes` driver and its controller are later pieces.
+
 | Package | Implements |
 |---|---|
 | `internal/contract` | routes, limits, request/response bodies and their validation |

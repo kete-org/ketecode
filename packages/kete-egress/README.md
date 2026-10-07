@@ -320,6 +320,26 @@ enabled; `/proc/net/tcp` and `/proc/net/tcp6`. Verified in Colima's kernel and G
 `ubuntu-latest` by the integration suite. **Not yet verified: Fly Machines' guest kernel and its
 resolver address** (`fdaa::3` is expected) — piece C/D's first real machine checks both.
 
+## Configuration v2 (parser only)
+
+Version 2 adds what an enterprise network needs: an upstream proxy reached with `CONNECT`
+(`upstream.proxy`, `http://` or `https://host:port`), proxy credentials only from a file
+(`upstream.proxy_auth_file`, never inline) and an extra CA bundle for upstream TLS
+(`upstream.ca_bundle_file`), both under `/run/`; entries reached without the proxy
+(`upstream.direct`); `host:port` allowlist entries for ports other than 443; and `internal` CIDR
+ranges the proxy user may reach on exactly their ports although v1 blocks them. No internal range
+may touch the forbidden ranges (`internal/blocked.Forbidden`), and an upstream proxy given as an
+address may not be in one. The rules and the refusals are
+[`docs/platform/egress-config-v2.md`](../../docs/platform/egress-config-v2.md) (the platform's copy;
+its test vector is `internal/config/testdata/egress-config-v2/configs.json`, checked by
+`config.ParseV2`'s tests). One deliberate difference: an upstream proxy given as an IPv4 literal in
+any range of this module's v1 blocked list (`blocked_v4` above, which also blocks `192.0.0.0/24` and
+`198.18.0.0/15`) must be inside an `internal` range; the platform's schema checks a shorter list.
+
+`config.ParseV2` validates a v2 document (each refusal is a `*config.FieldError` naming the field,
+never a value). `serve` and `nft` do not act on v2 yet: they read only v1, and a version 2 file is
+refused at start-up (exit 2) until the proxy and firewall implement it (enterprise runtime P2).
+
 ## How to test
 
 ```sh

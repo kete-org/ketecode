@@ -1,0 +1,126 @@
+{
+  "description": "job-host-v2 request signatures (docs/contracts/job-host-v2.md \"Version negotiation and signatures\"): job-host-v1's profile with tag=\"kete-job-host-v2\". Keys are job-host-v1's (signatures.json there). Each refusal applies `override` to the named request (poll unless `request` says otherwise) and must be refused by a v2 verifier with `reason`; `v1_verifier_reason` is what a v1 verifier answers for every request here (the tag is outside its profile).",
+  "keys": {
+    "ed25519_seed_hex": "38104d78d5b47c5424acdfd1b3e9c8e0c988ebfd14699b702ce8783b105ca118",
+    "ed25519_public": "aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU",
+    "x25519_public": "9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE",
+    "fingerprint": "03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a",
+    "other_ed25519_public": "6uUZMRZSj4h6k98L6aaz-MNmdvBQAOt2HCxcCGPyT5I"
+  },
+  "requests": [
+    {
+      "name": "enroll",
+      "method": "POST",
+      "authority": "portal.kete.example",
+      "path": "/api/v1/job-hosts/enroll",
+      "body": "{\"version\":2,\"enrollment_token\":\"kete_jhe_WfNp8lP4D462xJo4bB-cYfBS18gGIyyGwHiDSYSm0kg\",\"signing_key\":\"aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU\",\"sealing_key\":\"9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE\",\"facts\":{\"arch\":\"amd64\",\"driver\":\"kubernetes\",\"slots\":16,\"kvm\":false,\"reset\":\"none\",\"generation\":\"k8s-2026-10-07.1\",\"versions\":{\"agent\":\"0.10.0\",\"kubernetes\":\"v1.31.4\",\"host_kernel\":\"6.8.0-1015-azure\"},\"runtime_classes\":[\"kata-mshv-vm-isolation\"]}}",
+      "params": {
+        "created": 1791363600,
+        "expires": 1791363660,
+        "nonce": "101112131415161718191a1b1c1d1e1f",
+        "keyid": "03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a"
+      },
+      "headers": {
+        "content-type": "application/json",
+        "content-digest": "sha-256=:7AqLCegA8ps7/9xFHUri9t56ZpDYaW8mxd71nq1PPwQ=:",
+        "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1791363600;expires=1791363660;nonce=\"101112131415161718191a1b1c1d1e1f\";keyid=\"03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a\";alg=\"ed25519\";tag=\"kete-job-host-v2\"",
+        "signature": "kete=:yIn++hauAG0pcjjUykUpJsXzvfuaplIzjt15ON+fiT7yYWiKsAplLX6Bj3atrD7IHadydjluNz2qX/jxFnfrBA==:"
+      },
+      "signature_base": "\"@method\": POST\n\"@authority\": portal.kete.example\n\"@path\": /api/v1/job-hosts/enroll\n\"content-type\": application/json\n\"content-digest\": sha-256=:7AqLCegA8ps7/9xFHUri9t56ZpDYaW8mxd71nq1PPwQ=:\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1791363600;expires=1791363660;nonce=\"101112131415161718191a1b1c1d1e1f\";keyid=\"03f1356980aee51f136861f517a1567f238d6c8b35980c394e33b0e0caf4bf6a\";alg=\"ed25519\";tag=\"kete-job-host-v2\"",
+      "verify_at": 1791363605
+    },
+    {
+      "name": "poll",
+      "method": "POST",
+      "authority": "portal.kete.example",
+      "path": "/api/v1/job-hosts/poll",
+      "body": "{\"version\":2,\"generation\":\"k8s-2026-10-07.1\",\"versions\":{\"agent\":\"0.10.0\",\"kubernetes\":\"v1.31.4\",\"host_kernel\":\"6.8.0-1015-azure\"},\"slots\":{\"total\":16,\"free\":14},\"starts_blocked\":null,\"applied_revision\":12,\"runtime_classes\":[\"kata-mshv-vm-isolation\"],\"images\":[\"registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f\",\"registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d\"],\"repositories\":[\"gitlab:payments/api\",\"gitlab:payments/ledger\"],\"boundary\":{\"summary\":\"none\",\"denials\":\"actions\",\"publish_refs\":\"send\"},\"machines\":[{\"machine_id\":\"0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a\",\"job_id\":\"4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d\",\"state\":\"running\",\"since\":\"2026-10-07T08:52:10Z\",\"phase_lines\":[{\"ts\":\"2026-10-07T08:52:31.402Z\",\"step\":\"claim\",\"event\":\"ok\"},{\"ts\":\"2026-10-07T08:52:44.918Z\",\"step\":\"clone\",\"event\":\"ok\",\"code\":\"clone_done\"}],\"phase_lines_dropped\":0},{\"machine_id\":\"6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b\",\"job_id\":\"8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f\",\"state\":\"publishing\",\"since\":\"2026-10-07T08:58:02Z\",\"phase_lines\":[],\"phase_lines_dropped\":0},{\"machine_id\":\"b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e\",\"job_id\":\"d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a\",\"state\":\"destroyed\",\"since\":\"2026-10-07T08:59:40Z\",\"reason\":\"exited\",\"phase_lines\":[{\"ts\":\"2026-10-07T08:57:12.003Z\",\"step\":\"job\",\"event\":\"exit\",\"exit_code\":0}],\"phase_lines_dropped\":0,\"publish\":{\"status\":\"created\",\"branch\":\"kete/job/7f3a9c21\",\"base_sha\":\"9fceb02d0ae598e95dc970b74767f19372d61af8\",\"commit_sha\":\"e83c5163316f89bfbde7d9ab23ca2e25604af290\",\"mr\":{\"iid\":412,\"url\":\"https://gitlab.corp.example/payments/api/-/merge_requests/412\"}}},{\"machine_id\":\"e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b\",\"job_id\":\"f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c\",\"state\":\"failed\",\"since\":\"2026-10-07T08:59:55Z\",\"reason\":\"repository_unknown\",\"phase_lines\":[],\"phase_lines_dropped\":0}]}",
+      "params": {
+        "created": 1791363600,
+        "expires": 1791363660,
+        "nonce": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "keyid": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c"
+      },
+      "headers": {
+        "content-type": "application/json",
+        "content-digest": "sha-256=:sRozfaHPlz+/Z26yTwfoBoJoCn/ROCZea3Gj3rGRJ7Q=:",
+        "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1791363600;expires=1791363660;nonce=\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\";keyid=\"c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c\";alg=\"ed25519\";tag=\"kete-job-host-v2\"",
+        "signature": "kete=:g5/Z2JH51CaWDzaL1TvSlsmm7IODMIrdeGh9fI+NI+rG16UOReBMrzQsB9/326IKIOTwY/uQEOkpThcHU2VaDg==:"
+      },
+      "signature_base": "\"@method\": POST\n\"@authority\": portal.kete.example\n\"@path\": /api/v1/job-hosts/poll\n\"content-type\": application/json\n\"content-digest\": sha-256=:sRozfaHPlz+/Z26yTwfoBoJoCn/ROCZea3Gj3rGRJ7Q=:\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1791363600;expires=1791363660;nonce=\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\";keyid=\"c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c\";alg=\"ed25519\";tag=\"kete-job-host-v2\"",
+      "verify_at": 1791363605
+    }
+  ],
+  "v1_verifier_reason": "signature_malformed",
+  "refusals": [
+    {
+      "name": "signed under the v1 profile (tag kete-job-host-v1)",
+      "override": {
+        "headers": {
+          "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1791363600;expires=1791363660;nonce=\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\";keyid=\"c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c\";alg=\"ed25519\";tag=\"kete-job-host-v1\"",
+          "signature": "kete=:FUH0zpQj0XB5QkJI7xDzYCd1DLCyDyobR0bLlGjl2lh6fykq+S7AUVVpJZsMD2IYLrWjBPx4D2Jo+OWIyqIMBw==:"
+        }
+      },
+      "reason": "signature_malformed"
+    },
+    {
+      "name": "v1 tag on a v2 signature",
+      "override": {
+        "headers": {
+          "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1791363600;expires=1791363660;nonce=\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\";keyid=\"c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c\";alg=\"ed25519\";tag=\"kete-job-host-v1\""
+        }
+      },
+      "reason": "signature_malformed"
+    },
+    {
+      "name": "body changed after signing",
+      "override": {
+        "body": "{\"version\":2,\"generation\":\"k8s-2026-10-07.1\",\"versions\":{\"agent\":\"0.10.0\",\"kubernetes\":\"v1.31.4\",\"host_kernel\":\"6.8.0-1015-azure\"},\"slots\":{\"total\":16,\"free\":13},\"starts_blocked\":null,\"applied_revision\":12,\"runtime_classes\":[\"kata-mshv-vm-isolation\"],\"images\":[\"registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f\",\"registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d\"],\"repositories\":[\"gitlab:payments/api\",\"gitlab:payments/ledger\"],\"boundary\":{\"summary\":\"none\",\"denials\":\"actions\",\"publish_refs\":\"send\"},\"machines\":[{\"machine_id\":\"0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a\",\"job_id\":\"4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d\",\"state\":\"running\",\"since\":\"2026-10-07T08:52:10Z\",\"phase_lines\":[{\"ts\":\"2026-10-07T08:52:31.402Z\",\"step\":\"claim\",\"event\":\"ok\"},{\"ts\":\"2026-10-07T08:52:44.918Z\",\"step\":\"clone\",\"event\":\"ok\",\"code\":\"clone_done\"}],\"phase_lines_dropped\":0},{\"machine_id\":\"6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b\",\"job_id\":\"8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f\",\"state\":\"publishing\",\"since\":\"2026-10-07T08:58:02Z\",\"phase_lines\":[],\"phase_lines_dropped\":0},{\"machine_id\":\"b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e\",\"job_id\":\"d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a\",\"state\":\"destroyed\",\"since\":\"2026-10-07T08:59:40Z\",\"reason\":\"exited\",\"phase_lines\":[{\"ts\":\"2026-10-07T08:57:12.003Z\",\"step\":\"job\",\"event\":\"exit\",\"exit_code\":0}],\"phase_lines_dropped\":0,\"publish\":{\"status\":\"created\",\"branch\":\"kete/job/7f3a9c21\",\"base_sha\":\"9fceb02d0ae598e95dc970b74767f19372d61af8\",\"commit_sha\":\"e83c5163316f89bfbde7d9ab23ca2e25604af290\",\"mr\":{\"iid\":412,\"url\":\"https://gitlab.corp.example/payments/api/-/merge_requests/412\"}}},{\"machine_id\":\"e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b\",\"job_id\":\"f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c\",\"state\":\"failed\",\"since\":\"2026-10-07T08:59:55Z\",\"reason\":\"repository_unknown\",\"phase_lines\":[],\"phase_lines_dropped\":0}]}"
+      },
+      "reason": "digest_mismatch"
+    },
+    {
+      "name": "authority changed",
+      "override": {
+        "authority": "portal.other.example"
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "signed by another key",
+      "override": {
+        "headers": {
+          "signature": "kete=:xMp6GUO3oDeqGJSifrbfgB3wZRTazakx64wT3nXPxfZvA5bGzVy3sSX8R9gUyuekKVPu5d8Qx7mjzyfUtOtMCg==:"
+        }
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "malleated signature (S + L)",
+      "override": {
+        "headers": {
+          "signature": "kete=:g5/Z2JH51CaWDzaL1TvSlsmm7IODMIrdeGh9fI+NI+qzq5trX0NfBwvJ/oHW1YEfIOTwY/uQEOkpThcHU2VaHg==:"
+        }
+      },
+      "reason": "signature_invalid"
+    },
+    {
+      "name": "created 61 s in the past",
+      "override": {
+        "verify_at": 1791363661
+      },
+      "reason": "clock_skew"
+    },
+    {
+      "name": "enroll: keyid is not the fingerprint of the body keys (correctly signed by the body key)",
+      "request": "enroll",
+      "override": {
+        "headers": {
+          "signature-input": "kete=(\"@method\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1791363600;expires=1791363660;nonce=\"101112131415161718191a1b1c1d1e1f\";keyid=\"e43bea222d720b901f59a4433f23e685a07b929c3029408572abc28b3e174499\";alg=\"ed25519\";tag=\"kete-job-host-v2\"",
+          "signature": "kete=:2AEI8j072MMpp1s/8gvKHAz5GvcwdrHQoM6ws7Td84SWe2IYkvlDPPQBeU2WuSp1HLXuWWi//SNWet/qpey5BA==:"
+        }
+      },
+      "reason": "signature_invalid"
+    }
+  ]
+}

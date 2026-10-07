@@ -6,6 +6,10 @@
 // third-party cryptography is involved. Base mode does not authenticate the sender: what limits a
 // forged configuration is the agent's own checks (platform origin, image allowlist, ADR 0023
 // rules 13 and 17).
+//
+// job-host-v2 seals the same way under another `info` label (`docs/platform/job-host-v2.md`
+// "Sealed configuration"): OpenV2 and SealV2, so a v1 seal never opens as v2 and the reverse. Its
+// plaintext adds the `kubevm` profile (ValidateV2).
 package seal
 
 import (
@@ -44,13 +48,18 @@ func (b Binding) Valid() bool {
 		contract.ValidGeneration(b.Generation)
 }
 
-// Info is the HPKE info: the label and the four bindings, one per line, no trailing newline.
-func (b Binding) Info() ([]byte, error) {
+// Info is the v1 HPKE info: the label and the four bindings, one per line, no trailing newline.
+func (b Binding) Info() ([]byte, error) { return b.info(contract.HPKEInfoLabel) }
+
+// InfoV2 is the v2 HPKE info: v1's layout under the v2 label.
+func (b Binding) InfoV2() ([]byte, error) { return b.info(contract.HPKEInfoLabelV2) }
+
+func (b Binding) info(label string) ([]byte, error) {
 	if !b.Valid() {
 		return nil, ErrInvalidBinding
 	}
 	return []byte(strings.Join([]string{
-		contract.HPKEInfoLabel,
+		label,
 		"host_id=" + b.HostID,
 		"machine_id=" + b.MachineID,
 		"job_id=" + b.JobID,
@@ -70,6 +79,20 @@ func Open(privateKey []byte, b Binding, sc contract.SealedConfig) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
+	return open(privateKey, info, sc)
+}
+
+// OpenV2 is Open under the v2 info label: a configuration sealed under v1 doesn't open
+// (ErrUndecryptable).
+func OpenV2(privateKey []byte, b Binding, sc contract.SealedConfig) ([]byte, error) {
+	info, err := b.InfoV2()
+	if err != nil {
+		return nil, err
+	}
+	return open(privateKey, info, sc)
+}
+
+func open(privateKey, info []byte, sc contract.SealedConfig) ([]byte, error) {
 	if sc.Validate() != nil || len(privateKey) != 32 {
 		return nil, ErrUndecryptable
 	}
@@ -101,6 +124,19 @@ func Seal(publicKey []byte, b Binding, plaintext []byte) (contract.SealedConfig,
 	if err != nil {
 		return contract.SealedConfig{}, err
 	}
+	return seal(publicKey, info, plaintext)
+}
+
+// SealV2 is Seal under the v2 info label.
+func SealV2(publicKey []byte, b Binding, plaintext []byte) (contract.SealedConfig, error) {
+	info, err := b.InfoV2()
+	if err != nil {
+		return contract.SealedConfig{}, err
+	}
+	return seal(publicKey, info, plaintext)
+}
+
+func seal(publicKey, info, plaintext []byte) (contract.SealedConfig, error) {
 	kem, kdf, aead := suite()
 	pk, err := kem.NewPublicKey(publicKey)
 	if err != nil {
@@ -127,6 +163,9 @@ const (
 	ProfileMicroVM   = "microvm"
 	ProfileDedicated = "dedicated"
 	ProfileCloudVM   = "cloudvm"
+	// ProfileKubeVM is job-host-v2's `kubernetes` driver profile (JobMachineConfigV2): no
+	// host_provider, no host_generation. v1 refuses it.
+	ProfileKubeVM = "kubevm"
 )
 
 var providers = map[string]bool{"gcp": true, "digitalocean": true, "hetzner": true, "oci": true}
@@ -170,8 +209,16 @@ func ParseMachineConfig(data []byte) (MachineConfig, error) {
 	return c, nil
 }
 
-// Validate applies JobMachineConfig's field rules.
+// Validate applies JobMachineConfig's field rules (v1: microvm, dedicated, cloudvm).
 func (c MachineConfig) Validate() error {
+	if c.HostProfile == ProfileKubeVM {
+		return errors.New("machine config: host_profile")
+	}
+	return c.ValidateV2()
+}
+
+// ValidateV2 applies JobMachineConfigV2's field rules: v1's, with profile kubevm added.
+func (c MachineConfig) ValidateV2() error {
 	switch {
 	case !contract.ValidUUID(c.JobID):
 		return errors.New("machine config: job_id")
@@ -181,7 +228,7 @@ func (c MachineConfig) Validate() error {
 		return errors.New("machine config: claim_token")
 	case len(c.StorageHost) > 253 || !dnsHostRe.MatchString(c.StorageHost):
 		return errors.New("machine config: storage_host")
-	case c.HostProfile != ProfileMicroVM && c.HostProfile != ProfileDedicated && c.HostProfile != ProfileCloudVM:
+	case c.HostProfile != ProfileMicroVM && c.HostProfile != ProfileDedicated && c.HostProfile != ProfileCloudVM && c.HostProfile != ProfileKubeVM:
 		return errors.New("machine config: host_profile")
 	case (c.HostProfile == ProfileCloudVM) != providers[c.HostProvider] || (c.HostProfile != ProfileCloudVM && c.HostProvider != ""):
 		return errors.New("machine config: host_provider exactly for cloudvm")
@@ -190,6 +237,13 @@ func (c MachineConfig) Validate() error {
 		return errors.New("machine config: host_generation exactly for dedicated")
 	}
 	return nil
+}
+
+// FitsBinding reports what the platform's sealer and opener require of a configuration for a
+// binding (`fitsBinding`): the binding's job and, for dedicated, its generation. (Which profiles a
+// host accepts is the driver's rule.)
+func (c MachineConfig) FitsBinding(b Binding) bool {
+	return c.JobID == b.JobID && (c.HostProfile != ProfileDedicated || c.HostGeneration == b.Generation)
 }
 
 // Canonical is the configuration's canonical JSON: compact, fields in order, absent optionals

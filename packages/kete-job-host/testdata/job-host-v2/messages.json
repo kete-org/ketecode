@@ -1,0 +1,3758 @@
+{
+  "description": "job-host-v2 schema cases (docs/contracts/job-host-v2.md): each value must be accepted (valid: true) or refused (valid: false) by the named schema (the Zod export of packages/shared/src/api/v1/job-hosts-v2.ts; kete-code maps each to its Go type and validation). A field set to null in `value` is null on the wire; a missing field is absent.",
+  "cases": [
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes, 128 slots",
+      "valid": true,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 128,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes, 129 slots",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 129,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes with kvm true",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": true,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes with a reset",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "provider_rebuild",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes without runtime_classes",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes with no runtime class",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": []
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes with 9 runtime classes",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "kata-0",
+          "kata-1",
+          "kata-2",
+          "kata-3",
+          "kata-4",
+          "kata-5",
+          "kata-6",
+          "kata-7",
+          "kata-8"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes with a duplicate runtime class",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "kata",
+          "kata"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes with an invalid runtime class name",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "Kata_QEMU"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes without versions.kubernetes",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "host_kernel": "6.8.0"
+        },
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "kubernetes with a firecracker version",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "kubernetes",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure",
+          "firecracker": "1.13.1"
+        },
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "firecracker under v2, 4 slots",
+      "valid": true,
+      "value": {
+        "arch": "amd64",
+        "driver": "firecracker",
+        "slots": 4,
+        "kvm": true,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "firecracker": "1.13.1",
+          "guest_kernel": "6.1.141-kete.1",
+          "host_kernel": "6.8.0-45-generic"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "firecracker under v2, 33 slots",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "firecracker",
+        "slots": 33,
+        "kvm": true,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "firecracker": "1.13.1",
+          "guest_kernel": "6.1.141-kete.1",
+          "host_kernel": "6.8.0-45-generic"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "firecracker with runtime_classes",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "firecracker",
+        "slots": 4,
+        "kvm": true,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "firecracker": "1.13.1",
+          "guest_kernel": "6.1.141-kete.1",
+          "host_kernel": "6.8.0-45-generic"
+        },
+        "runtime_classes": [
+          "kata"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "firecracker with versions.kubernetes",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "firecracker",
+        "slots": 4,
+        "kvm": true,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "firecracker": "1.13.1",
+          "guest_kernel": "6.1.141-kete.1",
+          "host_kernel": "6.8.0-45-generic",
+          "kubernetes": "v1.31.4"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "dedicated under v2",
+      "valid": true,
+      "value": {
+        "arch": "amd64",
+        "driver": "dedicated",
+        "slots": 1,
+        "kvm": false,
+        "reset": "provider_rebuild",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "host_kernel": "6.8.0-45-generic"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "dedicated with 2 slots",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "dedicated",
+        "slots": 2,
+        "kvm": false,
+        "reset": "provider_rebuild",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "host_kernel": "6.8.0-45-generic"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2Facts",
+      "name": "unknown driver",
+      "valid": false,
+      "value": {
+        "arch": "amd64",
+        "driver": "gvisor",
+        "slots": 16,
+        "kvm": false,
+        "reset": "none",
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2EnrollRequest",
+      "name": "the example",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "enrollment_token": "kete_jhe_WfNp8lP4D462xJo4bB-cYfBS18gGIyyGwHiDSYSm0kg",
+        "signing_key": "aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU",
+        "sealing_key": "9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE",
+        "facts": {
+          "arch": "amd64",
+          "driver": "kubernetes",
+          "slots": 16,
+          "kvm": false,
+          "reset": "none",
+          "generation": "k8s-2026-10-07.1",
+          "versions": {
+            "agent": "0.10.0",
+            "kubernetes": "v1.31.4",
+            "host_kernel": "6.8.0-1015-azure"
+          },
+          "runtime_classes": [
+            "kata-mshv-vm-isolation"
+          ]
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2EnrollRequest",
+      "name": "without version",
+      "valid": false,
+      "value": {
+        "enrollment_token": "kete_jhe_WfNp8lP4D462xJo4bB-cYfBS18gGIyyGwHiDSYSm0kg",
+        "signing_key": "aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU",
+        "sealing_key": "9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE",
+        "facts": {
+          "arch": "amd64",
+          "driver": "kubernetes",
+          "slots": 16,
+          "kvm": false,
+          "reset": "none",
+          "generation": "k8s-2026-10-07.1",
+          "versions": {
+            "agent": "0.10.0",
+            "kubernetes": "v1.31.4",
+            "host_kernel": "6.8.0-1015-azure"
+          },
+          "runtime_classes": [
+            "kata-mshv-vm-isolation"
+          ]
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2EnrollRequest",
+      "name": "version 1",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "enrollment_token": "kete_jhe_WfNp8lP4D462xJo4bB-cYfBS18gGIyyGwHiDSYSm0kg",
+        "signing_key": "aqvKk_cQiwy0qZqDflMnLRaTOhufBkHzqORXp6BveqU",
+        "sealing_key": "9sT08dK32cQC5495pwlgLlwyRS1Im9elh8UkfgJxpnE",
+        "facts": {
+          "arch": "amd64",
+          "driver": "kubernetes",
+          "slots": 16,
+          "kvm": false,
+          "reset": "none",
+          "generation": "k8s-2026-10-07.1",
+          "versions": {
+            "agent": "0.10.0",
+            "kubernetes": "v1.31.4",
+            "host_kernel": "6.8.0-1015-azure"
+          },
+          "runtime_classes": [
+            "kata-mshv-vm-isolation"
+          ]
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "the example",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "without version",
+      "valid": false,
+      "value": {
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "128 slots",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 128,
+          "free": 128
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "129 slots",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 129,
+          "free": 0
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "starts blocked: runtime class missing",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": "runtime_class_missing",
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "starts blocked: unknown reason",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": "quota",
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "no images",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "a duplicate image",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "an image by tag",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job:latest"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "17 images",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000001",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000002",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000004",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000005",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000006",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000007",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000008",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000009",
+          "registry.corp.example/kete/kete-job@sha256:000000000000000000000000000000000000000000000000000000000000000a",
+          "registry.corp.example/kete/kete-job@sha256:000000000000000000000000000000000000000000000000000000000000000b",
+          "registry.corp.example/kete/kete-job@sha256:000000000000000000000000000000000000000000000000000000000000000c",
+          "registry.corp.example/kete/kete-job@sha256:000000000000000000000000000000000000000000000000000000000000000d",
+          "registry.corp.example/kete/kete-job@sha256:000000000000000000000000000000000000000000000000000000000000000e",
+          "registry.corp.example/kete/kete-job@sha256:000000000000000000000000000000000000000000000000000000000000000f",
+          "registry.corp.example/kete/kete-job@sha256:0000000000000000000000000000000000000000000000000000000000000010"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "repositories not advertised (null)",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": null,
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "repositories advertised, none",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "a repository URL",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "https://gitlab.corp.example/payments/api.git"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "a duplicate repository",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "repositories missing",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary missing",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary with an unknown value",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "partial",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary with an unknown setting",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send",
+          "prompts": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary omits refs, publish carries them",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "omit"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary omits refs, publish with only the branch (job metadata)",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "omit"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21"
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary omits refs, publish without them",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "omit"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created"
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary sends refs, created without commit_sha",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "boundary sends refs, refused without refs",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "refused",
+              "reason": "branch_exists"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "publish on a running machine",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "publish on a machine destroyed by the desired state",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "desired",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "failed: pod unschedulable",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "pod_unschedulable",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "destroyed with a failure reason",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "publishing with a reason",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0,
+            "reason": "exited"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "runtime classes missing is allowed (checked against the driver by the platform)",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.10.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 14
+        },
+        "starts_blocked": null,
+        "applied_revision": 12,
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+          "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d"
+        ],
+        "repositories": [
+          "gitlab:payments/api",
+          "gitlab:payments/ledger"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": [
+          {
+            "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+            "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+            "state": "running",
+            "since": "2026-10-07T08:52:10Z",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:52:31.402Z",
+                "step": "claim",
+                "event": "ok"
+              },
+              {
+                "ts": "2026-10-07T08:52:44.918Z",
+                "step": "clone",
+                "event": "ok",
+                "code": "clone_done"
+              }
+            ],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+            "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+            "state": "publishing",
+            "since": "2026-10-07T08:58:02Z",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          },
+          {
+            "machine_id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+            "job_id": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+            "state": "destroyed",
+            "since": "2026-10-07T08:59:40Z",
+            "reason": "exited",
+            "phase_lines": [
+              {
+                "ts": "2026-10-07T08:57:12.003Z",
+                "step": "job",
+                "event": "exit",
+                "exit_code": 0
+              }
+            ],
+            "phase_lines_dropped": 0,
+            "publish": {
+              "status": "created",
+              "branch": "kete/job/7f3a9c21",
+              "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+              "mr": {
+                "iid": 412,
+                "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+              }
+            }
+          },
+          {
+            "machine_id": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+            "job_id": "f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c",
+            "state": "failed",
+            "since": "2026-10-07T08:59:55Z",
+            "reason": "repository_unknown",
+            "phase_lines": [],
+            "phase_lines_dropped": 0
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "created with refs and a merge request",
+      "valid": true,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "created, merge request failed",
+      "valid": true,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "reason": "mr_failed"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "created, merge request failed, yet an mr",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+        },
+        "reason": "mr_failed"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "no changes",
+      "valid": true,
+      "value": {
+        "status": "no_changes",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "no changes with a commit",
+      "valid": false,
+      "value": {
+        "status": "no_changes",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "no changes with a reason",
+      "valid": false,
+      "value": {
+        "status": "no_changes",
+        "reason": "branch_exists"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "refused: branch exists",
+      "valid": true,
+      "value": {
+        "status": "refused",
+        "reason": "branch_exists",
+        "branch": "kete/job/7f3a9c21"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "refused: symlink (the entrypoint built no bundle)",
+      "valid": true,
+      "value": {
+        "status": "refused",
+        "reason": "symlink"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "refused without a reason",
+      "valid": false,
+      "value": {
+        "status": "refused"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "refused with a failure reason",
+      "valid": false,
+      "value": {
+        "status": "refused",
+        "reason": "hold_expired"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "failed: hold expired",
+      "valid": true,
+      "value": {
+        "status": "failed",
+        "reason": "hold_expired"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "failed: processes alive",
+      "valid": true,
+      "value": {
+        "status": "failed",
+        "reason": "processes_alive"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "failed with a commit",
+      "valid": false,
+      "value": {
+        "status": "failed",
+        "reason": "provider_error",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "a free-text reason",
+      "valid": false,
+      "value": {
+        "status": "failed",
+        "reason": "GitLab said 500"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "a free-text detail field",
+      "valid": false,
+      "value": {
+        "status": "failed",
+        "reason": "provider_error",
+        "detail": "remote: rejected"
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "merge request URL over http",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "http://gitlab.corp.example/payments/api/-/merge_requests/412"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "merge request URL on an internal port",
+      "valid": true,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example:8443/payments/api/-/merge_requests/412"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "merge request URL with a query",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412?x=1"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "merge request URL with a fragment",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412#note_1"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "merge request URL with a bad percent escape",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example/pay%zzments/api/-/merge_requests/412"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "merge request URL with a quote",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example/payments/\"api\"/-/merge_requests/412"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "merge request iid 0",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "kete/job/7f3a9c21",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 0,
+          "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+        }
+      }
+    },
+    {
+      "schema": "JobHostPublishOutcome",
+      "name": "branch outside kete/job/",
+      "valid": false,
+      "value": {
+        "status": "created",
+        "branch": "main",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "commit_sha": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+        "mr": {
+          "iid": 412,
+          "url": "https://gitlab.corp.example/payments/api/-/merge_requests/412"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "with repository and publish",
+      "valid": true,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main"
+        },
+        "publish": {
+          "branch": "kete/job/1b4d7e2a",
+          "open_mr": true,
+          "authorized": false
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "publish without repository",
+      "valid": false,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        },
+        "publish": {
+          "branch": "kete/job/1b4d7e2a",
+          "open_mr": true,
+          "authorized": false
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "neither (a v1-style machine)",
+      "valid": true,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "repository given as a URL",
+      "valid": false,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "https://gitlab.corp.example/payments/api.git",
+          "base_ref": "main"
+        },
+        "publish": {
+          "branch": "kete/job/1b4d7e2a",
+          "open_mr": true,
+          "authorized": false
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "base ref with ..",
+      "valid": false,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "../main"
+        },
+        "publish": {
+          "branch": "kete/job/1b4d7e2a",
+          "open_mr": true,
+          "authorized": false
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "publish to a non-job branch",
+      "valid": false,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main"
+        },
+        "publish": {
+          "branch": "main",
+          "open_mr": true,
+          "authorized": true
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2KubernetesRunMachine",
+      "name": "kubernetes: with repository",
+      "valid": true,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main"
+        },
+        "publish": {
+          "branch": "kete/job/1b4d7e2a",
+          "open_mr": true,
+          "authorized": false
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2KubernetesRunMachine",
+      "name": "kubernetes: with repository, no push",
+      "valid": true,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2KubernetesRunMachine",
+      "name": "kubernetes: without repository (a GitHub or Harness job placed on a runner)",
+      "valid": false,
+      "value": {
+        "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+        "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-07T09:22:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 4096,
+          "scratch_gib": 20
+        }
+      }
+    },
+    {
+      "schema": "JobMachineConfigV2",
+      "name": "kubevm",
+      "valid": true,
+      "value": {
+        "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+        "platform_url": "https://portal.kete.example",
+        "claim_token": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "storage_host": "storage.kete.example",
+        "host_profile": "kubevm"
+      }
+    },
+    {
+      "schema": "JobMachineConfigV2",
+      "name": "kubevm with host_generation",
+      "valid": false,
+      "value": {
+        "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+        "platform_url": "https://portal.kete.example",
+        "claim_token": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "storage_host": "storage.kete.example",
+        "host_profile": "kubevm",
+        "host_generation": "k8s-2026-10-07.1"
+      }
+    },
+    {
+      "schema": "JobMachineConfigV2",
+      "name": "kubevm with host_provider",
+      "valid": false,
+      "value": {
+        "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+        "platform_url": "https://portal.kete.example",
+        "claim_token": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "storage_host": "storage.kete.example",
+        "host_profile": "kubevm",
+        "host_provider": "gcp"
+      }
+    },
+    {
+      "schema": "JobMachineConfigV2",
+      "name": "unknown profile",
+      "valid": false,
+      "value": {
+        "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+        "platform_url": "https://portal.kete.example",
+        "claim_token": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "storage_host": "storage.kete.example",
+        "host_profile": "kube"
+      }
+    },
+    {
+      "schema": "JobMachineConfigV2",
+      "name": "a local section (never from the platform)",
+      "valid": false,
+      "value": {
+        "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+        "platform_url": "https://portal.kete.example",
+        "claim_token": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "storage_host": "storage.kete.example",
+        "host_profile": "kubevm",
+        "repository": {
+          "url": "https://gitlab.corp.example/payments/api.git"
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2PollResponse",
+      "name": "a response without version",
+      "valid": false,
+      "value": {
+        "in_reply_to": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "host_id": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c",
+        "status": "active",
+        "next_poll_after": 10,
+        "desired": {
+          "revision": 13,
+          "run": [
+            {
+              "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+              "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-07T09:22:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 4096,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "main"
+              },
+              "publish": {
+                "branch": "kete/job/1b4d7e2a",
+                "open_mr": true,
+                "authorized": false
+              }
+            },
+            {
+              "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+              "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+              "image": "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d",
+              "deadline": "2026-10-07T09:25:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 4096,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/ledger",
+                "base_ref": "release/2026.10"
+              },
+              "publish": {
+                "branch": "kete/job/c0ffee42",
+                "open_mr": false,
+                "authorized": true
+              }
+            },
+            {
+              "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+              "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-07T09:40:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 4096,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "main"
+              },
+              "config": {
+                "kem_id": 32,
+                "kdf_id": 1,
+                "aead_id": 1,
+                "enc": "fOTSDeSmiAMF_4GMF3idK0HPMqRDtCEDHBuaeyMbDxI",
+                "ciphertext": "AAAAAAAAAAAAAAAAAAAAAA"
+              }
+            }
+          ],
+          "destroy": []
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2PollResponse",
+      "name": "a response with version 1",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "in_reply_to": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "host_id": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c",
+        "status": "active",
+        "next_poll_after": 10,
+        "desired": {
+          "revision": 13,
+          "run": [
+            {
+              "machine_id": "0d9e8f7a-6b5c-4d3e-8f2a-1b0c9d8e7f6a",
+              "job_id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-07T09:22:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 4096,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "main"
+              },
+              "publish": {
+                "branch": "kete/job/1b4d7e2a",
+                "open_mr": true,
+                "authorized": false
+              }
+            },
+            {
+              "machine_id": "6e7f8a9b-0c1d-4e2f-8a3b-4c5d6e7f8a9b",
+              "job_id": "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+              "image": "registry.corp.example/kete/kete-job@sha256:1c6e9b2f5a8d3c0e7b4a1f8c5d2e9b6a3f0c7d4e1b8a5f2c9e6d3b0a7f4c1e8d",
+              "deadline": "2026-10-07T09:25:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 4096,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/ledger",
+                "base_ref": "release/2026.10"
+              },
+              "publish": {
+                "branch": "kete/job/c0ffee42",
+                "open_mr": false,
+                "authorized": true
+              }
+            },
+            {
+              "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+              "job_id": "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-07T09:40:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 4096,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "main"
+              },
+              "config": {
+                "kem_id": 32,
+                "kdf_id": 1,
+                "aead_id": 1,
+                "enc": "fOTSDeSmiAMF_4GMF3idK0HPMqRDtCEDHBuaeyMbDxI",
+                "ciphertext": "AAAAAAAAAAAAAAAAAAAAAA"
+              }
+            }
+          ],
+          "destroy": []
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2ErrorResponse",
+      "name": "contract mismatch",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "forbidden",
+          "message": "This host is enrolled under job-host-v1.",
+          "request_id": "req_5c2e9a1b",
+          "reason": "contract_mismatch"
+        }
+      }
+    }
+  ]
+}

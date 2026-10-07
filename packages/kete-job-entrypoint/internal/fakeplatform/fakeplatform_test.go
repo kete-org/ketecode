@@ -287,15 +287,54 @@ func readVector(t *testing.T) (harnessVector, []byte) {
 	return v, data
 }
 
-func TestHarnessVectorChecksum(t *testing.T) {
-	_, data := readVector(t)
+// jobsVectors are the jobs-v1 vectors copied byte for byte from kete-code-platform
+// docs/contracts/test-vectors/jobs-v1/, in SHA256SUMS order (regenerate with
+// `shasum -a 256 claim-harness-code.json claim-runtime-repo.json result-boundary.json`).
+var jobsVectors = []string{"claim-harness-code.json", "claim-runtime-repo.json", "result-boundary.json"}
+
+func TestJobsVectorsChecksums(t *testing.T) {
 	sums, err := os.ReadFile(filepath.Join("testdata", "jobs-v1", "SHA256SUMS"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(data)
-	if want := hex.EncodeToString(sum[:]) + "  claim-harness-code.json\n"; string(sums) != want {
-		t.Errorf("SHA256SUMS = %q, want %q (the vector drifted from the platform's copy)", sums, want)
+	var want strings.Builder
+	for _, name := range jobsVectors {
+		data, err := os.ReadFile(filepath.Join("testdata", "jobs-v1", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		want.WriteString(hex.EncodeToString(sum[:]) + "  " + name + "\n")
+	}
+	if string(sums) != want.String() {
+		t.Errorf("SHA256SUMS = %q, want %q (a vector drifted from the platform's copy)", sums, want.String())
+	}
+	entries, err := os.ReadDir(filepath.Join("testdata", "jobs-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != len(jobsVectors)+1 {
+		t.Errorf("testdata/jobs-v1 holds %d entries, want the %d vectors and SHA256SUMS", len(entries), len(jobsVectors))
+	}
+}
+
+// TestJobsVectorsMatchPlatform compares the copies with the platform's files byte for byte when
+// KETE_PLATFORM_JOBS_VECTORS points at kete-code-platform's docs/contracts/test-vectors/jobs-v1
+// (a local cross-repo check; CI has only this repository).
+func TestJobsVectorsMatchPlatform(t *testing.T) {
+	dir := os.Getenv("KETE_PLATFORM_JOBS_VECTORS")
+	if dir == "" {
+		t.Skip("KETE_PLATFORM_JOBS_VECTORS not set")
+	}
+	for _, name := range jobsVectors {
+		ours, err1 := os.ReadFile(filepath.Join("testdata", "jobs-v1", name))
+		theirs, err2 := os.ReadFile(filepath.Join(dir, name))
+		if err1 != nil || err2 != nil {
+			t.Fatal(err1, err2)
+		}
+		if string(ours) != string(theirs) {
+			t.Errorf("%s differs from the platform's copy", name)
+		}
 	}
 }
 
