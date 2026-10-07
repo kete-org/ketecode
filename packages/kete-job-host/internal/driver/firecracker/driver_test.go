@@ -15,6 +15,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/config"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostguard"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostnet"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/image"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/seal"
@@ -221,5 +222,23 @@ func TestCheckIsolation(t *testing.T) {
 	}
 	if err := d2.Start(context.Background(), driver.Spec{MachineID: vmID}); err == nil {
 		t.Fatal("Start ran with isolation lost")
+	}
+}
+
+// TestInitRefusesInAContainer: the host guard runs first in Init; a refusal writes nothing (no
+// state directories, no cgroup, no table).
+func TestInitRefusesInAContainer(t *testing.T) {
+	d, root := testDriver(t)
+	for _, dir := range []string{d.vmsDir, d.jailBase} {
+		_ = os.RemoveAll(dir)
+	}
+	d.o.HostGuard = func() error { return hostguard.ErrContainer }
+	if err := d.Init(context.Background()); !errors.Is(err, hostguard.ErrContainer) {
+		t.Fatalf("Init: %v", err)
+	}
+	for _, p := range []string{d.vmsDir, d.jailBase, filepath.Join(root, "cgroup")} {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("%s was created", p)
+		}
 	}
 }

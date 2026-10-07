@@ -115,7 +115,12 @@ func testConfig() layout.Config {
 	// present the dedicated reaper's set-up instead; guestTree.apply presents a VM's.
 	c.Proc1Cmdline = filepath.Join(kernelTreeDir, "cmdline")
 	c.MountInfo = filepath.Join(kernelTreeDir, "mountinfo")
-	c.MarkerFiles = []string{filepath.Join(kernelTreeDir, ".dockerenv"), filepath.Join(kernelTreeDir, "run", ".containerenv")}
+	c.Proc1Environ = filepath.Join(kernelTreeDir, "environ")
+	c.SelfStat = filepath.Join(kernelTreeDir, "stat") // the reaper (PID 1) as the parent
+	c.MarkerFiles = nil
+	for _, m := range hostprofile.ContainerMarkerFiles {
+		c.MarkerFiles = append(c.MarkerFiles, filepath.Join(kernelTreeDir, m))
+	}
 	c.NSInode = func(name string) (uint64, error) {
 		if name == "user" {
 			return hostprofile.InitUserNSIno, nil
@@ -134,6 +139,12 @@ func writeKernelTree() error {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(kernelTreeDir, "cmdline"), []byte("/proc/self/exe\x00"+hostprofile.DedicatedInitArg+"\x00"), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(kernelTreeDir, "environ"), []byte("PATH=/usr/sbin:/usr/bin:/sbin:/bin\x00"), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(kernelTreeDir, "stat"), []byte("2 (kete-job-entry) S 1 2 2 0 -1\n"), 0o644); err != nil {
 		return err
 	}
 	mi := "801 640 0:64 / / rw,relatime - overlay overlay rw\n802 801 0:66 / /proc rw,nosuid,nodev,noexec - proc proc rw\n" +

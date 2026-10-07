@@ -110,3 +110,44 @@ func TestLockFlyRefusesOddTypes(t *testing.T) {
 		t.Errorf("api is a symlink: %v", err)
 	}
 }
+
+// TestFlyPresent: the read-only presence check: no directory or no socket is ErrFlyAPIMissing, a
+// file in either place is an error, a directory with its socket passes; nothing is changed.
+func TestFlyPresent(t *testing.T) {
+	d := filepath.Join(t.TempDir(), ".fly")
+	if err := FlyPresent(d); !errors.Is(err, ErrFlyAPIMissing) {
+		t.Errorf("no directory: %v", err)
+	}
+	if err := os.WriteFile(d, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := FlyPresent(d); err == nil || errors.Is(err, ErrFlyAPIMissing) {
+		t.Errorf("a file: %v", err)
+	}
+	os.Remove(d)
+	if err := os.Mkdir(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := FlyPresent(d); !errors.Is(err, ErrFlyAPIMissing) {
+		t.Errorf("no socket: %v", err)
+	}
+	api := filepath.Join(d, "api")
+	if err := os.WriteFile(api, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := FlyPresent(d); err == nil || errors.Is(err, ErrFlyAPIMissing) {
+		t.Errorf("a file for the socket: %v", err)
+	}
+	os.Remove(api)
+	ln, err := net.Listen("unix", api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if err := FlyPresent(d); err != nil {
+		t.Errorf("directory and socket: %v", err)
+	}
+	if fi, err := os.Stat(d); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Errorf("the directory changed: %v %v", fi.Mode(), err)
+	}
+}

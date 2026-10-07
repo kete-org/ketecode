@@ -21,6 +21,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver/dedicated"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver/firecracker"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostguard"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostnet"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/image"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/state"
@@ -102,6 +103,10 @@ func versionOutput(bin string) (string, error) {
 // (P4): Firecracker and jailer versions, the guest kernel's digest. Dedicated (P5): loop devices,
 // the reset and whether this generation already ran its job.
 func driverChecks(cfg config.Config, check func(string, error), note func(string, string)) {
+	if cfg.Driver == contract.DriverFirecracker || cfg.Driver == contract.DriverDedicated {
+		// The drivers' Init refuses the same way (internal/hostguard).
+		check("on the host itself (not a container)", hostguard.Run(hostguard.Default()))
+	}
 	switch {
 	case cfg.Driver == contract.DriverFirecracker && cfg.FC != nil:
 		firecrackerChecks(cfg, check)

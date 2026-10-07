@@ -217,7 +217,8 @@ AppArmor kept it off the node's sysctls. Virtio and DMI signals can't tell a con
 node from the VM, so the guard uses:
 
 - `microvm`, `cloudvm`: the entrypoint is in the kernel's **initial user and PID namespaces**
-  (`/proc/self/ns/{user,pid}` have the fixed inode numbers `0xEFFFFFFD`, `0xEFFFFFFC`) and PID 1 is
+  (`/proc/self/ns/{user,pid}`, checked to be on nsfs, have the fixed inode numbers `0xEFFFFFFD`,
+  `0xEFFFFFFC`) and PID 1 is
   kete-job-init (`init`): kete-job-init is then the kernel's own init, so the kernel is the VM's.
   A container is never in the initial PID namespace (one sharing the host's has the host's init as
   PID 1). kete-job-init runs the same check first (step `init_kernel`).
@@ -227,16 +228,26 @@ node from the VM, so the guard uses:
   exactly `[<exe>, __dedicated-init]` (the driver's reaper); no mount point at or under `/etc`,
   `/dev/termination-log`, `/run/secrets` or `/var/run/secrets` (Docker, Podman and every CRI
   runtime bind-mount `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf`; the reaper writes them as
-  files); no `/.dockerenv` or `/run/.containerenv`.
+  files); no `/.dockerenv`, `/run/.containerenv`, `/run/systemd/container` or
+  `/run/host/container-manager`; no `container=` in PID 1's environment; the reaper is this
+  process's parent and PID 1 isn't this program (`/proc/self/exe`).
 
-A namespace or mount table that can't be read refuses too. Boot IDs aren't used: on `dedicated`
+A namespace, the mount table, PID 1's environment or this process's stat that can't be read
+refuses too. kete-job-host has the matching guard on its side (`internal/hostguard`): its
+firecracker and dedicated drivers refuse to start in a container. Boot IDs aren't used: on `dedicated`
 the kernel *is* the host's, and for the VM profiles the initial-namespace check needs nothing from
 the host. (The future `kubevm` profile, where the container runs in a PID namespace inside a Kata
 guest, compares its boot ID with the node's instead: enterprise runtime spec, "S0 findings".) The
 guard stops the image running where it doesn't belong (a Docker or Kubernetes container named
 `dedicated` or a VM profile); it is not a defence against a host administrator deliberately
-imitating the reaper, who owns the kernel anyway. `fly` is unchanged (Fly Machines are
-Firecracker VMs; its guard is below).
+imitating the reaper, who owns the kernel anyway.
+
+`fly` has **no** shared-kernel guard yet: whether the entrypoint on a Fly Machine is in the
+kernel's initial namespaces (so `OwnKernel` could apply) is unverified without a real Fly machine,
+a documented follow-up. What it does have, before anything is written: Fly's API directory and
+socket (`/.fly`, `/.fly/api`) must exist (`setup.FlyPresent`, read-only; `setup_fly` `missing`),
+so a container with Fly's variables alone stops before the sysctls. A container that also
+presents a fake `/.fly/api` socket is not caught.
 
 **Host-boundary probe** (step `host_boundary`, every profile but `fly`). As root, before the
 network guard installs the in-guest rules, so it proves the host's own isolation (the host

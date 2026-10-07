@@ -56,6 +56,20 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 	if !ok {
 		return exit(log, 1)
 	}
+	// Fly has no shared-kernel guard yet (a follow-up, to verify on a Fly machine): at least its API
+	// directory and socket must be there before anything is written, so Fly's variables alone in
+	// a container never reach the sysctls. The Fly guard proper (locking, the probe) runs below.
+	if profile == hostprofile.Fly {
+		if err := setup.FlyPresent(cfg.FlyDir); err != nil {
+			log.Start(pl.StepFly)
+			if errors.Is(err, setup.ErrFlyAPIMissing) {
+				log.Fail(pl.StepFly, pl.CodeMissing)
+			} else {
+				log.FailErr(pl.StepFly, pl.CodeFailed, err)
+			}
+			return exit(log, 1)
+		}
+	}
 	if !step(pl.StepBoot, setup.Self) {
 		log.Exit(2)
 		return 2
@@ -215,7 +229,8 @@ func signalPaths(cfg layout.Config) hostprofile.Paths {
 
 func kernelPaths(cfg layout.Config) hostprofile.KernelPaths {
 	return hostprofile.KernelPaths{
-		NSDir: cfg.NSDir, Proc1Cmdline: cfg.Proc1Cmdline, MountInfo: cfg.MountInfo, MarkerFiles: cfg.MarkerFiles, NSInode: cfg.NSInode,
+		NSDir: cfg.NSDir, Proc1Cmdline: cfg.Proc1Cmdline, Proc1Environ: cfg.Proc1Environ, SelfStat: cfg.SelfStat, SelfExe: cfg.SelfExe,
+		MountInfo: cfg.MountInfo, MarkerFiles: cfg.MarkerFiles, NSInode: cfg.NSInode,
 	}
 }
 

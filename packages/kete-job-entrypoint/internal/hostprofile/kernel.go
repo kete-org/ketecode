@@ -2,6 +2,8 @@ package hostprofile
 
 import (
 	"bytes"
+	"errors"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -21,8 +23,10 @@ import (
 //	                  dedicated driver; the host is single-tenant and rebuilt after the job). The
 //	                  guard proves the dedicated driver set the job up: the initial user namespace,
 //	                  a PID namespace that isn't the initial one, PID 1 the driver's reaper
-//	                  (argv exactly [<exe>, DedicatedInitArg]), and none of the marks container
-//	                  runtimes leave (RuntimeMountPrefixes in the mount table, ContainerMarkerFiles).
+//	                  (argv exactly [<exe>, DedicatedInitArg], not this program) and this process's
+//	                  parent, and none of the marks container runtimes leave (RuntimeMountPrefixes
+//	                  in the mount table, ContainerMarkerFiles, `container=` in PID 1's
+//	                  environment).
 //
 // The guard defends against running the image where it doesn't belong (a Kubernetes or Docker
 // container with the dedicated or a VM profile, which in S0 changed a node's sysctls); it is not a
@@ -47,14 +51,18 @@ const DedicatedInitArg = "__dedicated-init"
 // point equal to a prefix or below it counts.
 var RuntimeMountPrefixes = []string{"/etc", "/dev/termination-log", "/run/secrets", "/var/run/secrets"}
 
-// ContainerMarkerFiles are files container runtimes leave in a container's root (Docker's, Podman's).
-var ContainerMarkerFiles = []string{"/.dockerenv", "/run/.containerenv"}
+// ContainerMarkerFiles are files container managers leave in a container's root: Docker's,
+// Podman's, and systemd's container interface (/run/systemd/container, /run/host/container-manager).
+var ContainerMarkerFiles = []string{"/.dockerenv", "/run/.containerenv", "/run/systemd/container", "/run/host/container-manager"}
 
 // Kernel is what the machine shows about whose kernel the entrypoint runs in (GatherKernel).
 type Kernel struct {
 	UserNSInitial bool     // the kernel's initial user namespace
 	PIDNSInitial  bool     // the kernel's initial PID namespace
 	PID1Args      []string // PID 1's argv (nil when unreadable)
+	PID1Env       bool     // PID 1's environment sets `container=` (systemd's container interface)
+	PPID          int      // this process's parent
+	SelfExe       string   // this process's executable
 	RuntimeMount  string   // the first mount point under RuntimeMountPrefixes, or ""
 	MarkerFile    bool     // one of ContainerMarkerFiles exists
 }
@@ -68,7 +76,33 @@ func OwnKernel(k Kernel) bool { return k.UserNSInitial && k.PIDNSInitial }
 func DedicatedReaper(k Kernel) bool {
 	return k.UserNSInitial && !k.PIDNSInitial &&
 		len(k.PID1Args) == 2 && k.PID1Args[1] == DedicatedInitArg &&
+		k.PID1Args[0] != k.SelfExe && path.Base(k.PID1Args[0]) != path.Base(k.SelfExe) &&
+		k.PPID == 1 && !k.PID1Env &&
 		k.RuntimeMount == "" && !k.MarkerFile
+}
+
+// ContainerEnv reports whether /proc/<pid>/environ content sets a non-empty `container=`.
+func ContainerEnv(environ []byte) bool {
+	for _, kv := range bytes.Split(environ, []byte{0}) {
+		if v, ok := bytes.CutPrefix(kv, []byte("container=")); ok && len(v) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// ParentPID is the ppid field of /proc/<pid>/stat content (the fourth field, counted after the
+// command's closing parenthesis), or an error.
+func ParentPID(stat []byte) (int, error) {
+	i := bytes.LastIndexByte(stat, ')')
+	if i < 0 {
+		return 0, errors.New("hostprofile: malformed stat")
+	}
+	f := strings.Fields(string(stat[i+1:]))
+	if len(f) < 2 {
+		return 0, errors.New("hostprofile: malformed stat")
+	}
+	return strconv.Atoi(f[1])
 }
 
 // ParseArgs splits /proc/<pid>/cmdline content (NUL-terminated arguments) into argv.

@@ -94,3 +94,21 @@ deliberately imitates the reaper; that person owns the kernel anyway.
   have `CONFIG_NAMESPACES`, `CONFIG_PID_NS`, `CONFIG_USER_NS`).
 - Not runnable locally (macOS, no Docker by instruction): Linux-only tests rely on CI. A real
   dedicated host and a real Firecracker guest with the real image (kvm-test.sh) were not run.
+
+## Review amendments (2026-10-07, independent review of PR #19)
+- **fly:** no shared-kernel guard yet (whether the entrypoint on a Fly Machine is in the initial
+  namespaces can't be verified here; follow-up). Added: a read-only presence check of `/.fly` and
+  `/.fly/api` (`setup.FlyPresent`) right after `setup_host`, before any write, so Fly's variables
+  alone in a container never reach the sysctls (`setup_fly` `missing`). A container that also
+  fakes the socket is not caught.
+- **Host side:** `kete-job-host/internal/hostguard`: the firecracker and dedicated drivers' `Init`
+  (first step) and `doctor` refuse unless the agent is in the initial user and PID namespaces and
+  no container marker is present (`/.dockerenv`, `/run/.containerenv`, `/run/systemd/container`,
+  `/run/host/container-manager`, `container=` in `/proc/1/environ`).
+- **Coupling:** `initarg_test.go` (kete-job-host) reads `DedicatedInitArg` from the entrypoint's
+  source; kete-job-host.yml triggers on that file.
+- **Nits:** dedicated also requires the reaper as parent (ppid 1), PID 1 not this program, no
+  `container=` in PID 1's environment, the systemd marker files; nsfs verified by statfs
+  `NSFS_MAGIC`; kete-job-init opens the console before its guard.
+- AC7: host guard refuses in container facts and before any write in `Init` (unit tests).
+- AC8: fly without `/.fly/api` stops before `boot`/`setup_sysctl` (itest).

@@ -58,6 +58,17 @@ applies the schemas' required fields, nulls and strict objects), the v2 signatur
 
 ## Security model
 
+- **On the host itself, never in a container** (`internal/hostguard`; spike S0). The firecracker
+  and dedicated drivers write the host's kernel state (the host nftables table, cgroups, loop
+  devices; on a dedicated host the job writes the host's sysctls), so `Init` first refuses unless
+  the agent is in the kernel's initial user and PID namespaces (nsfs inode numbers `0xEFFFFFFD`,
+  `0xEFFFFFFC`, checked to be on nsfs) and no container marker is present (`/.dockerenv`,
+  `/run/.containerenv`, `/run/systemd/container`, `/run/host/container-manager`, `container=` in
+  PID 1's environment). `doctor` reports the same check. It stops a mistaken install in a
+  privileged container or DaemonSet; it is not a defence against an administrator deliberately
+  disguising one. The job entrypoint has the matching guard inside the job (its README
+  "Shared-kernel guard"), which also requires the dedicated reaper's argv `__dedicated-init`
+  (`dedicated.InitArg`; `initarg_test.go` fails if the two modules disagree).
 - **Pull only, signed, replay-protected.** Every request is an HTTPS `POST` signed with the host's
   Ed25519 key under the contract's fixed RFC 9421 profile (`created`, `expires` = +60 s, a fresh
   16-byte nonce). No bearer token exists.

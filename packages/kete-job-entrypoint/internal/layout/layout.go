@@ -53,6 +53,9 @@ type Config struct {
 	// these elsewhere, and only they set NSInode (nil: stat NSDir/<name>).
 	NSDir        string
 	Proc1Cmdline string
+	Proc1Environ string
+	SelfStat     string
+	SelfExe      string
 	MountInfo    string
 	MarkerFiles  []string
 	NSInode      func(name string) (uint64, error)
@@ -118,8 +121,11 @@ func Default() Config {
 
 		NSDir:        "/proc/self/ns",
 		Proc1Cmdline: "/proc/1/cmdline",
+		Proc1Environ: "/proc/1/environ",
+		SelfStat:     "/proc/self/stat",
+		SelfExe:      "/proc/self/exe",
 		MountInfo:    "/proc/self/mountinfo",
-		MarkerFiles:  []string{"/.dockerenv", "/run/.containerenv"},
+		MarkerFiles:  []string{"/.dockerenv", "/run/.containerenv", "/run/systemd/container", "/run/host/container-manager"},
 
 		PortKete: 81, PortTool: 82, PortRoot: 83,
 

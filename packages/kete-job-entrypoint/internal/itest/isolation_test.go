@@ -151,13 +151,19 @@ func TestIsolationProbeDetects(t *testing.T) {
 }
 
 // TestFlyGuardMissingAPISocket: on Fly (OnFly) with no /.fly/api, setup fails closed before
-// claim with setup_fly "missing".
+// claim with setup_fly "missing", and before anything is written (no sysctl or /proc step: Fly's
+// variables alone in a container never reach the host's sysctls).
 func TestFlyGuardMissingAPISocket(t *testing.T) {
 	withBoot(t, func(v *bootenv.Values) { v.OnFly = true })
 	r := runJob(t, fakeplatform.Knobs{Prompt: "lifecycle"}, func(c *layout.Config) { c.FlyDir = "/run/kete-it-nofly/.fly" })
 	zeroClaims(t, r)
 	if !phaseLine(r.stdout, `"step":"setup_fly","event":"failed","code":"missing"`) {
 		t.Errorf("no setup_fly missing line:\n%s", r.stdout)
+	}
+	for _, step := range []string{"boot", "setup_users", "setup_sysctl", "setup_proc"} {
+		if phaseLine(r.stdout, `"step":"`+step+`"`) {
+			t.Errorf("step %s ran before the Fly presence check refused:\n%s", step, r.stdout)
+		}
 	}
 	// A Fly directory without its socket fails the same way, even without Fly's variables.
 	withBoot(t, nil)

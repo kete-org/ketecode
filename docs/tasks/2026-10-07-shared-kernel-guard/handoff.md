@@ -10,3 +10,9 @@
 - Open: run `kete-job-host scripts/kvm-test.sh` (real dedicated + Firecracker with the real image)
   to confirm the guard passes on real hosts; decide whether `fly` should also require the initial
   PID namespace once it can be verified on a Fly machine.
+
+## 2026-10-07 claude (subagent), review round
+- Done: the review's should-fixes and nits (spec "Review amendments").
+- Open: fly's own shared-kernel guard (verify on a Fly machine whether the entrypoint is in the
+  initial namespaces, then apply `OwnKernel`); real dedicated host + Firecracker with the real
+  image (`kvm-test.sh`) still not run.

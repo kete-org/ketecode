@@ -23,6 +23,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/config"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostguard"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostnet"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/testroot"
 )
@@ -73,6 +74,8 @@ type entrypointReport struct {
 	PIDNS         uint64   `json:"pid_ns"`
 	RuntimeMounts []string `json:"runtime_mounts"`
 	MarkerFiles   []string `json:"marker_files"`
+	PPID          int      `json:"ppid"`
+	PID1Env       string   `json:"pid1_env"`
 }
 
 func fakeEntrypoint() int {
@@ -133,7 +136,13 @@ func fakeEntrypoint() int {
 			}
 		}
 	}
-	for _, f := range []string{"/.dockerenv", "/run/.containerenv"} {
+	r.PPID = os.Getppid()
+	if b, err := os.ReadFile("/proc/1/environ"); err == nil {
+		r.PID1Env = strings.ReplaceAll(strings.TrimSuffix(string(b), "\x00"), "\x00", " ")
+	} else {
+		r.PID1Env = "unreadable: " + err.Error()
+	}
+	for _, f := range []string{"/.dockerenv", "/run/.containerenv", "/run/systemd/container", "/run/host/container-manager"} {
 		if _, err := os.Lstat(f); err == nil {
 			r.MarkerFiles = append(r.MarkerFiles, f)
 		}
@@ -417,7 +426,8 @@ func TestJobRunsAndExits(t *testing.T) {
 	}
 	// What the entrypoint's shared-kernel guard requires of a dedicated job (kete-job-entrypoint
 	// hostprofile.DedicatedReaper): the initial user namespace, a PID namespace of its own, the
-	// reaper as PID 1 with argv exactly [<exe>, InitArg], no container-runtime mount or marker.
+	// reaper as PID 1 with argv exactly [<exe>, InitArg] and as the entrypoint's parent, no
+	// container-runtime mount or marker, no `container=` in PID 1's environment.
 	const initUserNS, initPIDNS = 0xEFFFFFFD, 0xEFFFFFFC
 	switch {
 	case r.UserNS != initUserNS:
@@ -430,6 +440,10 @@ func TestJobRunsAndExits(t *testing.T) {
 		t.Errorf("container-runtime mount points %q", r.RuntimeMounts)
 	case len(r.MarkerFiles) != 0:
 		t.Errorf("container marker files %q", r.MarkerFiles)
+	case r.PPID != 1:
+		t.Errorf("the entrypoint's parent is %d, want the reaper (PID 1)", r.PPID)
+	case strings.HasPrefix(r.PID1Env, "unreadable") || strings.Contains(" "+r.PID1Env, " container="):
+		t.Errorf("PID 1's environment %q", r.PID1Env)
 	}
 	// The cgroup limits are on the machine's cgroup.
 	for _, f := range []struct{ name, want string }{{"cpu.max", "100000 100000"}, {"memory.max", "536870912"}, {"pids.max", "4096"}} {
@@ -543,5 +557,34 @@ func TestReaperRefusesOutsideItsNamespace(t *testing.T) {
 	var ee *exec.ExitError
 	if !errors.As(err, &ee) || ee.ExitCode() != 1 || !bytes.Contains(out, []byte("PID 1")) {
 		t.Fatalf("%v: %s", err, out)
+	}
+}
+
+// TestInitRefusesInAContainer: the host guard runs first in Init; a refusal writes nothing (no
+// machines directory, no parent cgroup, no table).
+func TestInitRefusesInAContainer(t *testing.T) {
+	root := t.TempDir()
+	f := config.File{
+		PlatformURL: "https://portal.kete.example", Driver: contract.DriverDedicated, Slots: 1, Reset: contract.ResetProviderRebuild,
+		Generation: "g-test-1", StateDir: filepath.Join(root, "state"), Resolvers: []string{"1.1.1.1"},
+		Dedicated: &config.DedicatedFile{GuestNetwork: "10.231.0.0/30", MinFreeGiB: 1, PidsMax: 4096},
+	}
+	raw, _ := json.Marshal(f)
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := New(Options{Config: cfg, Images: fixedImages{"/nonexistent"}, Nft: fakeTable{}, CgroupRoot: filepath.Join(root, "cgroup"),
+		HostGuard: func() error { return hostguard.ErrContainer }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Init(context.Background()); !errors.Is(err, hostguard.ErrContainer) {
+		t.Fatalf("Init: %v", err)
+	}
+	for _, p := range []string{d.dir, filepath.Join(root, "cgroup")} {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("%s was created", p)
+		}
 	}
 }

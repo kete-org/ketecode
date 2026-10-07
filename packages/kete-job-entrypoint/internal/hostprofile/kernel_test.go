@@ -60,8 +60,10 @@ func capabilityPod() Kernel {
 	return Kernel{UserNSInitial: true, PID1Args: ParseArgs([]byte("/bin/sh\x00-c\x00exec /usr/local/libexec/kete/kete-job-entrypoint --config-fd 0\x00")), RuntimeMount: RuntimeMountIn(mountsPod)}
 }
 
+const entrypointExe = "/usr/local/libexec/kete/kete-job-entrypoint"
+
 func dedicatedKernel() Kernel {
-	return Kernel{UserNSInitial: true, PID1Args: ParseArgs([]byte("/proc/self/exe\x00" + DedicatedInitArg + "\x00")), RuntimeMount: RuntimeMountIn(mountsDedicated)}
+	return Kernel{UserNSInitial: true, PID1Args: ParseArgs([]byte("/proc/self/exe\x00" + DedicatedInitArg + "\x00")), PPID: 1, SelfExe: entrypointExe, RuntimeMount: RuntimeMountIn(mountsDedicated)}
 }
 
 func vmKernel() Kernel {
@@ -124,6 +126,10 @@ func TestGuardRules(t *testing.T) {
 		"PID 1 with extra args":   func(k *Kernel) { k.PID1Args = append(k.PID1Args, "x") },
 		"a runtime mount":         func(k *Kernel) { k.RuntimeMount = "/etc/hosts" },
 		"a container marker file": func(k *Kernel) { k.MarkerFile = true },
+		"container= for PID 1":    func(k *Kernel) { k.PID1Env = true },
+		"parent isn't PID 1":      func(k *Kernel) { k.PPID = 7 },
+		"PID 1 is this program":   func(k *Kernel) { k.PID1Args = []string{entrypointExe, DedicatedInitArg} },
+		"PID 1 is a copy of it":   func(k *Kernel) { k.PID1Args = []string{"/tmp/kete-job-entrypoint", DedicatedInitArg} },
 	} {
 		k := dedicatedKernel()
 		mod(&k)
@@ -133,5 +139,23 @@ func TestGuardRules(t *testing.T) {
 	}
 	if OwnKernel(Kernel{PIDNSInitial: true}) || OwnKernel(Kernel{UserNSInitial: true}) {
 		t.Error("OwnKernel needs both initial namespaces")
+	}
+}
+
+func TestContainerEnvAndParentPID(t *testing.T) {
+	for in, want := range map[string]bool{"": false, "PATH=/bin\x00": false, "PATH=/bin\x00container=docker\x00": true, "container=\x00": false, "xcontainer=1\x00": false} {
+		if ContainerEnv([]byte(in)) != want {
+			t.Errorf("ContainerEnv(%q) != %v", in, want)
+		}
+	}
+	for in, want := range map[string]int{"12 (kete-job-entry) S 1 12 12 0": 1, "40 (a) b) R 39 40": 39} {
+		if got, err := ParentPID([]byte(in)); err != nil || got != want {
+			t.Errorf("ParentPID(%q) = %d, %v", in, got, err)
+		}
+	}
+	for _, in := range []string{"", "12 (x", "12 (x) S", "12 (x) S y"} {
+		if _, err := ParentPID([]byte(in)); err == nil {
+			t.Errorf("ParentPID(%q) accepted", in)
+		}
 	}
 }

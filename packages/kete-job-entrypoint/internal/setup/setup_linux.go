@@ -134,6 +134,35 @@ func LockFly(dir string, onFly bool) error {
 	return nil
 }
 
+// FlyPresent is LockFly's presence check alone, reading only: Fly's API directory and each of its
+// API sockets exist (ErrFlyAPIMissing otherwise; not a directory or not a socket is an error). The
+// entrypoint runs it on the fly profile before it writes anything, so a container claiming to be
+// a Fly machine on Fly's variables alone never gets as far as the sysctls.
+func FlyPresent(dir string) error {
+	var st unix.Stat_t
+	if err := unix.Lstat(dir, &st); err != nil {
+		if errors.Is(err, unix.ENOENT) {
+			return ErrFlyAPIMissing
+		}
+		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return fmt.Errorf("%s is not a directory", dir)
+	}
+	for _, name := range FlyAPISockets {
+		if err := unix.Lstat(filepath.Join(dir, name), &st); err != nil {
+			if errors.Is(err, unix.ENOENT) {
+				return ErrFlyAPIMissing
+			}
+			return err
+		}
+		if st.Mode&unix.S_IFMT != unix.S_IFSOCK {
+			return fmt.Errorf("%s/%s is not a socket", dir, name)
+		}
+	}
+	return nil
+}
+
 // OpenDirNoFollow opens an absolute directory path one component at a time from /, refusing a
 // symlink anywhere.
 func OpenDirNoFollow(path string, flags int) (int, error) {

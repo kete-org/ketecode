@@ -59,6 +59,7 @@ func Stage1() {
 	// A panic must never leave PID 1 dead with the machine up (the kernel would panic, and with
 	// `panic=1` on the guest's command line reboot): power off instead.
 	defer powerOffOnPanic()
+	console() // first, so a refusal's phase line reaches the console (again after the mounts)
 	ownKernel(pl.New(os.Stdout))
 	mounted := baseMounts()
 	console()
@@ -129,7 +130,10 @@ func ownKernel(log *pl.Logger) {
 		log.FailErr(pl.StepInitKernel, pl.CodeSharedKernel, err)
 		shutdown(PowerOff)
 	}
-	k, err := hostprofile.GatherKernel(hostprofile.KernelPaths{NSDir: "/proc/self/ns", Proc1Cmdline: "/proc/1/cmdline", MountInfo: "/proc/self/mountinfo"})
+	k, err := hostprofile.GatherKernel(hostprofile.KernelPaths{
+		NSDir: "/proc/self/ns", Proc1Cmdline: "/proc/1/cmdline", Proc1Environ: "/proc/1/environ",
+		SelfStat: "/proc/self/stat", SelfExe: "/proc/self/exe", MountInfo: "/proc/self/mountinfo",
+	})
 	if err != nil {
 		log.FailErr(pl.StepInitKernel, pl.CodeSharedKernel, err)
 		shutdown(PowerOff)

@@ -38,10 +38,13 @@ verified-at: 0ff9212529
   that makes kete-job-init the kernel's init; kete-job-init checks the same first (step
   `init_kernel`, `guestinit.ownKernel`, power off on refusal). dedicated: `DedicatedReaper` =
   initial user ns, non-initial PID ns, `/proc/1/cmdline` exactly `[<exe>, __dedicated-init]`
-  (`DedicatedInitArg` = kete-job-host `dedicated.InitArg`), no mount point at/under `/etc`,
-  `/dev/termination-log`, `/run/secrets`, `/var/run/secrets`, no `/.dockerenv`/`/run/.containerenv`.
-  Inputs are `layout.Config` `NSDir`, `Proc1Cmdline`, `MountInfo`, `MarkerFiles`, `NSInode` (tests
-  only). No boot IDs (dedicated shares the host kernel by design). itest in-process runs fake the
+  (`DedicatedInitArg` = kete-job-host `dedicated.InitArg`, cross-checked by its `initarg_test.go`),
+  PID 1 not this program, ppid 1, no `container=` in `/proc/1/environ`, no mount point at/under
+  `/etc`, `/dev/termination-log`, `/run/secrets`, `/var/run/secrets`, no `ContainerMarkerFiles`
+  (Docker, Podman, systemd's `/run/systemd/container`, `/run/host/container-manager`). nsfs is
+  verified by statfs. Inputs are `layout.Config` `NSDir`, `Proc1Cmdline`, `Proc1Environ`,
+  `SelfStat`, `SelfExe`, `MountInfo`, `MarkerFiles`, `NSInode` (tests only). fly: no guard yet
+  (follow-up); `setup.FlyPresent` (read-only, `/.fly` + `/.fly/api`) runs before any write. No boot IDs (dedicated shares the host kernel by design). itest in-process runs fake the
   dedicated facts (`testConfig`) or a VM's (`guestTree.apply`); `TestBinaryBootSharedKernel` is the
   real refusal; the image e2e runs under a stand-in reaper (`internal/e2e/reaper_test.go`).
 - What is the host-boundary probe? Step `host_boundary` (`entry.hostBoundary`, every profile but
