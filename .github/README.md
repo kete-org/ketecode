@@ -10,6 +10,8 @@
   <a href="https://github.com/kete-org/kete-releases/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/kete-org/kete-releases?label=release&color=6e47f5"></a>
   <a href="https://www.npmjs.com/package/@ketecode/cli"><img alt="npm" src="https://img.shields.io/npm/v/@ketecode/cli?color=6e47f5"></a>
   <a href="https://github.com/kete-org/ketecode/actions/workflows/kete-build.yml"><img alt="CI" src="https://github.com/kete-org/ketecode/actions/workflows/kete-build.yml/badge.svg"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=ketecode.kete-code"><img alt="VS Code Marketplace" src="https://img.shields.io/visual-studio-marketplace/v/ketecode.kete-code?label=VS%20Code&color=6e47f5"></a>
+  <a href="https://open-vsx.org/extension/ketecode/kete-code"><img alt="Open VSX" src="https://img.shields.io/open-vsx/v/ketecode/kete-code?label=Open%20VSX&color=6e47f5"></a>
   <a href="../NOTICE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e47f5"></a>
 </p>
 
@@ -25,6 +27,10 @@ Kete Code is an AI coding agent for your terminal and editor. It reads your proj
 change, edits files, runs your builds and tests with your permission, and tells you honestly what
 it did. Use Claude, GPT, Gemini, a local model or any OpenAI-compatible endpoint, with your own
 keys or through one Kete account.
+
+This repository is the open-source runtime: the agent, the `kete` CLI and the editor extensions,
+under the MIT License and [built on OpenCode](#built-on-opencode). The Kete portal, model gateway
+and other hosted services are run separately and are not part of it.
 
 ```text
 $ kete
@@ -50,6 +56,18 @@ The install scripts check the release's Sigstore signature and SHA-256 checksums
 anything, and never ask for sudo or administrator rights. On Alpine, run `apk add libstdc++ libgcc`
 first. `kete upgrade` updates in place and verifies every download against a pinned signing key.
 Options (`KETE_VERSION`, `KETE_INSTALL_DIR`, …) are on [ketecode.ai/install](https://ketecode.ai/install).
+
+### In your editor
+
+| Editor | Install |
+|---|---|
+| **VS Code** | [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ketecode.kete-code), or `code --install-extension ketecode.kete-code` |
+| **Windsurf, Cursor, VSCodium** | [Open VSX](https://open-vsx.org/extension/ketecode/kete-code): search "Kete Code" in the Extensions view |
+| **JetBrains IDEs** (IntelliJ IDEA, PyCharm, WebStorm, GoLand, … 2024.3+) | coming to the JetBrains Marketplace; until then, the per-OS plugin zips on [the releases](https://github.com/kete-org/ketecode/releases/latest) install with **Settings → Plugins → ⚙ → Install Plugin from Disk…** |
+
+The editor extensions include the `kete` runtime (the JetBrains Marketplace build downloads it on
+first use, after asking, and verifies its signature before running it), so there is nothing else to
+install.
 
 ## Get started
 
@@ -77,7 +95,7 @@ kete login                        # or sign in to a Kete account to use the gate
   OpenAI-compatible server, or the Kete gateway with one sign-in and readable per-request usage.
   The gateway and portal are never required for local use.
 - **Extensible.** MCP servers (`kete mcp`), skills, plugins and multi-step workflows.
-- **One runtime, every surface.** The terminal UI, the VS Code extension (early access) and other
+- **One runtime, every surface.** The terminal UI, the VS Code and JetBrains extensions and other
   clients all talk to the same local `kete` server, so a session started in one continues in
   another.
 - **Unattended and cloud runs.** `kete job run` runs an agent unattended within a budget and a time
@@ -129,7 +147,8 @@ the stricter setting always wins.
 | `packages/cli` | the `kete` command and binary build |
 | `packages/core` | agent loop, tools, sessions, providers, permissions, config |
 | `packages/server`, `packages/tui`, `packages/app` | HTTP server, terminal UI, web UI (used by VS Code) |
-| `packages/kete-vscode` | the VS Code extension |
+| `packages/kete-vscode` | the VS Code extension (also Windsurf, Cursor, VSCodium via Open VSX) |
+| `packages/kete-jetbrains` | the JetBrains plugin (IntelliJ Platform, Kotlin) |
 | `packages/kete-job-*`, `packages/kete-egress`, `packages/kete-root-helper` | cloud job image, entrypoint, egress proxy, tool sandbox helper, self-hosted job host |
 | `packages/kete-tools` | release, distribution, upstream sync and repository checks |
 | `docs/` | [architecture](../docs/architecture.md), [ADRs](../docs/adr/), [release](../docs/release.md), [knowledge base](../docs/context/INDEX.md) |
