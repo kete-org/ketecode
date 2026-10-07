@@ -1,7 +1,7 @@
 ---
 module: job-entrypoint
 paths: [packages/kete-job-entrypoint/**, .github/workflows/kete-job-entrypoint.yml]
-verified-at: 0ff9212529
+verified-at: c377dd3136
 ---
 
 ## Quick answers
