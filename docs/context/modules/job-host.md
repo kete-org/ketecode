@@ -1,7 +1,7 @@
 ---
 module: job-host
 paths: [packages/kete-job-host/**, .github/workflows/kete-job-host.yml, docs/platform/job-host-v1.md]
-verified-at: cd74c80458
+verified-at: 0ff9212529
 ---
 
 ## Quick answers
