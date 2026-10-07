@@ -1,0 +1,75 @@
+{
+  "description": "boundJobRunResult (jobs-v1, additive 2026-10-07; ADR 0025 rule 5): one result as `kete job run --json` wrote it and its bounded form under each boundary. Compare as parsed JSON (key order is not significant). `redacted` cases use a redactor that replaces the whole text with \"[redacted]\" so the vector stays implementation-independent; a real redactor (kete-code KeteRedact, the platform's secret-shape rules) only removes secret shapes. Bounding a bounded result again must change nothing.",
+  "input": {
+    "version": 1,
+    "outcome": "completed",
+    "exit_code": 0,
+    "session_id": "ses_01J9Z8Y7X6W5V4T3S2R1Q0P9N8",
+    "text": "Fixed the race in settlement_test.go by waiting for the ledger flush.",
+    "isolated": true,
+    "branch": "kete/job/5d2e8a41",
+    "worktree": "/work/repo",
+    "directory": "/work/repo",
+    "cost_usd": 0.42,
+    "cost_scope": "family",
+    "duration_ms": 183000,
+    "audit_log": "/var/lib/kete-job/audit.jsonl",
+    "audit_local": true,
+    "denied": [
+      { "action": "shell", "resources": ["curl https://internal.corp/secret"], "message": "Not allowed by the job policy." },
+      { "action": "edit", "resources": ["/work/repo/.gitlab-ci.yml"] },
+      { "action": "shell", "resources": ["rm -rf /"] }
+    ],
+    "message": "done"
+  },
+  "redact": "[redacted]",
+  "cases": [
+    {
+      "name": "full, full (identity)",
+      "boundary": { "summary": "full", "denials": "full", "publish_refs": "send" },
+      "output": {
+        "version": 1, "outcome": "completed", "exit_code": 0, "session_id": "ses_01J9Z8Y7X6W5V4T3S2R1Q0P9N8",
+        "text": "Fixed the race in settlement_test.go by waiting for the ledger flush.", "isolated": true, "branch": "kete/job/5d2e8a41",
+        "worktree": "/work/repo", "directory": "/work/repo", "cost_usd": 0.42, "cost_scope": "family", "duration_ms": 183000,
+        "audit_log": "/var/lib/kete-job/audit.jsonl", "audit_local": true,
+        "denied": [
+          { "action": "shell", "resources": ["curl https://internal.corp/secret"], "message": "Not allowed by the job policy." },
+          { "action": "edit", "resources": ["/work/repo/.gitlab-ci.yml"] },
+          { "action": "shell", "resources": ["rm -rf /"] }
+        ],
+        "message": "done"
+      }
+    },
+    {
+      "name": "the default: none, actions",
+      "boundary": { "summary": "none", "denials": "actions", "publish_refs": "send" },
+      "output": {
+        "version": 1, "outcome": "completed", "exit_code": 0, "session_id": "ses_01J9Z8Y7X6W5V4T3S2R1Q0P9N8",
+        "isolated": true, "branch": "kete/job/5d2e8a41", "cost_usd": 0.42, "cost_scope": "family", "duration_ms": 183000, "audit_local": true,
+        "denied": [ { "action": "shell", "resources": [], "count": 2 }, { "action": "edit", "resources": [], "count": 1 } ],
+        "denied_count": 3
+      }
+    },
+    {
+      "name": "redacted, count",
+      "boundary": { "summary": "redacted", "denials": "count", "publish_refs": "omit" },
+      "output": {
+        "version": 1, "outcome": "completed", "exit_code": 0, "session_id": "ses_01J9Z8Y7X6W5V4T3S2R1Q0P9N8",
+        "text": "[redacted]", "isolated": true, "branch": "kete/job/5d2e8a41", "cost_usd": 0.42, "cost_scope": "family", "duration_ms": 183000,
+        "audit_local": true, "denied": [], "denied_count": 3, "message": "[redacted]"
+      }
+    },
+    {
+      "name": "full, actions",
+      "boundary": { "summary": "full", "denials": "actions", "publish_refs": "send" },
+      "output": {
+        "version": 1, "outcome": "completed", "exit_code": 0, "session_id": "ses_01J9Z8Y7X6W5V4T3S2R1Q0P9N8",
+        "text": "Fixed the race in settlement_test.go by waiting for the ledger flush.", "isolated": true, "branch": "kete/job/5d2e8a41",
+        "worktree": "/work/repo", "directory": "/work/repo", "cost_usd": 0.42, "cost_scope": "family", "duration_ms": 183000,
+        "audit_log": "/var/lib/kete-job/audit.jsonl", "audit_local": true,
+        "denied": [ { "action": "shell", "resources": [], "count": 2 }, { "action": "edit", "resources": [], "count": 1 } ],
+        "denied_count": 3, "message": "done"
+      }
+    }
+  ]
+}

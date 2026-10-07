@@ -67,3 +67,49 @@ func Contains(addr netip.Addr) bool {
 	}
 	return false
 }
+
+// Forbidden is egress configuration v2's forbidden ranges (`docs/platform/egress-config-v2.md`
+// "Forbidden ranges", the platform's EGRESS_FORBIDDEN_RANGES, in the same order): no internal range
+// may touch them, and the upstream proxy's address may not be in one, whether a literal (refused
+// at start-up) or resolved. They reach the node or the cloud control plane, or embed an arbitrary
+// IPv4 address: unspecified and "this network", loopback, link-local and cloud metadata, Azure
+// WireServer, Alibaba metadata, multicast, reserved and broadcast, IPv4-compatible IPv6,
+// IPv4-mapped, NAT64 (RFC 6052 and RFC 8215), 6to4, IPv6 link-local, AWS IPv6 metadata, IPv6
+// multicast. An `internal` range never re-opens them.
+var Forbidden = mustPrefixes(
+	"0.0.0.0/8",
+	"127.0.0.0/8",
+	"169.254.0.0/16",
+	"168.63.129.16/32",
+	"100.100.100.200/32",
+	"224.0.0.0/4",
+	"240.0.0.0/4",
+	"::/96",
+	"::1/128",
+	"::ffff:0:0/96",
+	"64:ff9b::/96",
+	"64:ff9b:1::/48",
+	"2002::/16",
+	"fe80::/10",
+	"fd00:ec2::254/128",
+	"ff00::/8",
+)
+
+// ForbiddenOverlaps reports whether p touches a forbidden range (same address family).
+func ForbiddenOverlaps(p netip.Prefix) bool {
+	for _, f := range Forbidden {
+		if f.Overlaps(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsForbidden reports whether addr is in a forbidden range. An invalid or zoned address is
+// forbidden.
+func IsForbidden(addr netip.Addr) bool {
+	if !addr.IsValid() || addr.Zone() != "" {
+		return true
+	}
+	return ForbiddenOverlaps(netip.PrefixFrom(addr, addr.BitLen()))
+}

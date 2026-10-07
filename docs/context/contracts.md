@@ -232,6 +232,13 @@ the same PR.
 - **Change rule:** config, control and log each carry `version`/`v` 1; a change bumps it and
   updates the README with the code. Limits and registry rules may only be narrowed by
   configuration. Full detail: the `egress` card.
+- **Configuration v2 (enterprise runtime P0c):** `docs/platform/egress-config-v2.md` (byte copy of
+  the platform's doc at `e5e32ee`, kete-org/ketecode-portal#73) adds `upstream` (CONNECT proxy,
+  `proxy_auth_file`/`ca_bundle_file` under `/run/`, `direct`), `internal` CIDR ranges and
+  `host:port` allowlist entries, and the forbidden ranges (`internal/blocked.Forbidden`, checked
+  against the doc). Parser only: `config.ParseV2` (refusals are `*FieldError` naming the field),
+  vector `packages/kete-egress/internal/config/testdata/egress-config-v2/configs.json` with
+  `SHA256SUMS`. `serve`/`nft` still read only v1 (`Parse` refuses version 2) until P2.
 
 ## 6d. Cloud-job entrypoint ↔ platform, and entrypoint ↔ `kete job run` (in-repo + platform)
 
@@ -369,10 +376,10 @@ the same PR.
 
 ## 6e. Job API v1 and the gateway's job-key request shape
 
-- **Doc:** `docs/platform/jobs-v1.md:1` — copied from platform commit `a2e3fbf` (2026-10-02),
-  plus the 2026-10-05 Harness Code hunks applied byte for byte from the platform's #68 branch
-  (`d282821`). Not byte-identical overall: earlier platform edits (error codes 429/503, upload
-  expiry text) were never copied; no check enforces equality. The platform's
+- **Doc:** `docs/platform/jobs-v1.md:1` — after its two-line header, byte-identical to the
+  platform's doc at commit `e5e32ee` (2026-10-07, kete-org/ketecode-portal#73: runtime
+  repositories, ADR 0025; also the 429/503 error codes and upload expiry text it had missed). No
+  check enforces equality of the doc; the vectors are checked (`SHA256SUMS`). The platform's
   `packages/shared/src/api/v1/jobs.ts` is the source of truth. It covers the user routes, the
   container callbacks §6d uses (claim incl. `features`, events incl. `kete_cgroup_extra`, result,
   uploads, finish, clone-done) and the job error codes. No kete-code mirror schema yet: the entrypoint's Go
@@ -424,6 +431,21 @@ the same PR.
   `revision` never decreasing.
 - **Change rule:** a contract change re-copies the doc and all three vectors (regenerate
   `SHA256SUMS`), updates `internal/contract`, the `job-host` card and this section together.
+- **job-host-v2 (enterprise runtime P0c):** `docs/platform/job-host-v2.md` (byte copy of the
+  platform's doc at `e5e32ee`, kete-org/ketecode-portal#73; source of truth
+  `packages/shared/src/api/v1/job-hosts-v2.ts`). v1's rules with tag `kete-job-host-v2`
+  (`sig.V2`), `version: 2` in every body (a response without it is discarded), HPKE label
+  `kete-job-host-v2 sealed-config` (`seal.OpenV2`/`SealV2`), driver `kubernetes` (1–128 slots,
+  `runtime_classes`), profile `kubevm` (`MachineConfig.ValidateV2`), state `publishing`, the
+  publish outcome (reason-by-status, refs gated by `boundary.publish_refs`, branch never gated),
+  and a kubernetes run machine without `repository` refused (`RunMachineV2.ValidateKubernetes` →
+  `config_invalid`). Go types: `packages/kete-job-host/internal/contract/v2.go`, decoded with
+  `contract.Decode` (required fields, nulls, strict objects). Vectors:
+  `packages/kete-job-host/testdata/job-host-v2/{hpke,messages,signatures}.json` + `SHA256SUMS`.
+  Not wired into the agent yet (P1/P2). The jobs-v1 side (claim features `runtime_repo`,
+  `runtime_publish`; `ParseRuntimeClaimResponse`; `BoundRunResult`) is
+  `packages/kete-job-entrypoint/internal/platform/runtime.go`, vectors `claim-runtime-repo.json`
+  and `result-boundary.json` beside `claim-harness-code.json`.
 - **Pending addition (kete-code P4):** machine reason `host_isolation_lost` (destroyed: the host
   table vanished or changed while it ran; the agent fails closed). In `internal/contract` only;
   the platform must add it to `JobHostMachineReason` and its contract before P3.

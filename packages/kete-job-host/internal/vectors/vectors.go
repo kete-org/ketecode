@@ -1,5 +1,6 @@
-// Package vectors loads the shared job-host-v1 test vectors (`testdata/job-host-v1/`, copied
-// byte for byte from kete-code-platform `docs/contracts/test-vectors/job-host-v1/`). Tests only.
+// Package vectors loads the shared job-host-v1 and job-host-v2 test vectors
+// (`testdata/job-host-v1/`, `testdata/job-host-v2/`, copied byte for byte from kete-code-platform
+// `docs/contracts/test-vectors/job-host-v1/` and `…/job-host-v2/`). Tests only.
 package vectors
 
 import (
@@ -9,14 +10,22 @@ import (
 	"runtime"
 )
 
-// Dir is the vectors directory.
-func Dir() string {
+// Dir is the v1 vectors directory.
+func Dir() string { return dir("job-host-v1") }
+
+// DirV2 is the v2 vectors directory.
+func DirV2() string { return dir("job-host-v2") }
+
+func dir(name string) string {
 	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "testdata", "job-host-v1")
+	return filepath.Join(filepath.Dir(file), "..", "..", "testdata", name)
 }
 
-// Files are the vector files, in SHA256SUMS order.
+// Files are the v1 vector files, in SHA256SUMS order.
 var Files = []string{"config-disk.json", "hpke.json", "signatures.json"}
+
+// FilesV2 are the v2 vector files, in SHA256SUMS order.
+var FilesV2 = []string{"hpke.json", "messages.json", "signatures.json"}
 
 // Signatures is signatures.json.
 type Signatures struct {
@@ -146,11 +155,71 @@ type ConfigDisk struct {
 	SHA256Hex string `json:"sha256_hex"`
 }
 
-// Load decodes one vector file into v.
-func Load(name string, v any) error {
-	b, err := os.ReadFile(filepath.Join(Dir(), name))
+// Load decodes one v1 vector file into v.
+func Load(name string, v any) error { return load(Dir(), name, v) }
+
+// LoadV2 decodes one v2 vector file into v.
+func LoadV2(name string, v any) error { return load(DirV2(), name, v) }
+
+func load(dir, name string, v any) error {
+	b, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
 		return err
 	}
 	return json.Unmarshal(b, v)
+}
+
+// ---------------------------------------------------------------- job-host-v2
+
+// SignaturesV2 is v2 signatures.json: v1's keys (the private ones are v1's vector), a v2-signed
+// enroll and poll, refusals, and what a v1 verifier answers for every v2 request.
+type SignaturesV2 struct {
+	Keys struct {
+		Ed25519SeedHex     string `json:"ed25519_seed_hex"`
+		Ed25519Public      string `json:"ed25519_public"`
+		X25519Public       string `json:"x25519_public"`
+		Fingerprint        string `json:"fingerprint"`
+		OtherEd25519Public string `json:"other_ed25519_public"`
+	} `json:"keys"`
+	Requests         []SignedRequest `json:"requests"`
+	V1VerifierReason string          `json:"v1_verifier_reason"`
+	Refusals         []SigRefusal    `json:"refusals"`
+}
+
+// HPKEV2 is v2 hpke.json.
+type HPKEV2 struct {
+	Suite struct {
+		Mode   int `json:"mode"`
+		KemID  int `json:"kem_id"`
+		KdfID  int `json:"kdf_id"`
+		AeadID int `json:"aead_id"`
+	} `json:"suite"`
+	Recipient struct {
+		SKHex  string `json:"sk_hex"`
+		PKHex  string `json:"pk_hex"`
+		Public string `json:"public"`
+	} `json:"recipient"`
+	Cases    []HPKECase `json:"cases"`
+	Refusals []struct {
+		Name     string `json:"name"`
+		Override struct {
+			Info           *string           `json:"info"`
+			Binding        map[string]string `json:"binding"`
+			CiphertextHex  *string           `json:"ciphertext_hex"`
+			RecipientSKHex *string           `json:"recipient_sk_hex"`
+		} `json:"override"`
+	} `json:"refusals"`
+}
+
+// MessageCase is one messages.json case: a value the named Zod schema accepts or refuses.
+type MessageCase struct {
+	Schema string          `json:"schema"`
+	Name   string          `json:"name"`
+	Valid  bool            `json:"valid"`
+	Value  json.RawMessage `json:"value"`
+}
+
+// Messages is v2 messages.json.
+type Messages struct {
+	Cases []MessageCase `json:"cases"`
 }

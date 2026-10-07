@@ -189,85 +189,15 @@ func validate(raw *rawConfig) (*Config, error) {
 	}
 	cfg := &Config{}
 
-	// uids
-	if raw.UIDs == nil {
-		return nil, errors.New("config: uids is required")
-	}
-	uid := func(name string, v *int64) (uint32, error) {
-		if v == nil {
-			return 0, fmt.Errorf("config: uids.%s is required", name)
-		}
-		if *v <= 0 || *v >= 1<<32-1 {
-			return 0, fmt.Errorf("config: uids.%s must be a non-zero uid (got %d)", name, *v)
-		}
-		return uint32(*v), nil
-	}
 	var err error
-	if cfg.UIDs.Proxy, err = uid("proxy", raw.UIDs.Proxy); err != nil {
+	if cfg.UIDs, err = validateUIDs(raw.UIDs); err != nil {
 		return nil, err
 	}
-	if cfg.UIDs.Kete, err = uid("kete", raw.UIDs.Kete); err != nil {
+	if cfg.Ports, err = validatePorts(raw.Ports); err != nil {
 		return nil, err
 	}
-	if cfg.UIDs.Tool, err = uid("tool", raw.UIDs.Tool); err != nil {
+	if cfg.Resolvers, err = validateResolvers(raw.Resolvers); err != nil {
 		return nil, err
-	}
-	u := cfg.UIDs
-	if u.Proxy == u.Kete || u.Proxy == u.Tool || u.Kete == u.Tool {
-		return nil, errors.New("config: uids.proxy, uids.kete and uids.tool must all differ")
-	}
-
-	// ports
-	if raw.Ports == nil {
-		return nil, errors.New("config: ports is required")
-	}
-	cfg.Ports = map[Port]uint16{}
-	seenPort := map[int]bool{}
-	for _, p := range []struct {
-		port Port
-		v    *int
-	}{{PortKete, raw.Ports.Kete}, {PortTool, raw.Ports.Tool}, {PortRoot, raw.Ports.Root}} {
-		if p.v == nil {
-			return nil, fmt.Errorf("config: ports.%s is required", p.port)
-		}
-		if *p.v < 1 || *p.v > 1023 {
-			return nil, fmt.Errorf("config: ports.%s must be a privileged port, 1-1023 (got %d)", p.port, *p.v)
-		}
-		if seenPort[*p.v] {
-			return nil, fmt.Errorf("config: ports must be distinct (%d is used twice)", *p.v)
-		}
-		seenPort[*p.v] = true
-		cfg.Ports[p.port] = uint16(*p.v)
-	}
-
-	// resolvers
-	if len(raw.Resolvers) == 0 {
-		return nil, errors.New("config: resolvers needs at least one resolver")
-	}
-	seenRes := map[netip.AddrPort]bool{}
-	for _, s := range raw.Resolvers {
-		ap, err := netip.ParseAddrPort(s)
-		if err != nil {
-			return nil, fmt.Errorf("config: resolver %q must be an IP literal and a port (e.g. \"[fdaa::3]:53\"): %v", s, err)
-		}
-		a := ap.Addr()
-		if a.Zone() != "" {
-			return nil, fmt.Errorf("config: resolver %q must not carry a zone", s)
-		}
-		if a.Is4In6() {
-			return nil, fmt.Errorf("config: resolver %q must be written as plain IPv4", s)
-		}
-		if a.IsLoopback() || a.IsUnspecified() || a.IsMulticast() {
-			return nil, fmt.Errorf("config: resolver %q must not be loopback, unspecified or multicast", s)
-		}
-		if ap.Port() != ResolverPort {
-			return nil, fmt.Errorf("config: resolver %q must use port %d", s, ResolverPort)
-		}
-		if seenRes[ap] {
-			return nil, fmt.Errorf("config: resolver %q is listed twice", s)
-		}
-		seenRes[ap] = true
-		cfg.Resolvers = append(cfg.Resolvers, ap)
 	}
 
 	// phases
@@ -345,21 +275,120 @@ func validate(raw *rawConfig) (*Config, error) {
 		}
 	}
 
-	// limits (may only be lowered)
-	cfg.Limits = Limits{RegistryRequests: registry.DefaultCap, LogMaxBytes: DefaultLogMaxBytes}
-	if raw.Limits != nil {
-		if v := raw.Limits.RegistryRequests; v != nil {
-			if *v < 1 || *v > registry.DefaultCap {
-				return nil, fmt.Errorf("config: limits.registry_requests must be 1-%d (it may only be lowered; got %d)", registry.DefaultCap, *v)
-			}
-			cfg.Limits.RegistryRequests = *v
-		}
-		if v := raw.Limits.LogMaxBytes; v != nil {
-			if *v < MinLogMaxBytes || *v > DefaultLogMaxBytes {
-				return nil, fmt.Errorf("config: limits.log_max_bytes must be %d-%d (it may only be lowered; got %d)", MinLogMaxBytes, DefaultLogMaxBytes, *v)
-			}
-			cfg.Limits.LogMaxBytes = *v
-		}
+	if cfg.Limits, err = validateLimits(raw.Limits); err != nil {
+		return nil, err
 	}
 	return cfg, nil
+}
+
+// validateUIDs checks uids (v1 and v2).
+func validateUIDs(raw *rawUIDs) (UIDs, error) {
+	var out UIDs
+	if raw == nil {
+		return out, errors.New("config: uids is required")
+	}
+	uid := func(name string, v *int64) (uint32, error) {
+		if v == nil {
+			return 0, fmt.Errorf("config: uids.%s is required", name)
+		}
+		if *v <= 0 || *v >= 1<<32-1 {
+			return 0, fmt.Errorf("config: uids.%s must be a non-zero uid (got %d)", name, *v)
+		}
+		return uint32(*v), nil
+	}
+	var err error
+	if out.Proxy, err = uid("proxy", raw.Proxy); err != nil {
+		return out, err
+	}
+	if out.Kete, err = uid("kete", raw.Kete); err != nil {
+		return out, err
+	}
+	if out.Tool, err = uid("tool", raw.Tool); err != nil {
+		return out, err
+	}
+	if out.Proxy == out.Kete || out.Proxy == out.Tool || out.Kete == out.Tool {
+		return out, errors.New("config: uids.proxy, uids.kete and uids.tool must all differ")
+	}
+	return out, nil
+}
+
+// validatePorts checks ports (v1 and v2).
+func validatePorts(raw *rawPorts) (map[Port]uint16, error) {
+	if raw == nil {
+		return nil, errors.New("config: ports is required")
+	}
+	out := map[Port]uint16{}
+	seenPort := map[int]bool{}
+	for _, p := range []struct {
+		port Port
+		v    *int
+	}{{PortKete, raw.Kete}, {PortTool, raw.Tool}, {PortRoot, raw.Root}} {
+		if p.v == nil {
+			return nil, fmt.Errorf("config: ports.%s is required", p.port)
+		}
+		if *p.v < 1 || *p.v > 1023 {
+			return nil, fmt.Errorf("config: ports.%s must be a privileged port, 1-1023 (got %d)", p.port, *p.v)
+		}
+		if seenPort[*p.v] {
+			return nil, fmt.Errorf("config: ports must be distinct (%d is used twice)", *p.v)
+		}
+		seenPort[*p.v] = true
+		out[p.port] = uint16(*p.v)
+	}
+	return out, nil
+}
+
+// validateResolvers checks resolvers (v1 and v2).
+func validateResolvers(raw []string) ([]netip.AddrPort, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("config: resolvers needs at least one resolver")
+	}
+	var out []netip.AddrPort
+	seenRes := map[netip.AddrPort]bool{}
+	for _, s := range raw {
+		ap, err := netip.ParseAddrPort(s)
+		if err != nil {
+			return nil, fmt.Errorf("config: resolver %q must be an IP literal and a port (e.g. \"[fdaa::3]:53\"): %v", s, err)
+		}
+		a := ap.Addr()
+		if a.Zone() != "" {
+			return nil, fmt.Errorf("config: resolver %q must not carry a zone", s)
+		}
+		if a.Is4In6() {
+			return nil, fmt.Errorf("config: resolver %q must be written as plain IPv4", s)
+		}
+		if a.IsLoopback() || a.IsUnspecified() || a.IsMulticast() {
+			return nil, fmt.Errorf("config: resolver %q must not be loopback, unspecified or multicast", s)
+		}
+		if ap.Port() != ResolverPort {
+			return nil, fmt.Errorf("config: resolver %q must use port %d", s, ResolverPort)
+		}
+		if seenRes[ap] {
+			return nil, fmt.Errorf("config: resolver %q is listed twice", s)
+		}
+		seenRes[ap] = true
+		out = append(out, ap)
+	}
+	return out, nil
+}
+
+// validateLimits applies the defaults and checks limits, which may only be lowered (v1 and v2).
+func validateLimits(raw *rawLimits) (Limits, error) {
+	out := Limits{RegistryRequests: registry.DefaultCap, LogMaxBytes: DefaultLogMaxBytes}
+	if raw == nil {
+		return out, nil
+	}
+	if v := raw.RegistryRequests; v != nil {
+		if *v < 1 || *v > registry.DefaultCap {
+			return out, fmt.Errorf("config: limits.registry_requests must be 1-%d (it may only be lowered; got %d)", registry.DefaultCap, *v)
+		}
+		out.RegistryRequests = *v
+	}
+	if v := raw.LogMaxBytes; v != nil {
+		if *v < MinLogMaxBytes || *v > DefaultLogMaxBytes {
+			return out, fmt.Errorf("config: limits.log_max_bytes must be %d-%d (it may only be lowered; got %d)", MinLogMaxBytes, DefaultLogMaxBytes, *v)
+		}
+		out.LogMaxBytes = *v
+	}
+	return out, nil
 }
