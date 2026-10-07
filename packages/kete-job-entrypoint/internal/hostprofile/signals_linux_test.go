@@ -216,7 +216,11 @@ func TestGatherKernel(t *testing.T) {
 	// The real reader: stat of /proc/self/ns/<name> gives nsfs inode numbers (this test process is
 	// never in a namespace whose number is below the dynamic range, other than the initial ones).
 	if _, err := os.Stat("/proc/self/ns/pid"); err == nil {
-		k, err := GatherKernel(KernelPaths{NSDir: "/proc/self/ns", Proc1Cmdline: "/proc/1/cmdline", Proc1Environ: "/proc/1/environ",
+		env := "/proc/1/environ"
+		if os.Geteuid() != 0 {
+			env = "/proc/self/environ" // PID 1's is root's to read; the entrypoint runs as root
+		}
+		k, err := GatherKernel(KernelPaths{NSDir: "/proc/self/ns", Proc1Cmdline: "/proc/1/cmdline", Proc1Environ: env,
 			SelfStat: "/proc/self/stat", SelfExe: "/proc/self/exe", MountInfo: "/proc/self/mountinfo"})
 		if err != nil {
 			t.Fatalf("real machine: %v", err)
