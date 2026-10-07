@@ -130,6 +130,7 @@ type Signals struct {
 	Provider   string // cloudvm: the configuration's provider
 	DMI        string // cloudvm: the provider whose DMI field matched (ProviderForDMI), or ""
 	Generation string // dedicated: the agent's reset generation
+	Kernel     Kernel // whose kernel this is (GatherKernel; read for every profile but fly)
 }
 
 // Refusal is a profile check's failure: a fixed code, never a value.
@@ -138,7 +139,8 @@ type Refusal struct{ Code phaselog.Code }
 func (r *Refusal) Error() string { return "host profile refused: " + string(r.Code) }
 
 // Check is the setup rule (step setup_host, before anything else): the profile's required
-// signals present, its forbidden ones absent (ADR 0023 rule 16's table).
+// signals present, its forbidden ones absent (ADR 0023 rule 16's table), and for every profile
+// but fly the shared-kernel guard (kernel.go).
 func Check(n Name, s Signals) error {
 	if _, err := Parse(string(n)); err != nil {
 		return &Refusal{Code: phaselog.CodeInvalid}
@@ -158,6 +160,11 @@ func Check(n Name, s Signals) error {
 	}
 	if s.Source != SourcePipe {
 		return &Refusal{Code: phaselog.CodeSource}
+	}
+	// The shared-kernel guard (kernel.go): nothing below Check may write kernel state unless the
+	// kernel is the VM's own, or the dedicated driver's single-tenant host's.
+	if (n == Dedicated && !DedicatedReaper(s.Kernel)) || (n != Dedicated && !OwnKernel(s.Kernel)) {
+		return &Refusal{Code: phaselog.CodeSharedKernel}
 	}
 	switch n {
 	case MicroVM:

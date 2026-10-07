@@ -1,7 +1,7 @@
 ---
 module: job-entrypoint
 paths: [packages/kete-job-entrypoint/**, .github/workflows/kete-job-entrypoint.yml]
-verified-at: e2f31003c6
+verified-at: 50ee2cb272
 ---
 
 ## Quick answers
@@ -25,11 +25,28 @@ verified-at: e2f31003c6
   `bootenv.Config`: the four + `host_profile`, `host_provider` (cloudvm), `host_generation`
   (dedicated); the four env vars must be unset; an env profile must match). `Values` carries
   `Profile`, `Source`, `Provider`, `Generation` across the handover (re-validated in `Decode`).
-  Setup: step `setup_host` (`entry.hostCheck`, first after `boot`) = `hostprofile.Gather` (reads
-  `/.fly`, `/proc/1/exe` vs `layout.InitBin`, virtio id `0x0013` under `/sys/bus/virtio/devices`,
-  DMI under `/sys/class/dmi/id`) + `hostprofile.Check` → codes `fly_signals`, `missing`, `source`,
-  `init`, `vsock`, `dmi`, `generation`, `invalid` (empty profile). Then `fly` → `flyGuard`
-  (unchanged); others → `hostBoundary`. README "Host profiles".
+  Setup: step `setup_host` (`entry.hostCheck`, the **first** step, before `boot`'s own writes) =
+  `hostprofile.Gather` (reads `/.fly`, `/proc/1/exe` vs `layout.InitBin`, virtio id `0x0013` under
+  `/sys/bus/virtio/devices`, DMI under `/sys/class/dmi/id`) + for non-fly `hostprofile.GatherKernel`
+  + `hostprofile.Check` → codes `fly_signals`, `missing`, `source`, `shared_kernel`, `init`,
+  `vsock`, `dmi`, `generation`, `invalid` (empty profile). Then `fly` → `flyGuard` (unchanged);
+  others → `hostBoundary`. README "Host profiles".
+- What is the shared-kernel guard? `hostprofile/kernel.go` (task
+  `docs/tasks/2026-10-07-shared-kernel-guard/`; spike S0 r2/r3: `dedicated` in a runc pod changed a
+  node sysctl). Code `shared_kernel`, before any write. microvm/cloudvm: `OwnKernel` = initial user
+  and PID namespaces (nsfs inodes `0xEFFFFFFD`/`0xEFFFFFFC` of `/proc/self/ns/*`), with `init`
+  that makes kete-job-init the kernel's init; kete-job-init checks the same first (step
+  `init_kernel`, `guestinit.ownKernel`, power off on refusal). dedicated: `DedicatedReaper` =
+  initial user ns, non-initial PID ns, `/proc/1/cmdline` exactly `[<exe>, __dedicated-init]`
+  (`DedicatedInitArg` = kete-job-host `dedicated.InitArg`, cross-checked by its `initarg_test.go`),
+  PID 1 not this program, ppid 1, no `container=` in `/proc/1/environ`, no mount point at/under
+  `/etc`, `/dev/termination-log`, `/run/secrets`, `/var/run/secrets`, no `ContainerMarkerFiles`
+  (Docker, Podman, systemd's `/run/systemd/container`, `/run/host/container-manager`). nsfs is
+  verified by statfs. Inputs are `layout.Config` `NSDir`, `Proc1Cmdline`, `Proc1Environ`,
+  `SelfStat`, `SelfExe`, `MountInfo`, `MarkerFiles`, `NSInode` (tests only). fly: no guard yet
+  (follow-up); `setup.FlyPresent` (read-only, `/.fly` + `/.fly/api`) runs before any write. No boot IDs (dedicated shares the host kernel by design). itest in-process runs fake the
+  dedicated facts (`testConfig`) or a VM's (`guestTree.apply`); `TestBinaryBootSharedKernel` is the
+  real refusal; the image e2e runs under a stand-in reaper (`internal/e2e/reaper_test.go`).
 - What is the host-boundary probe? Step `host_boundary` (`entry.hostBoundary`, every profile but
   fly, at the Fly guard's place: as root before the firewall): `hostprofile.FindConfigDisk`
   (any block device starting `kete-job-config v1\n` → `config_disk`); no IPv4 default gateway →

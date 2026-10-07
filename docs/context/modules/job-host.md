@@ -1,7 +1,7 @@
 ---
 module: job-host
 paths: [packages/kete-job-host/**, .github/workflows/kete-job-host.yml, docs/platform/job-host-v1.md]
-verified-at: cd74c80458
+verified-at: c377dd3136
 ---
 
 ## Quick answers
@@ -36,7 +36,19 @@ verified-at: cd74c80458
   hostname/resolv.conf/hosts from inside, `StartProcess` of
   `/usr/local/libexec/kete/kete-job-entrypoint --config-fd 3` (env `PATH` +
   `KETE_JOB_HOST_PROFILE=dedicated`), `ok`, `oom_score_adj -1000`, `reap` every child until the
-  entrypoint exits, `kill(-1)`, `exited <code>` to fd 6. `Status`: reaper alive (pid + start time +
+  entrypoint exits, `kill(-1)`, `exited <code>` to fd 6. The entrypoint's shared-kernel guard
+  requires exactly this set-up (PID 1 argv `[<exe>, __dedicated-init]`, initial user ns, own PID
+  ns, no mount under `/etc`, no container marker files): `InitArg` and the reaper's mounts are a
+  contract with kete-job-entrypoint `hostprofile.DedicatedReaper`; `TestJobRunsAndExits` checks it
+  (also the reaper as the entrypoint's parent, no `container=` in its environment), and
+  `initarg_test.go` reads the entrypoint's `DedicatedInitArg` from source (kete-job-host.yml also
+  triggers on that file).
+- Does the agent refuse to run in a container? Yes: `internal/hostguard` (`Run(Default())`):
+  initial user and PID namespaces (nsfs inodes, statfs `NSFS_MAGIC`), no `/.dockerenv`,
+  `/run/.containerenv`, `/run/systemd/container`, `/run/host/container-manager`, no `container=`
+  in `/proc/1/environ`. First step of the firecracker and dedicated drivers' `Init`
+  (`Options.HostGuard`, tests inject) and a `doctor` check ("on the host itself"). README
+  "Security model". `Status`: reaper alive (pid + start time +
   cgroup prefix) → running; `exit` says `exited` → exited; else crashed.
 - One job per generation? The agent, not the driver: `prepare` sets `state.GenerationSpentBy` to the
   machine id right before `starting` (`internal/agent/agent.go:682`, dedicated only; a failed save

@@ -112,6 +112,13 @@ func (g guestTree) apply(c *layout.Config) {
 	c.VirtioDir = filepath.Join(g.dir, "virtio")
 	c.DMIDir = filepath.Join(g.dir, "dmi")
 	c.RouteFile = filepath.Join(g.dir, "route")
+	// A VM's kernel: kete-job-init (Proc1Exe) in the initial namespaces.
+	c.NSInode = func(name string) (uint64, error) {
+		if name == "user" {
+			return hostprofile.InitUserNSIno, nil
+		}
+		return hostprofile.InitPIDNSIno, nil
+	}
 }
 
 func profileBoot(profile, provider, generation string) func(*bootenv.Values) {
@@ -380,33 +387,100 @@ func jobConfig(j *fakeplatform.Job, profile, generation string) []byte {
 	return b
 }
 
-// TestBinaryBootDedicated: the built binary as the dedicated host agent launches it
-// (KETE_JOB_HOST_PROFILE=dedicated, the values on a pipe, --config-fd 3) runs a whole job.
-func TestBinaryBootDedicated(t *testing.T) {
-	t.Cleanup(func() { cleanup(t) })
-	j := FP.NewJob(fakeplatform.Knobs{Prompt: "lifecycle", Deadline: 10 * time.Minute})
-	code, out := runBinary(t, j, []string{"PATH=/usr/bin:/bin", hostprofile.Var + "=dedicated"}, []string{"--config-fd", "3"}, jobConfig(j, "dedicated", "gen-7"), false)
-	if code != 0 {
-		t.Fatalf("exit %d; stdout:\n%s", code, out)
-	}
-	for _, want := range []string{`"step":"setup_host","event":"ok"`, `"step":"host_boundary","event":"ok"`, `"step":"isolation","event":"ok"`} {
-		if !phaseLine(out, want) {
-			t.Errorf("no %s line", want)
+// TestBinaryBootSharedKernel (the shared-kernel guard; spike S0 run r2): the built binary started
+// the way the dedicated host agent starts it (KETE_JOB_HOST_PROFILE=dedicated, the values on a
+// pipe as fd 3, or on stdin as `docker run -i` delivers them), but in this suite's privileged
+// container, a kernel shared with the CI runner, gets through the boot stage and is refused at
+// setup_host with shared_kernel: no claim, and nothing written to the kernel (the sysctls it sets,
+// /proc's mount options, the nftables table, the job cgroups). The whole binary path of a job is
+// the image's end-to-end test (kete-job-image scripts/e2e.sh), under a stand-in for the reaper.
+func TestBinaryBootSharedKernel(t *testing.T) {
+	sysctls := []string{"/proc/sys/user/max_user_namespaces", "/proc/sys/fs/protected_hardlinks", "/proc/sys/fs/protected_symlinks"}
+	sentinel := map[string]string{sysctls[0]: "12345", sysctls[1]: "0", sysctls[2]: "0"}
+	saved := map[string]string{}
+	for _, p := range sysctls {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
 		}
+		saved[p] = strings.TrimSpace(string(b))
 	}
-	if res := resultOf(t); res["outcome"] != "completed" {
-		t.Errorf("result = %v", res)
+	t.Cleanup(func() {
+		for p, v := range saved {
+			if err := os.WriteFile(p, []byte(v), 0o644); err != nil {
+				t.Errorf("restore %s: %v", p, err)
+			}
+		}
+	})
+	procMount := func() string {
+		mi, err := os.ReadFile("/proc/self/mountinfo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range strings.Split(string(mi), "\n") {
+			if f := strings.Fields(l); len(f) > 4 && f[4] == "/proc" {
+				return l
+			}
+		}
+		return ""
 	}
-	if _, ok := FP.Uploaded("bundle"); !ok {
-		t.Error("no bundle")
+	for _, viaStdin := range []bool{false, true} {
+		name := "config on fd 3"
+		if viaStdin {
+			name = "config on stdin"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Cleanup(func() { cleanup(t) })
+			for p, v := range sentinel {
+				if err := os.WriteFile(p, []byte(v), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			proc := procMount()
+			j := FP.NewJob(fakeplatform.Knobs{Prompt: "lifecycle", Deadline: 10 * time.Minute})
+			env := []string{"PATH=/usr/bin:/bin", hostprofile.Var + "=dedicated"}
+			var code int
+			var out string
+			if viaStdin {
+				code, out = runBinaryStdin(t, j, env, jobConfig(j, "dedicated", "gen-8"))
+			} else {
+				code, out = runBinary(t, j, env, []string{"--config-fd", "3"}, jobConfig(j, "dedicated", "gen-7"), false)
+			}
+			if code != 1 {
+				t.Errorf("exit %d, want 1", code)
+			}
+			if want := `"step":"setup_host","event":"failed","code":"shared_kernel"`; !phaseLine(out, want) {
+				t.Errorf("no %s line:\n%s", want, out)
+			}
+			for _, step := range []string{"boot", "setup_users", "setup_sysctl", "setup_proc", "host_boundary", "setup_dirs", "setup_cgroup", "egress_nft"} {
+				if phaseLine(out, `"step":"`+step+`"`) {
+					t.Errorf("step %s ran after the refusal:\n%s", step, out)
+				}
+			}
+			if n := countCalls("claim"); n != 0 {
+				t.Errorf("%d claim requests", n)
+			}
+			for p, v := range sentinel {
+				if b, err := os.ReadFile(p); err != nil || strings.TrimSpace(string(b)) != v {
+					t.Errorf("%s = %q (%v), want the untouched %q", p, b, err, v)
+				}
+			}
+			if got := procMount(); got != proc {
+				t.Errorf("/proc's mount changed:\n%s\n%s", proc, got)
+			}
+			if err := exec.Command("nft", "list", "table", "inet", "kete_egress").Run(); err == nil {
+				t.Error("the egress table exists")
+			}
+			if _, err := os.Stat(filepath.Join(cgroupRoot, "bin-boot", "kete-job")); err == nil {
+				t.Error("the job cgroups exist")
+			}
+		})
 	}
 }
 
-// TestBinaryBootDedicatedStdin: the config on fd 0 (as `docker run -i` delivers it, e2e.sh) works
-// the same: the handover pipe is moved above stdio.
-func TestBinaryBootDedicatedStdin(t *testing.T) {
-	t.Cleanup(func() { cleanup(t) })
-	j := FP.NewJob(fakeplatform.Knobs{Prompt: "lifecycle", Deadline: 10 * time.Minute})
+// runBinaryStdin runs the built entrypoint like runBinary, with cfg on stdin (--config-fd 0).
+func runBinaryStdin(t *testing.T, j *fakeplatform.Job, env []string, cfg []byte) (int, string) {
+	t.Helper()
 	prepareRoot(t)
 	boot := filepath.Join(cgroupRoot, "bin-boot")
 	if err := os.Mkdir(boot, 0o755); err != nil {
@@ -421,25 +495,25 @@ func TestBinaryBootDedicatedStdin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Write(jobConfig(j, "dedicated", "gen-8")); err != nil {
+	if _, err := w.Write(cfg); err != nil {
 		t.Fatal(err)
 	}
 	w.Close()
 	defer r.Close()
 	cmd := exec.Command(entrypoint, "--config-fd", "0")
-	cmd.Env = []string{"PATH=/usr/bin:/bin", hostprofile.Var + "=dedicated"}
+	cmd.Env = env
 	cmd.Stdin = r
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: cgfd}
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("entrypoint: %v; stdout:\n%s", err, out.String())
+	err = cmd.Run()
+	var ee *exec.ExitError
+	if err != nil && !errors.As(err, &ee) {
+		t.Fatalf("entrypoint: %v", err)
 	}
 	checkPhaseLines(t, out.String(), j)
-	if res := resultOf(t); res["outcome"] != "completed" {
-		t.Errorf("result = %v", res)
-	}
+	return cmd.ProcessState.ExitCode(), out.String()
 }
 
 // TestBinaryBootRefusals: boot-stage refusals exit 2 with no claim: no profile and no Fly signal

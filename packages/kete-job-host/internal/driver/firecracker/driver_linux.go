@@ -28,6 +28,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/config"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostguard"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostnet"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/image"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/seal"
@@ -47,6 +48,9 @@ type Options struct {
 	Mkfs string
 	// CheckEvery is the host table and disk check period (default 30 s).
 	CheckEvery time.Duration
+	// HostGuard refuses when the agent isn't on the host itself (default hostguard.Run with
+	// hostguard.Default; tests pass a fake). Init runs it before anything else.
+	HostGuard func() error
 }
 
 // TableManager applies the host table and checks it against the listing Apply returned
@@ -97,6 +101,9 @@ func New(o Options) (*Driver, error) {
 	if o.CgroupRoot == "" {
 		o.CgroupRoot = "/sys/fs/cgroup"
 	}
+	if o.HostGuard == nil {
+		o.HostGuard = func() error { return hostguard.Run(hostguard.Default()) }
+	}
 	if o.CheckEvery <= 0 {
 		o.CheckEvery = 30 * time.Second
 	}
@@ -118,6 +125,10 @@ func New(o Options) (*Driver, error) {
 // the agent: starts stay blocked (`host_table`) and the report says so (ADR 0023 rule 7). Then it
 // checks the table and free disk space every CheckEvery until ctx ends.
 func (d *Driver) Init(ctx context.Context) error {
+	// The shared-kernel guard first: every write below (and every job) touches this kernel.
+	if err := d.o.HostGuard(); err != nil {
+		return err
+	}
 	for _, dir := range []string{d.vmsDir, d.jailBase} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err

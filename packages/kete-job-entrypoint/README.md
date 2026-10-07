@@ -103,10 +103,11 @@ credential. A `failed` line with an error carries its fixed `class` and a number
 `errno` (the errno), `http` (the status), `git` and `exit` (the exit code), `launch_<code>` (a
 launch stage-2 failure, plus its errno), `timeout`, `cancelled`, or `other`.
 
-1. **Boot:** the re-exec above; not dumpable; `oom_score_adj` −1000; umask 022; SIGTERM or SIGINT
-   aborts the job (the same kill as the hard deadline, phase line `abort`/`signal`, exit 1) and
-   never reaches a job process. Then **`setup_host`**: the host profile against the machine's
-   signals ("Host profiles"); a mismatch exits 1 **before claim**.
+1. **Boot:** the re-exec above. First **`setup_host`**: the host profile against the machine's
+   signals and, for every profile but `fly`, the shared-kernel guard ("Host profiles"); a mismatch
+   exits 1 **before claim and before anything is written**. Then (step `boot`) not dumpable;
+   `oom_score_adj` −1000; umask 022; SIGTERM or SIGINT aborts the job (the same kill as the hard
+   deadline, phase line `abort`/`signal`, exit 1) and never reaches a job process.
 2. **Machine:** the users; `fs.protected_hardlinks` = `fs.protected_symlinks` = 1 and
    `user.max_user_namespaces` = 0 (written and read back); `/proc` remounted `hidepid=2`; on Fly
    the **Fly guard** (below: `/.fly` root 0700 and `/.fly/api` root 0600, failing closed on Fly
@@ -206,6 +207,47 @@ host's own control surfaces are out of the job's reach. Step `setup_host` checks
 Fail closed: Fly signals with any other profile is `fly_signals`; an unknown profile exits 2 at
 boot; unset is `fly` only with a Fly signal, else exit 2. The four values, their validation, the
 claim and every later step are the same in every profile.
+
+**Shared-kernel guard** (`setup_host`, code `shared_kernel`; every profile but `fly`;
+`internal/hostprofile/kernel.go`). The steps after `setup_host` write kernel state (sysctls, the
+`/proc` remount, nftables, cgroups), so the guard runs first and only reads. Spike S0 (enterprise
+runtime, runs r2/r3) ran the `dedicated` profile in a Kubernetes `runc` pod: privileged, a whole
+job passed and set the **node's** `user.max_user_namespaces` to 0; with capabilities only, only
+AppArmor kept it off the node's sysctls. Virtio and DMI signals can't tell a container on a VM
+node from the VM, so the guard uses:
+
+- `microvm`, `cloudvm`: the entrypoint is in the kernel's **initial user and PID namespaces**
+  (`/proc/self/ns/{user,pid}`, checked to be on nsfs, have the fixed inode numbers `0xEFFFFFFD`,
+  `0xEFFFFFFC`) and PID 1 is
+  kete-job-init (`init`): kete-job-init is then the kernel's own init, so the kernel is the VM's.
+  A container is never in the initial PID namespace (one sharing the host's has the host's init as
+  PID 1). kete-job-init runs the same check first (step `init_kernel`).
+- `dedicated`: the job runs in the dedicated host's own kernel by design (kete-job-host's
+  dedicated driver: one job, single-tenant host, rebuilt after it), so the guard proves the driver
+  set it up: the initial user namespace; a PID namespace other than the initial one; PID 1's argv
+  exactly `[<exe>, __dedicated-init]` (the driver's reaper); no mount point at or under `/etc`,
+  `/dev/termination-log`, `/run/secrets` or `/var/run/secrets` (Docker, Podman and every CRI
+  runtime bind-mount `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf`; the reaper writes them as
+  files); no `/.dockerenv`, `/run/.containerenv`, `/run/systemd/container` or
+  `/run/host/container-manager`; no `container=` in PID 1's environment; the reaper is this
+  process's parent and PID 1 isn't this program (`/proc/self/exe`).
+
+A namespace, the mount table, PID 1's environment or this process's stat that can't be read
+refuses too. kete-job-host has the matching guard on its side (`internal/hostguard`): its
+firecracker and dedicated drivers refuse to start in a container. Boot IDs aren't used: on `dedicated`
+the kernel *is* the host's, and for the VM profiles the initial-namespace check needs nothing from
+the host. (The future `kubevm` profile, where the container runs in a PID namespace inside a Kata
+guest, compares its boot ID with the node's instead: enterprise runtime spec, "S0 findings".) The
+guard stops the image running where it doesn't belong (a Docker or Kubernetes container named
+`dedicated` or a VM profile); it is not a defence against a host administrator deliberately
+imitating the reaper, who owns the kernel anyway.
+
+`fly` has **no** shared-kernel guard yet: whether the entrypoint on a Fly Machine is in the
+kernel's initial namespaces (so `OwnKernel` could apply) is unverified without a real Fly machine,
+a documented follow-up. What it does have, before anything is written: Fly's API directory and
+socket (`/.fly`, `/.fly/api`) must exist (`setup.FlyPresent`, read-only; `setup_fly` `missing`),
+so a container with Fly's variables alone stops before the sysctls. A container that also
+presents a fake `/.fly/api` socket is not caught.
 
 **Host-boundary probe** (step `host_boundary`, every profile but `fly`). As root, before the
 network guard installs the in-guest rules, so it proves the host's own isolation (the host
@@ -393,9 +435,13 @@ starts.
 `/usr/local/libexec/kete/kete-job-init` (`cmd/kete-job-init`, `internal/guestinit`) is PID 1 of a
 microvm or cloudvm guest (ADR 0023 rule 15); no systemd, SSH server, cloud-init or provider guest
 agent runs in the guest. It refuses to run as anything but PID 1 (exit 2). Phase lines only on the
-console (steps `init_mount`, `init_root`, `init_network`, `init_config`, `init_metadata_drop`,
+console (steps `init_kernel`, `init_mount`, `init_root`, `init_network`, `init_config`, `init_metadata_drop`,
 `init_entrypoint` with the entrypoint's `exit_code`, `init_poweroff`); never a value.
 
+0. **Shared-kernel guard** (both stages, step `init_kernel`, code `shared_kernel`): mount `/proc`
+   unless already there, then require the kernel's initial user and PID namespaces ("Host
+   profiles"); otherwise power off before anything else is written (in a container's PID namespace
+   that only ends the namespace).
 1. **Stage 1** (the read-only image root): mount `/proc`, `/sys`, `/dev` (devtmpfs) unless already
    there, make the root mount private, make `/dev/console` its stdio if the kernel couldn't. When a
    block device or partition (`/sys/class/block`) holds an ext4 file system labelled `kete-scratch`
@@ -496,7 +542,15 @@ installs them at the image's paths, creates the users as the image does, points
 `/etc/resolv.conf` at the fake DNS, and runs the tests in a fresh network namespace with the fake
 platform on `198.51.100.10` and its DNS on `198.51.100.53`. It restores
 `user.max_user_namespaces` on exit (a host-wide value in Colima's VM). CI:
-`.github/workflows/kete-job-entrypoint.yml`.
+`.github/workflows/kete-job-entrypoint.yml`. That container shares the runner's kernel, so the
+shared-kernel guard refuses it: in-process runs present the guard's facts from test files
+(`layout.Config` `Proc1Cmdline`, `MountInfo`, `MarkerFiles`, `NSInode`; the dedicated reaper's by
+default, a VM's for `guestTree`), and only `TestBinaryBootSharedKernel` runs the binary on the real
+ones. The image's end-to-end test runs the binary under a stand-in for the reaper
+(`internal/e2e/reaper_test.go`). The guard's rules are unit-tested over the mount tables of a
+privileged Docker container, a capability-only Kubernetes pod, the dedicated reaper's job and a
+Firecracker guest (`internal/hostprofile/kernel_test.go`, `signals_linux_test.go`); kete-job-host's
+dedicated driver test checks that its real reaper presents what the guard requires.
 
 The integration tests: `TestLifecycle` (AC1 with the fake `kete`: a tool call through the real
 helper as the tool user, an edit, the bundle holds exactly that edit), `TestRefuseClaimWithout
@@ -524,9 +578,11 @@ profile + a Fly signal = `fly`). Host profiles (`itest/profiles_test.go`): `Test
 metadata and IPv6 sample and a present config disk each refused at `host_boundary`; with nothing
 reachable the job runs), `TestCloudvmMetadataDrop` (without init's table `metadata_drop`; with it,
 applied by `guestinit.ApplyMetadataDrop`, a local `169.254.169.254:80` listener is dropped for root
-and the job runs), `TestBinaryBootDedicated` (the binary with `KETE_JOB_HOST_PROFILE=dedicated`
-and the config on fd 3 runs a whole job), `TestBinaryBootDedicatedStdin` (the same with the
-config on fd 0, as `docker run -i` delivers it) and `TestBinaryBootRefusals` (exit 2 and no claim: no
+and the job runs), `TestBinaryBootSharedKernel` (the binary with `KETE_JOB_HOST_PROFILE=dedicated`
+and the config on fd 3 or on fd 0, as `docker run -i` delivers it, in this suite's privileged
+container, a kernel shared with the runner: through the boot stage, then `setup_host`
+`shared_kernel`, no claim, and the sysctls, `/proc`'s mount, the nftables table and the job cgroups
+untouched) and `TestBinaryBootRefusals` (exit 2 and no claim: no
 profile and no Fly signal, an unknown profile, dedicated from the environment, the config in a
 file, the values in both places, a profile mismatch, no generation, fly from a pipe). In-process
 runs that name no profile get the one the boot stage would resolve: `fly` with a Fly signal, else
@@ -543,6 +599,10 @@ outside `*.kete.test` to its own resolver so the AC5 package installs reach the 
 `internal/e2e` (build tag `e2e`) asserts the recorded state; see `packages/kete-job-image/README.md`.
 
 ## Not verified without a real host
+
+The shared-kernel guard has not yet run on a real dedicated host or in a Firecracker guest with
+the real image (kete-job-host `scripts/kvm-test.sh`, a KVM host); CI covers its rules, the
+dedicated reaper's facts (kete-job-host's driver test) and its refusal in a privileged container.
 
 The microvm path ran on Firecracker in P4 (`kete-job-host` KVM tests). The cloudvm path ran under
 QEMU only (P7, `packages/kete-job-image/packer/test/boot-test.sh`: firmware, GRUB, the cloudvm

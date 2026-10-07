@@ -27,6 +27,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/config"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostguard"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/hostnet"
 )
 
@@ -57,6 +58,9 @@ type Options struct {
 	Self string
 	// CheckEvery is the host table and disk check period (default 30 s).
 	CheckEvery time.Duration
+	// HostGuard refuses when the agent isn't on the host itself (default hostguard.Run with
+	// hostguard.Default; tests pass a fake). Init runs it before anything else.
+	HostGuard func() error
 }
 
 // Driver is the dedicated driver.
@@ -105,6 +109,9 @@ func New(o Options) (*Driver, error) {
 	if o.CgroupRoot == "" {
 		o.CgroupRoot = "/sys/fs/cgroup"
 	}
+	if o.HostGuard == nil {
+		o.HostGuard = func() error { return hostguard.Run(hostguard.Default()) }
+	}
 	if o.CheckEvery <= 0 {
 		o.CheckEvery = 30 * time.Second
 	}
@@ -126,6 +133,10 @@ func New(o Options) (*Driver, error) {
 // (`host_table`) rather than stopping the agent. Then it re-checks the table's health and free
 // disk space every CheckEvery until ctx ends.
 func (d *Driver) Init(ctx context.Context) error {
+	// The shared-kernel guard first: every write below (and every job) touches this kernel.
+	if err := d.o.HostGuard(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(d.dir, 0o700); err != nil {
 		return err
 	}

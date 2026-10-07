@@ -3,6 +3,7 @@
 package hostprofile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -112,5 +113,129 @@ func TestFindConfigDisk(t *testing.T) {
 	}
 	if _, err := OpenConfigDisk(filepath.Join(p.DevDir, "vdf")); err == nil || err == ErrNotConfigDisk {
 		t.Errorf("symlink: %v", err)
+	}
+}
+
+// kernelTree is a machine for GatherKernel: PID 1's argv, the mount table, marker files, and the
+// namespaces' inode numbers.
+func kernelTree(t *testing.T, args, mountinfo string, markers []string, user, pid uint64) KernelPaths {
+	t.Helper()
+	d := t.TempDir()
+	write(t, filepath.Join(d, "cmdline"), args)
+	write(t, filepath.Join(d, "mountinfo"), mountinfo)
+	write(t, filepath.Join(d, "environ"), "PATH=/usr/sbin:/usr/bin:/sbin:/bin\x00")
+	write(t, filepath.Join(d, "stat"), "12 (kete-job-entry) S 1 12 12 0 -1")
+	if err := os.Symlink("/usr/local/libexec/kete/kete-job-entrypoint", filepath.Join(d, "exe")); err != nil {
+		t.Fatal(err)
+	}
+	p := KernelPaths{Proc1Cmdline: filepath.Join(d, "cmdline"), MountInfo: filepath.Join(d, "mountinfo"),
+		Proc1Environ: filepath.Join(d, "environ"), SelfStat: filepath.Join(d, "stat"), SelfExe: filepath.Join(d, "exe")}
+	for _, m := range ContainerMarkerFiles {
+		p.MarkerFiles = append(p.MarkerFiles, filepath.Join(d, m))
+	}
+	for _, m := range markers {
+		write(t, filepath.Join(d, m), "")
+	}
+	p.NSInode = func(name string) (uint64, error) {
+		switch name {
+		case "user":
+			return user, nil
+		case "pid":
+			return pid, nil
+		}
+		return 0, errors.New("no such namespace")
+	}
+	return p
+}
+
+// TestGatherKernel: the four machines of kernel_test.go read from files, through the same rules.
+func TestGatherKernel(t *testing.T) {
+	const other = 0xF0000123
+	cases := []struct {
+		name            string
+		p               KernelPaths
+		vm, dedicated   bool
+		mount           string
+		marker, pid1Set bool
+	}{
+		{"privileged docker", kernelTree(t, "bash\x00scripts/integration.sh\x00", mountsDocker, []string{".dockerenv"}, InitUserNSIno, other), false, false, "/etc/resolv.conf", true, true},
+		{"capability pod", kernelTree(t, "/pause\x00", mountsPod, nil, InitUserNSIno, other), false, false, "/etc/hosts", false, true},
+		{"podman", kernelTree(t, "/usr/local/libexec/kete/kete-job-entrypoint\x00", "1 0 0:1 / / rw - overlay overlay rw\n", []string{"run/.containerenv"}, InitUserNSIno, other), false, false, "", true, true},
+		{"systemd-nspawn", kernelTree(t, "/proc/self/exe\x00"+DedicatedInitArg+"\x00", mountsDedicated, []string{"run/systemd/container"}, InitUserNSIno, other), false, false, "", true, true},
+		{"rootless container", kernelTree(t, "/proc/self/exe\x00"+DedicatedInitArg+"\x00", mountsDedicated, nil, other, other), false, false, "", false, true},
+		{"dedicated", kernelTree(t, "/proc/self/exe\x00"+DedicatedInitArg+"\x00", mountsDedicated, nil, InitUserNSIno, other), false, true, "", false, true},
+		{"vm", kernelTree(t, "/usr/local/libexec/kete/kete-job-init\x00__guest\x00", mountsVM, nil, InitUserNSIno, InitPIDNSIno), true, false, "", false, true},
+	}
+	for _, c := range cases {
+		k, err := GatherKernel(c.p)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if OwnKernel(k) != c.vm || DedicatedReaper(k) != c.dedicated || k.RuntimeMount != c.mount || k.MarkerFile != c.marker || (len(k.PID1Args) > 0) != c.pid1Set {
+			t.Errorf("%s: %+v", c.name, k)
+		}
+	}
+	// PID 1's argv unreadable (gone, or another's under hidepid) is no argv, never an error.
+	p := kernelTree(t, "", mountsDedicated, nil, InitUserNSIno, other)
+	os.Remove(p.Proc1Cmdline)
+	if k, err := GatherKernel(p); err != nil || k.PID1Args != nil || DedicatedReaper(k) {
+		t.Errorf("no cmdline: %+v %v", k, err)
+	}
+	// container= in PID 1's environment, or a parent other than PID 1, isn't the reaper's job.
+	p = kernelTree(t, "/proc/self/exe\x00"+DedicatedInitArg+"\x00", mountsDedicated, nil, InitUserNSIno, other)
+	write(t, p.Proc1Environ, "container=lxc\x00")
+	if k, err := GatherKernel(p); err != nil || !k.PID1Env || DedicatedReaper(k) {
+		t.Errorf("container env: %+v %v", k, err)
+	}
+	p = kernelTree(t, "/proc/self/exe\x00"+DedicatedInitArg+"\x00", mountsDedicated, nil, InitUserNSIno, other)
+	write(t, p.SelfStat, "12 (kete-job-entry) S 9 12 12 0 -1")
+	if k, err := GatherKernel(p); err != nil || k.PPID != 9 || DedicatedReaper(k) {
+		t.Errorf("parent 9: %+v %v", k, err)
+	}
+	// A namespace, the mount table, PID 1's environment or this process's stat that can't be
+	// read fails (the caller refuses).
+	for _, f := range []func(KernelPaths) string{
+		func(p KernelPaths) string { return p.Proc1Environ }, func(p KernelPaths) string { return p.SelfStat },
+	} {
+		p := kernelTree(t, "", mountsDedicated, nil, InitUserNSIno, other)
+		os.Remove(f(p))
+		if _, err := GatherKernel(p); err == nil {
+			t.Error("an unreadable input accepted")
+		}
+	}
+	p = kernelTree(t, "", mountsDedicated, nil, InitUserNSIno, other)
+	p.NSInode = func(string) (uint64, error) { return 0, os.ErrPermission }
+	if _, err := GatherKernel(p); err == nil {
+		t.Error("unreadable namespace accepted")
+	}
+	p = kernelTree(t, "", mountsDedicated, nil, InitUserNSIno, other)
+	os.Remove(p.MountInfo)
+	if _, err := GatherKernel(p); err == nil {
+		t.Error("missing mount table accepted")
+	}
+	// The real reader: stat of /proc/self/ns/<name> gives nsfs inode numbers (this test process is
+	// never in a namespace whose number is below the dynamic range, other than the initial ones).
+	if _, err := os.Stat("/proc/self/ns/pid"); err == nil {
+		env := "/proc/1/environ"
+		if os.Geteuid() != 0 {
+			env = "/proc/self/environ" // PID 1's is root's to read; the entrypoint runs as root
+		}
+		k, err := GatherKernel(KernelPaths{NSDir: "/proc/self/ns", Proc1Cmdline: "/proc/1/cmdline", Proc1Environ: env,
+			SelfStat: "/proc/self/stat", SelfExe: "/proc/self/exe", MountInfo: "/proc/self/mountinfo"})
+		if err != nil {
+			t.Fatalf("real machine: %v", err)
+		}
+		t.Logf("this machine: %+v", k)
+		if DedicatedReaper(k) {
+			t.Error("a test process passes as the dedicated reaper's job")
+		}
+		if k.PPID != os.Getppid() {
+			t.Errorf("ppid %d, want %d", k.PPID, os.Getppid())
+		}
+		f := filepath.Join(t.TempDir(), "pid")
+		write(t, f, "")
+		if _, err := NSInode(f); err == nil {
+			t.Error("a regular file accepted as a namespace")
+		}
 	}
 }

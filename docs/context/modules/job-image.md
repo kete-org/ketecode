@@ -1,7 +1,7 @@
 ---
 module: job-image
 paths: [packages/kete-job-image/**, .github/workflows/kete-job-image.yml, .github/workflows/kete-release.yml, .github/workflows/kete-cloudvm-packer.yml, .github/workflows/kete-cloudvm-images.yml, .github/actions/kete-cloudvm-setup/**]
-verified-at: 9ae84d36f0
+verified-at: c377dd3136
 ---
 
 ## Quick answers
@@ -35,7 +35,11 @@ verified-at: 9ae84d36f0
   which the proxy refuses), job container `--privileged --cgroupns=private` run **as the dedicated
   host profile** (`KETE_JOB_HOST_PROFILE=dedicated`, `--config-fd 0`, the fake's `config.json` on
   stdin via `docker run -i` in the background), bind-mounted `resolv.conf` and a CA bundle plus the
-  fake's per-run test CA (`scripts/e2e.sh`). A host-side nft table `inet kete_e2e_host` (applied from
+  fake's per-run test CA (`scripts/e2e.sh`). PID 1 is a test-only stand-in for kete-job-host's
+  dedicated reaper (`--entrypoint .../e2e.test __dedicated-init`, kete-job-entrypoint
+  `internal/e2e/reaper_test.go`): it copies Docker's `/etc` bind mounts into the container's files,
+  unmounts them, removes `/.dockerenv` and starts the entrypoint, because the entrypoint's
+  shared-kernel guard refuses a plain Docker container. A host-side nft table `inet kete_e2e_host` (applied from
   a `--network host` container, removed on exit) stands in for the host agent's table so the
   entrypoint's host-boundary probe passes: job → Docker host dropped, private/special ranges
   dropped, only the fake and TCP 443 forwarded. It saves and restores the host-wide

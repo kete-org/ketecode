@@ -18,11 +18,15 @@ on:
     branches: [main]
     paths:
       - "packages/kete-job-host/**"
+      # The dedicated reaper's InitArg must match the entrypoint's guard (initarg_test.go).
+      - "packages/kete-job-entrypoint/internal/hostprofile/kernel.go"
       - ".github/workflows/kete-job-host.yml"
   push:
     branches: [main]
     paths:
       - "packages/kete-job-host/**"
+      # The dedicated reaper's InitArg must match the entrypoint's guard (initarg_test.go).
+      - "packages/kete-job-entrypoint/internal/hostprofile/kernel.go"
       - ".github/workflows/kete-job-host.yml"
   workflow_dispatch:
 

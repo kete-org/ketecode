@@ -143,3 +143,106 @@ func FindConfigDisk(sysBlock, devDir string) (string, error) {
 	}
 	return "", nil
 }
+
+// KernelPaths are where GatherKernel reads (layout.Config's fields; tests point them elsewhere).
+type KernelPaths struct {
+	NSDir        string   // the process's namespaces (/proc/self/ns)
+	Proc1Cmdline string   // PID 1's argv (/proc/1/cmdline)
+	Proc1Environ string   // PID 1's environment (/proc/1/environ)
+	SelfStat     string   // the process's stat, for its parent (/proc/self/stat)
+	SelfExe      string   // the process's executable link (/proc/self/exe)
+	MountInfo    string   // the process's mount table (/proc/self/mountinfo)
+	MarkerFiles  []string // ContainerMarkerFiles
+	// NSInode returns a namespace's nsfs inode number (nil: stat NSDir/<name>). Only tests set it:
+	// a test can't present the kernel's initial namespaces.
+	NSInode func(name string) (uint64, error)
+}
+
+// GatherKernel reads the shared-kernel guard's facts (kernel.go). It only reads. A namespace that
+// can't be read is an error (the caller fails closed); an unreadable PID 1 argv is none (not the
+// reaper).
+func GatherKernel(p KernelPaths) (Kernel, error) {
+	ino := p.NSInode
+	if ino == nil {
+		ino = func(name string) (uint64, error) { return NSInode(filepath.Join(p.NSDir, name)) }
+	}
+	var k Kernel
+	user, err := ino("user")
+	if err != nil {
+		return Kernel{}, err
+	}
+	pid, err := ino("pid")
+	if err != nil {
+		return Kernel{}, err
+	}
+	k.UserNSInitial, k.PIDNSInitial = user == InitUserNSIno, pid == InitPIDNSIno
+	args, err := readLimited(p.Proc1Cmdline, 64<<10)
+	switch {
+	case err == nil:
+		k.PID1Args = ParseArgs(args)
+	case errors.Is(err, os.ErrNotExist), errors.Is(err, os.ErrPermission):
+	default:
+		return Kernel{}, err
+	}
+	env, err := readLimited(p.Proc1Environ, 1<<20)
+	if err != nil {
+		return Kernel{}, err
+	}
+	k.PID1Env = ContainerEnv(env)
+	stat, err := readLimited(p.SelfStat, 64<<10)
+	if err != nil {
+		return Kernel{}, err
+	}
+	if k.PPID, err = ParentPID(stat); err != nil {
+		return Kernel{}, err
+	}
+	if k.SelfExe, err = os.Readlink(p.SelfExe); err != nil {
+		return Kernel{}, err
+	}
+	mi, err := readLimited(p.MountInfo, 4<<20)
+	if err != nil {
+		return Kernel{}, err
+	}
+	k.RuntimeMount = RuntimeMountIn(string(mi))
+	for _, f := range p.MarkerFiles {
+		if _, err := os.Lstat(f); err == nil {
+			k.MarkerFile = true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return Kernel{}, err
+		}
+	}
+	return k, nil
+}
+
+// NSInode is a namespace file's nsfs inode number; a file that isn't on nsfs is an error.
+func NSInode(path string) (uint64, error) {
+	var sfs unix.Statfs_t
+	if err := unix.Statfs(path, &sfs); err != nil {
+		return 0, err
+	}
+	if uint32(sfs.Type) != unix.NSFS_MAGIC {
+		return 0, errors.New("hostprofile: " + path + " is not on nsfs")
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return 0, err
+	}
+	return st.Ino, nil
+}
+
+// readLimited reads at most max bytes of a file; a longer one is an error.
+func readLimited(path string, max int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, errors.New("hostprofile: " + path + " is too large")
+	}
+	return b, nil
+}

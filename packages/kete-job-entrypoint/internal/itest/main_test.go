@@ -29,6 +29,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/cgroup"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/entry"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/fakeplatform"
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/hostprofile"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/isolation"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/launch"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/layout"
@@ -71,6 +72,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+	if err := writeKernelTree(); err != nil {
+		fmt.Fprintln(os.Stderr, "kernel tree:", err)
+		os.Exit(2)
+	}
 	FP, err = fakeplatform.Start(fakeplatform.Config{Addr: fakeAddr, DNSAddr: dnsAddr, StateDir: stateDir, GitHTTPBackend: "/usr/lib/git-core/git-http-backend"})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fake platform:", err)
@@ -105,7 +110,46 @@ func testConfig() layout.Config {
 	c.HTTPTimeout = 10 * time.Second
 	c.RetryBackoff = 100 * time.Millisecond
 	c.ClaimWindow = 5 * time.Second
+	// The shared-kernel guard's facts: this suite runs in a privileged container, a shared kernel the
+	// guard refuses (TestBinaryBootSharedKernel runs the binary on the real ones). In-process runs
+	// present the dedicated reaper's set-up instead; guestTree.apply presents a VM's.
+	c.Proc1Cmdline = filepath.Join(kernelTreeDir, "cmdline")
+	c.MountInfo = filepath.Join(kernelTreeDir, "mountinfo")
+	c.Proc1Environ = filepath.Join(kernelTreeDir, "environ")
+	c.SelfStat = filepath.Join(kernelTreeDir, "stat") // the reaper (PID 1) as the parent
+	c.MarkerFiles = nil
+	for _, m := range hostprofile.ContainerMarkerFiles {
+		c.MarkerFiles = append(c.MarkerFiles, filepath.Join(kernelTreeDir, m))
+	}
+	c.NSInode = func(name string) (uint64, error) {
+		if name == "user" {
+			return hostprofile.InitUserNSIno, nil
+		}
+		return 0xF0000001, nil // a PID namespace of the reaper's
+	}
 	return c
+}
+
+var kernelTreeDir = filepath.Join(stateDir, "kernel")
+
+// writeKernelTree writes the dedicated reaper's PID 1 argv and job mount table (kete-job-host
+// internal/driver/dedicated) for testConfig.
+func writeKernelTree() error {
+	if err := os.MkdirAll(kernelTreeDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(kernelTreeDir, "cmdline"), []byte("/proc/self/exe\x00"+hostprofile.DedicatedInitArg+"\x00"), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(kernelTreeDir, "environ"), []byte("PATH=/usr/sbin:/usr/bin:/sbin:/bin\x00"), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(kernelTreeDir, "stat"), []byte("2 (kete-job-entry) S 1 2 2 0 -1\n"), 0o644); err != nil {
+		return err
+	}
+	mi := "801 640 0:64 / / rw,relatime - overlay overlay rw\n802 801 0:66 / /proc rw,nosuid,nodev,noexec - proc proc rw\n" +
+		"807 801 0:71 / /run rw,nosuid,nodev - tmpfs tmpfs rw\n808 801 0:30 / /sys/fs/cgroup rw,nosuid,nodev,noexec - cgroup2 cgroup2 rw\n"
+	return os.WriteFile(filepath.Join(kernelTreeDir, "mountinfo"), []byte(mi), 0o644)
 }
 
 // cleanup removes everything a run leaves: the nft table, the job cgroups (after moving this

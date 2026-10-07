@@ -54,11 +54,11 @@ func valid(n Name) Signals {
 	case Fly:
 		return Signals{FlyEnv: true, Source: SourceEnv}
 	case MicroVM:
-		return Signals{Source: SourcePipe, Init: true}
+		return Signals{Source: SourcePipe, Init: true, Kernel: vmKernel()}
 	case CloudVM:
-		return Signals{Source: SourcePipe, Init: true, Provider: "gcp", DMI: "gcp"}
+		return Signals{Source: SourcePipe, Init: true, Provider: "gcp", DMI: "gcp", Kernel: vmKernel()}
 	case Dedicated:
-		return Signals{Source: SourcePipe, Generation: "gen-1"}
+		return Signals{Source: SourcePipe, Generation: "gen-1", Kernel: dedicatedKernel()}
 	}
 	return Signals{}
 }
@@ -106,6 +106,14 @@ func TestCheckMatrix(t *testing.T) {
 		{"dedicated from the environment", Dedicated, func(s *Signals) { s.Source = SourceEnv }, phaselog.CodeSource},
 		{"dedicated without a generation", Dedicated, func(s *Signals) { s.Generation = "" }, phaselog.CodeGeneration},
 		{"dedicated, bad generation", Dedicated, func(s *Signals) { s.Generation = "a b" }, phaselog.CodeGeneration},
+		{"microvm in a container", MicroVM, func(s *Signals) { s.Kernel = privilegedDocker() }, phaselog.CodeSharedKernel},
+		{"microvm, not the initial pid namespace", MicroVM, func(s *Signals) { s.Kernel.PIDNSInitial = false }, phaselog.CodeSharedKernel},
+		{"cloudvm in a pod", CloudVM, func(s *Signals) { s.Kernel = capabilityPod() }, phaselog.CodeSharedKernel},
+		{"cloudvm, not the initial user namespace", CloudVM, func(s *Signals) { s.Kernel.UserNSInitial = false }, phaselog.CodeSharedKernel},
+		{"dedicated in a privileged container", Dedicated, func(s *Signals) { s.Kernel = privilegedDocker() }, phaselog.CodeSharedKernel},
+		{"dedicated in a capability-only pod", Dedicated, func(s *Signals) { s.Kernel = capabilityPod() }, phaselog.CodeSharedKernel},
+		{"dedicated in a VM's kernel", Dedicated, func(s *Signals) { s.Kernel = vmKernel() }, phaselog.CodeSharedKernel},
+		{"fly needs no kernel facts", Fly, func(s *Signals) { s.Kernel = Kernel{} }, "ok"},
 	}
 	for _, c := range cases {
 		s := valid(c.n)
