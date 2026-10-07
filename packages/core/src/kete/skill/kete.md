@@ -83,8 +83,21 @@ uncertain.
   permission. Approving allows another $5. The permission rule
   `"permissions": [{ "action": "budget", "resource": "*", "effect": "deny" }]` stops the
   session instead (for scripts and CI), and `"effect": "allow"` turns the prompt off. Note that
-  `kete run --auto` auto-approves permissions that aren't explicitly denied, including
-  `budget`.
+  `kete run --dangerously-skip-permissions` auto-approves permissions that aren't explicitly
+  denied, including `budget`; `--auto` doesn't.
+- **Permission modes and safe defaults.** By default Kete Code edits files in the workspace and runs
+  read-only and test/build commands without asking; any other shell command, web fetch/search and
+  every high-risk command (`git push`, `reset --hard`, deletes, package installs, network tools,
+  containers/cloud/deploy tools, databases, `sudo`, credentials, writes outside the workspace,
+  commands it can't parse) asks first. A session's mode (`kete.permissionMode`: `default`,
+  `accept-edits`, `auto`, `ask`, `plan`) changes that: `auto` stops asking except for high-risk
+  commands, `ask` asks before every edit, command and web request, `plan` blocks edits and any
+  command that changes something. Users switch with `kete --permission-mode <mode>`, `<leader>p` or
+  `/mode` in the terminal UI, or the editor's mode toggle; a rule in `permissions` that names the
+  action (e.g. `{ "action": "shell", "resource": "git push origin feature/*", "effect": "allow" }`)
+  overrides the defaults. Never suggest `--dangerously-skip-permissions` except for throwaway
+  environments. When a command is refused in Plan mode, tell the user to switch modes rather than
+  working around it.
 - **Unattended runs.** A session family marked unattended (session metadata `kete.unattended`, set
   once at creation and never removable afterward — `kete job run` sets it) never waits on a person:
   every permission that would ask is denied instead, with the reason "unattended run: not allowed

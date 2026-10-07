@@ -427,8 +427,36 @@ reaches when nothing denied the request, and only turns `allow` into `ask`.
 | `core/src/plugin/internal.ts` | Registers `KetePermissionMode.Plugin` in `pre`, after `KeteBudgetRule` |
 
 When syncing upstream: check that `Permission` still returns `deny` before triggering the `evaluate`
-hook (`test/kete/permission-mode-service.test.ts`), and that the tool actions are still `edit`, `shell`
-and `webfetch`.
+hook (`test/kete/permission-mode-service.test.ts`), and that the tool actions are still `edit`, `shell`,
+`webfetch` and `websearch`. The modes were extended by "Safe defaults and permission modes" below.
+
+### Safe defaults and permission modes (feature/safe-defaults-modes)
+
+Upstream's default agent allows every action (`"*": allow`). `core/src/kete/permission-mode.ts` now
+layers Kete Code's safe defaults on the same `evaluate` hook instead of editing
+`schema/src/agent.ts`: when an allowed request's only matching rule is that catch-all, the
+session's mode (`default`, `accept-edits`, `auto`, `ask`, `plan`; shared list in
+`util/src/kete/permission-mode.ts`) decides whether it still asks. Shell commands are classified by
+`core/src/kete/shell-risk.ts` (read / build / other / high). Explicit rules (agent, config, session,
+saved "always" approvals) are kept except in `ask` and `plan` modes. It still only tightens, and
+unattended families keep their own policy. User guide: `docs/permissions.md`.
+
+| File                                         | Change                                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `cli/src/commands/commands.ts`               | `--permission-mode <mode>` flag; `--auto` describes the `auto` mode; `--dangerously-skip-permissions` is documented (no longer hidden) |
+| `cli/src/commands/handlers/default.ts`, `run.ts` | `--auto` → `auto` mode (`kete/permission-mode.ts`'s `fromFlags`); only `--dangerously-skip-permissions`/`--yolo` make the client approve everything |
+| `cli/src/run/run.ts`                         | `RunCommandInput.permissionMode`; sets it on the session before the first prompt                                        |
+| `tui/src/context/args.tsx`                   | `Args.permissionMode`                                                                                                    |
+| `tui/src/app.tsx`                            | Calls `useKetePermissionModeCommands()` (cycle command, `/mode`, resumed-session mode)                                  |
+| `tui/src/config/keybind.ts`                  | `permission.mode.cycle` bound to `<leader>p`                                                                             |
+| `tui/src/component/prompt/index.tsx`         | New sessions are created with the mode's metadata; the status row gets the mode                                         |
+| `tui/src/component/prompt/metadata.tsx`      | Shows the session's permission mode (not for Default); the client-side bypass's label is now `auto-accept`              |
+
+When syncing upstream: check that upstream's default agent still starts with `{ action: "*",
+resource: "*", effect: "allow" }` (the "catch-all" the safe defaults key on, `catchAll()` in
+`permission-mode.ts`) — if upstream adds its own shell or web defaults, revisit; that the shell tool
+still asks once per parsed command (`tool/plugin/shell.ts`, `shell/parse.ts`); and that the TUI's
+`<leader>p` is still free.
 
 ### Starter role agents (feature/local-role-agents)
 

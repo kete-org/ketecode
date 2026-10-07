@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Safer defaults: Kete Code now asks before shell commands that can change things, and always
+  before high-risk ones (`git push`, `reset --hard`, deletes, package installs, network tools,
+  containers, cloud and deploy tools, databases, `sudo`, credentials) and web requests. Edits in
+  your workspace and read-only or test/build commands still run without asking.
+- The composer's toggle is now **Default / Auto / Ask / Plan**. **Auto** (new) runs edits and
+  commands without asking but still asks before high-risk commands. **Plan** is now enforced as
+  read-only by the runtime, not only by the Plan agent. The status bar shows the chat's mode.
+
 ## 0.2.4
 
 - Local models: the model picker shows a **Local** group for Ollama, LM Studio and vLLM (also on

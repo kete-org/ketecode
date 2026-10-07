@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { Spec } from "../framework/spec"
 import { Updater } from "../services/updater"
 import { KeteCommands } from "../kete/commands" // kete_change
+import * as KetePermissionMode from "../kete/permission-mode" // kete_change
 
 export const PrintLogs = GlobalFlag.setting("print-logs")({
   flag: Flag.boolean("print-logs").pipe(
@@ -27,13 +28,29 @@ const ServerParams = {
 
 const PermissionParams = {
   auto: Flag.boolean("auto").pipe(
-    Flag.withDescription("Auto-approve permissions that are not explicitly denied"),
+    // kete_change start: --auto is the "auto" permission mode, not a bypass (kete/permission-mode.ts)
+    Flag.withDescription(
+      "Use the auto permission mode: edits and commands run without asking; high-risk commands still ask",
+    ),
+    // kete_change end
     Flag.withDefault(false),
   ),
+  // kete_change start: Kete Code permission modes (kete/permission-mode.ts)
+  permissionMode: Flag.choice("permission-mode", KetePermissionMode.modes).pipe(
+    Flag.withDescription(
+      "Permission mode for the session: default (asks before risky commands), accept-edits, auto, ask (asks before everything) or plan (read-only)",
+    ),
+    Flag.optional,
+  ),
+  // kete_change end
   yolo: Flag.boolean("yolo").pipe(Flag.withDefault(false), Flag.withHidden),
   dangerouslySkipPermissions: Flag.boolean("dangerously-skip-permissions").pipe(
+    // kete_change start: the explicit bypass is documented, not hidden
+    Flag.withDescription(
+      "Approve every permission request that isn't denied, including high-risk commands, without asking",
+    ),
+    // kete_change end
     Flag.withDefault(false),
-    Flag.withHidden,
   ),
 }
 

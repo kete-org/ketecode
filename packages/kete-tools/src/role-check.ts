@@ -85,7 +85,9 @@ async function run(scenario: Scenario, model: string, gateway: Record<string, st
     Object.entries(process.env).filter(([name]) => !name.startsWith("KETE_") && !name.startsWith("OPENCODE_")),
   )
   Object.assign(environment, gateway)
-  const args = ["run", "--standalone", "--format", "json", "--model", model, "--agent", scenario.agent, ...(scenario.auto ? ["--auto"] : []), scenario.task]
+  // A throwaway repository: `auto` scenarios approve every request, as `--auto` did before it became
+  // the "auto" permission mode (which still asks, and so rejects, high-risk commands in `kete run`).
+  const args = ["run", "--standalone", "--format", "json", "--model", model, "--agent", scenario.agent, ...(scenario.auto ? ["--dangerously-skip-permissions"] : []), scenario.task]
   const started = Date.now()
   const output = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
     const child = spawn(values.kete!, args, {

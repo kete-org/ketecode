@@ -69,6 +69,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
+import * as KetePermissionModeView from "../../kete/permission-mode" // kete_change
 
 export type PromptProps = {
   sessionID?: string
@@ -192,6 +193,7 @@ export function Prompt(props: PromptProps) {
   const leader = Keymap.useLeaderActive()
   const muted = () => leader() || props.muted
   const local = useLocal()
+  const keteMode = KetePermissionModeView.useKetePermissionMode() // kete_change
   const paths = useTuiPaths()
   const terminalEnvironment = useTuiTerminalEnvironment()
   const clipboard = useClipboard()
@@ -1223,6 +1225,7 @@ export function Prompt(props: PromptProps) {
       // flight. Sends against the new session gate on the request.
       const created = data.session.create({
         location: directory ? { directory } : location,
+        metadata: keteMode.createMetadata(), // kete_change: --permission-mode in force before the first tool call
         agent: agent.id,
         model: {
           providerID: selection.providerID,
@@ -1826,6 +1829,7 @@ export function Prompt(props: PromptProps) {
                 mode={store.mode}
                 agent={agentLabel()}
                 auto={local.permission.mode === "autoaccept"}
+                keteMode={KetePermissionModeView.statusText(keteMode.current())} // kete_change
                 model={promptDisplay().modelLabel}
                 provider={promptDisplay().providerLabel}
                 variant={promptDisplay().variant}

@@ -822,12 +822,14 @@ Both should behave consistently.
   exact command in a modal, then runs `kete sync --approve <key> --command <exact>`, which refuses
   if the command changed in between, and reloads the server. OAuth sign-in runs `kete mcp auth` in
   a terminal; connect and disconnect use the runtime's MCP endpoints.
-- **Permission modes.** A session's `kete.permissionMode` metadata ("ask" or "default"; subagent
-  sessions inherit it) is read by `core/src/kete/permission-mode.ts` on the permission `evaluate`
-  hook, which runs only when nothing denied the request; "ask" turns an allowed edit, shell command or
-  web fetch into a prompt and never loosens anything. The extension sets it per chat
-  (`PATCH /api/session/:id`, merging the metadata) and passes the default for new sessions as
-  `KETE_PERMISSION_MODE`. Plan mode is upstream's read-only Plan agent.
+- **Permission modes.** A session's `kete.permissionMode` metadata (`default`, `accept-edits`,
+  `auto`, `ask` or `plan`; subagent sessions follow their root session's) is read by
+  `core/src/kete/permission-mode.ts` on the permission `evaluate` hook, which runs only when nothing
+  denied the request. It applies Kete Code's safe defaults where only upstream's catch-all allow
+  matched (shell commands classified by `core/src/kete/shell-risk.ts`), and never loosens anything
+  (`docs/permissions.md`). The extension sets it per chat (`PATCH /api/session/:id`, merging the
+  metadata) and passes the default for new sessions as `KETE_PERMISSION_MODE`. Plan mode is the
+  `plan` permission mode (read-only, enforced by the runtime) together with upstream's Plan agent.
 - **Editor tools.** The extension serves VS Code's diagnostics to the agent as a small MCP server
   (`editor-tools.ts`: `initialize`, `tools/list`, `tools/call` over streamable HTTP, JSON replies
   only) on 127.0.0.1 with a random bearer token, rejecting other `Host`s and any `Origin`. It

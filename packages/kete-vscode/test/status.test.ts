@@ -67,9 +67,18 @@ describe("status bar attention", () => {
 
 describe("status bar permission mode", () => {
   test("shows when the chat asks before edits", () => {
-    const bar = statusBar({ state: "running", url: "u" }, undefined, 0, true)
+    const bar = statusBar({ state: "running", url: "u" }, undefined, 0, "ask")
     expect(bar.text).toBe("$(check) $(kete-mark) Kete · $(shield) Ask")
     expect(bar.tooltip).toContain("asks before every edit, command and web fetch")
-    expect(statusBar({ state: "running", url: "u" }, undefined, 0, false).text).toBe("$(check) $(kete-mark) Kete")
+    expect(statusBar({ state: "running", url: "u" }, undefined, 0, "default").text).toBe("$(check) $(kete-mark) Kete")
+  })
+
+  test("shows Auto and Plan honestly", () => {
+    const auto = statusBar({ state: "running", url: "u" }, undefined, 0, "auto")
+    expect(auto.text).toBe("$(check) $(kete-mark) Kete · $(zap) Auto")
+    expect(auto.tooltip).toContain("high-risk commands")
+    const plan = statusBar({ state: "running", url: "u" }, undefined, 0, "plan")
+    expect(plan.text).toBe("$(check) $(kete-mark) Kete · $(eye) Plan")
+    expect(plan.tooltip).toContain("read-only")
   })
 })

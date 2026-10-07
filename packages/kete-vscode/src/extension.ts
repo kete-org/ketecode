@@ -58,7 +58,7 @@ import { ago, isSessionID, parseSessions, sessionFromLink, sessionLink, type Ses
 import { fileReference } from "./reference"
 import { Server } from "./server"
 import { applySettings, configDirectory, httpUrl, type KeteSettings } from "./settings"
-import { insideWorkspace, statusBar, type AccountState } from "./status"
+import { insideWorkspace, statusBar, type AccountState, type PermissionMode } from "./status"
 
 const run = promisify(execFile)
 
@@ -91,7 +91,7 @@ type State = {
   /** Each open session's permission mode, as the runtime has it ("default" or "ask"). */
   readonly modes: Map<string, PermissionMode>
   /** The mode the running server gives sessions without their own (the setting when it started). */
-  serverMode: PermissionMode
+  serverMode: "default" | "ask" // from kete.chat.askBeforeEdits
   readonly before: Map<string, string>
   review: Array<{ file: string; status: string; left: string; right: string }>
   /** The session list view, refreshed (debounced) when sessions change. */
@@ -360,9 +360,9 @@ function serverEnvironment(state: State): Record<string, string> {
 
 function render(state: State) {
   const active = activeSession(state)
-  const ask = active !== undefined && state.modes.get(active) === "ask"
-  void commands.executeCommand("setContext", "kete.askBeforeEdits", ask)
-  const bar = statusBar(state.server.state, state.account, state.attention.pending.size, ask)
+  const mode = active === undefined ? undefined : state.modes.get(active)
+  void commands.executeCommand("setContext", "kete.askBeforeEdits", mode === "ask")
+  const bar = statusBar(state.server.state, state.account, state.attention.pending.size, mode)
   state.item.text = bar.text
   state.item.tooltip = bar.tooltip
   state.item.backgroundColor = bar.error ? new ThemeColor("statusBarItem.errorBackground") : undefined
@@ -1239,9 +1239,11 @@ function workspaceDiagnostics(file: string | undefined): Diagnostic[] | undefine
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Permission mode: "Ask before edits" for the chat's session (core/src/kete/permission-mode.ts)
+// Permission mode for the chat's session (core/src/kete/permission-mode.ts). The title-bar shield
+// switches between Ask and Default; the composer's toggle (packages/app/src/kete/mode.ts) offers
+// Default, Auto, Ask and Plan. Both write the same metadata key.
 
-type PermissionMode = "default" | "ask"
+const MODES: readonly PermissionMode[] = ["default", "accept-edits", "auto", "ask", "plan"]
 const MODE_KEY = "kete.permissionMode"
 
 function isSessionMetadataEvent(data: unknown): data is { sessionID: string } {
@@ -1267,7 +1269,7 @@ async function getSession(state: State, id: string) {
 /** A session without its own mode uses the default the server was started with. */
 function modeOf(state: State, metadata: Record<string, unknown>): PermissionMode {
   const value = metadata[MODE_KEY]
-  return value === "ask" || value === "default" ? value : state.serverMode
+  return MODES.find((mode) => mode === value) ?? state.serverMode
 }
 
 async function loadMode(state: State, id: string) {
@@ -1305,7 +1307,9 @@ async function setMode(state: State, mode: PermissionMode) {
     // Read back what the runtime stored, so the shield shows the real state.
     await loadMode(state, id)
     window.setStatusBarMessage(
-      mode === "ask" ? "$(shield) Kete Code asks before edits, commands and web fetches in this chat" : "$(unlock) Kete Code follows the agent's permissions in this chat",
+      mode === "ask"
+        ? "$(shield) Kete Code asks before edits, commands and web fetches in this chat"
+        : "$(unlock) Kete Code edits without asking in this chat, and asks before commands that can change things and high-risk ones",
       4_000,
     )
   } catch (error) {

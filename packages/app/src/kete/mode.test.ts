@@ -7,37 +7,34 @@ describe("derive", () => {
   })
   test("otherwise reads the session's permission mode", () => {
     expect(derive({ agent: "build", metadata: { "kete.permissionMode": "ask" } })).toBe("ask")
-    expect(derive({ agent: "build", metadata: { "kete.permissionMode": "default" } })).toBe("auto")
+    expect(derive({ agent: "build", metadata: { "kete.permissionMode": "default" } })).toBe("default")
+    expect(derive({ agent: "build", metadata: { "kete.permissionMode": "auto" } })).toBe("auto")
+    expect(derive({ agent: "build", metadata: { "kete.permissionMode": "plan" } })).toBe("plan")
+    expect(derive({ agent: "build", metadata: { "kete.permissionMode": "accept-edits" } })).toBe("accept-edits")
   })
   test("falls back when there is no metadata yet", () => {
-    expect(derive({ agent: "build" })).toBe("auto")
+    expect(derive({ agent: "build" })).toBe("default")
     expect(derive({ agent: "build", fallback: "ask" })).toBe("ask")
   })
   test("an unrecognised metadata value falls back too", () => {
-    expect(derive({ agent: "build", metadata: { "kete.permissionMode": "bogus" } })).toBe("auto")
+    expect(derive({ agent: "build", metadata: { "kete.permissionMode": "bogus" } })).toBe("default")
   })
 })
 
 describe("next", () => {
-  test("cycles Auto -> Ask -> Plan -> Auto", () => {
-    expect(next("auto", true)).toBe("ask")
-    expect(next("ask", true)).toBe("plan")
-    expect(next("plan", true)).toBe("auto")
-  })
-  test("skips Plan when the plan agent isn't available", () => {
-    expect(next("ask", false)).toBe("auto")
-    expect(next("auto", false)).toBe("ask")
+  test("cycles Default -> Auto -> Ask -> Plan -> Default", () => {
+    expect(next("default")).toBe("auto")
+    expect(next("auto")).toBe("ask")
+    expect(next("ask")).toBe("plan")
+    expect(next("plan")).toBe("default")
   })
 })
 
 describe("withMode", () => {
   test("writes only the permission-mode key, keeping the rest of the metadata", () => {
     expect(withMode({ other: "x" }, "ask")).toEqual({ other: "x", "kete.permissionMode": "ask" })
-    expect(withMode(undefined, "auto")).toEqual({ "kete.permissionMode": "default" })
-  })
-  test("writes only default/ask, never anything else", () => {
-    const metadata = withMode(undefined, "ask")
-    expect(Object.values(metadata)).toEqual(["ask"])
+    expect(withMode(undefined, "auto")).toEqual({ "kete.permissionMode": "auto" })
+    expect(withMode(undefined, "plan")).toEqual({ "kete.permissionMode": "plan" })
   })
 })
 
@@ -49,15 +46,10 @@ describe("KeteModeDraft", () => {
     KeteModeDraft.clear("draft-a")
     expect(KeteModeDraft.metadata("draft-a")).toBeUndefined()
   })
-  test("Plan carries no metadata (it's an agent choice, applied separately)", () => {
+  test("Plan carries metadata too: the mode is what makes it read-only", () => {
     KeteModeDraft.set("draft-b", "plan")
-    expect(KeteModeDraft.metadata("draft-b")).toBeUndefined()
+    expect(KeteModeDraft.metadata("draft-b")).toEqual({ "kete.permissionMode": "plan" })
     KeteModeDraft.clear("draft-b")
-  })
-  test("Auto carries metadata too, so a draft's explicit choice always reaches the new session", () => {
-    KeteModeDraft.set("draft-c", "auto")
-    expect(KeteModeDraft.metadata("draft-c")).toEqual({ "kete.permissionMode": "default" })
-    KeteModeDraft.clear("draft-c")
   })
 })
 
@@ -95,7 +87,7 @@ describe("apply", () => {
     expect(agent.current()).toBe("build")
   })
 
-  test("Plan selects the plan agent without touching metadata", async () => {
+  test("Plan writes the plan mode and selects the plan agent", async () => {
     const calls: unknown[] = []
     const sdk = {
       session: {
@@ -110,7 +102,7 @@ describe("apply", () => {
     }
     const agent = agentStub("build")
     await apply({ sdk, sessionID: "ses_2", mode: "plan", agent })
-    expect(calls).toEqual([])
+    expect(calls).toEqual(["get", ["update", { sessionID: "ses_2", metadata: { "kete.permissionMode": "plan" } }]])
     expect(agent.current()).toBe("plan")
   })
 
@@ -124,7 +116,7 @@ describe("apply", () => {
     const agent = agentStub("review")
     await apply({ sdk, sessionID: "ses_3", mode: "plan", agent })
     expect(agent.current()).toBe("plan")
-    await apply({ sdk, sessionID: "ses_3", mode: "auto", agent })
+    await apply({ sdk, sessionID: "ses_3", mode: "default", agent })
     expect(agent.current()).toBe("review")
   })
 
@@ -137,6 +129,18 @@ describe("apply", () => {
     }
     const agent = agentStub("plan")
     await apply({ sdk, sessionID: "ses_4", mode: "auto", agent })
+    expect(agent.current()).toBe("build")
+  })
+
+  test("Plan without a plan agent on offer is the permission mode only", async () => {
+    const sdk = {
+      session: {
+        get: async () => ({ metadata: {} }),
+        update: async () => {},
+      },
+    }
+    const agent = { current: () => "build", options: () => ["build"], select: () => {} }
+    await apply({ sdk, sessionID: "ses_5", mode: "plan", agent })
     expect(agent.current()).toBe("build")
   })
 })

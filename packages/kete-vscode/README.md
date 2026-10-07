@@ -35,12 +35,16 @@ starts it for you, so there is nothing else to install.
   runs a command on your computer waits for you: **Review and Approve** shows the exact command, and
   it runs only after you approve it (again, if it ever changes). **Sign In** handles servers that
   use OAuth.
-- **Ask before edits:** click the shield in the chat's title bar, or the **Auto / Ask / Plan**
-  toggle next to send in the composer, and Kete Code asks before every file edit, shell command and
-  web fetch in that chat (the status bar shows "Ask"). New chats follow `kete.chat.askBeforeEdits`.
-  **Plan** switches to the read-only **Plan** agent. Neither Ask nor Plan ever allows what the
-  agent's permissions or your organization's policy deny. In Ask mode an "Always allow" answered
-  earlier doesn't skip the question.
+- **Permission modes:** by default Kete Code edits files in your workspace and runs read-only and
+  test/build commands without asking, and asks before any other command, before high-risk ones
+  (`git push`, deletes, package installs, network tools, containers, cloud and deploy tools,
+  databases, `sudo`, credentials) and before web requests. The **Default / Auto / Ask / Plan**
+  toggle next to send changes this for the chat: **Auto** runs edits and commands without asking but
+  still asks before high-risk commands; **Ask** asks before every edit, command and web fetch (the
+  shield in the chat's title bar switches between Ask and Default); **Plan** is read-only and also
+  switches to the **Plan** agent. New chats follow `kete.chat.askBeforeEdits`. No mode ever allows
+  what the agent's permissions or your organization's policy deny. In Ask mode an "Always allow"
+  answered earlier doesn't skip the question.
 - **Your editor's diagnostics:** Kete Code can ask the editor for the errors and warnings your language
   servers and linters report (the `editor_diagnostics` tool), so it checks its edits the way you
   would. Secret files and `files.exclude` matches are left out; turn it off with
