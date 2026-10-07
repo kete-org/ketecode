@@ -263,8 +263,10 @@ the same PR.
   padding; cloudvm user data is the object. This is the shape kete-code-platform's P2.0 host-agent
   contract must adopt. New phase steps `setup_host`, `host_boundary` (codes `fly_signals`,
   `source`, `init`, `vsock`, `dmi`, `generation`, `gateway`, `private_range`, `ipv6`,
-  `config_disk`, `metadata_drop`, `guarded_path`) and `kete-job-init`'s `init_*` steps; all before
-  claim, phase lines only. README "Host profiles" and "kete-job-init".
+  `config_disk`, `metadata_drop`, `guarded_path`, and since the shared-kernel guard
+  `shared_kernel`) and `kete-job-init`'s `init_*` steps (`init_kernel` added with the guard); all
+  before claim, phase lines only. Phase-line codes and steps are free-form `^[a-z][a-z0-9_]{0,39}$`
+  in job-host-v1/v2 (`JobHostPhaseLine`), so the new code and step need no contract change. README "Host profiles" and "kete-job-init".
 - **Before claim (no callback, so not platform-visible):** off Fly the host-boundary probe (root,
   before any in-guest rule) must reach no gateway port, metadata, private-range or IPv6 sample; on
   Fly the Fly guard fails closed (on Fly, a

@@ -34,7 +34,9 @@ const (
 	// ParentCgroup holds one cgroup per machine, outside the agent unit's cgroup (the job
 	// survives an agent restart, like a firecracker VM).
 	ParentCgroup = "kete-job-host-jobs"
-	// InitArg is argv[1] of the reaper (the agent's binary re-executed).
+	// InitArg is argv[1] of the reaper (the agent's binary re-executed). The job entrypoint's
+	// shared-kernel guard requires PID 1's argv to be exactly [<exe>, InitArg]
+	// (kete-job-entrypoint hostprofile.DedicatedInitArg): change both together.
 	InitArg = "__dedicated-init"
 	// EntrypointBin is the job image's entrypoint (the image's ENTRYPOINT; kete-job-init's path).
 	EntrypointBin = "/usr/local/libexec/kete/kete-job-entrypoint"

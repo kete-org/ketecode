@@ -95,8 +95,12 @@ How it runs (`scripts/e2e.sh`): a Docker network on the documentation range `198
 (Docker's bridge ranges are in the proxy's blocklist, and its embedded DNS is loopback, which the
 proxy refuses). The fake (`packages/kete-job-entrypoint/cmd/kete-job-fake-platform`) runs from the
 test image at `198.51.100.10`, serving `*.kete.test` over HTTPS with its own per-run test CA and DNS,
-forwarding every other name to Docker's resolver. The job container runs the image's own
-`ENTRYPOINT` as the **dedicated** host profile would (the entrypoint README's "Host profiles"):
+forwarding every other name to Docker's resolver. The job container runs the image's entrypoint
+as the **dedicated** host profile would (the entrypoint README's "Host profiles"), started by a
+test-only stand-in for kete-job-host's dedicated reaper (`e2e.test __dedicated-init`, the test
+layer's `--entrypoint`): the entrypoint's shared-kernel guard refuses a plain Docker container, so
+the stand-in, as PID 1, removes Docker's mounts under `/etc` (copying their content into the
+container's own files) and `/.dockerenv`, then starts the entrypoint with
 `KETE_JOB_HOST_PROFILE=dedicated` and `--config-fd 0`, with the fake's `config.json` on stdin
 (`docker run -i`: a pipe, so no token is in the host's argv or the container's environment),
 `--privileged --cgroupns=private`, a bind-mounted `resolv.conf` naming the fake, and a bind-mounted

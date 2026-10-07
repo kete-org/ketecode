@@ -59,6 +59,7 @@ func Stage1() {
 	// A panic must never leave PID 1 dead with the machine up (the kernel would panic, and with
 	// `panic=1` on the guest's command line reboot): power off instead.
 	defer powerOffOnPanic()
+	ownKernel(pl.New(os.Stdout))
 	mounted := baseMounts()
 	console()
 	log := pl.New(os.Stdout) // stdout is the console now
@@ -99,6 +100,7 @@ func Stage2(log *pl.Logger) {
 	if log == nil {
 		log = pl.New(os.Stdout)
 	}
+	ownKernel(log)
 	// SIGTERM and SIGINT (ctrl-alt-del with CAD off) are forwarded to the entrypoint by Wait; until
 	// then they are ignored, as the kernel ignores them for PID 1 without a handler.
 	signal.Ignore(unix.SIGTERM, unix.SIGINT, unix.SIGHUP)
@@ -114,6 +116,29 @@ func powerOffOnPanic() {
 	if recover() != nil {
 		shutdown(PowerOff)
 	}
+}
+
+// ownKernel is the shared-kernel guard (hostprofile kernel.go), before anything else is written:
+// kete-job-init must be the kernel's own init (the initial user and PID namespaces), never PID 1
+// of a container's PID namespace sharing a host's kernel. It needs /proc: a VM's is mounted here
+// (the guest's own kernel, before any other write); a container already has one. On refusal it
+// powers off, which inside a container's PID namespace only ends that namespace.
+func ownKernel(log *pl.Logger) {
+	log.Start(pl.StepInitKernel)
+	if err := mountIf("proc", "/proc", "proc", unix.PROC_SUPER_MAGIC, unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, ""); err != nil {
+		log.FailErr(pl.StepInitKernel, pl.CodeSharedKernel, err)
+		shutdown(PowerOff)
+	}
+	k, err := hostprofile.GatherKernel(hostprofile.KernelPaths{NSDir: "/proc/self/ns", Proc1Cmdline: "/proc/1/cmdline", MountInfo: "/proc/self/mountinfo"})
+	if err != nil {
+		log.FailErr(pl.StepInitKernel, pl.CodeSharedKernel, err)
+		shutdown(PowerOff)
+	}
+	if !hostprofile.OwnKernel(k) {
+		log.Fail(pl.StepInitKernel, pl.CodeSharedKernel)
+		shutdown(PowerOff)
+	}
+	log.OK(pl.StepInitKernel)
 }
 
 func statfsType(path string) int64 {

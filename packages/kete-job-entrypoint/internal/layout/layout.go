@@ -49,6 +49,14 @@ type Config struct {
 	VirtioDir   string // virtio devices (a vsock device has id 0x0013)
 	DMIDir      string // firmware DMI fields (sys_vendor, product_name, chassis_asset_tag)
 
+	// The shared-kernel guard's inputs (hostprofile.GatherKernel). Only in-process tests point
+	// these elsewhere, and only they set NSInode (nil: stat NSDir/<name>).
+	NSDir        string
+	Proc1Cmdline string
+	MountInfo    string
+	MarkerFiles  []string
+	NSInode      func(name string) (uint64, error)
+
 	// Ports A, B and R on 127.0.0.1.
 	PortKete, PortTool, PortRoot int
 
@@ -107,6 +115,11 @@ func Default() Config {
 		DevDir:      "/dev",
 		VirtioDir:   "/sys/bus/virtio/devices",
 		DMIDir:      "/sys/class/dmi/id",
+
+		NSDir:        "/proc/self/ns",
+		Proc1Cmdline: "/proc/1/cmdline",
+		MountInfo:    "/proc/self/mountinfo",
+		MarkerFiles:  []string{"/.dockerenv", "/run/.containerenv"},
 
 		PortKete: 81, PortTool: 82, PortRoot: 83,
 

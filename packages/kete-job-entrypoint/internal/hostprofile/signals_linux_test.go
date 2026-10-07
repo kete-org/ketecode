@@ -3,6 +3,7 @@
 package hostprofile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -112,5 +113,88 @@ func TestFindConfigDisk(t *testing.T) {
 	}
 	if _, err := OpenConfigDisk(filepath.Join(p.DevDir, "vdf")); err == nil || err == ErrNotConfigDisk {
 		t.Errorf("symlink: %v", err)
+	}
+}
+
+// kernelTree is a machine for GatherKernel: PID 1's argv, the mount table, marker files, and the
+// namespaces' inode numbers.
+func kernelTree(t *testing.T, args, mountinfo string, markers []string, user, pid uint64) KernelPaths {
+	t.Helper()
+	d := t.TempDir()
+	write(t, filepath.Join(d, "cmdline"), args)
+	write(t, filepath.Join(d, "mountinfo"), mountinfo)
+	p := KernelPaths{Proc1Cmdline: filepath.Join(d, "cmdline"), MountInfo: filepath.Join(d, "mountinfo")}
+	for _, m := range []string{".dockerenv", "run/.containerenv"} {
+		p.MarkerFiles = append(p.MarkerFiles, filepath.Join(d, m))
+	}
+	for _, m := range markers {
+		write(t, filepath.Join(d, m), "")
+	}
+	p.NSInode = func(name string) (uint64, error) {
+		switch name {
+		case "user":
+			return user, nil
+		case "pid":
+			return pid, nil
+		}
+		return 0, errors.New("no such namespace")
+	}
+	return p
+}
+
+// TestGatherKernel: the four machines of kernel_test.go read from files, through the same rules.
+func TestGatherKernel(t *testing.T) {
+	const other = 0xF0000123
+	cases := []struct {
+		name            string
+		p               KernelPaths
+		vm, dedicated   bool
+		mount           string
+		marker, pid1Set bool
+	}{
+		{"privileged docker", kernelTree(t, "bash\x00scripts/integration.sh\x00", mountsDocker, []string{".dockerenv"}, InitUserNSIno, other), false, false, "/etc/resolv.conf", true, true},
+		{"capability pod", kernelTree(t, "/pause\x00", mountsPod, nil, InitUserNSIno, other), false, false, "/etc/hosts", false, true},
+		{"podman", kernelTree(t, "/usr/local/libexec/kete/kete-job-entrypoint\x00", "1 0 0:1 / / rw - overlay overlay rw\n", []string{"run/.containerenv"}, InitUserNSIno, other), false, false, "", true, true},
+		{"rootless container", kernelTree(t, "/proc/self/exe\x00"+DedicatedInitArg+"\x00", mountsDedicated, nil, other, other), false, false, "", false, true},
+		{"dedicated", kernelTree(t, "/proc/self/exe\x00"+DedicatedInitArg+"\x00", mountsDedicated, nil, InitUserNSIno, other), false, true, "", false, true},
+		{"vm", kernelTree(t, "/usr/local/libexec/kete/kete-job-init\x00__guest\x00", mountsVM, nil, InitUserNSIno, InitPIDNSIno), true, false, "", false, true},
+	}
+	for _, c := range cases {
+		k, err := GatherKernel(c.p)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if OwnKernel(k) != c.vm || DedicatedReaper(k) != c.dedicated || k.RuntimeMount != c.mount || k.MarkerFile != c.marker || (len(k.PID1Args) > 0) != c.pid1Set {
+			t.Errorf("%s: %+v", c.name, k)
+		}
+	}
+	// PID 1's argv unreadable (gone, or another's under hidepid) is no argv, never an error.
+	p := kernelTree(t, "", mountsDedicated, nil, InitUserNSIno, other)
+	os.Remove(p.Proc1Cmdline)
+	if k, err := GatherKernel(p); err != nil || k.PID1Args != nil || DedicatedReaper(k) {
+		t.Errorf("no cmdline: %+v %v", k, err)
+	}
+	// A namespace or the mount table that can't be read fails (the caller refuses).
+	p = kernelTree(t, "", mountsDedicated, nil, InitUserNSIno, other)
+	p.NSInode = func(string) (uint64, error) { return 0, os.ErrPermission }
+	if _, err := GatherKernel(p); err == nil {
+		t.Error("unreadable namespace accepted")
+	}
+	p = kernelTree(t, "", mountsDedicated, nil, InitUserNSIno, other)
+	os.Remove(p.MountInfo)
+	if _, err := GatherKernel(p); err == nil {
+		t.Error("missing mount table accepted")
+	}
+	// The real reader: stat of /proc/self/ns/<name> gives nsfs inode numbers (this test process is
+	// never in a namespace whose number is below the dynamic range, other than the initial ones).
+	if _, err := os.Stat("/proc/self/ns/pid"); err == nil {
+		k, err := GatherKernel(KernelPaths{NSDir: "/proc/self/ns", Proc1Cmdline: "/proc/1/cmdline", MountInfo: "/proc/self/mountinfo"})
+		if err != nil {
+			t.Fatalf("real machine: %v", err)
+		}
+		t.Logf("this machine: %+v", k)
+		if DedicatedReaper(k) {
+			t.Error("a test process passes as the dedicated reaper's job")
+		}
 	}
 }

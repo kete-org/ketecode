@@ -50,13 +50,15 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 		log.OK(s)
 		return true
 	}
-	if !step(pl.StepBoot, setup.Self) {
-		log.Exit(2)
-		return 2
-	}
+	// The host profile and the shared-kernel guard come first: nothing, not even this process's
+	// own settings, is written before it is known whose kernel this is.
 	profile, ok := hostCheck(log, cfg, boot)
 	if !ok {
 		return exit(log, 1)
+	}
+	if !step(pl.StepBoot, setup.Self) {
+		log.Exit(2)
+		return 2
 	}
 	var ids sysusers.IDs
 	if !step(pl.StepUsers, func() error {
@@ -165,9 +167,10 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 	return job.Run(ctx, deps)
 }
 
-// hostCheck is step setup_host: the boot values' host profile against the machine's signals
-// (hostprofile.Check). Any mismatch, or a profile that can't be read, refuses the job before
-// claim with a fixed code.
+// hostCheck is step setup_host, the first step: the boot values' host profile against the
+// machine's signals (hostprofile.Check), with the shared-kernel guard for every profile but fly.
+// Any mismatch, or a profile that can't be read, refuses the job before claim, and before anything
+// is written, with a fixed code.
 func hostCheck(log *pl.Logger, cfg layout.Config, boot bootenv.Values) (hostprofile.Name, bool) {
 	log.Start(pl.StepHost)
 	n, err := hostprofile.Parse(boot.Profile)
@@ -181,6 +184,14 @@ func hostCheck(log *pl.Logger, cfg layout.Config, boot bootenv.Values) (hostprof
 	if err != nil {
 		log.FailErr(pl.StepHost, pl.CodeFailed, err)
 		return "", false
+	}
+	if n != hostprofile.Fly {
+		// Reads only. A namespace that can't be read refuses as the guard would: whose kernel
+		// this is stays unknown.
+		if sig.Kernel, err = hostprofile.GatherKernel(kernelPaths(cfg)); err != nil {
+			log.FailErr(pl.StepHost, pl.CodeSharedKernel, err)
+			return "", false
+		}
 	}
 	if err := hostprofile.Check(n, sig); err != nil {
 		var r *hostprofile.Refusal
@@ -199,6 +210,12 @@ func signalPaths(cfg layout.Config) hostprofile.Paths {
 	return hostprofile.Paths{
 		FlyDir: cfg.FlyDir, InitBin: cfg.InitBin, Proc1Exe: cfg.Proc1Exe, VirtioDir: cfg.VirtioDir,
 		DMIDir: cfg.DMIDir, SysBlockDir: cfg.SysBlockDir, DevDir: cfg.DevDir,
+	}
+}
+
+func kernelPaths(cfg layout.Config) hostprofile.KernelPaths {
+	return hostprofile.KernelPaths{
+		NSDir: cfg.NSDir, Proc1Cmdline: cfg.Proc1Cmdline, MountInfo: cfg.MountInfo, MarkerFiles: cfg.MarkerFiles, NSInode: cfg.NSInode,
 	}
 }
 

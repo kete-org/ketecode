@@ -53,6 +53,7 @@ const (
 	StepAbort      Step = "abort"
 
 	// kete-job-init's steps (PID 1 in microvm and cloudvm guests).
+	StepInitKernel   Step = "init_kernel" // the shared-kernel guard, before anything is written
 	StepInitMount    Step = "init_mount"
 	StepInitRoot     Step = "init_root"
 	StepInitNet      Step = "init_network"
@@ -98,6 +99,10 @@ const (
 	CodeVsock      Code = "vsock"       // a vsock device exists (microvm)
 	CodeDMI        Code = "dmi"         // the firmware vendor doesn't match the provider (cloudvm)
 	CodeGeneration Code = "generation"  // no reset generation (dedicated)
+	// The process may share its kernel with other workloads (a container), so no kernel state may be
+	// written: not the VM's own kernel (microvm, cloudvm), not the dedicated driver's set-up
+	// (dedicated). hostprofile "shared-kernel guard".
+	CodeSharedKernel Code = "shared_kernel"
 
 	// The host-boundary probe's reasons (root, before the in-guest rules), and the tool user's
 	// extra per-profile reasons in the isolation check.

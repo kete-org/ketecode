@@ -3,10 +3,13 @@
 # (packages/kete-job-image/README.md "End-to-end test"). Per scenario:
 #   1. the fake (cmd/kete-job-fake-platform) at 198.51.100.10 on a documentation-range Docker
 #      network (Docker's bridge ranges are blocked by the egress proxy, its embedded DNS is loopback);
-#   2. the job container from the image's own ENTRYPOINT as the dedicated host profile would run it
+#   2. the job container: the image's entrypoint as the dedicated host profile runs it
 #      (KETE_JOB_HOST_PROFILE=dedicated, the fake's config.json on a pipe: stdin, --config-fd 0),
-#      privileged with a private cgroup namespace, its resolv.conf naming the fake's DNS and its CA
-#      bundle plus the fake's test CA (bind mounts). The Docker host stands in for the host agent's
+#      started by a stand-in for kete-job-host's dedicated reaper (`e2e.test __dedicated-init`,
+#      internal/e2e/reaper_test.go: PID 1, Docker's /etc mounts and /.dockerenv removed), since the
+#      entrypoint's shared-kernel guard refuses a plain Docker container; privileged with a private
+#      cgroup namespace, its resolv.conf naming the fake's DNS and its CA bundle plus the fake's test
+#      CA (bind mounts the stand-in copies into the container's own files). The Docker host stands in for the host agent's
 #      table (kete-code-platform ADR 0023 rule 7): host_table below drops every packet from the job to
 #      the Docker host itself and to private and special ranges, and lets only TCP 443 and the fake
 #      out, so the entrypoint's host-boundary probe passes for the right reason;
@@ -121,9 +124,9 @@ for sc in "${scenarios[@]}"; do
   # Attached with stdin (docker run -i), so the config reaches the entrypoint on a pipe and stdin
   # closes at its end; the CLI runs in the background and the container is polled as before.
   docker run -i --name "$job" --privileged --cgroupns=private --network "$net" --ip "$job_ip" \
-    -e KETE_JOB_HOST_PROFILE=dedicated \
     -v "$st/resolv.conf:/etc/resolv.conf:ro" -v "$st/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro" \
-    "$test_image" --config-fd 0 < "$st/config.json" >/dev/null 2>&1 &
+    --entrypoint /usr/local/libexec/kete-e2e/e2e.test \
+    "$test_image" __dedicated-init < "$st/config.json" >/dev/null 2>&1 &
   runner=$!
   for _ in $(seq 1 120); do
     docker inspect "$job" >/dev/null 2>&1 && break

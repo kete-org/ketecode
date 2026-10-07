@@ -36,7 +36,10 @@ verified-at: cd74c80458
   hostname/resolv.conf/hosts from inside, `StartProcess` of
   `/usr/local/libexec/kete/kete-job-entrypoint --config-fd 3` (env `PATH` +
   `KETE_JOB_HOST_PROFILE=dedicated`), `ok`, `oom_score_adj -1000`, `reap` every child until the
-  entrypoint exits, `kill(-1)`, `exited <code>` to fd 6. `Status`: reaper alive (pid + start time +
+  entrypoint exits, `kill(-1)`, `exited <code>` to fd 6. The entrypoint's shared-kernel guard
+  requires exactly this set-up (PID 1 argv `[<exe>, __dedicated-init]`, initial user ns, own PID
+  ns, no mount under `/etc`, no container marker files): `InitArg` and the reaper's mounts are a
+  contract with kete-job-entrypoint `hostprofile.DedicatedReaper`; `TestJobRunsAndExits` checks it. `Status`: reaper alive (pid + start time +
   cgroup prefix) → running; `exit` says `exited` → exited; else crashed.
 - One job per generation? The agent, not the driver: `prepare` sets `state.GenerationSpentBy` to the
   machine id right before `starting` (`internal/agent/agent.go:682`, dedicated only; a failed save

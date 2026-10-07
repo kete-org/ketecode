@@ -65,6 +65,14 @@ type entrypointReport struct {
 	Zombies    int    `json:"zombies"`
 	ExtraFDs   string `json:"extra_fds"`
 	Umask      int    `json:"umask"`
+	// The facts the entrypoint's shared-kernel guard checks (kete-job-entrypoint hostprofile
+	// kernel.go, DedicatedReaper): PID 1's argv, the user and PID namespaces' nsfs inode numbers,
+	// container-runtime mount points and marker files.
+	PID1Args      []string `json:"pid1_args"`
+	UserNS        uint64   `json:"user_ns"`
+	PIDNS         uint64   `json:"pid_ns"`
+	RuntimeMounts []string `json:"runtime_mounts"`
+	MarkerFiles   []string `json:"marker_files"`
 }
 
 func fakeEntrypoint() int {
@@ -103,6 +111,33 @@ func fakeEntrypoint() int {
 		}
 	}
 	r.Umask = unix.Umask(0o022)
+	if b, err := os.ReadFile("/proc/1/cmdline"); err == nil {
+		r.PID1Args = strings.Split(strings.TrimSuffix(string(b), "\x00"), "\x00")
+	}
+	for name, dst := range map[string]*uint64{"user": &r.UserNS, "pid": &r.PIDNS} {
+		var st unix.Stat_t
+		if unix.Stat("/proc/self/ns/"+name, &st) == nil {
+			*dst = st.Ino
+		}
+	}
+	if mi, err := os.ReadFile("/proc/self/mountinfo"); err == nil {
+		for _, line := range strings.Split(string(mi), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 5 {
+				continue
+			}
+			for _, p := range []string{"/etc", "/dev/termination-log", "/run/secrets", "/var/run/secrets"} {
+				if f[4] == p || strings.HasPrefix(f[4], p+"/") {
+					r.RuntimeMounts = append(r.RuntimeMounts, f[4])
+				}
+			}
+		}
+	}
+	for _, f := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := os.Lstat(f); err == nil {
+			r.MarkerFiles = append(r.MarkerFiles, f)
+		}
+	}
 	// An orphan for PID 1: a child that exits at once, leaving a grandchild that exits soon after.
 	if p, err := os.StartProcess(os.Args[0], []string{os.Args[0], "spawn-orphan"}, &os.ProcAttr{Files: []*os.File{nil, nil, nil}}); err == nil {
 		_, _ = p.Wait()
@@ -379,6 +414,22 @@ func TestJobRunsAndExits(t *testing.T) {
 		t.Errorf("descriptors beyond 0-3 leaked into the entrypoint: %s", r.ExtraFDs)
 	case r.Umask != 0o022:
 		t.Errorf("umask %o", r.Umask)
+	}
+	// What the entrypoint's shared-kernel guard requires of a dedicated job (kete-job-entrypoint
+	// hostprofile.DedicatedReaper): the initial user namespace, a PID namespace of its own, the
+	// reaper as PID 1 with argv exactly [<exe>, InitArg], no container-runtime mount or marker.
+	const initUserNS, initPIDNS = 0xEFFFFFFD, 0xEFFFFFFC
+	switch {
+	case r.UserNS != initUserNS:
+		t.Errorf("user namespace %#x, want the initial one", r.UserNS)
+	case r.PIDNS == 0 || r.PIDNS == initPIDNS:
+		t.Errorf("pid namespace %#x, want one of the job's own", r.PIDNS)
+	case len(r.PID1Args) != 2 || r.PID1Args[1] != InitArg:
+		t.Errorf("PID 1 argv %q, want [<exe> %s]", r.PID1Args, InitArg)
+	case len(r.RuntimeMounts) != 0:
+		t.Errorf("container-runtime mount points %q", r.RuntimeMounts)
+	case len(r.MarkerFiles) != 0:
+		t.Errorf("container marker files %q", r.MarkerFiles)
 	}
 	// The cgroup limits are on the machine's cgroup.
 	for _, f := range []struct{ name, want string }{{"cpu.max", "100000 100000"}, {"memory.max", "536870912"}, {"pids.max", "4096"}} {
