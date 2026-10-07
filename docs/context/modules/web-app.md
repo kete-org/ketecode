@@ -1,7 +1,7 @@
 ---
 module: web-app
 paths: [packages/app/src/kete/panel.tsx, packages/app/src/kete/panel.css, packages/app/src/kete/panel-layout.tsx, packages/app/src/kete/panel-state.ts, packages/app/src/kete/mode.ts, packages/app/src/kete/composer-controls.tsx, packages/app/src/new-session/view.tsx, packages/app/src/composer/composer.tsx, packages/app/src/composer/editor/editor.tsx, packages/app/src/new-session/composer-adapter.ts]
-verified-at: 139c15e1b2
+verified-at: 0b8a24ff25
 ---
 
 ## Quick answers
@@ -10,7 +10,7 @@ verified-at: 139c15e1b2
 - What is the "Kete panel"? The redesigned empty state + composer of the web app's new-session/
   session view: a header (mark + wordmark), an 84px hero with a one-time weave-in animation, an
   optional tip and "what's new" notices, a dismissible CLI hint, and two composer-toolbar additions
-  (a commands button, an Auto/Ask/Plan permission-mode toggle). `docs/tasks/2026-09-29-chat-panel-design/`
+  (a commands button, a Default/Auto/Ask/Plan permission-mode toggle). `docs/tasks/2026-09-29-chat-panel-design/`
   is the task that built it; `spec.md` there is the source of truth for exact visuals, not this card.
 - Where does the empty state/composer live upstream, and what's the seam? `new-session/view.tsx`
   `NewSessionView` has no slot — Kete's header/empty-state/CLI-hint replace `<NewSessionWordmark/>`
@@ -24,16 +24,17 @@ verified-at: 139c15e1b2
 - How does a **new** session start in Ask (not race a first prompt against a PATCH)? The toggle
   (unauthenticated, no session yet) stores the chosen mode in `mode.ts`'s `KeteModeDraft` map, keyed
   by the new-session draft's ID; `new-session/composer-adapter.ts:97` passes
-  `KeteModeDraft.metadata(draftID)` (undefined for Plan/default, so nothing changes for other users)
+  `KeteModeDraft.metadata(draftID)` (undefined when nothing was chosen, so nothing changes for other users; Plan included since it's a mode)
   into `data.session.create({ …, metadata })`, then clears the draft (`:99`). That call goes through
   `packages/client/src/solid/data.ts`'s hand-written reactive wrapper, not the generated SDK directly
   — see the `server-sdk` card for why that needed its own small upstream edit.
-- How does the toggle change mode on an **existing** session? `mode.ts`'s `apply()`: for Auto/Ask,
+- How does the toggle change mode on an **existing** session? `mode.ts`'s `apply()`: for every mode,
   GET the session, merge `kete.permissionMode` into its metadata, PATCH (metadata is replaced whole
-  server-side — the same pattern the VS Code extension's title-bar toggle uses,
-  `kete-vscode/src/extension.ts:1205-1276`); for Plan, it calls the composer's agent selector
-  (`ApplyAgent.select("plan")`), remembering the agent it replaced per session so leaving Plan
-  restores it (or the first non-Plan agent offered, if none was remembered — `mode.ts:98-115`).
+  server-side — the same pattern the VS Code extension's title-bar toggle uses); then
+  `selectAgent()`: Plan also selects the `plan` agent when it's offered, remembering the agent it
+  replaced per session so leaving Plan restores it (or the first non-Plan agent offered). The mode is
+  written first so Plan's read-only rule is in force before the agent changes. Labels and tooltips
+  come from `util/src/kete/permission-mode.ts` (`permissions` card; user guide `docs/permissions.md`).
 - Why is `ApplyAgent.current`/`select` typed as plain `string`, not `string | undefined`? The real
   `view.agent` (`composer/model.ts:347-363`) always has a current agent and its `onSelect` only takes
   a `string` — there's no "no agent" state to select back into. A single-agent composer (no switcher)
@@ -124,10 +125,11 @@ hide (`dismiss*Locally()`, so the UI updates immediately) and, when embedded, po
 
 **Permission mode toggle:** `composer-controls.tsx`'s `KeteModeToggle` derives its displayed state
 from `mode.ts`'s `derive({agent: view.agent?.current(), metadata: session?.metadata})`, reading the
-session's cached metadata via `useData()`. Clicking cycles with `next()` (skips Plan when the `plan`
-agent isn't offered) then: existing session → `mode.apply({sdk, sessionID, mode, agent})`; no session
-yet (new-session route) → Plan selects the agent immediately via the composer's `ApplyAgent`, Auto/Ask
-is staged in `KeteModeDraft` for `composer-adapter.ts`'s `session.create` call to pick up.
+session's cached metadata via `useData()` (a draft shows the mode chosen for it). Clicking cycles with
+`next()` (Default → Auto → Ask → Plan; Plan is offered even without the `plan` agent, as a mode) then:
+existing session → `mode.apply({sdk, sessionID, mode, agent})`; no session yet (new-session route) →
+the mode is staged in `KeteModeDraft` for `composer-adapter.ts`'s `session.create` call, and Plan's
+agent choice applies to the draft's selection right away.
 
 ## Data and APIs used
 
