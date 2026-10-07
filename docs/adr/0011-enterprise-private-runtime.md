@@ -1,6 +1,6 @@
 # 0011. Enterprise private runtime: a Kubernetes runner built on the job host agent
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-07, after spike S0; amendments in the spec's "S0 findings" section)
 - **Date:** 2026-10-07
 
 ## Context

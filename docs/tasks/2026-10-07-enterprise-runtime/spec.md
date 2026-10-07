@@ -575,3 +575,37 @@ label `kete.dev/role=publish`, runner image by digest, writer Secret + outbox mo
 no capabilities). All labelled
 `kete.dev/machine-id`, `kete.dev/job-id`, `kete.dev/deadline`; the controller's reconcile deletes
 anything labelled that the desired state doesn't hold.
+
+---
+
+## S0 findings: binding amendments (2026-10-07)
+
+Spike S0 ([s0-report.md](s0-report.md), artefacts in [s0/](s0/)) ran the released `kete-v0.2.5` job
+entrypoint in a Kata 4.2 pod (k3s, arm64, nested KVM) with capabilities only, no `privileged`: every
+pre-claim check passed and a no-agent job finished. Verdict: **proceed with the VM-isolated design**,
+with these changes, which override the sections they touch:
+
+1. **Capabilities (§4.2):** 10, not 7: add `SYS_RESOURCE`, `FOWNER`, `FSETID`; keep `KILL` until a
+   timeout path is tested; add `NET_BIND_SERVICE` (or document the containerd
+   `ip_unprivileged_port_start=0` dependency). The jobs namespace runs at Pod Security `privileged`,
+   so the admission policy carries every rule.
+2. **VM detection:** virtio/DMI signals are useless (a runc pod on a VM node looks the same; arm64
+   Kata guests have no DMI). The entrypoint compares its boot ID with the node's: the controller
+   reads `Node.status.nodeInfo.bootID` after scheduling and writes it into the job Secret (kubelet
+   waits for the Secret); the controller needs `get nodes`. Mismatch required; equal → refuse
+   `shared_kernel` **before any write**.
+3. **`dedicated` profile gap (existing code):** today's `dedicated` profile has no shared-kernel
+   check; a privileged runc pod ran a full job and changed a node sysctl. The boot-ID/shared-kernel
+   guard must also protect `dedicated` (fix ahead of P2, as its own PR).
+4. **Clock:** the Kata guest is never NTP-synced; offset stayed within ±0.3 s. Keep the `adjtimex`
+   check in the controller (node); the entrypoint may compare with the platform's `Date` at claim.
+5. **NetworkPolicy race:** policies can be enforced after a pod starts. Require a CNI that enforces
+   before start (Calico/Cilium, verified per platform) **or** retry `host_boundary` for up to ~30 s
+   (nothing secret exists before claim).
+
+Also: `kubevm` remounts `/proc/sys` and `/sys/fs/cgroup` read-write itself (`setup_kubevm`); the
+Secret volume unmounts inside the guest; `kubectl exec` into job pods fails once cgroups are set up
+(no exec probes); guest memory needs explicit sizing (default 2 GiB) and the RuntimeClass overhead is
+≈390 MB, not 160Mi; `enable_mem_prealloc` must stay off. **Not proven:** a real `kete` agent job to
+completion inside Kata (k5 was cut off at 20 min under nested-virt slowdown) — rerun on non-nested
+or x86 KVM before P2 acceptance; nothing ran on AKS/OpenShift/EKS/GKE or x86 yet.

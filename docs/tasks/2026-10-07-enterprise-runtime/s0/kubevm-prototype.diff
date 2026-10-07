@@ -1,0 +1,223 @@
+diff --git a/internal/bootenv/bootenv.go b/internal/bootenv/bootenv.go
+index 3c5b97e..9348a6a 100644
+--- a/internal/bootenv/bootenv.go
++++ b/internal/bootenv/bootenv.go
+@@ -55,6 +55,9 @@ type Values struct {
+ 	Source     string `json:"source,omitempty"`
+ 	Provider   string `json:"host_provider,omitempty"`
+ 	Generation string `json:"host_generation,omitempty"`
++	// S0 prototype: kubevm only, the node's boot ID as the controller read it from the Node object
++	// (status.nodeInfo.bootID): the pod's own kernel must report a different one.
++	NodeBootID string `json:"node_boot_id,omitempty"`
+ }
+ 
+ // FlyVars are variables Fly sets in every machine (fly.io/docs/machines/runtime-environment).
+@@ -164,6 +167,7 @@ type Config struct {
+ 	HostProfile    string `json:"host_profile"`
+ 	HostProvider   string `json:"host_provider,omitempty"`
+ 	HostGeneration string `json:"host_generation,omitempty"`
++	NodeBootID     string `json:"node_boot_id,omitempty"` // S0 prototype: kubevm only
+ }
+ 
+ // MaxConfig is the largest config payload accepted.
+@@ -211,7 +215,18 @@ func ValidateConfig(c Config) error {
+ 	if _, err := Read(c.getenv); err != nil {
+ 		return err
+ 	}
+-	return validateProfileFields(c.HostProfile, string(hostprofile.SourcePipe), c.HostProvider, c.HostGeneration)
++	if err := validateProfileFields(c.HostProfile, string(hostprofile.SourcePipe), c.HostProvider, c.HostGeneration); err != nil {
++		return err
++	}
++	return validateNodeBootID(c.HostProfile, c.NodeBootID)
++}
++
++// validateNodeBootID (S0 prototype): a boot ID (a UUID) exactly for kubevm.
++func validateNodeBootID(profile, id string) error {
++	if (profile == string(hostprofile.KubeVM)) != hostprofile.ValidBootID(id) || (profile != string(hostprofile.KubeVM) && id != "") {
++		return errors.New("node_boot_id is required exactly for kubevm")
++	}
++	return nil
+ }
+ 
+ func (c Config) getenv(name string) string {
+@@ -285,6 +300,7 @@ func FromConfig(c Config, getenv func(string) string) (Values, error) {
+ 	}
+ 	v.OnFly = OnFly(getenv)
+ 	v.Profile, v.Source, v.Provider, v.Generation = c.HostProfile, string(hostprofile.SourcePipe), c.HostProvider, c.HostGeneration
++	v.NodeBootID = c.NodeBootID
+ 	return v, nil
+ }
+ 
+@@ -325,7 +341,11 @@ func Decode(r io.Reader) (Values, error) {
+ 		if err := validateProfileFields(v.Profile, v.Source, v.Provider, v.Generation); err != nil {
+ 			return Values{}, err
+ 		}
++		if err := validateNodeBootID(v.Profile, v.NodeBootID); err != nil {
++			return Values{}, err
++		}
+ 	}
+ 	out.Profile, out.Source, out.Provider, out.Generation = v.Profile, v.Source, v.Provider, v.Generation
++	out.NodeBootID = v.NodeBootID
+ 	return out, nil
+ }
+diff --git a/internal/entry/entry_linux.go b/internal/entry/entry_linux.go
+index 5550d1c..2f78cbe 100644
+--- a/internal/entry/entry_linux.go
++++ b/internal/entry/entry_linux.go
+@@ -9,6 +9,7 @@ package entry
+ import (
+ 	"context"
+ 	"errors"
++	"fmt"
+ 	"io"
+ 	"net"
+ 	"net/netip"
+@@ -20,6 +21,8 @@ import (
+ 	"syscall"
+ 	"time"
+ 
++	"golang.org/x/sys/unix"
++
+ 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bootenv"
+ 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bundle"
+ 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/cgroup"
+@@ -58,6 +61,20 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
+ 	if !ok {
+ 		return exit(log, 1)
+ 	}
++	// S0 prototype: CRI mounts /proc/sys and /sys/fs/cgroup read-only in a non-privileged
++	// container; in a VM-isolated pod the kernel is the pod's own, so the entrypoint (CAP_SYS_ADMIN
++	// in the guest) makes both writable before the sysctls and cgroups steps.
++	if profile == hostprofile.KubeVM && !step(pl.StepKubeVM, func() error {
++		if err := unix.Mount("", cfg.ProcMount+"/sys", "", unix.MS_REMOUNT|unix.MS_BIND, ""); err != nil {
++			return fmt.Errorf("remount %s/sys rw: %w", cfg.ProcMount, err)
++		}
++		if err := unix.Mount("", "/sys/fs/cgroup", "", unix.MS_REMOUNT|unix.MS_BIND|unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, ""); err != nil {
++			return fmt.Errorf("remount /sys/fs/cgroup rw: %w", err)
++		}
++		return nil
++	}) {
++		return exit(log, 1)
++	}
+ 	var ids sysusers.IDs
+ 	if !step(pl.StepUsers, func() error {
+ 		pw, err := os.Open(cfg.PasswdPath)
+@@ -177,6 +194,7 @@ func hostCheck(log *pl.Logger, cfg layout.Config, boot bootenv.Values) (hostprof
+ 	}
+ 	sig, err := hostprofile.Gather(signalPaths(cfg), hostprofile.Signals{
+ 		FlyEnv: boot.OnFly, Source: hostprofile.Source(boot.Source), Provider: boot.Provider, Generation: boot.Generation,
++		NodeBootID: boot.NodeBootID,
+ 	})
+ 	if err != nil {
+ 		log.FailErr(pl.StepHost, pl.CodeFailed, err)
+@@ -199,6 +217,7 @@ func signalPaths(cfg layout.Config) hostprofile.Paths {
+ 	return hostprofile.Paths{
+ 		FlyDir: cfg.FlyDir, InitBin: cfg.InitBin, Proc1Exe: cfg.Proc1Exe, VirtioDir: cfg.VirtioDir,
+ 		DMIDir: cfg.DMIDir, SysBlockDir: cfg.SysBlockDir, DevDir: cfg.DevDir,
++		BootIDFile: cfg.ProcMount + "/sys/kernel/random/boot_id",
+ 	}
+ }
+ 
+diff --git a/internal/hostprofile/hostprofile.go b/internal/hostprofile/hostprofile.go
+index 6d16f94..4d4979d 100644
+--- a/internal/hostprofile/hostprofile.go
++++ b/internal/hostprofile/hostprofile.go
+@@ -42,6 +42,9 @@ const (
+ 	MicroVM   Name = "microvm"
+ 	Dedicated Name = "dedicated"
+ 	CloudVM   Name = "cloudvm"
++	// KubeVM (S0 prototype): a Kubernetes pod in a VM-isolated RuntimeClass (Kata). Values on a
++	// pipe; the pod's kernel must not be the node's (boot IDs differ).
++	KubeVM Name = "kubevm"
+ )
+ 
+ // Source is where the four values came from.
+@@ -55,7 +58,7 @@ const (
+ // Parse checks a profile name.
+ func Parse(s string) (Name, error) {
+ 	switch n := Name(s); n {
+-	case Fly, MicroVM, Dedicated, CloudVM:
++	case Fly, MicroVM, Dedicated, CloudVM, KubeVM:
+ 		return n, nil
+ 	}
+ 	return "", errors.New("unknown host profile")
+@@ -114,6 +117,11 @@ func ProviderForDMI(read func(field string) (string, error)) string {
+ 	return found
+ }
+ 
++var bootIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
++
++// ValidBootID checks a Linux boot ID (/proc/sys/kernel/random/boot_id; Node status.nodeInfo.bootID).
++func ValidBootID(id string) bool { return bootIDPattern.MatchString(id) }
++
+ var generationPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+ 
+ // ValidGeneration checks a dedicated host's reset generation: 1-64 of letters, digits, '.', '_'
+@@ -130,6 +138,8 @@ type Signals struct {
+ 	Provider   string // cloudvm: the configuration's provider
+ 	DMI        string // cloudvm: the provider whose DMI field matched (ProviderForDMI), or ""
+ 	Generation string // dedicated: the agent's reset generation
++	BootID     string // this kernel's boot ID
++	NodeBootID string // kubevm: the node's boot ID from the configuration
+ }
+ 
+ // Refusal is a profile check's failure: a fixed code, never a value.
+@@ -178,6 +188,12 @@ func Check(n Name, s Signals) error {
+ 		if !ValidGeneration(s.Generation) {
+ 			return &Refusal{Code: phaselog.CodeGeneration}
+ 		}
++	case KubeVM:
++		// Same boot ID as the node: the pod shares the node's kernel (runc, or a RuntimeClass that
++		// isn't VM-isolated). Refused before anything else runs.
++		if !ValidBootID(s.NodeBootID) || !ValidBootID(s.BootID) || s.BootID == s.NodeBootID {
++			return &Refusal{Code: phaselog.CodeSharedKernel}
++		}
+ 	}
+ 	return nil
+ }
+diff --git a/internal/hostprofile/signals_linux.go b/internal/hostprofile/signals_linux.go
+index 6576f29..179c819 100644
+--- a/internal/hostprofile/signals_linux.go
++++ b/internal/hostprofile/signals_linux.go
+@@ -23,6 +23,7 @@ type Paths struct {
+ 	DMIDir      string
+ 	SysBlockDir string
+ 	DevDir      string
++	BootIDFile  string
+ }
+ 
+ // virtioVsockID is the virtio device id of a vsock device (virtio spec: 19).
+@@ -58,6 +59,13 @@ func Gather(p Paths, s Signals) (Signals, error) {
+ 			s.Vsock = true
+ 		}
+ 	}
++	if p.BootIDFile != "" {
++		b, err := os.ReadFile(p.BootIDFile)
++		if err != nil {
++			return Signals{}, err
++		}
++		s.BootID = strings.TrimSpace(string(b))
++	}
+ 	s.DMI = ProviderForDMI(func(field string) (string, error) {
+ 		b, err := os.ReadFile(filepath.Join(p.DMIDir, field))
+ 		return string(b), err
+diff --git a/internal/phaselog/phaselog.go b/internal/phaselog/phaselog.go
+index 35b6daa..79cfc57 100644
+--- a/internal/phaselog/phaselog.go
++++ b/internal/phaselog/phaselog.go
+@@ -26,6 +26,7 @@ const (
+ 	StepProc       Step = "setup_proc"
+ 	StepFly        Step = "setup_fly"
+ 	StepHost       Step = "setup_host"    // the host profile's signals (module README "Host profiles")
++	StepKubeVM     Step = "setup_kubevm"  // S0 prototype: /proc/sys and the cgroup mount made writable
+ 	StepBoundary   Step = "host_boundary" // the root host-boundary probe (every profile but fly)
+ 	StepDirs       Step = "setup_dirs"
+ 	StepCgroup     Step = "setup_cgroup"
+@@ -98,6 +99,7 @@ const (
+ 	CodeVsock      Code = "vsock"       // a vsock device exists (microvm)
+ 	CodeDMI        Code = "dmi"         // the firmware vendor doesn't match the provider (cloudvm)
+ 	CodeGeneration Code = "generation"  // no reset generation (dedicated)
++	CodeSharedKernel Code = "shared_kernel" // kubevm: the pod's boot ID is the node's (S0 prototype)
+ 
+ 	// The host-boundary probe's reasons (root, before the in-guest rules), and the tool user's
+ 	// extra per-profile reasons in the isolation check.

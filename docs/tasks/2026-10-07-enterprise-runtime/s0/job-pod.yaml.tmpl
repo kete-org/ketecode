@@ -1,0 +1,34 @@
+# Throwaway S0 job pod. @RUNTIME@ = RuntimeClass (empty line removed for runc), @CMD@ = the wrapper.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: @NAME@
+  namespace: kete-s0
+  labels: {app: kete-job-s0}
+spec:
+  @RUNTIME@
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  terminationGracePeriodSeconds: 30
+  dnsPolicy: None
+  dnsConfig: {nameservers: [198.51.100.10]}
+  containers:
+  - name: job
+    image: @IMAGE@
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/sh", "-c", "@CMD@"]  # a wrapper from wrappers/ (ConfigMap s0-wrappers)
+    env: [{name: KETE_JOB_HOST_PROFILE, value: @PROFILE@}]
+    resources:
+      requests: {cpu: "1", memory: 2Gi}
+      limits: {cpu: "1", memory: 2Gi}
+    securityContext:
+      @SECCTX@
+    volumeMounts:
+    - {name: config, mountPath: /run/kete-config, readOnly: true}
+    - {name: wrappers, mountPath: /s0, readOnly: true}
+    - {name: ca, mountPath: /etc/ssl/certs/ca-certificates.crt, subPath: ca-certificates.crt, readOnly: true}
+  volumes:
+  - {name: config, secret: {secretName: kete-job-s0, defaultMode: 0400}}
+  - {name: ca, configMap: {name: kete-job-s0-ca}}
+  - {name: wrappers, configMap: {name: s0-wrappers}}
