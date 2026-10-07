@@ -1,0 +1,17 @@
+# Dropped into /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/kata.toml (k3s imports it).
+# Both handlers use the Kata 4.2.0 runtime-rs shim, selected per handler by ConfigPath.
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.kata-qemu]
+  runtime_type = "io.containerd.kata-qemu.v2"
+  runtime_path = "/opt/kata/runtime-rs/bin/containerd-shim-kata-v2"
+  privileged_without_host_devices = true
+  pod_annotations = ["io.katacontainers.*"]
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.kata-qemu.options]
+  ConfigPath = "/etc/kata-containers/configuration-qemu-s0.toml" # shipped qemu config with cpu_features = "" (nested KVM on Apple VZ has no PMU)
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.kata-dragonball]
+  runtime_type = "io.containerd.kata-dragonball.v2"
+  runtime_path = "/opt/kata/runtime-rs/bin/containerd-shim-kata-v2"
+  privileged_without_host_devices = true
+  pod_annotations = ["io.katacontainers.*"]
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.kata-dragonball.options]
+  ConfigPath = "/opt/kata/share/defaults/kata-containers/runtime-rs/configuration-dragonball.toml"

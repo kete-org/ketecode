@@ -1,0 +1,69 @@
+== bench-runc
+nproc=4 mem=MemTotal:        8112408 kB
+587 526 0:83 / / rw,relatime - overlay overlay rw,lowerdir=/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/28/fs:/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/27/fs:/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/26/fs:/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/25/fs:/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/24/fs:/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/23/fs:/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/22/fs:/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/21/fs,upperdir=/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/80/fs,workdir=/var/lib/rancher/k3s/agent/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/80/work,uuid=on,nouserxattr
+589 587 0:105 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+590 587 0:106 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,inode64
+591 590 0:107 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+592 590 0:93 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw
+593 587 0:98 / /sys ro,nosuid,nodev,noexec,relatime - sysfs sysfs ro
+594 593 0:30 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw,nsdelegate,memory_recursiveprot
+600 590 0:56 / /dev/shm rw,relatime - tmpfs shm rw,size=65536k,inode64
+533 589 0:108 / /proc/acpi ro,relatime - tmpfs tmpfs ro,inode64
+539 589 0:109 / /proc/scsi ro,relatime - tmpfs tmpfs ro,inode64
+540 593 0:110 / /sys/firmware ro,relatime - tmpfs tmpfs ro,inode64
+279 ms: sh -c i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done
+160 ms: sha256sum /usr/local/bin/kete
+84 ms: sha256sum /usr/local/bin/kete
+229 ms: dd if=/dev/zero of=/var/tmp/s0.bin bs=1M count=200 conv=fsync
+47 ms: dd if=/dev/zero of=/dev/shm/s0.bin bs=1M count=200
+24 ms: sh -c for i in $(seq 500); do echo x > /var/tmp/f$i; done; rm -f /var/tmp/f*
+75 ms: /usr/local/bin/kete --version
+52 ms: /usr/local/bin/kete --version
+247 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/var/tmp/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]
+16 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/dev/shm/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]
+== bench-kata
+nproc=2 mem=MemTotal:        2061760 kB
+136 98 0:44 / / rw,nodev,relatime master:60 - virtiofs none rw
+137 136 0:45 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+138 136 0:46 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
+139 138 0:47 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+140 138 0:35 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw
+141 136 0:23 / /sys ro,nosuid,nodev,noexec,relatime - sysfs sysfs rw
+142 141 0:27 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime - cgroup2 cgroup2 rw,nsdelegate,memory_recursiveprot,memory_hugetlb_accounting
+148 138 0:37 / /dev/shm rw,relatime master:50 - tmpfs shm rw
+370 ms: sh -c i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done
+3051 ms: sha256sum /usr/local/bin/kete
+1250 ms: sha256sum /usr/local/bin/kete
+4363 ms: dd if=/dev/zero of=/var/tmp/s0.bin bs=1M count=200 conv=fsync
+7177 ms: dd if=/dev/zero of=/dev/shm/s0.bin bs=1M count=200
+1378 ms: sh -c for i in $(seq 500); do echo x > /var/tmp/f$i; done; rm -f /var/tmp/f*
+27940 ms: /usr/local/bin/kete --version
+24034 ms: /usr/local/bin/kete --version
+2054 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/var/tmp/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]
+1161 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/dev/shm/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]
+elapsed 887s
+elapsed 133s
+== bench-runc (rerun)
+nproc=4 mem=MemTotal:        8112408 kB
+257 ms: sh -c i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done
+198 ms: sha256sum /usr/local/bin/kete
+88 ms: sha256sum /usr/local/bin/kete
+816 ms: dd if=/dev/zero of=/var/tmp/s0.bin bs=1M count=200 conv=fsync
+355 ms: dd if=/dev/zero of=/dev/shm/s0.bin bs=1M count=200
+82 ms: sh -c for i in $(seq 500); do echo x > /var/tmp/f$i; done; rm -f /var/tmp/f*
+561 ms: /usr/local/bin/kete --version
+164 ms: /usr/local/bin/kete --version
+581 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/var/tmp/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]
+24 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/dev/shm/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]
+== bench-kata (rerun)
+nproc=2 mem=MemTotal:        2061760 kB
+495 ms: sh -c i=0; while [ $i -lt 300000 ]; do i=$((i+1)); done
+5384 ms: sha256sum /usr/local/bin/kete
+9779 ms: sha256sum /usr/local/bin/kete
+5492 ms: dd if=/dev/zero of=/var/tmp/s0.bin bs=1M count=200 conv=fsync
+5864 ms: dd if=/dev/zero of=/dev/shm/s0.bin bs=1M count=200
+1808 ms: sh -c for i in $(seq 500); do echo x > /var/tmp/f$i; done; rm -f /var/tmp/f*
+28047 ms: /usr/local/bin/kete --version
+26844 ms: /usr/local/bin/kete --version
+2433 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/var/tmp/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]
+1544 ms: python3 -c import sqlite3,os; c=sqlite3.connect("/dev/shm/s0.db"); c.execute("pragma journal_mode=wal"); c.execute("create table t(x)"); [ (c.execute("insert into t values (?)",(i,)), c.commit()) for i in range(300)]

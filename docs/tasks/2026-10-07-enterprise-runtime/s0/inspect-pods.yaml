@@ -1,0 +1,62 @@
+# Throwaway: prints kernel/VM signals and privileges seen by a pod, under Kata and under runc.
+apiVersion: v1
+kind: Namespace
+metadata: {name: kete-s0}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: inspect, namespace: kete-s0}
+data:
+  inspect.sh: |
+    #!/bin/sh
+    # Prints what a pod can see about its kernel and privileges (S0 VM-signal and capability checks).
+    echo "== uname"; uname -a
+    echo "== boot_id"; cat /proc/sys/kernel/random/boot_id
+    echo "== cmdline"; cat /proc/cmdline
+    echo "== pid1"; cat /proc/1/cmdline | tr '\0' ' '; echo
+    echo "== caps"; grep -E '^Cap(Inh|Prm|Eff|Bnd|Amb)' /proc/self/status
+    echo "== nonewprivs/seccomp"; grep -E 'NoNewPrivs|Seccomp' /proc/self/status
+    echo "== virtio"; for d in /sys/bus/virtio/devices/*; do [ -e "$d" ] && echo "$d $(cat $d/device)"; done
+    echo "== dmi"; for f in sys_vendor product_name board_vendor chassis_asset_tag bios_vendor; do [ -r /sys/class/dmi/id/$f ] && echo "$f=$(cat /sys/class/dmi/id/$f)"; done; ls /sys/class/dmi 2>&1
+    echo "== devicetree"; [ -r /proc/device-tree/compatible ] && tr '\0' ' ' < /proc/device-tree/compatible; echo
+    echo "== hypervisor"; ls /sys/hypervisor 2>&1; grep -m1 -i hypervisor /proc/cpuinfo; cat /sys/devices/system/clocksource/clocksource0/current_clocksource
+    echo "== meminfo"; grep MemTotal /proc/meminfo; nproc
+    echo "== mounts"; grep -E ' /proc | /proc/sys | /sys | /sys/fs/cgroup | /run/kete-config ' /proc/self/mountinfo
+    echo "== cgroup"; cat /proc/self/cgroup; cat /sys/fs/cgroup/cgroup.controllers 2>&1; cat /sys/fs/cgroup/cgroup.subtree_control 2>&1
+    echo "== block"; ls /sys/class/block; ls -la /dev | head -40
+    echo "== route"; cat /proc/net/route
+    echo "== resolv"; cat /etc/resolv.conf
+    echo "== adjtimex"; command -v adjtimex || true
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: inspect-kata, namespace: kete-s0}
+spec:
+  runtimeClassName: kata-qemu
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  containers:
+  - name: c
+    image: ghcr.io/kete-org/kete-job@sha256:7c0c31d68d17cf8cd9d1ecbe9186b102ee6571c931bc072bd19b7739cf4a676a
+    command: ["/bin/sh", "/inspect/inspect.sh"]
+    securityContext:
+      capabilities: {drop: [ALL], add: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE, SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE, FOWNER]}
+    volumeMounts: [{name: inspect, mountPath: /inspect}]
+  volumes: [{name: inspect, configMap: {name: inspect}}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: inspect-runc, namespace: kete-s0}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  containers:
+  - name: c
+    image: ghcr.io/kete-org/kete-job@sha256:7c0c31d68d17cf8cd9d1ecbe9186b102ee6571c931bc072bd19b7739cf4a676a
+    command: ["/bin/sh", "/inspect/inspect.sh"]
+    securityContext:
+      capabilities: {drop: [ALL], add: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE, SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE, FOWNER]}
+    volumeMounts: [{name: inspect, mountPath: /inspect}]
+  volumes: [{name: inspect, configMap: {name: inspect}}]

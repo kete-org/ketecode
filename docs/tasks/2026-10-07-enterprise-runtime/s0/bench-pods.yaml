@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata: {name: bench-kata, namespace: kete-s0}
+spec:
+  runtimeClassName: kata-qemu
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+  - name: c
+    image: ghcr.io/kete-org/kete-job@sha256:7c0c31d68d17cf8cd9d1ecbe9186b102ee6571c931bc072bd19b7739cf4a676a
+    command: ["/bin/sh", "/b/bench.sh"]
+    resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "1", memory: 2Gi}}
+    volumeMounts: [{name: b, mountPath: /b}]
+  volumes: [{name: b, configMap: {name: bench}}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: bench-runc, namespace: kete-s0}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+  - name: c
+    image: ghcr.io/kete-org/kete-job@sha256:7c0c31d68d17cf8cd9d1ecbe9186b102ee6571c931bc072bd19b7739cf4a676a
+    command: ["/bin/sh", "/b/bench.sh"]
+    resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "1", memory: 2Gi}}
+    volumeMounts: [{name: b, mountPath: /b}]
+  volumes: [{name: b, configMap: {name: bench}}]

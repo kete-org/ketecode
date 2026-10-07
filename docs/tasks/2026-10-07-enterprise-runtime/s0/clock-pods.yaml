@@ -1,0 +1,28 @@
+# Throwaway: adjtimex (read-only) and wall clock as seen by a Kata pod and a runc pod. hostPath only
+# to ship the test binary into this throwaway pod (never in a job pod).
+apiVersion: v1
+kind: Pod
+metadata: {name: clock-kata, namespace: kete-s0}
+spec:
+  runtimeClassName: kata-qemu
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+  - name: c
+    image: ghcr.io/kete-org/kete-job@sha256:7c0c31d68d17cf8cd9d1ecbe9186b102ee6571c931bc072bd19b7739cf4a676a
+    command: ["/bin/sh", "-c", "for i in 1 2 3; do /t/clockcheck; sleep 5; done; ls /sys/class/ptp 2>&1; cat /sys/devices/system/clocksource/clocksource0/available_clocksource"]
+    volumeMounts: [{name: t, mountPath: /t, readOnly: true}]
+  volumes: [{name: t, hostPath: {path: /mnt/lima-colima-kvmtest/s0/bin, type: Directory}}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: clock-runc, namespace: kete-s0}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+  - name: c
+    image: ghcr.io/kete-org/kete-job@sha256:7c0c31d68d17cf8cd9d1ecbe9186b102ee6571c931bc072bd19b7739cf4a676a
+    command: ["/bin/sh", "-c", "/t/clockcheck"]
+    volumeMounts: [{name: t, mountPath: /t, readOnly: true}]
+  volumes: [{name: t, hostPath: {path: /mnt/lima-colima-kvmtest/s0/bin, type: Directory}}]

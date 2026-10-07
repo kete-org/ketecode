@@ -1,0 +1,16 @@
+# Throwaway S0 NetworkPolicy: the job pod may reach only the fake platform (HTTPS + DNS) and public
+# HTTPS; nothing in private/special ranges (node, pod and service CIDRs, metadata). Ingress: none.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: kete-job-egress, namespace: kete-s0}
+spec:
+  podSelector: {matchLabels: {app: kete-job-s0}}
+  policyTypes: [Ingress, Egress]
+  egress:
+  - to: [{ipBlock: {cidr: 198.51.100.10/32}}]
+    ports: [{protocol: TCP, port: 443}, {protocol: TCP, port: 53}, {protocol: UDP, port: 53}]
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 0.0.0.0/8, 192.0.0.0/24, 198.18.0.0/15, 198.51.100.0/24, 224.0.0.0/4, 240.0.0.0/4]
+    ports: [{protocol: TCP, port: 443}]
