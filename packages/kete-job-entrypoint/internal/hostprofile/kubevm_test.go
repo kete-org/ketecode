@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/isolation"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/phaselog"
 )
 
@@ -74,6 +75,11 @@ func TestKubeTargets(t *testing.T) {
 	ps := KubeTargets("10.96.0.1:443", []string{"10.0.0.7"})
 	if len(ps) != 1+len(GatewayPorts) || ps[0].Target != "10.96.0.1:443" || ps[0].Reason != phaselog.CodeKubeAPI || ps[1].Reason != phaselog.CodeNode {
 		t.Errorf("targets %+v", ps)
+	}
+	// The probe's request accepts them (an unknown reason would fail the whole check as `probe`).
+	req := isolation.NewRequest(append(isolation.Controls("127.0.0.1:1", ""), ps...))
+	if err := req.Validate(); err != nil {
+		t.Errorf("request with the kubevm targets: %v", err)
 	}
 	if len(KubeTargets("", nil)) != 0 {
 		t.Error("targets without inputs")
