@@ -1,10 +1,18 @@
 ---
 module: egress
 paths: [packages/kete-egress/**, .github/workflows/kete-egress.yml]
-verified-at: 6d8972321a
+verified-at: 99f9825fb1
 ---
 
 ## Quick answers
+- Configuration v2? Acted on since enterprise runtime P2: `config.Load` dispatches by version
+  (`ParseV2` → `ConfigV2.Runtime`, allowlists keyed by `host` for 443 or `host:port`); the proxy
+  parses CONNECT/Host with `hostname.AuthorityEntry`/`HostHeaderEntry`, checks addresses with
+  `Proxy.addrAllowed` (forbidden → internal range ports → v1 blocked → 443), dials through the
+  upstream proxy in `dialViaUpstream` (credentials from `upstream.proxy_auth_file`, reason
+  `upstream_proxy`), trusts `upstream.ca_bundle_file` via `AddCABundle`; `nft` adds the forbidden
+  sets, internal ranges and a literal proxy to `proxy_out`. README "Configuration v2". Only the
+  entrypoint's kubevm profile writes v2.
 - What is this module? `kete-egress`, the cloud job's only network boundary: the egress half of
   platform ADR 0019 rule 4 (kete-code-platform `docs/jobs.md` §8 item 2). One Go binary with two
   subcommands, `nft` (prints the job's nftables ruleset) and `serve` (the TLS-terminating proxy on

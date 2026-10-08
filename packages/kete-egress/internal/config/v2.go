@@ -3,8 +3,8 @@ package config
 // Configuration v2 (`docs/platform/egress-config-v2.md`; module README "Configuration v2"): v1
 // plus an upstream proxy reached with CONNECT, a CA bundle for upstream TLS, and internal
 // destinations (private ranges, ports other than 443) allowed by CIDR for the proxy user. ParseV2
-// validates a document; the proxy and firewall don't act on v2 yet (enterprise runtime piece P2),
-// so the `serve` and `nft` subcommands still read only v1 (Parse refuses version 2).
+// validates a document and Runtime turns it into the Config the proxy and the firewall run on
+// (Load picks the version; the `serve` and `nft` subcommands read both).
 
 import (
 	"bytes"
@@ -132,6 +132,31 @@ type ConfigV2 struct {
 	Limits     Limits
 	Upstream   *Upstream
 	Internal   []InternalRange
+}
+
+// Runtime is the configuration the proxy and the firewall run on: v1's Config with Allow and
+// Registries keyed by each target's one spelling (Target.String()), Upstream and Internal set.
+func (c *ConfigV2) Runtime() *Config {
+	out := &Config{
+		Version: VersionV2, UIDs: c.UIDs, Ports: c.Ports, Resolvers: c.Resolvers, Limits: c.Limits,
+		Allow: map[phase.Phase]map[Port]map[string]bool{}, Registries: map[string]registry.Spec{},
+		Upstream: c.Upstream, Internal: c.Internal,
+	}
+	for ph, ports := range c.Allow {
+		m := map[Port]map[string]bool{}
+		for port, ts := range ports {
+			set := map[string]bool{}
+			for t := range ts {
+				set[t.String()] = true
+			}
+			m[port] = set
+		}
+		out.Allow[ph] = m
+	}
+	for t, spec := range c.Registries {
+		out.Registries[t.String()] = spec
+	}
+	return out
 }
 
 // AllTargets is the sorted union of every allowlisted target.

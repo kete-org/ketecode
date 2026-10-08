@@ -75,7 +75,7 @@ const (
 // (when it fails, nothing else the probe says means anything).
 var Priority = []phaselog.Code{
 	phaselog.CodeControl, phaselog.CodeFlyAPI, phaselog.CodeHelperSocket, phaselog.CodeUnixSocket,
-	phaselog.CodeKeteDir, phaselog.CodeGuardedPath, phaselog.CodeMetadata, phaselog.CodeSixPN,
+	phaselog.CodeKeteDir, phaselog.CodeGuardedPath, phaselog.CodeMetadata, phaselog.CodeKubeAPI, phaselog.CodeNode, phaselog.CodeSixPN,
 	phaselog.CodeGateway, phaselog.CodePrivateRange, phaselog.CodeIPv6, phaselog.CodeResolver,
 	phaselog.CodeLoopback,
 }

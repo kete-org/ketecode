@@ -191,7 +191,8 @@ JSON Lines on fd 6, one object per request or refusal. The platform stores it as
 - `reason` appears on refusals and failures only: `host_not_allowed`, `bad_connect`,
   `unsupported_method`, `port`, `bad_host`, `peer_uid`, `conn_limit`, `sni_mismatch`,
   `tls_handshake`, `host_mismatch`, `protocol`, `target`, `upgrade`, `body_too_large`, `log_full`,
-  `resolved_blocked`, `resolve_failed`, `upstream_error`, `idle_timeout` (rate-limited like a
+  `resolved_blocked`, `resolve_failed`, `upstream_error`, `upstream_proxy` (v2: the enterprise
+  proxy refused or failed the CONNECT), `idle_timeout` (rate-limited like a
   refusal), `suppressed_summary`, and the registry reasons
   `method`, `query`, `body`, `path_length`, `path`, `path_shape`, `registry_cap`.
 - **The file never exceeds `log_max_bytes`**, even with requests in flight: a request is forwarded
@@ -320,7 +321,7 @@ enabled; `/proc/net/tcp` and `/proc/net/tcp6`. Verified in Colima's kernel and G
 `ubuntu-latest` by the integration suite. **Not yet verified: Fly Machines' guest kernel and its
 resolver address** (`fdaa::3` is expected) — piece C/D's first real machine checks both.
 
-## Configuration v2 (parser only)
+## Configuration v2
 
 Version 2 adds what an enterprise network needs: an upstream proxy reached with `CONNECT`
 (`upstream.proxy`, `http://` or `https://host:port`), proxy credentials only from a file
@@ -336,9 +337,28 @@ its test vector is `internal/config/testdata/egress-config-v2/configs.json`, che
 any range of this module's v1 blocked list (`blocked_v4` above, which also blocks `192.0.0.0/24` and
 `198.18.0.0/15`) must be inside an `internal` range; the platform's schema checks a shorter list.
 
-`config.ParseV2` validates a v2 document (each refusal is a `*config.FieldError` naming the field,
-never a value). `serve` and `nft` do not act on v2 yet: they read only v1, and a version 2 file is
-refused at start-up (exit 2) until the proxy and firewall implement it (enterprise runtime P2).
+`serve` and `nft` read both versions (`config.Load`: version 2 goes through `ParseV2`, then
+`ConfigV2.Runtime`, the v1 `Config` with allowlists keyed by each entry's one spelling — the bare
+host for 443, `host:port` otherwise). The job entrypoint writes v2 for the `kubevm` profile only.
+
+- **Proxy:** a `CONNECT` may name any port; the entry `host:port` must be allowed in the current
+  phase for the port's user, the TLS leaf and SNI are the host's, and each request's `Host` must be
+  the entry (`host` or `host:443` for 443). Every allowed connection is opened as `CONNECT
+  host:port` through the upstream proxy (TLS to an `https` proxy, verified), with
+  `Proxy-Authorization: Basic` from the credentials file (read once at start, never logged), except
+  `upstream.direct` entries, which are dialled as in v1. A refused or failed `CONNECT` (any non-2xx,
+  `407` included) refuses the connection: status 502, log reason `upstream_proxy`, no retry.
+- **Addresses** (every destination, the proxy's own too, resolved per connection as in v1): a
+  forbidden address is refused whatever else says; one inside an internal range is allowed on
+  exactly that range's ports; any other v1-blocked address is refused; the rest only on 443. A
+  destination is resolved and checked even when it then goes through the proxy.
+- **Trust:** the system roots plus `upstream.ca_bundle_file` (at most 256 KiB, at least one
+  certificate, none named like a job CA), for upstream TLS only; clients still trust only the job
+  CA.
+- **Firewall** (`nft`): v1's ruleset, plus in `proxy_out`, before the blocked-range refusal: the
+  forbidden sets refused, each internal range accepted on its ports, and a literal upstream proxy
+  address on its port. The other users' chains are v1's. A proxy named by DNS on a port other than
+  443 must sit in an internal range listing that port.
 
 ## How to test
 

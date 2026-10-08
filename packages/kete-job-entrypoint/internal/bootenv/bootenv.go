@@ -31,6 +31,9 @@ const (
 	minTokenLen = 32
 	maxTokenLen = 512
 	maxPayload  = 4096
+	// maxHandover bounds the boot stage's handover (a kubevm configuration is larger than the
+	// others); it stays below a pipe's capacity, so the write never blocks.
+	maxHandover = 56 << 10
 )
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -55,6 +58,11 @@ type Values struct {
 	Source     string `json:"source,omitempty"`
 	Provider   string `json:"host_provider,omitempty"`
 	Generation string `json:"host_generation,omitempty"`
+	// kubevm: the node's boot ID and the runner's local section (kubevm.go), and the Kubernetes
+	// API from the pod's environment (KUBERNETES_SERVICE_HOST:PORT, a host-boundary target).
+	NodeBootID string `json:"node_boot_id,omitempty"`
+	Local      *Local `json:"local,omitempty"`
+	KubeAPI    string `json:"kube_api,omitempty"`
 }
 
 // FlyVars are variables Fly sets in every machine (fly.io/docs/machines/runtime-environment).
@@ -164,6 +172,9 @@ type Config struct {
 	HostProfile    string `json:"host_profile"`
 	HostProvider   string `json:"host_provider,omitempty"`
 	HostGeneration string `json:"host_generation,omitempty"`
+	// kubevm only (kubevm.go): the node's boot ID and the runner's local section.
+	NodeBootID string `json:"node_boot_id,omitempty"`
+	Local      *Local `json:"local,omitempty"`
 }
 
 // MaxConfig is the largest config payload accepted.
@@ -184,7 +195,31 @@ func DecodeConfig(r io.Reader) (Config, error) {
 
 // ParseConfig is DecodeConfig over bytes already read.
 func ParseConfig(data []byte) (Config, error) {
-	if len(data) > MaxConfig {
+	c, err := parseConfig(data, MaxConfig)
+	if err != nil {
+		return Config{}, err
+	}
+	if c.HostProfile == string(hostprofile.KubeVM) {
+		return Config{}, errors.New("config: kubevm takes its configuration from --config-file")
+	}
+	return c, nil
+}
+
+// ParseKubeVMConfig reads a kubevm configuration file's bytes (larger than a pipe's payload: the
+// local section). It must name the kubevm profile.
+func ParseKubeVMConfig(data []byte) (Config, error) {
+	c, err := parseConfig(data, MaxKubeVMConfig)
+	if err != nil {
+		return Config{}, err
+	}
+	if c.HostProfile != string(hostprofile.KubeVM) {
+		return Config{}, errors.New("config: a --config-file configuration is kubevm's")
+	}
+	return c, nil
+}
+
+func parseConfig(data []byte, max int) (Config, error) {
+	if len(data) > max {
 		return Config{}, errors.New("config too large")
 	}
 	dec := json.NewDecoder(strings.NewReader(string(data)))
@@ -211,7 +246,13 @@ func ValidateConfig(c Config) error {
 	if _, err := Read(c.getenv); err != nil {
 		return err
 	}
-	return validateProfileFields(c.HostProfile, string(hostprofile.SourcePipe), c.HostProvider, c.HostGeneration)
+	if err := validateProfileFields(c.HostProfile, string(hostprofile.SourceFor(hostprofile.Name(c.HostProfile))), c.HostProvider, c.HostGeneration); err != nil {
+		return err
+	}
+	if c.HostProfile == string(hostprofile.Fly) {
+		return errors.New("host profile fly takes its values from the environment")
+	}
+	return validateKubeVM(c.HostProfile, c.NodeBootID, c.Local)
 }
 
 func (c Config) getenv(name string) string {
@@ -284,7 +325,15 @@ func FromConfig(c Config, getenv func(string) string) (Values, error) {
 		return Values{}, err
 	}
 	v.OnFly = OnFly(getenv)
-	v.Profile, v.Source, v.Provider, v.Generation = c.HostProfile, string(hostprofile.SourcePipe), c.HostProvider, c.HostGeneration
+	v.Profile, v.Source, v.Provider, v.Generation = c.HostProfile, string(hostprofile.SourceFor(hostprofile.Name(c.HostProfile))), c.HostProvider, c.HostGeneration
+	if c.HostProfile == string(hostprofile.KubeVM) {
+		v.NodeBootID, v.Local, v.KubeAPI = c.NodeBootID, c.Local, KubeAPIFromEnv(getenv)
+		if v.KubeAPI == "" {
+			// The kubelet sets it in every pod: without it the host-boundary probe would skip the
+			// Kubernetes API. Refused, never skipped.
+			return Values{}, errors.New("kubevm needs KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT (a host-boundary target)")
+		}
+	}
 	return v, nil
 }
 
@@ -293,11 +342,11 @@ func Encode(v Values) ([]byte, error) { return json.Marshal(v) }
 
 // Decode reads and re-validates the values from the handover pipe.
 func Decode(r io.Reader) (Values, error) {
-	data, err := io.ReadAll(io.LimitReader(r, maxPayload+1))
+	data, err := io.ReadAll(io.LimitReader(r, maxHandover+1))
 	if err != nil {
 		return Values{}, err
 	}
-	if len(data) > maxPayload {
+	if len(data) > maxHandover {
 		return Values{}, errors.New("handover payload too large")
 	}
 	var v Values
@@ -326,6 +375,13 @@ func Decode(r io.Reader) (Values, error) {
 			return Values{}, err
 		}
 	}
+	if err := validateKubeVM(v.Profile, v.NodeBootID, v.Local); err != nil {
+		return Values{}, err
+	}
+	if !validKubeAPI(v.KubeAPI) || ((v.KubeAPI != "") != (v.Profile == string(hostprofile.KubeVM))) {
+		return Values{}, errors.New("kube_api")
+	}
 	out.Profile, out.Source, out.Provider, out.Generation = v.Profile, v.Source, v.Provider, v.Generation
+	out.NodeBootID, out.Local, out.KubeAPI = v.NodeBootID, v.Local, v.KubeAPI
 	return out, nil
 }

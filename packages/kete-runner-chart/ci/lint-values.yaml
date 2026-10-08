@@ -9,6 +9,8 @@ enrollment:
   tokenSecret: kete-runner-enrollment
 proxy:
   url: http://proxy.corp.example:3128
+  authSecret:
+    name: corp-proxy-auth
 caBundle:
   existingSecret: corp-ca
 jobs:
@@ -17,8 +19,14 @@ jobs:
     - registry.corp.example/kete/job@sha256:0000000000000000000000000000000000000000000000000000000000000002
   egress:
     cidrs: [10.20.0.10/32]
+    ports: [443, 3128]
+  resources: {cpu: "2", memory: 4Gi, ephemeralStorage: 20Gi}
+  outbox: {size: 2Gi, storageClass: fast-ssd, holdHours: 12}
+  proxy: {authSecret: {name: kete-jobs-proxy-auth}}
 repositories: ["gitlab:payments/api"]
-podDriver: placeholder
+repositorySources:
+  - {name: "gitlab:payments/api", url: "https://gitlab.corp.example/payments/api.git", cloneSecret: gitlab-payments-read}
+podDriver: kubevm
 networkPolicy:
   apiServer:
     cidrs: [10.0.0.1/32]

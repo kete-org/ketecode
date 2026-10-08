@@ -30,7 +30,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/* The admission policies' names (each binding has its policy's name); also config admission_policies. */}}
 {{- define "kete-runner.policyNames" -}}
 {{- $base := printf "kete-runner-%s" .Values.jobs.namespace -}}
-{{- dict "pods" (printf "%s-pods" $base) "jobSecrets" (printf "%s-secrets" $base) "controllerSecrets" (printf "kete-runner-%s-controller" .Release.Namespace) | toJson -}}
+{{- dict "pods" (printf "%s-pods" $base) "jobSecrets" (printf "%s-secrets" $base) "outboxes" (printf "%s-outboxes" $base) "controllerSecrets" (printf "kete-runner-%s-controller" .Release.Namespace) | toJson -}}
 {{- end -}}
 
 {{- define "kete-runner.checks" -}}
@@ -46,4 +46,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- range .Values.jobs.images -}}
 {{- if not (regexMatch "^[a-z0-9.:-]+/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$" .) -}}{{- fail (printf "jobs.images entry %q is not <registry>/<repository>@sha256:<digest>" .) -}}{{- end -}}
 {{- end -}}
+{{- if eq .Values.podDriver "kubevm" -}}
+{{- $names := list -}}
+{{- range .Values.repositorySources -}}
+{{- if not (has .name $.Values.repositories) -}}{{- fail (printf "repositorySources entry %q names no repository in repositories" .name) -}}{{- end -}}
+{{- $names = append $names .name -}}
+{{- end -}}
+{{- range .Values.repositories -}}
+{{- if not (has . $names) -}}{{- fail (printf "repository %q has no repositorySources entry (podDriver kubevm clones only from a configured source)" .) -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if eq .Values.podDriver "kubevm" -}}
+{{- if not .Values.jobs.outbox.storageClass -}}{{- fail "jobs.outbox.storageClass is required: a StorageClass that enforces capacity and mounts nosuid,nodev,noexec (README \"Outbox storage\")" -}}{{- end -}}
+{{- if and .Values.jobs.proxy.authSecret.name (not .Values.proxy.url) -}}{{- fail "jobs.proxy.authSecret needs proxy.url" -}}{{- end -}}
+{{- if and .Values.jobs.proxy.authSecret.name (eq .Values.jobs.proxy.authSecret.name .Values.proxy.authSecret.name) (eq .Values.jobs.proxy.authSecret.key .Values.proxy.authSecret.key) -}}{{- fail "jobs.proxy.authSecret must be a credential distinct from proxy.authSecret" -}}{{- end -}}
+{{- end -}}
+{{- if and .Values.proxy.authSecret.name (not .Values.proxy.url) -}}{{- fail "proxy.authSecret needs proxy.url" -}}{{- end -}}
 {{- end -}}

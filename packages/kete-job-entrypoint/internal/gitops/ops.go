@@ -59,6 +59,20 @@ func (r Runner) Verify(ctx context.Context, gitDir, ref, baseSHA string) error {
 	return nil
 }
 
+// Head returns the commit refs/heads/<ref> names in a bare copy (kubevm records it as the job's
+// base: the runner gives a ref, not a commit).
+func (r Runner) Head(ctx context.Context, gitDir, ref string) (string, error) {
+	out, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + gitDir, "rev-parse", "--verify", "refs/heads/" + ref + "^{commit}"}})
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(string(out))
+	if len(sha) != 40 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return "", ErrMismatch
+	}
+	return sha, nil
+}
+
 // AgentCopy makes the agent's working copy: its own objects (no hardlinks, no alternates), the
 // job's branch at base_sha, no remote. The working copy's own index is used here (no
 // GIT_INDEX_FILE), so the agent's git sees a clean checkout.

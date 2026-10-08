@@ -1,5 +1,6 @@
 // Package kubetest is an in-memory Kubernetes API server for the runner's tests: the routes
-// internal/kube calls (pods, secrets, events, leases, a node, /version), resourceVersions with
+// internal/kube calls (pods and their logs, secrets, PVCs, events, leases, a node, RuntimeClasses,
+// /version), resourceVersions with
 // conflicts on stale writes, label-selector lists, a scheduler that binds every new pod to one
 // node, owner-reference garbage collection of Secrets, and the caller identity of every write
 // (bearer token = username), so tests can play the admission policy's creator rule. Tests only.
@@ -46,11 +47,19 @@ type Server struct {
 	PageSize int
 	// Writes records "<user> <method> <resource>/<name>" for every write.
 	Writes []string
+	// Logs are the pods' logs by name (pods/log).
+	Logs map[string]string
 }
+
+// NodeAddress is the fake node's InternalIP, PodCIDR its pod range.
+const (
+	NodeAddress = "172.18.0.3"
+	PodCIDR     = "10.244.1.0/24"
+)
 
 // New starts the server.
 func New() *Server {
-	s := &Server{objs: map[key]map[string]any{}, Version: "v1.31.2"}
+	s := &Server{objs: map[key]map[string]any{}, Version: "v1.31.2", Logs: map[string]string{}}
 	s.Server = httptest.NewTLSServer(http.HandlerFunc(s.serve))
 	return s
 }
@@ -99,7 +108,37 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			status(w, 404, "NotFound")
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]any{"name": Node}, "status": map[string]any{"nodeInfo": map[string]any{"bootID": BootID}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]any{"name": Node}, "spec": map[string]any{"podCIDR": PodCIDR}, "status": map[string]any{
+			"nodeInfo": map[string]any{"bootID": BootID}, "addresses": []any{map[string]any{"type": "InternalIP", "address": NodeAddress}, map[string]any{"type": "Hostname", "address": Node}},
+		}})
+		return
+	case strings.HasPrefix(p, "/apis/storage.k8s.io/v1/storageclasses/") && r.Method == http.MethodGet:
+		o, found := s.objs[key{"storageclasses", "", strings.TrimPrefix(p, "/apis/storage.k8s.io/v1/storageclasses/")}]
+		if !found {
+			status(w, 404, "NotFound")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(o)
+		return
+	case strings.HasPrefix(p, "/apis/node.k8s.io/v1/runtimeclasses/") && r.Method == http.MethodGet:
+		o, found := s.objs[key{"runtimeclasses", "", strings.TrimPrefix(p, "/apis/node.k8s.io/v1/runtimeclasses/")}]
+		if !found {
+			status(w, 404, "NotFound")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(o)
+		return
+	case strings.HasSuffix(p, "/log") && strings.Contains(p, "/pods/") && r.Method == http.MethodGet:
+		parts := strings.Split(strings.Trim(p, "/"), "/") // api v1 namespaces <ns> pods <name> log
+		if len(parts) != 7 {
+			status(w, 404, "NotFound")
+			return
+		}
+		if _, found := s.objs[key{"pods", parts[3], parts[5]}]; !found {
+			status(w, 404, "NotFound")
+			return
+		}
+		_, _ = io.WriteString(w, s.Logs[parts[5]])
 		return
 	}
 	if rest, ok := strings.CutPrefix(p, "/apis/admissionregistration.k8s.io/v1/"); ok && r.Method == http.MethodGet {
@@ -347,6 +386,39 @@ func (s *Server) WritesBy(user string) []string {
 func (s *Server) AddAdmissionPolicy(name string) {
 	s.Put("validatingadmissionpolicies", "", map[string]any{"metadata": map[string]any{"name": name}, "spec": map[string]any{"failurePolicy": "Fail"}})
 	s.Put("validatingadmissionpolicybindings", "", map[string]any{"metadata": map[string]any{"name": name}, "spec": map[string]any{"policyName": name, "validationActions": []any{"Deny"}}})
+}
+
+// AddRuntimeClass stores a RuntimeClass with handler kata (AddRuntimeClassHandler for another).
+func (s *Server) AddRuntimeClass(name string) { s.AddRuntimeClassHandler(name, "kata") }
+
+// AddRuntimeClassHandler stores a RuntimeClass with a handler.
+func (s *Server) AddRuntimeClassHandler(name, handler string) {
+	s.Put("runtimeclasses", "", map[string]any{"metadata": map[string]any{"name": name}, "handler": handler})
+}
+
+// AddStorageClass stores a StorageClass.
+func (s *Server) AddStorageClass(name, provisioner string, mountOptions ...string) {
+	s.Put("storageclasses", "", map[string]any{"metadata": map[string]any{"name": name}, "provisioner": provisioner, "mountOptions": mountOptions})
+}
+
+// SetPodStatus replaces a pod's status.
+func (s *Server) SetPodStatus(ns, name string, st map[string]any) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o, ok := s.objs[key{"pods", ns, name}]
+	if !ok {
+		return false
+	}
+	o["status"] = st
+	meta(o)["resourceVersion"] = s.nextRV()
+	return true
+}
+
+// SetLog sets a pod's log.
+func (s *Server) SetLog(name, log string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Logs[name] = log
 }
 
 // Delete removes an object.

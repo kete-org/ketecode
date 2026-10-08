@@ -14,6 +14,10 @@ import (
 // PlaceholderAvailable reports whether this build has the placeholder pod driver.
 const PlaceholderAvailable = true
 
+// TestBuild: a kete_testdriver build (kind CI only, never released). It accepts the CI-only
+// SharedKernelTestClass RuntimeClass.
+const TestBuild = true
+
 // Placeholder is the test-only PodFunc (build tag kete_testdriver; config pod_driver
 // "placeholder"): each machine is a pod running its allowlisted image's `sleep` under the first
 // configured RuntimeClass, as an unprivileged user with every capability dropped, so the

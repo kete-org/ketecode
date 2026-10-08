@@ -449,3 +449,42 @@ func TestGitHubClaimUnchanged(t *testing.T) {
 		t.Errorf("contract errors %v", s.ContractErrors())
 	}
 }
+
+// A runtime repository's job: claim without clone, the runtime name, no uploads, finish outbox.
+func TestRuntimeRepositoryJob(t *testing.T) {
+	s := &Server{BaseSHA: strings.Repeat("a", 40)}
+	j := s.NewJob(Knobs{Prompt: "p", RuntimeRepo: "gitlab:payments/api"})
+	post := func(op, auth, body string) (int, []byte) {
+		h := map[string]string{}
+		if auth != "" {
+			h["Authorization"] = "Bearer " + auth
+		}
+		rec := do(s, "POST", "https://"+PlatformHost+"/api/v1/jobs/"+j.ID+"/"+op, []byte(body), h)
+		return rec.Code, rec.Body.Bytes()
+	}
+	if st, _ := post("claim", "", `{"claim_token":"`+j.ClaimToken+`","features":["clone_revoke_callback"]}`); st != 404 {
+		t.Errorf("claim without the runtime features = %d", st)
+	}
+	st, body := post("claim", "", `{"claim_token":"`+j.ClaimToken+`","features":["clone_revoke_callback","runtime_repo","runtime_publish"]}`)
+	var cl map[string]any
+	_ = json.Unmarshal(body, &cl)
+	if st != 200 || cl["clone"] != nil || cl["repository"].(map[string]any)["name"] != "gitlab:payments/api" {
+		t.Fatalf("claim %d %s", st, body)
+	}
+	cb := cl["callback_token"].(string)
+	if st, _ := post("result", cb, `{"version":1,"outcome":"completed","exit_code":0,"denied":[]}`); st != 204 {
+		t.Errorf("result %d", st)
+	}
+	if st, _ := post("uploads", cb, `{"bundle":true}`); st != 404 {
+		t.Errorf("uploads %d", st)
+	}
+	if st, _ := post("finish", cb, `{}`); st != 400 {
+		t.Errorf("v1 finish %d", st)
+	}
+	if st, _ := post("finish", cb, `{"outbox":true}`); st != 202 {
+		t.Errorf("outbox finish %d", st)
+	}
+	if n := len(s.ContractErrors()); n != 3 {
+		t.Errorf("contract errors %v", s.ContractErrors())
+	}
+}

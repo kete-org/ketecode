@@ -3,9 +3,13 @@
 package bootenv
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
@@ -90,4 +94,45 @@ func ReadConfigFD(fdArg string) (Config, error) {
 		return Config{}, fmt.Errorf("config fd %d is not a pipe", fd)
 	}
 	return DecodeConfig(f)
+}
+
+// ConfigFileArg is the flag naming the kubevm configuration file:
+// `kete-job-entrypoint --config-file /run/kete-config/config.json`.
+const ConfigFileArg = "--config-file"
+
+// ReadConfigFile reads the kubevm configuration from path, which must be exactly want (the per-job
+// Secret's volume, layout.ConfigFile). The kubelet writes a Secret volume as symlinks into a
+// timestamped directory of the same volume, so links are followed, but the file reached must be a
+// regular file inside the volume's directory. Nothing is written here: the volume is unmounted
+// later, after the shared-kernel check (entry's setup_kubevm).
+func ReadConfigFile(path, want string) (Config, error) {
+	if path != want {
+		return Config{}, fmt.Errorf("--config-file must be %s", want)
+	}
+	dir := filepath.Dir(want)
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if !strings.HasPrefix(real, dir+"/") {
+		return Config{}, errors.New("the configuration file leaves its volume")
+	}
+	f, err := os.OpenFile(real, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return Config{}, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return Config{}, err
+	}
+	if !st.Mode().IsRegular() {
+		return Config{}, errors.New("the configuration is not a regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, MaxKubeVMConfig+1))
+	if err != nil {
+		return Config{}, err
+	}
+	defer clear(data)
+	return ParseKubeVMConfig(data)
 }

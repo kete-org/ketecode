@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"syscall"
 	"testing"
@@ -575,5 +576,33 @@ func TestControlMalformed(t *testing.T) {
 	}
 	if code := pp.exitCode(t); code != 2 {
 		t.Errorf("malformed control line: exit %d", code)
+	}
+}
+
+// Configuration v2's ruleset (forbidden sets, internal ranges, a literal upstream proxy) is valid
+// nftables input: `kete-egress nft` output checked by the real nft (-c: check only, nothing applied).
+func TestFirewallV2RulesetIsValid(t *testing.T) {
+	c := map[string]any{
+		"version":   2,
+		"uids":      map[string]any{"proxy": E.proxyUID, "kete": E.keteUID, "tool": E.toolUID},
+		"ports":     map[string]any{"kete": portA, "tool": portB, "root": portR},
+		"resolvers": []string{"10.96.0.10:53"},
+		"phases": map[string]any{
+			"clone": map[string]any{"root": []string{"gitlab.corp.example:8443", "portal.kete.example"}},
+			"agent": map[string]any{"kete": []string{"portal.kete.example"}},
+		},
+		"upstream": map[string]any{"proxy": "http://10.20.0.5:3128"},
+		"internal": []map[string]any{
+			{"cidr": "10.20.0.0/16", "ports": []int{443, 3128, 8443}},
+			{"cidr": "fd12:3456:789a::/48", "ports": []int{443}},
+		},
+	}
+	path, err := writeConfig(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("sh", "-c", fmt.Sprintf("%s nft --config %s | nft -c -f -", E.bin, path)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("nft -c refused the v2 ruleset: %v: %s", err, out)
 	}
 }

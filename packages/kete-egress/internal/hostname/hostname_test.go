@@ -87,3 +87,25 @@ func TestHostHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestEntryForms(t *testing.T) {
+	for in, want := range map[string]string{"gitlab.corp.example:8443": "gitlab.corp.example:8443", "a.example:443": "a.example", "A.Example:443": "a.example"} {
+		got, host, err := AuthorityEntry(in)
+		if err != nil || got != want || host == "" {
+			t.Errorf("AuthorityEntry(%q) = %q %q %v", in, got, host, err)
+		}
+	}
+	for _, bad := range []string{"a.example:0", "a.example:08443", "a.example:65536", "10.0.0.1:443", "a.example"} {
+		if _, _, err := AuthorityEntry(bad); err == nil {
+			t.Errorf("AuthorityEntry(%q) accepted", bad)
+		}
+	}
+	for in, want := range map[string]string{"a.example": "a.example", "a.example:443": "a.example", "a.example:8443": "a.example:8443"} {
+		if got, err := HostHeaderEntry(in); err != nil || got != want {
+			t.Errorf("HostHeaderEntry(%q) = %q %v", in, got, err)
+		}
+	}
+	if _, err := HostHeaderEntry("[::1]:443"); err == nil {
+		t.Error("an IP literal Host was accepted")
+	}
+}

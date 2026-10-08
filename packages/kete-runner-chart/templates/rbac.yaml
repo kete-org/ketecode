@@ -1,6 +1,7 @@
 # Least privilege (spec §4.3, "S0 findings" 2). No pods/exec, no cluster-wide Secrets, no
-# workloads. Cluster scope: `get nodes` (the node boot ID for the kubevm check) and `get` on this
-# release's admission policies and bindings by name (the controller's fail-closed guard).
+# workloads. Cluster scope: `get nodes` (the node boot ID and addresses for the kubevm checks),
+# `get` on the configured RuntimeClasses by name (runtime_class_missing) and on this release's
+# admission policies and bindings by name (the controller's fail-closed guard).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -24,6 +25,15 @@ rules:
     resources: [secrets]
     resourceNames: [{{ . | quote }}]
     verbs: [get, delete]
+  {{- end }}
+  {{- $clone := list }}
+  {{- range .Values.repositorySources }}{{ $clone = append $clone .cloneSecret }}{{ end }}
+  {{- with ($clone | uniq) }}
+  # The repositories' read credentials (copied into each job's per-job Secret): read only.
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ range $i, $n := . }}{{ if $i }}, {{ end }}{{ $n | quote }}{{ end }}]
+    verbs: [get]
   {{- end }}
   # Single active replica.
   - apiGroups: [coordination.k8s.io]
@@ -61,6 +71,14 @@ rules:
   # Job pods (one per machine) and their per-machine Secrets. No exec, attach or port-forward.
   - apiGroups: [""]
     resources: [pods]
+    verbs: [create, get, list, delete]
+  # The job's stdout: phase lines only (the entrypoint writes nothing else there).
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  # Each job's outbox volume, kept after the pod until published or expired.
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
     verbs: [create, get, list, delete]
   - apiGroups: [""]
     resources: [secrets]
@@ -100,7 +118,18 @@ rules:
   {{- $names := include "kete-runner.policyNames" . | fromJson }}
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicies, validatingadmissionpolicybindings]
-    resourceNames: [{{ $names.pods | quote }}, {{ $names.jobSecrets | quote }}, {{ $names.controllerSecrets | quote }}]
+    resourceNames: [{{ $names.pods | quote }}, {{ $names.jobSecrets | quote }}, {{ $names.outboxes | quote }}, {{ $names.controllerSecrets | quote }}]
+    verbs: [get]
+  {{- with .Values.jobs.outbox.storageClass }}
+  # The outbox StorageClass's provisioner and mount options (checked before any start).
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    resourceNames: [{{ . | quote }}]
+    verbs: [get]
+  {{- end }}
+  - apiGroups: [node.k8s.io]
+    resources: [runtimeclasses]
+    resourceNames: [{{ range $i, $n := .Values.jobs.runtimeClassNames }}{{ if $i }}, {{ end }}{{ $n | quote }}{{ end }}]
     verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

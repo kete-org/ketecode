@@ -9,7 +9,8 @@
 // (the isolation check's probe, already the tool user), `__run` (the
 // scrubbed re-exec, reading the machine configuration from a pipe), default (boot: read and
 // validate the environment, or with `--config-fd <n>` the config pipe kete-job-init or the host
-// agent wrote, resolve the host profile, then re-exec as `__run` with an empty environment).
+// agent wrote, or with `--config-file` the Kubernetes runner's per-job Secret (kubevm), resolve
+// the host profile, then re-exec as `__run` with an empty environment).
 package main
 
 import (
@@ -66,8 +67,15 @@ func main() {
 		if c, err = bootenv.ReadConfigFD(os.Args[2]); err == nil {
 			boot, err = bootenv.FromConfig(c, os.Getenv)
 		}
+	case len(os.Args) == 3 && os.Args[1] == bootenv.ConfigFileArg:
+		// kubevm: the per-job Secret's file. Only read here; it is unmounted in setup_kubevm,
+		// after the shared-kernel check.
+		var c bootenv.Config
+		if c, err = bootenv.ReadConfigFile(os.Args[2], layout.ConfigFile); err == nil {
+			boot, err = bootenv.FromConfig(c, os.Getenv)
+		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: kete-job-entrypoint [--config-fd <n>] (on Fly configured by KETE_JOB_ID, KETE_JOB_PLATFORM_URL, KETE_JOB_CLAIM_TOKEN, KETE_JOB_STORAGE_HOST; "+hostprofile.Var+" selects the host profile)")
+		fmt.Fprintln(os.Stderr, "usage: kete-job-entrypoint [--config-fd <n> | --config-file "+layout.ConfigFile+"] (on Fly configured by KETE_JOB_ID, KETE_JOB_PLATFORM_URL, KETE_JOB_CLAIM_TOKEN, KETE_JOB_STORAGE_HOST; "+hostprofile.Var+" selects the host profile)")
 		os.Exit(2)
 	}
 	if err != nil {

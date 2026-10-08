@@ -1,10 +1,21 @@
 ---
 module: job-entrypoint
 paths: [packages/kete-job-entrypoint/**, .github/workflows/kete-job-entrypoint.yml]
-verified-at: 50ee2cb272
+verified-at: 99f9825fb1
 ---
 
 ## Quick answers
+- What is the kubevm profile? The Kubernetes runner's job pods (enterprise runtime P2; README
+  "kubevm"): `--config-file /run/kete-config/config.json` (`bootenv.ReadConfigFile`,
+  `ParseKubeVMConfig`, the `local` section in `internal/bootenv/kubevm.go`); `setup_host` checks the
+  boot ID against `node_boot_id` first (`hostprofile.KubeVMKernel`); `setup_kubevm` unmounts the
+  Secret and remounts `/proc/sys` and `/sys/fs/cgroup` (`internal/entry/kubevm_linux.go`);
+  `host_boundary` adds the Kubernetes API and node targets and retries ≤ 30 s; egress
+  configuration v2 (`egress.Base.V2`); `job.Runtime` swaps the claim (`ClaimRuntime`, fail closed:
+  `claim` failed `repository`, nothing else sent), the clone source and base (`gitops.Head`), the
+  result (`BoundRunResult`), uploads (`internal/outbox`, `manifest.json` v1) and finish
+  (`FinishOutbox`). The test-only shared-kernel mode exists only with `-tags kete_testdriver`
+  (`hostprofile.SharedKernelTestBuild`).
 - What is this module? `kete-job-entrypoint`, the cloud job container's **root** entrypoint (piece C
   of the image work; kete-code-platform `docs/jobs.md` §8 items 1-2, ADRs 0018-0021). It sets up
   the machine, guards the network with `kete-egress`, starts `kete-root-helper`, claims the job,

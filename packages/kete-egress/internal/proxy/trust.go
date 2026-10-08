@@ -4,7 +4,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -55,4 +58,67 @@ func CheckRoots(pool *x509.CertPool) error {
 		}
 	}
 	return nil
+}
+
+// Limits of the configuration v2 upstream files.
+const (
+	maxCABundle  = 256 << 10
+	maxProxyAuth = 1024
+)
+
+// AddCABundle returns pool plus the PEM certificates of path (configuration v2
+// upstream.ca_bundle_file): extra roots for upstream TLS only, never the job's clients' trust. The
+// file must hold at least one certificate, and none may be named like the job CA (CheckRoots).
+func AddCABundle(pool *x509.CertPool, path string) (*x509.CertPool, error) {
+	b, err := readSmall(path, maxCABundle)
+	if err != nil {
+		return nil, fmt.Errorf("ca_bundle_file: %w", err)
+	}
+	extra := x509.NewCertPool()
+	if !extra.AppendCertsFromPEM(b) {
+		return nil, errors.New("ca_bundle_file holds no PEM certificate")
+	}
+	if err := CheckRoots(extra); err != nil {
+		return nil, fmt.Errorf("ca_bundle_file: %w", err)
+	}
+	out := pool.Clone()
+	out.AppendCertsFromPEM(b)
+	return out, nil
+}
+
+// ReadProxyAuth reads configuration v2 upstream.proxy_auth_file: one `username:password` line
+// (printable ASCII, a non-empty username without ':'). The value is never logged or echoed in an
+// error.
+func ReadProxyAuth(path string) (string, error) {
+	b, err := readSmall(path, maxProxyAuth)
+	if err != nil {
+		return "", fmt.Errorf("proxy_auth_file: %w", err)
+	}
+	v := strings.TrimRight(string(b), "\r\n")
+	i := strings.IndexByte(v, ':')
+	if i < 1 {
+		return "", errors.New("proxy_auth_file must hold username:password")
+	}
+	for j := 0; j < len(v); j++ {
+		if v[j] < 0x20 || v[j] > 0x7e {
+			return "", errors.New("proxy_auth_file must be printable ASCII on one line")
+		}
+	}
+	return v, nil
+}
+
+func readSmall(path string, max int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, fmt.Errorf("larger than %d bytes", max)
+	}
+	return b, nil
 }

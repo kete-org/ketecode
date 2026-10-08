@@ -56,6 +56,12 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 	if !ok {
 		return exit(log, 1)
 	}
+	// kubevm: the pod's own kernel is proven; now the per-job Secret's volume goes (nothing in the
+	// guest may read the configuration again), and /proc/sys and the cgroup mount, which the
+	// container runtime mounts read-only, become writable for the steps below.
+	if profile == hostprofile.KubeVM && !kubeVMSetup(log, cfg) {
+		return exit(log, 1)
+	}
 	// Fly has no shared-kernel guard yet (a follow-up, to verify on a Fly machine): at least its API
 	// directory and socket must be there before anything is written, so Fly's variables alone in
 	// a container never reach the sysctls. The Fly guard proper (locking, the probe) runs below.
@@ -91,7 +97,12 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 	}) {
 		return exit(log, 1)
 	}
-	if !step(pl.StepSysctl, func() error { return setup.ApplySysctls(setup.Sysctls(cfg.ProcMount)) }) {
+	if sharedKernelTest(boot) {
+		// The test-only shared-kernel mode (kind CI, a kete_testdriver build): these sysctls are
+		// host-wide in a shared kernel, so they are left alone — the very writes the release
+		// build refuses to risk outside its own VM.
+		log.Note(pl.StepSysctl, pl.CodeSharedKernel)
+	} else if !step(pl.StepSysctl, func() error { return setup.ApplySysctls(setup.Sysctls(cfg.ProcMount)) }) {
 		return exit(log, 1)
 	}
 	if !step(pl.StepProc, func() error { return setup.RemountProc(cfg.ProcMount) }) {
@@ -103,10 +114,18 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 		if !flyGuard(ctx, log, cfg, boot, ids) {
 			return exit(log, 1)
 		}
-	} else if !hostBoundary(ctx, log, cfg, profile) {
+	} else if !hostBoundary(ctx, log, cfg, profile, boot) {
 		return exit(log, 1)
 	}
-	if !step(pl.StepDirs, func() error { return setup.MakeDirs(Dirs(cfg, ids)) }) {
+	if !step(pl.StepDirs, func() error {
+		if err := setup.MakeDirs(Dirs(cfg, ids)); err != nil {
+			return err
+		}
+		if profile == hostprofile.KubeVM {
+			return kubeVMDirs(cfg, ids, boot)
+		}
+		return nil
+	}) {
 		return exit(log, 1)
 	}
 	var cg cgroup.Layout
@@ -141,6 +160,9 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 		}
 		base = egress.Base{ProxyUID: ids.Proxy.UID, KeteUID: ids.Kete.UID, ToolUID: ids.Tool.UID,
 			PortKete: cfg.PortKete, PortTool: cfg.PortTool, PortRoot: cfg.PortRoot, Resolvers: res}
+		if profile == hostprofile.KubeVM {
+			base.V2 = egressV2(cfg, boot)
+		}
 		return nil
 	}) {
 		return exit(log, 1)
@@ -162,7 +184,23 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 		Git: cfg.GitBin, Home: cfg.RootHome(), ProxyURL: proxyURL, CAPath: cfg.CAPath(),
 		Timeout: cfg.GitTimeout, CloneTimeout: cfg.CloneTimeout, MaxStdout: layout.GitMaxStdout, MaxStderr: layout.GitMaxStderr,
 	}
-	m := &machine{cfg: cfg, ids: ids, cg: cg, git: git, resolvers: base.Resolvers, profile: profile}
+	m := &machine{cfg: cfg, ids: ids, cg: cg, git: git, resolvers: base.Resolvers, profile: profile, kubeAPI: boot.KubeAPI}
+	if boot.Local != nil {
+		m.nodes, m.internalPorts = boot.Local.NodeAddresses, internalPorts(boot)
+	}
+	pc := platform.New(platform.Options{
+		BaseURL: boot.PlatformURL, JobID: boot.JobID, StorageHost: boot.StorageHost, ProxyURL: proxyURL, Timeout: cfg.HTTPTimeout,
+		ClaimTries: cfg.ClaimTries, ClaimWindow: cfg.ClaimWindow, Backoff: cfg.RetryBackoff,
+	})
+	var rt *job.Runtime
+	if profile == hostprofile.KubeVM {
+		var err error
+		if rt, err = runtimeDeps(cfg, boot, pc, git); err != nil {
+			log.FailErr(pl.StepEgressConf, pl.CodeInvalid, err)
+			return exit(log, 1)
+		}
+		boot.Local = nil // the clone credential lives on in rt only
+	}
 	deps := job.Deps{
 		Cfg:  cfg,
 		Log:  log,
@@ -170,13 +208,11 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 		Egress: &egressImpl{
 			mgr: mgr, base: base, cfg: cfg,
 		},
-		Platform: platform.New(platform.Options{
-			BaseURL: boot.PlatformURL, JobID: boot.JobID, StorageHost: boot.StorageHost, ProxyURL: proxyURL, Timeout: cfg.HTTPTimeout,
-			ClaimTries: cfg.ClaimTries, ClaimWindow: cfg.ClaimWindow, Backoff: cfg.RetryBackoff,
-		}),
-		Git:     git,
-		Machine: m,
-		Now:     time.Now,
+		Platform: pc,
+		Git:      git,
+		Machine:  m,
+		Now:      time.Now,
+		Runtime:  rt,
 	}
 	return job.Run(ctx, deps)
 }
@@ -192,14 +228,23 @@ func hostCheck(log *pl.Logger, cfg layout.Config, boot bootenv.Values) (hostprof
 		log.Fail(pl.StepHost, pl.CodeInvalid)
 		return "", false
 	}
-	sig, err := hostprofile.Gather(signalPaths(cfg), hostprofile.Signals{
+	paths := signalPaths(cfg)
+	in := hostprofile.Signals{
 		FlyEnv: boot.OnFly, Source: hostprofile.Source(boot.Source), Provider: boot.Provider, Generation: boot.Generation,
-	})
+	}
+	if n == hostprofile.KubeVM {
+		// The kubevm rule is the boot ID (KubeVMKernel), read here: the namespace facts can't
+		// tell a Kata guest from a container on a VM node.
+		paths.BootIDFile = cfg.BootIDFile
+		in.NodeBootID = boot.NodeBootID
+		in.SharedKernelTest = sharedKernelTest(boot)
+	}
+	sig, err := hostprofile.Gather(paths, in)
 	if err != nil {
 		log.FailErr(pl.StepHost, pl.CodeFailed, err)
 		return "", false
 	}
-	if n != hostprofile.Fly {
+	if n != hostprofile.Fly && n != hostprofile.KubeVM {
 		// Reads only. A namespace that can't be read refuses as the guard would: whose kernel
 		// this is stays unknown.
 		if sig.Kernel, err = hostprofile.GatherKernel(kernelPaths(cfg)); err != nil {
@@ -249,7 +294,7 @@ func readGateways(path string) ([]netip.Addr, error) {
 // host-boundary probe (the default gateway's sample ports, metadata, private-range and IPv6
 // samples) must reach nothing. This proves the host-level isolation (the host table, the
 // provider's network) exists independently of the guest's own rules.
-func hostBoundary(ctx context.Context, log *pl.Logger, cfg layout.Config, profile hostprofile.Name) bool {
+func hostBoundary(ctx context.Context, log *pl.Logger, cfg layout.Config, profile hostprofile.Name, boot bootenv.Values) bool {
 	log.Start(pl.StepBoundary)
 	gws, err := readGateways(cfg.RouteFile)
 	if err != nil {
@@ -290,12 +335,52 @@ func hostBoundary(ctx context.Context, log *pl.Logger, cfg layout.Config, profil
 	}
 	defer ln.Close()
 	probes := append(isolation.Controls(ln.TCPAddr(), ""), hostprofile.BoundaryTargets(gws)...)
-	if code := isolation.Check(ctx, isolation.NewRequest(probes), isolation.SysNet{}); code != isolation.OK {
-		log.Fail(pl.StepBoundary, code)
-		return false
+	if profile != hostprofile.KubeVM {
+		if code := isolation.Check(ctx, isolation.NewRequest(probes), isolation.SysNet{}); code != isolation.OK {
+			log.Fail(pl.StepBoundary, code)
+			return false
+		}
+		log.OK(pl.StepBoundary)
+		return true
 	}
-	log.OK(pl.StepBoundary)
-	return true
+	// kubevm: also the Kubernetes API and the node's addresses; and a NetworkPolicy may be
+	// enforced only after the pod started (spec "S0 findings" 5), so a failed probe is retried
+	// for a bounded time and passes only after two consecutive rounds in which every target was
+	// unreachable. The claim token (in memory) hasn't been used and no job code runs before claim,
+	// so waiting exposes nothing new. The probe runs as root before the in-guest firewall: what
+	// root can't reach now, no user reaches after it.
+	var nodes []string
+	if boot.Local != nil {
+		nodes = boot.Local.NodeAddresses
+	}
+	probes = append(probes, hostprofile.KubeTargets(boot.KubeAPI, nodes, internalPorts(boot))...)
+	until := time.Now().Add(cfg.BoundaryRetry)
+	clean := 0
+	for {
+		code := isolation.Check(ctx, isolation.NewRequest(probes), isolation.SysNet{})
+		if code == isolation.OK {
+			if clean++; clean >= 2 {
+				log.OK(pl.StepBoundary)
+				return true
+			}
+		} else {
+			clean = 0
+		}
+		if ctx.Err() != nil || !time.Now().Add(cfg.BoundaryEvery).Before(until) {
+			if code == isolation.OK {
+				code = pl.CodeProbe // one clean round only: not proven twice in the window
+			}
+			log.Fail(pl.StepBoundary, code)
+			return false
+		}
+		if code != isolation.OK {
+			log.Note(pl.StepBoundary, code)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(cfg.BoundaryEvery):
+		}
+	}
 }
 
 // flyGuard is step setup_fly: lock Fly's API directory and socket (failing closed on Fly when
@@ -435,13 +520,16 @@ func (e *egressImpl) Start(_ context.Context, inst egress.Instance) (job.Proxy, 
 }
 
 type machine struct {
-	cfg       layout.Config
-	ids       sysusers.IDs
-	cg        cgroup.Layout
-	git       gitops.Runner
-	resolvers []string
-	audit     *auditReader
-	profile   hostprofile.Name
+	kubeAPI       string   // kubevm
+	nodes         []string // kubevm
+	internalPorts []uint16 // kubevm
+	cfg           layout.Config
+	ids           sysusers.IDs
+	cg            cgroup.Layout
+	git           gitops.Runner
+	resolvers     []string
+	audit         *auditReader
+	profile       hostprofile.Name
 }
 
 // CheckIsolation runs the isolation probe as the tool user, in the tool cgroup, against every
@@ -489,6 +577,14 @@ func (m *machine) CheckIsolation(ctx context.Context) error {
 			return &isolation.Failure{Reason: pl.CodeProbe, Err: err}
 		}
 		in.FlySockets, in.OffFly, in.Extra = nil, true, hostprofile.IsolationTargets(m.profile, gws, devs)
+		if m.profile == hostprofile.KubeVM {
+			// The Kubernetes API, the node, the (unmounted) config volume, the outbox and the
+			// enterprise proxy's credentials: none for the tool user.
+			in.Extra = append(in.Extra, hostprofile.KubeTargets(m.kubeAPI, m.nodes, m.internalPorts)...)
+			for _, d := range []string{m.cfg.OutboxDir, m.cfg.UpstreamDir} {
+				in.Extra = append(in.Extra, isolation.Probe{Kind: isolation.KindDir, Target: d, Reason: pl.CodeGuardedPath})
+			}
+		}
 	}
 	probes := isolation.Build(in)
 	// The tool cgroup holds no process directly (its leaves are the helper's p<N>), so the probe

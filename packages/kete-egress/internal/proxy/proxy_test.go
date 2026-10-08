@@ -153,6 +153,11 @@ type hopts struct {
 	// jobCAUpstream: the upstream presents certificates from the proxy's own job CA, and the
 	// proxy verifies against the system roots loaded before that CA existed (as serve does).
 	jobCAUpstream bool
+	// v2 turns the test configuration into a version 2 one before the proxy is built (proxy_v2_test.go).
+	v2 func(t *testing.T, cfg *config.Config, upPort int)
+	// proxyAuth is Deps.ProxyAuth; upstreamProxyPort the v2 upstream proxy's real port.
+	proxyAuth         string
+	upstreamProxyPort int
 }
 
 func newHarness(t *testing.T, o hopts) *harness {
@@ -181,6 +186,9 @@ func newHarness(t *testing.T, o hopts) *harness {
 		roots = x509.NewCertPool()
 	case roots == nil:
 		roots = up.pool
+	}
+	if o.v2 != nil {
+		o.v2(t, cfg, up.srv.Listener.Addr().(*net.TCPAddr).Port)
 	}
 	h := &harness{cfg: cfg, log: &syncBuf{}, addr: map[config.Port]string{}, up: up}
 	lns := map[config.Port]net.Listener{}
@@ -219,7 +227,9 @@ func newHarness(t *testing.T, o hopts) *harness {
 		}
 		// Loopback stands in for the internet here; every other blocked range stays blocked.
 		p.isBlocked = func(a netip.Addr) bool { return !a.IsLoopback() && blocked.Contains(a) }
+		p.isForbidden = func(a netip.Addr) bool { return !a.IsLoopback() && blocked.IsForbidden(a) }
 		p.upstreamPort = upPort
+		p.upstreamProxyPort = o.upstreamProxyPort
 		if o.idle > 0 {
 			p.streamIdle = o.idle
 		}
@@ -232,6 +242,7 @@ func newHarness(t *testing.T, o hopts) *harness {
 		Phase:         phase.NewState(),
 		Fatal:         func(err error) { t.Errorf("fatal: %v", err) },
 		UpstreamRoots: roots,
+		ProxyAuth:     o.proxyAuth,
 	}, opts...)
 	if err != nil {
 		t.Fatal(err)

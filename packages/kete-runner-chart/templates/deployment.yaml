@@ -48,6 +48,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            {{- with .Values.proxy.url }}
+            # Job image verification (registry referrers, Sigstore TUF) goes through the proxy; the
+            # platform client and the API server client ignore the environment.
+            - name: HTTPS_PROXY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.caBundle.existingSecret }}
+            # The CA bundle for image verification too (the system roots file stays loaded).
+            - name: SSL_CERT_DIR
+              value: /etc/kete-runner/ca-dir:/etc/ssl/certs
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -65,11 +76,48 @@ spec:
             - name: ca
               mountPath: /etc/kete-runner/ca
               readOnly: true
+            # A regular file (subPath): Go's SSL_CERT_DIR skips a Secret volume's symlinks.
+            - name: ca
+              mountPath: /etc/kete-runner/ca-dir/ca.crt
+              subPath: {{ .Values.caBundle.key | quote }}
+              readOnly: true
             {{- end }}
+            {{- if .Values.proxy.authSecret.name }}
+            - name: proxy-auth
+              mountPath: /etc/kete-runner/proxy
+              readOnly: true
+            {{- end }}
+            {{- if .Values.jobs.proxy.authSecret.name }}
+            - name: job-proxy-auth
+              mountPath: /etc/kete-runner/job-proxy
+              readOnly: true
+            {{- end }}
+            # The Sigstore TUF cache for job image verification.
+            - name: cache
+              mountPath: /var/cache/kete-runner
       volumes:
         - name: config
           configMap:
             name: kete-runner-config
+        - name: cache
+          emptyDir:
+            sizeLimit: 64Mi
+        {{- if .Values.proxy.authSecret.name }}
+        - name: proxy-auth
+          secret:
+            secretName: {{ .Values.proxy.authSecret.name | quote }}
+            items:
+              - key: {{ .Values.proxy.authSecret.key | quote }}
+                path: {{ .Values.proxy.authSecret.key | quote }}
+        {{- end }}
+        {{- if .Values.jobs.proxy.authSecret.name }}
+        - name: job-proxy-auth
+          secret:
+            secretName: {{ .Values.jobs.proxy.authSecret.name | quote }}
+            items:
+              - key: {{ .Values.jobs.proxy.authSecret.key | quote }}
+                path: {{ .Values.jobs.proxy.authSecret.key | quote }}
+        {{- end }}
         {{- if .Values.caBundle.existingSecret }}
         - name: ca
           secret:

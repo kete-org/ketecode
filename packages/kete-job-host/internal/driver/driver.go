@@ -38,7 +38,21 @@ type Spec struct {
 	// Config is the machine configuration's canonical JSON. The agent clears the slice after
 	// Start returns; a driver must not retain it.
 	Config []byte
+	// Repository is the run machine's runtime repository (job-host-v2; nil otherwise): the
+	// kubernetes driver resolves it in the runner's registry for the job's local section.
+	Repository *contract.RunRepository
 }
+
+// FailedError is a Status error that ends a machine still starting as `failed` with Reason (a
+// job-host-v2 failed reason such as pod_unschedulable or image_pull_failed) instead of crashing
+// it: the agent records the reason and removes what the driver holds (Stop).
+type FailedError struct {
+	Reason string
+	Err    error
+}
+
+func (e *FailedError) Error() string { return "machine failed: " + e.Reason + ": " + e.Err.Error() }
+func (e *FailedError) Unwrap() error { return e.Err }
 
 // Status is a machine's observed status.
 type Status int

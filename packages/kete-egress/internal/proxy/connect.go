@@ -112,7 +112,9 @@ func (p *Proxy) handle(port config.Port, raw net.Conn) {
 		p.refuseLog(p.entry(port, "CONNECT", authHost, ""), http.StatusBadRequest, policy.ReasonBadConnect)
 		return
 	}
-	host, err := hostname.Authority(head.target)
+	// host is the allowlist entry (v1: the host, port 443 only; v2: the bare host for 443, else
+	// `host:port`); sniHost is its host name, which the TLS leaf and the SNI must name.
+	host, sniHost, err := p.authority(head.target)
 	if err != nil {
 		reason := policy.ReasonBadHost
 		if errors.Is(err, hostname.ErrPort) {
@@ -123,7 +125,7 @@ func (p *Proxy) handle(port config.Port, raw net.Conn) {
 		return
 	}
 	if hosts := head.header.Values("Host"); len(hosts) > 0 {
-		hh, err := hostname.HostHeader(hosts[0])
+		hh, err := p.hostHeader(hosts[0])
 		if len(hosts) != 1 || err != nil || hh != host {
 			writeStatus(raw, http.StatusBadRequest)
 			p.refuseLog(p.entry(port, "CONNECT", host, ""), http.StatusBadRequest, policy.ReasonHostMismatch)
@@ -154,11 +156,11 @@ func (p *Proxy) handle(port config.Port, raw net.Conn) {
 		SessionTicketsDisabled: true,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			sni, err := hostname.Normalize(hello.ServerName)
-			if err != nil || sni != host {
+			if err != nil || sni != sniHost {
 				sniMismatch = true
 				return nil, fmt.Errorf("SNI %q is not the CONNECT host", hello.ServerName)
 			}
-			return p.ca.Leaf(host)
+			return p.ca.Leaf(sniHost)
 		},
 	}
 	tc := tls.Server(ic, tlsCfg)
@@ -182,6 +184,24 @@ func (p *Proxy) handle(port config.Port, raw net.Conn) {
 	})
 	defer stopWatch()
 	p.serveHTTP(cc, tc)
+}
+
+// authority parses a CONNECT target into its allowlist entry and host name: v1 accepts port 443
+// only; v2 any port (whether the entry is allowed is the allowlist's question).
+func (p *Proxy) authority(target string) (entry, host string, err error) {
+	if p.cfg.Version == config.VersionV2 {
+		return hostname.AuthorityEntry(target)
+	}
+	h, err := hostname.Authority(target)
+	return h, h, err
+}
+
+// hostHeader parses a Host header into the allowlist spelling the CONNECT host has.
+func (p *Proxy) hostHeader(v string) (string, error) {
+	if p.cfg.Version == config.VersionV2 {
+		return hostname.HostHeaderEntry(v)
+	}
+	return hostname.HostHeader(v)
 }
 
 func (p *Proxy) peerOK(port config.Port, raw net.Conn) bool {

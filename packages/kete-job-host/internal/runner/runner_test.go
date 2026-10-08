@@ -94,6 +94,7 @@ func newEnv(t *testing.T) *env {
 	ks := kubetest.New()
 	t.Cleanup(ks.Close)
 	ks.AddAdmissionPolicy("kete-runner-jobs")
+	ks.AddRuntimeClass("kete-test")
 	log := &syncBuffer{}
 	e := &env{t: t, kube: ks, p: p, clk: clk, log: log, addr: srv.Listener.Addr().String()}
 	e.o = runner.Options{
@@ -390,6 +391,7 @@ func TestRunnerBlocksStartsWithoutAdmissionPolicy(t *testing.T) {
 	}
 	e.kube.Delete("validatingadmissionpolicies", "", "kete-runner-jobs")
 	e.kube.AddAdmissionPolicy("kete-runner-jobs")
+	e.kube.AddRuntimeClass("kete-test")
 	e.assign(host, mid(2), jid(2), imageA, repo, nil, time.Hour)
 	e.eventually("started again", func() bool { return e.kube.Get("pods", jobsNS, kdriver.PodName(mid(2))) != nil })
 }
