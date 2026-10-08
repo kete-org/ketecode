@@ -5,7 +5,8 @@
 //
 // bwrap binds paths that exist. Missing protected paths (a `kete.jsonc` that isn't there yet) are
 // created by the caller as empty, unreadable placeholders before the command and removed after it
-// (sandbox.ts); bwrap then binds them read-only, so the command can't create the real file.
+// (resolve.ts); bwrap then binds them read-only (files: /dev/null, plus a copy of git's exclude list
+// naming them, so `git add -A` skips them), so the command can't create the real file.
 // Because bwrap takes arguments, not a profile, nothing in a path can be read as an option or rule:
 // every path follows its option as a separate argument and is checked to be absolute.
 
@@ -24,6 +25,8 @@ export function args(policy: Policy, cwd: string): string[] {
   for (const value of policy.writable) bind("--bind", value)
   for (const value of policy.pinned) bind("--bind", value)
   for (const value of policy.readOnly) bind("--ro-bind", value)
+  for (const value of policy.masked) out.push("--ro-bind", "/dev/null", checkPath(value))
+  for (const item of policy.overlays) out.push("--ro-bind", checkPath(item.source), checkPath(item.target))
   const files = policy.hidden.filter((item) => !item.directory)
   const directories = policy.hidden.filter((item) => item.directory)
   for (const item of files) out.push("--ro-bind", "/dev/null", checkPath(item.path))

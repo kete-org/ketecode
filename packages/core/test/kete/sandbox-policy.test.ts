@@ -4,7 +4,6 @@
 // sandbox works; CI installs bubblewrap.
 import path from "path"
 import fs from "fs/promises"
-import os from "os"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { KeteSandboxProbe } from "@opencode/core/kete/sandbox/probe"
 import { KeteSandboxResolve } from "@opencode/core/kete/sandbox/resolve"
@@ -19,9 +18,9 @@ if (!probe.available && process.env.KETE_SANDBOX_TESTS === "required")
 if (!probe.available) console.log(`sandbox-policy.test.ts skipped: ${probe.reason}`)
 
 // Somewhere the test can write but the sandbox can't: macOS's shared folder (the isolated home sits
-// in the per-user temp directory, which the sandbox may write), Linux's real home directory (from the
-// user database: the test runner points $HOME into a temp directory).
-const outsideDir = process.platform === "darwin" ? "/Users/Shared" : os.userInfo().homedir
+// in the per-user temp directory, which the sandbox may write), on Linux the test folder of this
+// checkout (the test runner points $HOME into /tmp, which the sandbox may write).
+const outsideDir = process.platform === "darwin" ? "/Users/Shared" : path.join(import.meta.dir, "..")
 
 const settings = KeteSandboxSettings.resolve({ documents: [], globalDirectory: "/nonexistent", env: {} })
 
@@ -143,9 +142,10 @@ describe.skipIf(!probe.available)("sandbox policy, run for real", () => {
       expect(await exists(path.join(env.workspace, name)), name).toBe(false)
     if (probe.available && probe.mechanism === "seatbelt") expect(await exists(path.join(env.workspace, "sub", ".kete", "kete.jsonc"))).toBe(false)
 
-    const commit = await sandboxed(env, "git -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m two && git log --oneline | wc -l")
+    // `git add -A` must not trip over Linux placeholders (they are masked with /dev/null, which git ignores).
+    const commit = await sandboxed(env, "git add -A && git -c user.email=t@example.com -c user.name=t commit -q -m two && git status --porcelain && git log --oneline | wc -l")
     expect(commit.exit, commit.out).toBe(0)
-    expect(commit.out.trim()).toBe("2")
+    expect(commit.out.trim(), commit.out).toBe("2")
   })
 
   test("credentials are hidden, except SSH host keys", async () => {

@@ -112,7 +112,8 @@ A policy denying `sandbox_network` stops commands from asking for network access
   and its parents inside writable folders), not in every subfolder; git internals only in the
   workspace's own git folder, not in nested repositories. When a protected file doesn't exist yet,
   Kete Code puts an unreadable placeholder there for the duration of the command and removes it
-  afterwards.
+  afterwards (inside the sandbox git is told to ignore it; your own `git status` may list it while
+  the command runs).
 - Caches are shared with builds you run yourself: code could leave a poisoned entry (e.g. in the Go
   build cache) for a later build outside the sandbox. Set `caches: false` if that matters to you.
 - Files other tools act on later — editor settings (`.vscode/`, `.idea/`), a planted bare git

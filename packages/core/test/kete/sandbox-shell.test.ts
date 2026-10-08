@@ -6,7 +6,6 @@
 // permission hooks (sandbox.test.ts covers those).
 import path from "path"
 import fs from "fs/promises"
-import os from "os"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Money } from "@opencode/schema/money"
@@ -271,9 +270,9 @@ describe.skipIf(!probe.available)("the local OS sandbox through the shell tool",
           const hosts = yield* run({ command: `cat "${home}/.ssh/known_hosts"` })
           expect(hosts.text).toContain("github.com")
 
-          // The isolated test home sits in a temp directory, which the sandbox may write: use the real
-          // home on Linux (from the user database, not $HOME) and the shared folder on macOS.
-          const outside = path.join(process.platform === "darwin" ? "/Users/Shared" : os.userInfo().homedir, `outside-${Date.now()}.txt`)
+          // The isolated test home sits in a temp directory, which the sandbox may write: use this
+          // checkout's test folder on Linux and the shared folder on macOS.
+          const outside = path.join(process.platform === "darwin" ? "/Users/Shared" : path.join(import.meta.dir, ".."), `outside-${Date.now()}.txt`)
           const write = yield* run({ command: `echo x > "${outside}"` })
           expect(write.exit).not.toBe(0)
           expect(yield* Effect.promise(() => Bun.file(outside).exists())).toBe(false)

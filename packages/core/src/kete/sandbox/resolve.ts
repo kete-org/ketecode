@@ -243,6 +243,12 @@ export class Placeholders {
     return () => this.release(target, directory, current)
   }
 
+  /** Whether `target` is currently a placeholder this registry created (not a real file). */
+  async isPlaceholder(target: string) {
+    const entry = this.held.get(target)
+    return entry ? await entry.created.catch(() => false) : false
+  }
+
   private async release(target: string, directory: boolean, entry: { count: number; readonly created: Promise<boolean> }) {
     entry.count--
     if (entry.count > 0) return
@@ -281,6 +287,26 @@ async function create(target: string, directory: boolean): Promise<boolean> {
     if (await exists(target)) return false
     throw error
   }
+}
+
+/**
+ * Linux: a copy of the repository's `info/exclude` that also lists the placeholders, bound over the
+ * real one inside the sandbox, so git ignores them. Written in Kete Code's own temp directory (read-only
+ * in the sandbox); removed after the command.
+ */
+async function excludeOverlay(common: string, workspace: string, placeholders: ReadonlyArray<string>, tmp: string) {
+  const target = path.join(common, "info", "exclude")
+  if (!(await exists(target))) {
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, "", { flag: "a" })
+  }
+  const original = await fs.readFile(target, "utf8").catch(() => "")
+  const lines = placeholders.map((value) => "/" + path.relative(workspace, value).split(path.sep).join("/"))
+  await fs.mkdir(tmp, { recursive: true })
+  const directory = await fs.mkdtemp(path.join(tmp, "sandbox-exclude-"))
+  const source = path.join(directory, "exclude")
+  await fs.writeFile(source, `${original}${original.endsWith("\n") || original === "" ? "" : "\n"}# Kete Code sandbox placeholders\n${lines.join("\n")}\n`)
+  return { source, target, release: () => fs.rm(directory, { recursive: true, force: true }) }
 }
 
 /** The process's placeholders. */
@@ -342,13 +368,26 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
     const pinned: string[] = []
     if (git.hooksPath) readOnly.push(git.hooksPath)
 
+    const masked: string[] = []
+    const overlays: Array<{ source: string; target: string }> = []
     if (linux) {
       for (const dir of chain)
         for (const item of configNames) {
           const target = path.join(dir, item.name)
           releases.push(await placeholders.acquire(target, item.directory))
-          readOnly.push(target)
+          // A file placeholder is covered with /dev/null and listed in git's exclude file (below), so
+          // `git add -A` in the sandbox doesn't try to add it; a real file or a directory (git ignores
+          // empty ones) is bound read-only onto itself.
+          if (!item.directory && (await placeholders.isPlaceholder(target))) masked.push(target)
+          else readOnly.push(target)
         }
+      const common = git.local ?? git.linked?.common
+      const inRepository = masked.filter((value) => within(value, workspace))
+      if (common && inRepository.length > 0) {
+        const exclude = await excludeOverlay(common, workspace, inRepository, await real(input.kete.tmp))
+        releases.push(exclude.release)
+        overlays.push({ source: exclude.source, target: exclude.target })
+      }
       const gitDirs = [...(git.local ? [git.local] : []), ...gitExternal]
       for (const gitDir of gitDirs) {
         const hooks = path.join(gitDir, "hooks")
@@ -400,6 +439,8 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
       readOnly: readOnlyExisting,
       gitDirectories: gitExternal,
       pinned,
+      masked,
+      overlays,
       hidden,
       visible,
       network: input.network,

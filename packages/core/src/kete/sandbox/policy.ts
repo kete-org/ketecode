@@ -23,6 +23,11 @@ export interface Policy {
   readonly gitDirectories: ReadonlyArray<string>
   /** Linux: directories bound onto themselves so they can't be renamed or replaced (`.git`). */
   readonly pinned: ReadonlyArray<string>
+  /** Linux: placeholders for missing protected files, covered with /dev/null. A character device is
+   * invisible to `git status` and `git add -A`; a read-only regular file there would make them fail. */
+  readonly masked: ReadonlyArray<string>
+  /** Linux: files bound read-only over others (git's exclude list with the placeholders added). */
+  readonly overlays: ReadonlyArray<{ readonly source: string; readonly target: string }>
   /** Credential paths that can't be read. */
   readonly hidden: ReadonlyArray<Hidden>
   /** Exceptions inside hidden paths (e.g. `~/.ssh/known_hosts`). */

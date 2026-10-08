@@ -74,6 +74,8 @@ const policy = (overrides: Partial<Policy> = {}): Policy => ({
   readOnly: ["/home/me/.config/kete"],
   gitDirectories: [],
   pinned: ["/work/repo/.git"],
+  masked: ["/work/repo/kete.jsonc"],
+  overlays: [{ source: "/home/me/.local/share/kete/tmp/x/exclude", target: "/work/repo/.git/info/exclude" }],
   hidden: [
     { path: "/home/me/.ssh", directory: true },
     { path: "/home/me/.netrc", directory: false },
@@ -148,6 +150,8 @@ describe("bwrap arguments", () => {
   test("hidden files get /dev/null, hidden directories a tmpfs made read-only after the exceptions", () => {
     const args = KeteBubblewrap.args(policy(), "/work/repo")
     expect(args.join(" ")).toContain("--ro-bind /dev/null /home/me/.netrc")
+    expect(args.join(" ")).toContain("--ro-bind /dev/null /work/repo/kete.jsonc")
+    expect(args.join(" ")).toContain("--ro-bind /home/me/.local/share/kete/tmp/x/exclude /work/repo/.git/info/exclude")
     const tmpfs = args.indexOf("--tmpfs")
     const visible = args.findIndex((arg, i) => arg === "--ro-bind" && args[i + 1] === "/home/me/.ssh/known_hosts")
     const remount = args.indexOf("--remount-ro")
