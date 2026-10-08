@@ -1,7 +1,7 @@
 ---
 module: permissions
 paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/shell-risk.ts, packages/util/src/kete/permission-mode.ts, packages/core/src/kete/permission-ceiling.ts, packages/core/src/permission.ts, packages/core/src/plugin/internal.ts, packages/cli/src/kete/permission-mode.ts, packages/tui/src/kete/permission-mode.tsx]
-verified-at: 72d051b365
+verified-at: ad8739fb7a
 ---
 ## Quick answers
 - What does Kete Code allow by default in an interactive session? Upstream's default agent allows
@@ -31,7 +31,8 @@ verified-at: 72d051b365
 - How are `cd` in subshells/loops, symlinks and redirects handled (re-review)? `shell/parse.ts`
   (marked) adds `kete/shell-directory.ts` directories for `cd`/`pushd` with no or an unknown target,
   so `external_directory` asks; edits are also checked on their real path (`realTarget`, through
-  `FSUtil`); web fetch follows redirects itself (`kete/web-redirect.ts`) and asks before another
+  `FSUtil`: realpath of the deepest existing ancestor, then `readLink` per remaining component, so
+  dangling links count; a chain over 32 links is `UNRESOLVED`, a protected path); web fetch follows redirects itself (`kete/web-redirect.ts`) and asks before another
   origin. `KeteShellRisk.changesBuild` flags `npm pkg set` etc. Accepted residual risk: edited test
   files run under `npm test` (`docs/permissions.md`; Wave 0b's sandbox contains it).
 - What can Plan mode do? Only `planAllowed` actions (read, glob, grep, question, skill, budget,
