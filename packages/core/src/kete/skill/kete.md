@@ -95,7 +95,11 @@ uncertain.
   command that changes something. Users switch with `kete --permission-mode <mode>`, `<leader>p` or
   `/mode` in the terminal UI, or the editor's mode toggle; a rule in `permissions` that names the
   action (e.g. `{ "action": "shell", "resource": "git push origin feature/*", "effect": "allow" }`)
-  overrides the defaults. Never suggest `--dangerously-skip-permissions` except for throwaway
+  overrides the defaults. Editing Kete Code's own configuration, agents or skills (`.kete/`,
+  `kete.json`) or `.git` always asks; editing build/test entry points (`package.json`, `Makefile`,
+  `*.config.*`, `conftest.py`, …) asks, and the next test or build command after that asks once.
+  Don't try to work around a prompt by writing permission rules or moving work into scripts. This
+  is a guard, not a sandbox. Never suggest `--dangerously-skip-permissions` except for throwaway
   environments. When a command is refused in Plan mode, tell the user to switch modes rather than
   working around it.
 - **Unattended runs.** A session family marked unattended (session metadata `kete.unattended`, set

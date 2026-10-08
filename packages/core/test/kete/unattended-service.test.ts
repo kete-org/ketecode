@@ -216,10 +216,11 @@ describe("KeteUnattended with the permission service", () => {
     }),
   )
 
-  it.effect("D2: an interactive session's own edit rules are unaffected — .kete/kete.jsonc is allowed like any other path", () =>
+  it.effect("D2: an interactive session isn't denied — editing .kete/kete.jsonc asks (Kete Code's configuration always asks, kete/permission-mode.ts)", () =>
     Effect.gen(function* () {
       yield* setup({ policy: undefined, rootRules: [{ action: "edit", resource: "*", effect: "allow" }] })
-      expect((yield* ask(root, "edit", ".kete/kete.jsonc")).effect).toBe("allow")
+      expect((yield* ask(root, "edit", ".kete/kete.jsonc")).effect).toBe("ask")
+      expect((yield* ask(root, "edit", "src/a.ts")).effect).toBe("allow")
     }),
   )
 

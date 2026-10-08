@@ -25,9 +25,9 @@ export const label: Readonly<Record<Mode, string>> = {
 
 /** One honest sentence per mode, for help text and tooltips. */
 export const description: Readonly<Record<Mode, string>> = {
-  default: "Edits and read-only or test/build commands run; other commands, high-risk commands and web requests ask first.",
+  default: "Edits and read-only or test/build commands run; other commands, high-risk commands, build-file edits and web requests ask first.",
   "accept-edits": "Same as Default: edits run without asking; commands and web requests follow Default.",
-  auto: "Edits, commands and web requests run without asking; high-risk commands (push, deletes, installs, deploys, databases, sudo, credentials) still ask.",
+  auto: "Edits, commands and web requests run without asking; high-risk commands (push, deletes, installs, deploys, databases, sudo, credentials) still ask. Scripts and interpreters (node -e, python -c) can do anything you can, so only the literal command is checked.",
   ask: "Asks before every edit, command and web request.",
   plan: "Read-only: edits and commands that change anything are blocked.",
 }

@@ -90,7 +90,9 @@ kete login                        # or sign in to a Kete account to use the gate
   `reset --hard`, deletes, package installs, network tools, containers, cloud and deploy tools,
   databases, `sudo` and credentials. Switch modes with `--permission-mode` or `<leader>p` in the
   terminal UI: **auto** (stops asking except for high-risk commands), **ask** (approve every edit
-  and command) or **plan** (read-only). See [Permissions](../docs/permissions.md).
+  and command) or **plan** (read-only). Edits to its own configuration and `.git` always ask. It's
+  a guard, not a sandbox: what it runs runs with your access. See
+  [Permissions](../docs/permissions.md).
 - **Plans first when you want it to.** The `plan` agent drafts an approach without touching files;
   the default `build` agent carries it out. Starter role agents (Code Reviewer, QA, Docs Writer,
   Security, DevOps) cover common jobs, and subagents can work in parallel in their own git

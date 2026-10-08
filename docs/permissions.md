@@ -4,6 +4,11 @@ Every tool call Kete Code makes goes through allow / ask / deny permissions. Thi
 Kete Code does without asking by default, the five permission modes, how to switch between them in
 each client, and how you and your organization can loosen or tighten the defaults.
 
+**This is a guard, not a sandbox.** Kete Code reads each command before it runs and asks before the
+risky ones, but anything it is allowed to run — a test, a build, a script — runs with your user's
+full access. A local sandbox is planned; until then, use `ask` mode or a throwaway environment for
+work you don't trust.
+
 ## The default: safe for interactive work
 
 In an interactive session (the terminal UI, `kete run`, the VS Code and JetBrains extensions and the
@@ -12,59 +17,92 @@ web UI), with no mode chosen, Kete Code:
 | Runs without asking | Asks first |
 | --- | --- |
 | Reading and searching files, listing, LSP, todos | Reading `.env` files, anything outside the workspace (upstream's own rules) |
-| Editing files in the workspace | |
-| Read-only commands: `ls`, `cat`, `head`, `grep`/`rg`, `find` (without `-delete`/`-exec rm`), `git status`/`diff`/`log`/`show`/`branch`, `jq`, `sed -n`, … | Any other shell command that may change something: `git commit`, `mkdir`, `cp`, `node script.js`, `npm start`, writing a file with `>`, … |
-| The project's own test, build, lint and typecheck commands: `npm test`, `npm run build`, `bun run typecheck`, `pnpm lint`, `cargo test`, `go test`, `pytest`, `uv run pytest`, `tsc`, `make test`, `./gradlew test`, … | Web fetches and web searches |
+| Editing files in the workspace | Editing a build or test entry point (below), and **always** editing Kete Code's own configuration or `.git` (below) |
+| Read-only commands: `ls`, `cat`, `head`, `grep`/`rg`, `find` (without `-delete`/`-exec rm`), `git status`/`diff`/`log`/`show`/`branch`, `jq`, simple `sed -n '…p'` / `sed 's/a/b/g'`, … | Any other shell command that may change something: `git commit`, `mkdir`, `cp`, `node script.js`, `npm start`, writing a file with `>`, `sed -i`, … |
+| The project's own test, build, lint and typecheck commands: `npm test`, `npm run build`, `bun run typecheck`, `pnpm lint`, `cargo test`, `go test`, `pytest`, `tsc`, `make test`, `./gradlew test`, … | Web fetches and web searches |
 | | **High-risk commands, always** (below) |
+
+Test and build commands are allowed because running them is the core loop. They run the project's
+code: a test file, a `conftest.py` or a package script can do anything. To stop the agent from
+quietly turning "run the tests" into "run anything", Kete Code asks before an edit to a file that
+decides what those commands run, and after such an edit it asks once before the next test or build
+command. These **build and test entry points** are: `package.json`, lockfiles, `Makefile`/`*.mk`,
+`justfile`, `Taskfile*`, `build.rs`, `pyproject.toml`, `setup.py`/`setup.cfg`, `conftest.py`,
+`tox.ini`, `noxfile.py`, `*.config.{js,cjs,mjs,ts,cts,mts}` (Vite, Vitest, Jest, ESLint, …),
+`.npmrc`, `.yarnrc*`, `bunfig.toml`, `deno.json(c)`, `.envrc`, Gradle and Maven build files,
+`Gemfile`/`Rakefile`, `.github/workflows/**` and `.husky/**`. Ordinary source and test files are
+not on the list (the tool would be unusable), so a test file the agent edits can still run code
+when the tests run.
+
+**Kete Code's own configuration and git's internals always ask** in every mode (Plan blocks them),
+even when a rule allows edits: `.kete/**` (config, agents, skills, plugins, commands),
+`kete.json`/`kete.jsonc`, the global config and data directories (`~/.config/kete`,
+`~/.local/share/kete`) and `.git/**` (hooks and config run commands). Otherwise an agent could write
+itself a permission rule. Shell commands that write there (`echo … > .kete/kete.json`,
+`git config …`) are high-risk.
 
 **High-risk commands** ask in every mode except Plan, which blocks them:
 
 - Git: `git push` (any), `reset --hard`, `clean`, `checkout -- <file>` / `checkout .`, `restore`,
-  `branch -D`, `stash drop`, `git rm`, any force flag
+  `branch -D`, `stash drop`, `git rm`, `git config` (set), `git -c …` / `--config-env`, any force flag
 - Deleting or moving files: `rm`, `rmdir`, `unlink`, `mv`, `find -delete`, `xargs rm`, `dd`, …;
   `chmod -R`/`chown -R`
 - Package installs, removals and publishing: `npm`/`pnpm`/`yarn`/`bun` `install`/`add`/`remove`/
-  `publish`, `npx`/`bunx`, `pip install`, `uv add`, `poetry add`, `cargo add`/`install`,
-  `go get`, `brew`, `apt`, `gem`, …
-- Network clients: `curl`, `wget`, `ssh`, `scp`, `rsync`, `nc`, …
+  `publish`, `npx`/`bunx`, `pip install`, `uv add`, `uv run` (it syncs the environment), `poetry
+  add`, `cargo add`/`install`, `go get`, `brew`, `apt`, `gem`, …; package scripts named like
+  `deploy`, `release`, `publish`, `migrate`, `db:*`, `prod`, `clean`, …
+- Network clients: `curl`, `wget`, `ssh`, `scp`, `rsync`, `nc`, …; code from a URL (`deno test https://…`)
 - Containers, cloud, infrastructure and deployment: `docker`, `podman`, `kubectl`, `helm`,
   `terraform`, `pulumi`, `aws`, `gcloud`, `az`, `vercel`, `fly`, `gh`, `supabase`, …
 - Databases and migrations: `psql`, `mysql`, `mongosh`, `redis-cli`, `prisma migrate`/`db push`,
   `drizzle-kit push`, `rails db:*`, `manage.py migrate`, …
 - `sudo` and other privilege escalation; system services and settings (`systemctl`,
-  `launchctl`, `crontab`, …)
-- Credentials: `.env` and key files, `~/.ssh`, `~/.aws`, `printenv`/`env`, keychains
-- Writing outside the workspace (`> /etc/…`, `>> ~/.bashrc`, `cp x /usr/local/bin`)
+  `launchctl`, `crontab`, …); `alias`/`function` definitions
+- Credentials and secrets: `.env` and key files (also through globs like `.env*` or brace
+  expansion), `~/.ssh`, `~/.aws`, `printenv`/`env`, `jq env`, `ps e`, `%VAR%`, `$env:`, `env:`, keychains
+- Commands that run another program the classifier can't see: `rg --pre`, `git grep -O`,
+  `bat --pager`, `fd --exec=…`
+- Leaving the workspace: `cd` alone, `cd -`, `cd ..` or `cd /elsewhere` (also when it's followed
+  by other commands); writing outside the workspace (`> /etc/…`, `>> ~/.bashrc`)
 - Anything the classifier can't check: command substitution (`$(…)`, backticks), subshells,
-  heredocs, a command named by a variable, unbalanced quotes
+  heredocs, a command named by a variable or built with brace expansion, unbalanced quotes
 
 How commands are read: the shell tool splits a command line into its commands (pipes, `&&`, `;`,
-loops, `$(…)`), and each one is checked; the line asks if any part does. Kete Code also unwraps
-`sudo`, `env`, `timeout`, `nohup`, `xargs`, `find -exec`, `sh -c "…"`, `bash -c`, `eval` and
-`cmd /c`, ignores quoted text (`git commit -m "don't git push"` is just a commit) and treats
-`NAME=value` prefixes as changing what a command does. This is a guard, not a sandbox: a project
-script that the default allows (`npm test`, `make build`) runs whatever the project defines.
+loops, `$(…)`), and each one is checked, plus the whole line for directory changes; the line asks if
+any part does. Kete Code also unwraps `sudo`, `env`, `timeout`, `nohup`, `time`, `xargs`,
+`find -exec`, `sh -c "…"`, `bash -c`, `eval` and `cmd /c`, reads backslashes both the POSIX way
+(`r\m` is `rm`) and the Windows way, ignores quoted text (`git commit -m "don't git push"` is just a
+commit) and treats `NAME=value` prefixes as changing what a command does.
 
 ## Permission modes
 
 | Mode | Edits | Read-only and test/build commands | Other commands | High-risk commands | Web fetch/search |
 | --- | --- | --- | --- | --- | --- |
-| `default` | run | run | ask | ask | ask |
-| `accept-edits` | run | run | ask | ask | ask |
+| `default` | run (entry points ask) | run | ask | ask | ask |
+| `accept-edits` | run (entry points ask) | run | ask | ask | ask |
 | `auto` | run | run | run | **ask** | run |
 | `ask` | ask | ask | ask | ask | ask |
 | `plan` | **blocked** | read-only run, test/build blocked | blocked | blocked | ask |
 
+Edits to Kete Code's configuration and `.git` ask in every mode but Plan, which blocks them.
+
 - **`accept-edits`** is the same as `default` today, because the default already edits without
   asking; it exists for clients that offer that name.
-- **`auto`** is not a bypass: high-risk commands still ask.
+- **`auto`** is not a bypass: high-risk commands still ask. But it only sees the literal command:
+  `node -e …`, `python -c …` or a script the agent wrote can do anything you can, including the
+  high-risk things. Web fetches run without asking, so a page's content and the URL you fetch can
+  carry data out; use `default` when that matters.
 - **`ask`** asks even when a rule or an earlier "Always allow" would allow the request.
 - **`plan`** is enforced by the runtime: no edit and no command that changes anything runs, even
-  one a rule allows. The clients' Plan also switches to the read-only **Plan** agent for its
+  one a rule allows. Only reading and searching, questions, skills, read-only commands, web
+  requests (asked), MCP resource reads and subagents (which run in Plan mode too) are available;
+  MCP tools and worktrees are blocked, because the runtime can't tell a read-only MCP tool from one
+  that changes things. The clients' Plan also switches to the read-only **Plan** agent for its
   planning prompt.
 
-A subagent follows its root session's mode. Unattended runs (`kete job run`, cloud jobs) don't use
-these defaults: they keep their own fail-closed policy ([ADR 0008](adr/0008-unattended-runs-fail-closed.md)).
+A subagent follows its root session's mode (the root-most session that has one). Unattended runs
+(`kete job run`, cloud jobs) don't use these defaults: they keep their own fail-closed policy
+([ADR 0008](adr/0008-unattended-runs-fail-closed.md)).
 
 ### Choosing a mode
 
@@ -78,12 +116,15 @@ these defaults: they keep their own fail-closed policy ([ADR 0008](adr/0008-unat
 | Runtime default | `KETE_PERMISSION_MODE=<mode>` for sessions that don't set one (the extensions set it from their setting). |
 
 A session's mode is its `kete.permissionMode` metadata, so every client shows and changes the same
-value.
+value. Clients change it by reading the session's metadata, merging the key and writing the whole
+metadata back (the server replaces metadata whole), so two clients changing *other* metadata keys of
+the same session at the same moment can overwrite each other's change; the mode itself is re-read
+and shown after every write.
 
 ## Loosening and tightening the defaults
 
 The defaults only apply where nothing more specific was said. Any rule that names the action wins
-over them (except in `ask` and `plan` modes):
+over them (except in `ask` and `plan` modes, and except for Kete Code's configuration and `.git`):
 
 ```jsonc
 // .kete/kete.jsonc or ~/.config/kete/kete.jsonc
@@ -91,23 +132,45 @@ over them (except in `ask` and `plan` modes):
   "permissions": [
     { "action": "shell", "resource": "git push origin feature/*", "effect": "allow" },
     { "action": "shell", "resource": "docker compose up*", "effect": "allow" },
-    { "action": "webfetch", "resource": "*", "effect": "allow" },
+    { "action": "edit", "resource": "package.json", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://docs.example.com/*", "effect": "allow" },
     { "action": "shell", "resource": "terraform *", "effect": "deny" }
   ]
 }
 ```
 
-An agent's own `permissions` and a session's rules count the same way, and so does answering
-**Always allow** to a prompt (saved per project; for web fetches it covers every URL).
+A rule `{ "action": "*", "resource": "*", "effect": "allow" }` looks the same as upstream's
+built-in catch-all, so it does **not** turn the defaults off; name the action (`"shell"`, `"edit"`,
+`"webfetch"`) instead.
+
+An agent's own `permissions` and a session's rules count the same way. Answering **Always allow**
+to a prompt saves an approval for the project, with limits: it isn't offered for high-risk
+commands or for commands that run anything (`bash`, `node`, `python`, `npx`, `env`, `xargs`,
+`sudo`, …), and a saved approval never covers a high-risk command — only a configured rule can.
+For a web fetch it covers that site (scheme, host and port), not every URL.
 
 Tightening always wins: a `deny` rule is decided before any mode runs, and your organization's
 policies (synced from the Kete platform) and `experimental.policies` in config are applied after
 the mode, so they can deny what a mode or rule would allow. No mode turns `ask` or `deny` into
 `allow`.
 
+## Upgrading from earlier versions
+
+- Interactive sessions now ask before shell commands that can change things, before web requests
+  and always before high-risk commands. Before, everything but `.env` reads and paths outside the
+  workspace ran without asking.
+- **`kete run` in scripts and CI** stops at the first command that needs approval (it rejects the
+  prompt and ends the run). Use `--permission-mode auto` for trusted automation that should only
+  stop at high-risk commands, configured `permissions` rules for the specific commands it needs, or
+  `--dangerously-skip-permissions` in a throwaway environment. For unattended jobs, use
+  `kete job run` and its policy.
+- **`--auto` no longer approves everything**: it is the `auto` mode, so high-risk commands still
+  ask (and are rejected in `kete run`). The old behaviour is `--dangerously-skip-permissions`.
+- Plan is now enforced by the runtime as a mode, not only by the Plan agent's prompt.
+
 ## Reference
 
 - Runtime: `packages/core/src/kete/permission-mode.ts` (modes and defaults),
-  `packages/core/src/kete/shell-risk.ts` (command classification), shared names in
-  `packages/util/src/kete/permission-mode.ts`.
+  `packages/core/src/kete/shell-risk.ts` (command classification, protected paths, entry points),
+  shared names in `packages/util/src/kete/permission-mode.ts`.
 - Knowledge-base card: `docs/context/modules/permissions.md`.

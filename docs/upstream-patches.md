@@ -451,12 +451,18 @@ unattended families keep their own policy. User guide: `docs/permissions.md`.
 | `tui/src/config/keybind.ts`                  | `permission.mode.cycle` bound to `<leader>p`                                                                             |
 | `tui/src/component/prompt/index.tsx`         | New sessions are created with the mode's metadata; the status row gets the mode                                         |
 | `tui/src/component/prompt/metadata.tsx`      | Shows the session's permission mode (not for Default); the client-side bypass's label is now `auto-accept`              |
+| `core/src/tool/plugin/shell.ts`              | Passes the whole command line as `metadata.command` (the defaults' `cd` check); `save` is empty — no "Always allow" — when a command is high-risk or runs anything (`KeteShellRisk.saveable`) |
+| `core/src/tool/plugin/webfetch.ts`           | `save` is the URL's origin (`kete/web-host.ts`) instead of `*`, so "Always allow" covers one site                       |
+| `core/test/tool-webfetch.test.ts`            | Expects the per-origin `save`                                                                                           |
+| `core/src/plugin/internal.ts`                | Comment on the existing `KetePermissionMode.Plugin` line updated                                                        |
 
 When syncing upstream: check that upstream's default agent still starts with `{ action: "*",
 resource: "*", effect: "allow" }` (the "catch-all" the safe defaults key on, `catchAll()` in
 `permission-mode.ts`) — if upstream adds its own shell or web defaults, revisit; that the shell tool
 still asks once per parsed command (`tool/plugin/shell.ts`, `shell/parse.ts`); and that the TUI's
-`<leader>p` is still free.
+`<leader>p` is still free; that `ShellParse` still excludes `cd` from the asked resources (the
+`metadata.command` line check covers it) and that `$((…))` still parses; that the web fetch tool
+still asks with the requested URL as its resource.
 
 ### Starter role agents (feature/local-role-agents)
 

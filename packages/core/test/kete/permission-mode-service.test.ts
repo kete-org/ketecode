@@ -98,9 +98,9 @@ const setup = Effect.fn(function* (input: {
   }
 })
 
-const ask = Effect.fn(function* (action: string, resources: string[]) {
+const ask = Effect.fn(function* (action: string, resources: string[], metadata?: Record<string, unknown>) {
   const permission = yield* Permission.Service
-  return (yield* permission.ask({ id: Permission.ID.create(), sessionID, action, resources })).effect
+  return (yield* permission.ask({ id: Permission.ID.create(), sessionID, action, resources, metadata })).effect
 })
 
 /** The resources the shell tool asks permission for, from its own parser. */
@@ -171,8 +171,31 @@ describe("KetePermissionMode with the permission service", () => {
       expect(yield* ask("shell", ["npm install"])).toBe("allow")
       expect(yield* ask("shell", ["git push origin main"])).toBe("ask")
       const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "shell", resources: ["git commit *"] })
+      expect(yield* ask("shell", ["git commit -m x"])).toBe("allow")
+      // A saved approval never covers a high-risk command: only a configured rule can.
       yield* saved.add({ projectID: Project.ID.global, action: "shell", resources: ["git push *"] })
-      expect(yield* ask("shell", ["git push origin main"])).toBe("allow")
+      expect(yield* ask("shell", ["git push origin main"])).toBe("ask")
+    }),
+  )
+
+  it.effect("the shell tool's whole line: `cd` out of the workspace asks even though `cd` isn't asked for", () =>
+    Effect.gen(function* () {
+      yield* setup({ rules: upstreamDefault })
+      const command = "cd && cat Documents/secret.txt"
+      const resources = yield* parsed(command)
+      expect(resources).toEqual(["cat Documents/secret.txt"])
+      expect(yield* ask("shell", resources)).toBe("allow")
+      expect(yield* ask("shell", resources, { command })).toBe("ask")
+    }),
+  )
+
+  it.effect("editing Kete Code's configuration asks even when a rule allows edits", () =>
+    Effect.gen(function* () {
+      yield* setup({ rules: [...upstreamDefault, { action: "edit", resource: "*", effect: "allow" }], mode: "auto" })
+      expect(yield* ask("edit", [".kete/kete.jsonc"])).toBe("ask")
+      expect(yield* ask("edit", [".git/config"])).toBe("ask")
+      expect(yield* ask("edit", ["src/a.ts"])).toBe("allow")
     }),
   )
 })

@@ -45,3 +45,20 @@
 - Web fetch "Always allow" covers every URL (the tool saves `*`).
 - JetBrains' default-mode setting still offers default/ask only; no Kotlin change.
 - No live end-to-end run against a model (unit and real-service tests only).
+
+## Review fixes (2026-10-08)
+Independent review of PR #20: all blockers (B1–B3), should-fixes (S1–S7) and nits addressed — see
+`handoff.md`'s 2026-10-08 entry and the spec amendment. New upstream edits (marked, recorded):
+`core/src/tool/plugin/shell.ts` (whole line as metadata; no "Always allow" for high-risk/run-anything
+commands), `core/src/tool/plugin/webfetch.ts` (per-origin save), `core/test/tool-webfetch.test.ts`,
+the comment in `core/src/plugin/internal.ts`. New Kete file `core/src/kete/web-host.ts`.
+
+| Check | Result |
+|---|---|
+| core `test/kete` | PASS (816) — shell-risk 309 (all review repros included), permission-mode 96, permission-mode-service 8, web-host 3 |
+| core `tool-webfetch.test.ts`, `tool-shell.test.ts` | PASS except the 6 shell-tool compound-syntax tests that fail on main too |
+| app `test:unit` | PASS (1006) · kete-vscode test PASS (112) |
+| lint, `upstream:check --base origin/main`, `card-check` | PASS |
+| `verify --base main` | 0 new failures (core 6274 pass / 30 fail vs main 5868 / 30, same environment-dependent failures) |
+
+Still open: MCP tools outside Plan keep upstream's default (allowed); no live model run.

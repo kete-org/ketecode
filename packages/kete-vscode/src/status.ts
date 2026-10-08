@@ -15,7 +15,7 @@ const MODE_TEXT: Readonly<Record<PermissionMode, { readonly text: string; readon
   "accept-edits": { text: "$(edit) Accept edits", tooltip: "This chat edits files without asking; commands and web requests follow the defaults" },
   auto: {
     text: "$(zap) Auto",
-    tooltip: "This chat runs edits and commands without asking; high-risk commands (push, deletes, installs, deploys, databases, sudo) still ask",
+    tooltip: "This chat runs edits and commands without asking; high-risk commands (push, deletes, installs, deploys, databases, sudo) still ask. Scripts it runs can do anything you can.",
   },
   ask: { text: "$(shield) Ask", tooltip: "This chat asks before every edit, command and web fetch" },
   plan: { text: "$(eye) Plan", tooltip: "This chat is read-only: edits and commands that change anything are blocked" },

@@ -5,8 +5,18 @@
 // permission service's `evaluate` hook, instead of editing upstream's agent defaults: when an
 // allow comes only from that catch-all rule, the session's mode decides whether the request
 // still runs without asking. A rule that names the action (from an agent, the user's or
-// project's `permission` config, the session, or a saved "always" approval) is an explicit
-// choice and is kept — except in "ask" and "plan" modes, which are explicit choices too.
+// project's `permissions` config, or the session) is an explicit choice and is kept — except in
+// "ask" and "plan" modes, which are explicit choices too. A saved "Always allow" counts too, except
+// for high-risk commands and ones that run anything (`KeteShellRisk.saveable`). A config rule
+// `"*": allow` can't be told apart from upstream's and gets the defaults.
+//
+// Whatever the mode (Plan denies instead): an edit to Kete Code's own configuration, agents,
+// skills, plugins or commands (`.kete/**`, `kete.json(c)`, the global config directory) or to
+// `.git/**` always asks — otherwise an agent could write itself a permission rule. In Default and
+// Accept-edits, editing a build/test entry point (package.json, Makefile, `*.config.*`, …) asks,
+// and after one was edited the session's next test/build command asks once.
+//
+// This is a guard, not a sandbox: an allowed test command runs whatever the project's code does.
 //
 // Modes (session metadata `kete.permissionMode`, inherited from the root session; sessions
 // without it use `KETE_PERMISSION_MODE`, then "default"):
@@ -32,6 +42,7 @@ import { define } from "@opencode/plugin/effect/plugin"
 import type { Permission as PermissionSchema } from "@opencode/schema/permission"
 import { KetePermissionModes } from "@opencode/util/kete/permission-mode"
 import { Effect, Option } from "effect"
+import { Global } from "@opencode/util/global"
 import { Agent } from "../agent.js"
 import { Location } from "../location.js"
 import { Permission } from "../permission.js"
@@ -52,17 +63,35 @@ export const guarded: ReadonlySet<string> = new Set(["edit", "shell", "webfetch"
 
 const network: ReadonlySet<string> = new Set(["webfetch", "websearch"])
 
+/**
+ * What Plan mode lets through (other checks still apply): reading and searching, questions, skills,
+ * read-only shell commands, web requests (asked), MCP resource reads, budget prompts, and
+ * subagents — which run in Plan mode too, since a subagent follows its root session's mode.
+ * Everything else, including MCP tools (the runtime has no read-only marking for them) and
+ * worktrees, is denied.
+ */
+export const planAllowed: ReadonlySet<string> = new Set([
+  "read", "glob", "grep", "question", "skill", "budget", "external_directory", "webfetch", "websearch",
+  "shell", "subagent", "opencode_list_mcp_resources", "opencode_read_mcp_resource",
+])
+
 export const parse = KetePermissionModes.parse
 
 const rank: Record<Decision, number> = { deny: 0, ask: 1, allow: 2 }
 const stricter = (a: Decision, b: Decision): Decision => (rank[a] <= rank[b] ? a : b)
 
+/** Which rule allowed a resource: upstream's catch-all, a saved "Always allow", or an explicit rule. */
+export type Source = "catch-all" | "saved" | "explicit"
+
 /** One resource of a request, as this module sees it. */
 export interface Resource {
-  /** The command or path. */
+  /** The command, path or URL. */
   readonly value: string
-  /** True when the only rule allowing it is upstream's catch-all `"*": allow`. */
-  readonly defaulted: boolean
+  readonly source: Source
+  /** For edits: Kete Code's configuration or git's internals (always asks). */
+  readonly protected?: boolean
+  /** For edits: a build/test entry point (asks in Default and Accept-edits). */
+  readonly entryPoint?: boolean
 }
 
 export interface Input {
@@ -71,14 +100,29 @@ export interface Input {
   readonly resources: ReadonlyArray<Resource>
   /** Whether the session belongs to an unattended run (kete/unattended-policy.ts). */
   readonly unattended: boolean
+  /** For shell: the whole command line, for directory changes the per-command check can't see. */
+  readonly line?: string
+  /** For shell: a build/test entry point was edited in this session family since the last check. */
+  readonly buildChanged?: boolean
 }
 
 export interface Outcome {
   readonly effect: Decision
   readonly message?: string
+  /** The "build setup changed" check fired (the caller then forgets the change). */
+  readonly buildCheck?: boolean
 }
 
+const ALLOW: Outcome = { effect: "allow" }
 const PLAN_EDIT = "Plan mode is read-only: switch to another permission mode to edit files."
+const PROTECTED =
+  "Kete Code always asks before changing its own configuration, agents, skills or plugins, or git's internals (.git)."
+
+/** Whether a resource still gets the safe defaults: no explicit rule, and no saved approval that may count. */
+function defaulted(resource: Resource, shell: boolean) {
+  if (resource.source === "catch-all") return true
+  return resource.source === "saved" && shell && !KeteShellRisk.saveable(resource.value)
+}
 
 /**
  * What `input.mode` allows for one request, before the decision it was given: `allow` means "no
@@ -86,24 +130,43 @@ const PLAN_EDIT = "Plan mode is read-only: switch to another permission mode to 
  */
 export function decide(input: Input): Outcome {
   const { mode, action } = input
-  if (mode === "ask") return guarded.has(action) ? { effect: "ask", message: "Ask mode: approve each edit, command and web request." } : { effect: "allow" }
   if (mode === "plan") {
     if (action === "edit") return { effect: "deny", message: PLAN_EDIT }
+    if (!planAllowed.has(action))
+      return { effect: "deny", message: `Plan mode is read-only: \`${action}\` isn't available. Switch permission mode to use it.` }
     if (action === "shell") {
       for (const resource of input.resources) {
         const risk = KeteShellRisk.classify(resource.value)
         if (risk.risk !== "read")
           return { effect: "deny", message: `Plan mode is read-only: \`${short(resource.value)}\` ${risk.reason}.` }
       }
-      return { effect: "allow" }
+      const line = input.line === undefined ? undefined : KeteShellRisk.classifyLine(input.line)
+      if (line?.risk === "high") return { effect: "deny", message: `Plan mode is read-only: the command ${line.reason}.` }
+      return ALLOW
     }
   }
-  if (input.unattended) return { effect: "allow" }
+  if (mode === "ask")
+    return guarded.has(action) ? { effect: "ask", message: "Ask mode: approve each edit, command and web request." } : ALLOW
+  if (input.unattended) return ALLOW
+  if (action === "edit") {
+    if (input.resources.some((resource) => resource.protected)) return { effect: "ask", message: PROTECTED }
+    if (
+      (mode === "default" || mode === "accept-edits") &&
+      input.resources.some((resource) => resource.entryPoint && resource.source !== "explicit")
+    )
+      return {
+        effect: "ask",
+        message: "This file is part of how the project builds or tests: changing it changes what test and build commands run.",
+      }
+    return ALLOW
+  }
   if (action === "shell") {
-    let result: Outcome = { effect: "allow" }
+    let result: Outcome = ALLOW
+    let build = false
     for (const resource of input.resources) {
-      if (!resource.defaulted) continue
+      if (!defaulted(resource, true)) continue
       const risk = KeteShellRisk.classify(resource.value)
+      if (risk.risk === "build") build = true
       const asks = risk.risk === "high" || (risk.risk === "other" && mode !== "auto")
       if (!asks) continue
       const message =
@@ -112,11 +175,22 @@ export function decide(input: Input): Outcome {
           : `\`${short(resource.value)}\` ${risk.reason}.`
       if (result.effect === "allow" || risk.risk === "high") result = { effect: "ask", message }
     }
+    const anyDefaulted = input.resources.some((resource) => defaulted(resource, true))
+    if (input.line !== undefined && anyDefaulted) {
+      const line = KeteShellRisk.classifyLine(input.line)
+      if (line.risk === "high") result = { effect: "ask", message: `High-risk command: it ${line.reason}.` }
+    }
+    if (build && input.buildChanged && (mode === "default" || mode === "accept-edits"))
+      return {
+        effect: "ask",
+        message: result.message ?? "The project's build or test setup was changed in this session: check before running it.",
+        buildCheck: true,
+      }
     return result
   }
-  if (network.has(action) && mode !== "auto" && input.resources.some((resource) => resource.defaulted))
+  if (network.has(action) && mode !== "auto" && input.resources.some((resource) => resource.source === "catch-all"))
     return { effect: "ask", message: "Kete Code asks before web requests." }
-  return { effect: "allow" }
+  return ALLOW
 }
 
 function short(value: string) {
@@ -142,23 +216,44 @@ export interface Lookup {
   readonly approved: Effect.Effect<Permission.Ruleset>
   /** The mode for sessions without one. */
   readonly fallback: Mode
+  /** Absolute directories that are Kete Code's own (global config and data). */
+  readonly protectedRoots?: ReadonlyArray<string>
+  /** Session families (by root session ID) that edited a build/test entry point since the last check. */
+  readonly buildChanged?: Set<string>
 }
 
-/** The mode of the root-most session in `sessionID`'s family that has one, else the fallback. */
-export const resolveMode = Effect.fnUntraced(function* (lookup: Lookup, sessionID: SessionSchema.ID) {
+/** The family's root session and the mode of the root-most session that has one (else the fallback). */
+export const resolveFamily = Effect.fnUntraced(function* (lookup: Lookup, sessionID: SessionSchema.ID) {
   let found: Mode | undefined
+  let root: SessionSchema.ID = sessionID
   let current: SessionSchema.ID | undefined = sessionID
   for (let depth = 0; current !== undefined && depth <= MAX_DEPTH; depth++) {
     const session: Option.Option<SessionSchema.Info> = yield* lookup.session(current)
     if (Option.isNone(session)) break
+    root = current
     const mode = parse(session.value.metadata?.[metadataKey])
     if (mode !== undefined) found = mode
     current = session.value.parentID
   }
-  return found ?? lookup.fallback
+  return { mode: found ?? lookup.fallback, root }
 })
 
+/** The mode of the root-most session in `sessionID`'s family that has one, else the fallback. */
+export const resolveMode = (lookup: Lookup, sessionID: SessionSchema.ID) =>
+  resolveFamily(lookup, sessionID).pipe(Effect.map((family) => family.mode))
+
 const catchAll = (rule: Permission.Rule) => rule.action === "*" && rule.resource === "*" && rule.effect === "allow"
+
+const normalize = (value: string) => value.split("\\").join("/").replace(/\/+$/, "")
+
+function isProtected(value: string, roots: ReadonlyArray<string>) {
+  if (KeteShellRisk.protectedPath(value)) return true
+  const path = normalize(value)
+  return roots.some((root) => {
+    const base = normalize(root)
+    return base !== "" && (path === base || path.startsWith(base + "/"))
+  })
+}
 
 /** Applies the session's mode to one `evaluate` hook event. */
 export const apply = Effect.fnUntraced(function* (
@@ -168,28 +263,49 @@ export const apply = Effect.fnUntraced(function* (
     readonly agent?: string
     readonly action: string
     readonly resources: ReadonlyArray<string>
+    readonly metadata?: Record<string, unknown>
     effect: Decision
     message?: string
   },
 ) {
-  if (event.effect === "deny" || !guarded.has(event.action)) return
-  const mode = yield* resolveMode(lookup, event.sessionID)
-  // Nothing to tighten: "ask" already asks, and only Plan mode denies.
-  if (event.effect === "ask" && mode !== "plan") return
-  if (mode === "auto" && event.action !== "shell") return
-  if ((mode === "default" || mode === "accept-edits") && event.action === "edit") return
+  if (event.effect === "deny") return
+  if (!guarded.has(event.action)) {
+    // Only Plan mode does anything outside the guarded actions.
+    const { mode } = yield* resolveFamily(lookup, event.sessionID)
+    if (mode === "plan") tighten(event, decide({ mode, action: event.action, resources: [], unattended: false }))
+    return
+  }
+  const { mode, root } = yield* resolveFamily(lookup, event.sessionID)
   const session = yield* lookup.session(event.sessionID)
-  const unattended =
-    (yield* KeteUnattendedPolicy.resolve(lookup.session, event.sessionID)).kind === "unattended"
-  // The rules the permission service used, to tell a catch-all allow from an explicit one.
+  const unattended = (yield* KeteUnattendedPolicy.resolve(lookup.session, event.sessionID)).kind === "unattended"
+  // The rules the permission service used, to tell a catch-all allow from an explicit or saved one.
   const info = Option.getOrUndefined(session)
   const agent = yield* lookup.agent(event.agent ?? info?.agent)
-  const rules = [...Permission.merge(agent?.permissions ?? [], info?.permissions ?? []), ...(yield* lookup.approved)]
-  const resources = event.resources.map((value) => ({
-    value,
-    defaulted: catchAll(Permission.evaluate(event.action, value, rules)),
-  }))
-  tighten(event, decide({ mode, action: event.action, resources, unattended }))
+  const configured = Permission.merge(agent?.permissions ?? [], info?.permissions ?? [])
+  const approved = yield* lookup.approved
+  const all = [...configured, ...approved]
+  const roots = lookup.protectedRoots ?? []
+  const resources = event.resources.map((value): Resource => {
+    const rule = Permission.evaluate(event.action, value, all)
+    const source: Source = approved.includes(rule) ? "saved" : catchAll(rule) ? "catch-all" : "explicit"
+    if (event.action !== "edit") return { value, source }
+    return { value, source, protected: isProtected(value, roots), entryPoint: KeteShellRisk.entryPoint(value) }
+  })
+  const line = event.action === "shell" && typeof event.metadata?.command === "string" ? event.metadata.command : undefined
+  const outcome = decide({
+    mode,
+    action: event.action,
+    resources,
+    unattended,
+    line,
+    buildChanged: lookup.buildChanged?.has(root) ?? false,
+  })
+  const final = stricter(event.effect, outcome.effect)
+  tighten(event, outcome)
+  if (outcome.buildCheck) lookup.buildChanged?.delete(root)
+  // An edit to a build/test entry point that may go ahead: the next test/build command asks once.
+  if (event.action === "edit" && final !== "deny" && resources.some((resource) => resource.entryPoint))
+    lookup.buildChanged?.add(root)
 })
 
 export const Plugin = define({
@@ -203,6 +319,7 @@ export const Plugin = define({
     const agents = yield* Agent.Service
     const saved = yield* PermissionSaved.Service
     const location = yield* Location.Service
+    const global = yield* Global.Service
     const lookup: Lookup = {
       session: (sessionID) => sessions.get(sessionID).pipe(Effect.option),
       agent: (agentID) => agents.resolve(agentID),
@@ -214,6 +331,9 @@ export const Plugin = define({
           ),
         ),
       fallback,
+      protectedRoots: [global.config, global.data],
+      // Per runtime process, keyed by root session; entries are removed when the check fires.
+      buildChanged: new Set(),
     }
     yield* ctx.permission.hook("evaluate", (event) => apply(lookup, event))
   }),

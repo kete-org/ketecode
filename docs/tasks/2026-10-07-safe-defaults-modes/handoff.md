@@ -34,3 +34,24 @@ Decisions:
 Open:
 - MCP tool calls stay allowed by default (upstream); a default for MCP tools is a follow-up.
 - JetBrains' default-mode setting still offers default/ask only (its chat uses the web toggle).
+
+## 2026-10-08 implementer (review fixes)
+
+Addressed the independent review of PR #20 (B1–B3, S1–S7, nits). Decisions:
+- Protected paths (B1) ask in every mode, even over explicit allow rules and saved approvals;
+  unattended families are left to their own policy (D2 already denies Kete config there).
+- Entry points (B2): a configured rule (agent/config/session) loosens them, a saved approval doesn't.
+  The "build setup changed" flag is per runtime process, keyed by root session, set when an
+  entry-point edit isn't denied by this hook (later org policies may still deny it; then the extra
+  ask is harmless) and cleared when the check fires.
+- `cd` (S1): upstream's shell tool never asks for `cd`. A marked edit passes the whole command line
+  as request metadata (`metadata.command`); `classifyLine` only looks at directory changes so loops
+  and other compound syntax don't start asking.
+- S4: a marked edit in the shell tool drops `save` (so clients don't offer "Always allow") when any
+  command is high-risk or runs anything; saved approvals for such commands are ignored anyway.
+- S5: web fetch saves `[origin, origin/*]` (marked edit + `kete/web-host.ts`); websearch keeps `*`.
+- S6: Plan allows read, glob, grep, question, skill, budget, external_directory, webfetch/search,
+  shell (read-only), subagent and MCP resource reads; everything else is denied. Subagents stay
+  allowed because they resolve the root's Plan mode (tested), and the Plan agent uses them.
+- `$((…))` arithmetic is now parsed (needed so upstream's shell-tool test keeps its save pattern).
+- `git --git-dir ../x/.git log` is high (a protected path in a non-read command).

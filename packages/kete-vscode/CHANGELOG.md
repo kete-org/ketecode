@@ -6,9 +6,19 @@
   before high-risk ones (`git push`, `reset --hard`, deletes, package installs, network tools,
   containers, cloud and deploy tools, databases, `sudo`, credentials) and web requests. Edits in
   your workspace and read-only or test/build commands still run without asking.
+- Edits to Kete Code's own configuration, agents and skills (`.kete/`, `kete.json`) and to `.git`
+  always ask; edits to build and test entry points (`package.json`, `Makefile`, `*.config.*`,
+  `conftest.py`, …) ask, and the next test or build command after one asks once. "Always allow"
+  is no longer offered for high-risk commands, and for web fetches it covers one site, not every URL.
 - The composer's toggle is now **Default / Auto / Ask / Plan**. **Auto** (new) runs edits and
-  commands without asking but still asks before high-risk commands. **Plan** is now enforced as
-  read-only by the runtime, not only by the Plan agent. The status bar shows the chat's mode.
+  commands without asking but still asks before high-risk commands (scripts it runs can still do
+  anything you can). **Plan** is now enforced as read-only by the runtime, not only by the Plan
+  agent; MCP tools are off in Plan. The status bar shows the chat's mode.
+- **Upgrading:** `kete run` in scripts and CI now stops at the first command that needs approval.
+  Use `--permission-mode auto` (still stops at high-risk commands), `permissions` rules for the
+  commands it needs, or `--dangerously-skip-permissions` in a throwaway environment. `--auto` no
+  longer approves high-risk commands. Details: `docs/permissions.md`.
+- Kete Code's permissions are a guard, not a sandbox: anything it runs runs with your access.
 
 ## 0.2.4
 

@@ -9,6 +9,7 @@ import { Parser } from "htmlparser2"
 import { Permission } from "../../permission.js"
 import { convertHTMLToMarkdown, MAX_MARKDOWN_BYTES } from "../html-markdown.js"
 import { collectBoundedResponseBody } from "../http-body.js"
+import { KeteWebHost } from "../../kete/web-host.js" // kete_change
 
 export const name = "webfetch"
 export const MAX_RESPONSE_BYTES = MAX_MARKDOWN_BYTES
@@ -125,7 +126,7 @@ export const Plugin = {
               yield* permission.assert({
                 action: name,
                 resources: [input.url],
-                save: ["*"],
+                save: KeteWebHost.savePatterns(input.url), // kete_change: "Always allow" covers this host, not every URL
                 metadata: input,
                 sessionID: context.sessionID,
                 agent: context.agent,

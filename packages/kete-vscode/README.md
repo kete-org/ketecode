@@ -44,7 +44,8 @@ starts it for you, so there is nothing else to install.
   shield in the chat's title bar switches between Ask and Default); **Plan** is read-only and also
   switches to the **Plan** agent. New chats follow `kete.chat.askBeforeEdits`. No mode ever allows
   what the agent's permissions or your organization's policy deny. In Ask mode an "Always allow"
-  answered earlier doesn't skip the question.
+  answered earlier doesn't skip the question. Edits to Kete Code's configuration and `.git` always
+  ask. This is a guard, not a sandbox: commands Kete Code runs run with your access.
 - **Your editor's diagnostics:** Kete Code can ask the editor for the errors and warnings your language
   servers and linters report (the `editor_diagnostics` tool), so it checks its edits the way you
   would. Secret files and `files.exclude` matches are left out; turn it off with

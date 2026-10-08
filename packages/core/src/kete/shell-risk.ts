@@ -52,6 +52,10 @@ interface Word {
   readonly expands: boolean
   /** True when any part of the word was quoted or escaped. */
   readonly quoted: boolean
+  /** True when an unquoted part has brace expansion (`{a,b}`, `{1..3}`). */
+  readonly brace: boolean
+  /** True when an unquoted part has a glob character (`*`, `?`, `[`). */
+  readonly glob: boolean
 }
 
 interface Redirect {
@@ -70,7 +74,23 @@ const ESCAPABLE = new Set([..." \t'\"`$\\;&|<>()*?[]#~!{}=%"])
 
 const UNPARSEABLE = "can't be checked safely (command substitution, subshell, heredoc or unbalanced quotes)"
 
-export function tokenize(input: string): Parsed {
+/**
+ * `posix`: a backslash escapes any character (`r\m` is `rm`), as in POSIX shells. Otherwise a
+ * backslash before an ordinary character is kept (`C:\Users` in cmd and PowerShell). `classify`
+ * checks both readings and keeps the riskier.
+ */
+/** `$(( … ))` arithmetic at `index` (pointing at `$`): its length, or -1 when it's anything else. */
+function arithmetic(text: string, index: number) {
+  if (!text.startsWith("$((", index)) return -1
+  const end = text.indexOf("))", index + 3)
+  if (end === -1) return -1
+  const body = text.slice(index + 3, end)
+  if (!/^[\w\s+\-*/%<>=!&|^~?:,.$]*$/.test(body) || body.includes("$(")) return -1
+  return end + 2 - index
+}
+
+export function tokenize(input: string, options: { readonly posix?: boolean } = {}): Parsed {
+  const posix = options.posix ?? false
   const text = input.replace(/\\\r?\n/g, " ")
   const segments: Segment[] = []
   let words: Word[] = []
@@ -79,16 +99,24 @@ export function tokenize(input: string): Parsed {
   let started = false
   let expands = false
   let quoted = false
+  let bare = "" // the word's unquoted characters, for brace and glob detection
   let pendingRedirect: string | undefined
 
   const endWord = () => {
     if (!started) return
-    const word: Word = { value, expands, quoted }
+    const word: Word = {
+      value,
+      expands,
+      quoted,
+      brace: /\{[^{}]*(,|\.\.)[^{}]*\}/.test(bare),
+      glob: /[*?[]/.test(bare),
+    }
     if (pendingRedirect !== undefined) {
       redirects.push({ op: pendingRedirect, target: word })
       pendingRedirect = undefined
     } else words.push(word)
     value = ""
+    bare = ""
     started = false
     expands = false
     quoted = false
@@ -110,7 +138,7 @@ export function tokenize(input: string): Parsed {
       if (i + 1 >= text.length) return fail()
       // A backslash before an ordinary character is kept (`C:\Users` on Windows shells); before a
       // shell-special one it escapes it, as in POSIX shells.
-      if (ESCAPABLE.has(text[i + 1]!)) {
+      if (posix || ESCAPABLE.has(text[i + 1]!)) {
         value += text[i + 1]
         quoted = true
         i++
@@ -137,6 +165,13 @@ export function tokenize(input: string): Parsed {
           j++
           continue
         }
+        if (d === "$" && arithmetic(text, j) !== -1) {
+          const length = arithmetic(text, j)
+          value += text.slice(j, j + length)
+          expands = true
+          j += length - 1
+          continue
+        }
         if (d === "`" || (d === "$" && text[j + 1] === "(")) return fail()
         if (d === "$" && /[A-Za-z_{0-9@*#?!$-]/.test(text[j + 1] ?? "")) expands = true
         value += d
@@ -149,9 +184,19 @@ export function tokenize(input: string): Parsed {
     }
     if (c === "`") return fail()
     if (c === "$") {
+      const length = arithmetic(text, i)
+      if (length !== -1) {
+        value += text.slice(i, i + length)
+        bare += "$"
+        expands = true
+        started = true
+        i += length - 1
+        continue
+      }
       if (next === "(" || next === "'") return fail()
       if (next !== undefined && /[A-Za-z_{0-9@*#?!$-]/.test(next)) expands = true
       value += c
+      bare += c
       started = true
       continue
     }
@@ -216,6 +261,7 @@ export function tokenize(input: string): Parsed {
     }
     if ((c === "{" || c === "}") && !started && (next === undefined || /\s/.test(next))) return fail()
     value += c
+    bare += c
     started = true
   }
   if (!endSegment()) return fail()
@@ -257,10 +303,65 @@ export function outside(value: string) {
   return value.split(/[\\/]/).includes("..")
 }
 
+const lower = (value: string) => value.toLowerCase()
+const segments = (value: string) => value.split(/[\\/]/).filter((part) => part !== "" && part !== ".")
+const basename = (value: string) => segments(value).at(-1) ?? value
+
+/**
+ * Whether `value` is Kete Code's own configuration or git's internals, which an agent must never
+ * change without asking: a written permission rule, agent, skill, plugin or command would raise its
+ * own permissions, and `.git/config` and `.git/hooks` run commands. `.kete/**`, `kete.json(c)`,
+ * `.git/**`; the global config and data directories are credential paths (`credential`). Callers
+ * also pass the global config directory as an absolute path (`permission-mode.ts`).
+ */
+export function protectedPath(value: string) {
+  const parts = segments(value).map(lower)
+  if (parts.includes(".git") || parts.includes(".kete")) return true
+  const name = parts.at(-1) ?? ""
+  return name === "kete.json" || name === "kete.jsonc"
+}
+
+const ENTRY_POINT_NAMES = new Set([
+  "package.json", "makefile", "gnumakefile", "justfile", ".justfile", "build.rs", "pyproject.toml",
+  "setup.py", "setup.cfg", "conftest.py", "tox.ini", "noxfile.py", ".npmrc", ".yarnrc", ".yarnrc.yml",
+  "bunfig.toml", "deno.json", "deno.jsonc", ".envrc", "rakefile", "gemfile", "build.gradle",
+  "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "pom.xml", "pnpm-workspace.yaml",
+])
+
+/**
+ * Whether `value` is a file the project's build, test or install commands run or load as code:
+ * package scripts, lockfiles, Makefiles, `*.config.*` tool configs, `conftest.py`, CI workflows, git
+ * hooks managers. Editing one turns a test/build command the defaults allow into arbitrary code, so
+ * these edits ask in Default mode. Ordinary source and test files are not listed — they run when
+ * tests run, too (`docs/permissions.md` says so).
+ */
+export function entryPoint(value: string) {
+  const parts = segments(value).map(lower)
+  const name = parts.at(-1) ?? ""
+  if (ENTRY_POINT_NAMES.has(name)) return true
+  if (/lock/.test(name) && /\.(json|ya?ml|lockb?|toml)$|\.lock$/.test(name)) return true
+  if (/\.mk$/.test(name) || /^taskfile/.test(name)) return true
+  if (/\.config\.(js|cjs|mjs|ts|cts|mts)$/.test(name)) return true
+  const path = parts.join("/")
+  return path.includes(".github/workflows/") || parts.includes(".husky")
+}
+
+/** Expands `{a,b}` brace expressions (bounded); `{a..b}` ranges are left as they are. */
+export function expandBraces(value: string, limit = 64): string[] {
+  const match = /\{([^{}]*,[^{}]*)\}/.exec(value)
+  if (!match) return [value]
+  const results: string[] = []
+  for (const option of match[1]!.split(",")) {
+    for (const expanded of expandBraces(value.slice(0, match.index) + option + value.slice(match.index + match[0].length), limit)) {
+      results.push(expanded)
+      if (results.length >= limit) return results
+    }
+  }
+  return results
+}
+
 // ---------------------------------------------------------------------------------------------
 // Command tables
-
-const lower = (value: string) => value.toLowerCase()
 
 /** Commands that only read (subject to the argument checks in `classifyWords`). */
 const READ_COMMANDS = new Set([
@@ -385,10 +486,19 @@ function buildName(name: string | undefined) {
 const flags = (args: Word[]) => args.filter((arg) => arg.value.startsWith("-")).map((arg) => arg.value)
 const positional = (args: Word[]) => args.filter((arg) => !arg.value.startsWith("-"))
 
-/** Classifies a whole command line: as risky as its riskiest part. */
+/**
+ * Classifies a whole command line: as risky as its riskiest part. A line with backslashes is read
+ * both as a POSIX shell would (`r\\m` is `rm`) and as cmd/PowerShell would (`C:\\Users`), and the
+ * riskier reading wins.
+ */
 export function classify(command: string, depth = 0): Classification {
   if (depth > MAX_DEPTH) return high("nests shells too deeply to check safely")
-  const parsed = tokenize(command)
+  const windows = classifyParsed(tokenize(command), depth)
+  if (!command.includes("\\") || windows.risk === "high") return windows
+  return max(windows, classifyParsed(tokenize(command, { posix: true }), depth))
+}
+
+function classifyParsed(parsed: Parsed, depth: number): Classification {
   if (!parsed.ok) return high(parsed.reason)
   let result = READ
   for (const segment of parsed.segments) {
@@ -398,25 +508,79 @@ export function classify(command: string, depth = 0): Classification {
   return result
 }
 
+const DIRECTORY_CHANGES = new Set(["cd", "chdir", "pushd", "set-location", "sl", "push-location"])
+
+/**
+ * The directory changes in a whole command line (`cd`, `pushd`, `Set-Location`). The shell tool
+ * asks for each command but not for `cd`, so `cd && cat Documents/x` would otherwise read outside
+ * the workspace unseen: `cd` alone or `cd -` (home, previous directory) and a path outside the
+ * workspace are high. Anything the tokenizer can't read is left to the per-command checks.
+ */
+export function classifyLine(command: string): Classification {
+  const parsed = tokenize(command, { posix: true })
+  if (!parsed.ok) return READ
+  for (const segment of parsed.segments) {
+    const words = segment.words.filter((word, index) => index > 0 || !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value))
+    const head = words[0]
+    if (!head || !DIRECTORY_CHANGES.has(lower(head.value))) continue
+    const target = words.slice(1).find((word) => !word.value.startsWith("-") || word.value === "-")
+    if (target === undefined) return high("changes to the home directory, outside the workspace")
+    if (target.value === "-" || target.expands || target.brace || outside(target.value))
+      return high("changes to a directory outside the workspace")
+  }
+  return READ
+}
+
+/**
+ * Commands that run whatever they're given, and whose saved pattern (`shell/parse.ts` keeps one word
+ * for them, or `bun -e *`-style two) would cover any program: a saved "Always allow" would allow
+ * anything. `git`, `npm`, `make`, … save narrower patterns (`git commit *`) and aren't listed.
+ */
+const RUNS_ANYTHING = new Set([
+  "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "ash", "pwsh", "powershell", "cmd", "node",
+  "python", "python3", "py", "ruby", "perl", "php", "deno", "bun", "bunx", "npx", "pnpx", "tsx", "ts-node",
+  "env", "xargs", "sudo", "doas", "eval", "exec", "command", "builtin", "nohup", "time", "timeout", "nice",
+  "find", "fd", "awk", "gawk", "sed", "invoke-expression", "iex", "start-process", "source", ".", "watch",
+])
+
+/**
+ * Whether an "Always allow" answer may be saved for `command`: not for a high-risk command, and not
+ * for one whose saved pattern (`<head> …`) would cover commands that run anything.
+ */
+export function saveable(command: string) {
+  if (classify(command).risk === "high") return false
+  const parsed = tokenize(command, { posix: true })
+  if (!parsed.ok) return false
+  return parsed.segments.every((segment) => {
+    const words = segment.words.filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value))
+    const head = words[0]
+    if (!head) return true
+    return !RUNS_ANYTHING.has(lower(basename(head.value)).replace(/\.(exe|cmd|bat|ps1)$/, ""))
+  })
+}
+
 function classifySegment(segment: Segment, depth: number): Classification {
   let result = READ
   for (const redirect of segment.redirects) {
     if (redirect.target === undefined) continue // descriptor duplication
     const target = redirect.target
-    if (redirect.op.includes("<")) {
-      if (credential(target.value)) return high("reads a credential or secret file")
-      if (outside(target.value) || target.expands) result = max(result, other("reads a file outside the workspace"))
-      continue
+    for (const value of target.brace ? expandBraces(target.value) : [target.value]) {
+      if (redirect.op.includes("<")) {
+        if (credential(value) || dotGlob(value, target.glob)) return high("reads a credential or secret file")
+        if (outside(value) || target.expands) result = max(result, other("reads a file outside the workspace"))
+        continue
+      }
+      if (SAFE_DEVICES.has(value)) continue
+      if (credential(value) || dotGlob(value, target.glob)) return high("writes a credential or secret file")
+      if (outside(value) || target.expands) return high("writes a file outside the workspace")
+      if (protectedPath(value)) return high("writes Kete Code's configuration or git's internals")
+      result = max(result, other("writes a file"))
     }
-    if (SAFE_DEVICES.has(target.value)) continue
-    if (credential(target.value)) return high("writes a credential or secret file")
-    if (outside(target.value) || target.expands) return high("writes a file outside the workspace")
-    result = max(result, other("writes a file"))
   }
   const words = [...segment.words]
   let assigned = false
   while (words.length > 0 && !words[0]!.quoted && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]!.value)) {
-    if (/^(LD_PRELOAD|LD_LIBRARY_PATH|DYLD_[A-Z_]+|PATH|GIT_SSH_COMMAND|GIT_SSH|GIT_EXEC_PATH|BASH_ENV|ENV|PROMPT_COMMAND|NODE_OPTIONS|PYTHONSTARTUP)=/.test(words[0]!.value))
+    if (/^(LD_PRELOAD|LD_LIBRARY_PATH|DYLD_[A-Z_]+|PATH|GIT_SSH_COMMAND|GIT_SSH|GIT_EXEC_PATH|GIT_CONFIG[A-Z_]*|BASH_ENV|ENV|PROMPT_COMMAND|NODE_OPTIONS|PYTHONSTARTUP|PAGER|GIT_PAGER|EDITOR|VISUAL)=/.test(words[0]!.value))
       result = max(result, other("changes how the command is loaded"))
     words.shift()
     assigned = true
@@ -429,26 +593,50 @@ function classifySegment(segment: Segment, depth: number): Classification {
   return combined
 }
 
+/** A glob in a dotfile name (`.env*`, `.en?`, `.*`) can match secret files. */
+function dotGlob(value: string, glob: boolean) {
+  return glob && basename(value).startsWith(".")
+}
+
 function classifyWords(words: Word[], depth: number): Classification {
   const head = words[0]!
   if (head.expands) return high("runs a command named by a variable")
+  if (head.brace) return high("builds the command name with brace expansion")
   const pathy = /[\\/]/.test(head.value)
   const base = lower(head.value.split(/[\\/]/).at(-1) ?? head.value).replace(/\.(exe|cmd|bat|ps1)$/, "")
   const args = words.slice(1)
+  // Environment variables hold secrets: cmd's `%VAR%`, PowerShell's `$env:` and `env:` drive.
+  for (const word of words) {
+    if (/%[A-Za-z_][A-Za-z0-9_]*%/.test(word.value) || /\$env:/i.test(word.value) || /^env:/i.test(word.value))
+      return high("reads environment variables, which can hold secrets")
+  }
+  // Brace expansion: `-{delete,x}` is a flag, `{~,}/.ssh` a credential path.
+  const expanded = new Map<Word, string[]>()
+  for (const arg of args) {
+    if (!arg.brace) continue
+    const values = expandBraces(arg.value)
+    if (values.some((value) => value.startsWith("-"))) return high("builds a flag with brace expansion")
+    expanded.set(arg, values)
+  }
   const result = classifyCommand(base, args, depth, pathy)
   if (result.risk === "high") return result
-  // Credential files and paths outside the workspace, whatever the command.
+  const values = (arg: Word) => (expanded.get(arg) ?? [arg.value]).map((value) => value.replace(/^--?[A-Za-z-]+=/, ""))
+  // Credential files, whatever the command.
   for (const arg of args) {
-    const value = arg.value.replace(/^--?[A-Za-z-]+=/, "")
-    if (credential(value)) return high("touches a credential or secret file")
+    if (values(arg).some((value) => credential(value) || dotGlob(value, arg.glob)))
+      return high("touches a credential or secret file")
   }
-  if (rank[result.risk] <= rank.build) {
+  // Writes to Kete Code's configuration or git's internals.
+  if (rank[result.risk] >= rank.other && args.some((arg) => values(arg).some(protectedPath)))
+    return high("may change Kete Code's configuration or git's internals")
+  let checked = result
+  if (expanded.size > 0) checked = max(checked, other("uses brace expansion"))
+  if (rank[checked.risk] <= rank.build) {
     if (pathy && !/^\.[\\/](gradlew|mvnw)$/.test(head.value)) return other("runs a program by path")
-    if (pathArgs(base, args).some((arg) => outside(arg.value.replace(/^--?[A-Za-z-]+=/, ""))))
-      return other("reads outside the workspace")
-    if (result.risk === "read" && args.some((arg) => arg.expands)) return other("uses variables in its arguments")
+    if (pathArgs(base, args).some((arg) => values(arg).some(outside))) return other("reads outside the workspace")
+    if (checked.risk === "read" && args.some((arg) => arg.expands)) return other("uses variables in its arguments")
   }
-  return result
+  return checked
 }
 
 function pathArgs(base: string, args: Word[]) {
@@ -483,6 +671,20 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
   // `x --version`, `x --help`
   if (values.length === 1 && /^(--version|-v|-V|version|--help|-h|help)$/.test(first!) && !pathy) return READ
 
+  if (base === "alias" || base === "unalias" || base === "function" || base === "set-alias" || base === "new-alias")
+    return values.length === 0 || (base === "alias" && values.every((value) => !value.includes("=")))
+      ? READ
+      : high("redefines commands")
+  if (base === "time") {
+    // GNU time writes its report to a file with -o/--output (-a appends).
+    const index = values.findIndex((value) => value === "-o" || value === "--output" || value.startsWith("--output="))
+    if (index !== -1) {
+      const target = values[index]!.startsWith("--output=") ? values[index]!.slice(9) : values[index + 1]
+      if (target === undefined || outside(target) || credential(target) || protectedPath(target))
+        return high("writes a file outside the workspace or Kete Code's configuration")
+      return max(other("writes a file"), unwrap(args, WRAPPERS.time!, depth) ?? READ)
+    }
+  }
   const wrapper = WRAPPERS[base]
   if (wrapper) return unwrap(args, wrapper, depth) ?? (base === "command" ? READ : other())
 
@@ -504,7 +706,8 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
       ? high("prints environment variables, which can hold secrets")
       : other("sets shell variables")
   if (base === "xargs") {
-    const valued = new Set(["-I", "-i", "-n", "-P", "-L", "-l", "-d", "-E", "-e", "-s", "-a", "--arg-file", "--delimiter", "--max-args", "--max-procs", "--replace"])
+    // GNU's -i, -e and -l take their optional value attached (`-i{}`), never as the next word.
+    const valued = new Set(["-I", "-n", "-P", "-L", "-d", "-E", "-s", "-a", "--arg-file", "--delimiter", "--max-args", "--max-procs"])
     let rest = args
     while (rest.length > 0 && rest[0]!.value.startsWith("-")) {
       const flag = rest[0]!.value
@@ -529,6 +732,29 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     return base === "invoke-expression" || base === "iex" ? high("evaluates a string that can't be checked") : other("runs a shell script")
 
   if (base === "git") return git(args)
+  if (base === "jq" || base === "gojq" || base === "jaq") {
+    if (values.some((value) => /(^|[^A-Za-z0-9_$])(\$ENV|env)([^A-Za-z0-9_]|$)/.test(value)))
+      return high("reads environment variables, which can hold secrets")
+    return READ
+  }
+  if (base === "ps") {
+    // BSD-style `ps e`/`ps eww` and `ps -E` print each process's environment.
+    if (values.some((value) => (!value.startsWith("-") && /^[a-zA-Z]*e[a-zA-Z]*$/.test(value)) || /^-[a-zA-Z]*E/.test(value)))
+      return high("prints process environments, which can hold secrets")
+    return READ
+  }
+  if (base === "rg" || base === "ripgrep") {
+    if (values.some((value) => value === "--pre" || value.startsWith("--pre=")))
+      return high("runs a preprocessor program on every file")
+    return READ
+  }
+  if (base === "bat" || base === "batcat") {
+    if (values.some((value) => value === "--pager" || value.startsWith("--pager="))) return high("runs a pager program")
+    if (values.some((value) => /^--paging(=|$)/.test(value) && !/=never$/.test(value))) return other("runs a pager")
+    return READ
+  }
+  if (base === "xxd") return values.some((value) => /^-[a-zA-Z]*r/.test(value) || value === "-revert") ? other("writes a file") : READ
+  if (base === "tree") return values.some((value) => value === "-o" || value.startsWith("-o")) ? other("writes a file") : READ
   if (["npm", "pnpm", "yarn", "bun", "cnpm"].includes(base)) return nodePackageManager(base, args, depth)
   if (["npx", "bunx", "pnpx"].includes(base)) {
     if (values.some((value) => value === "--no-install" || value === "--no")) {
@@ -556,9 +782,13 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     const goals = positional(args).map((arg) => lower(arg.value))
     if (goals.some((goal) => /(deploy|publish|release|upload|install)/.test(goal))) return high("publishes or installs artifacts")
     const known = /^(test|build|check|compile|verify|package|assemble|lint|clean|validate|test-compile|spotlesscheck|ktlintcheck|detekt)$/
+    if (values.some((value) => /^(-D|--init-script|-I|--settings|-s|-f|--file|-b|--build-file)/.test(value))) return other("runs the build with changed settings")
     return goals.length > 0 && goals.every((goal) => known.test(goal.split(":").at(-1) ?? goal)) ? BUILD : other()
   }
   if (base === "make" || base === "gmake" || base === "just" || base === "task" || base === "rake") {
+    // --eval, another makefile, or a variable (SHELL=, CC=, …) can run anything.
+    if (values.some((value) => /^(--eval|-E|-f|--file|--makefile|-C|--directory|-I|--include-dir)/.test(value) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(value)))
+      return other("runs make with changed rules or variables")
     const targets = positional(args).filter((arg) => !arg.value.includes("="))
     if (targets.some((target) => /(^db:|migrat)/i.test(target.value))) return high("connects to or migrates a database")
     if (targets.some((target) => RISKY_NAME.test(target.value))) return high(`runs the "${targets.find((target) => RISKY_NAME.test(target.value))!.value}" target`)
@@ -571,6 +801,7 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
   }
   if (base === "deno") {
     if (/^(install|add|remove|uninstall|upgrade|publish|compile)$/.test(first ?? "")) return high("installs or changes packages")
+    if (values.some((value) => /^(https?|npm|jsr):/i.test(value))) return high("runs remote code")
     return /^(test|check|lint|bench)$/.test(first ?? "") || (first === "fmt" && values.includes("--check")) ? BUILD : other("runs a program")
   }
   if (base === "swift") return /^(build|test)$/.test(first ?? "") ? BUILD : other()
@@ -593,12 +824,7 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     return other("runs a program")
   }
   if (base === "find" || base === "fd" || base === "fdfind") return find(base, args, depth)
-  if (base === "sed") {
-    if (values.some((value) => /^(-i|--in-place)/.test(value) || /^-[a-zA-Z]*i/.test(value))) return other("edits files in place")
-    const scripts = values.filter((value) => !value.startsWith("-"))
-    if (scripts.some((script) => /(^|[;{}\n]|\/[a-zA-Z0-9]*)\s*[wWe](\s|$)|[0-9$]\s*[ewW](\s|$)/.test(script))) return other("may write files or run commands")
-    return READ
-  }
+  if (base === "sed") return sed(values)
   if (base === "awk" || base === "gawk" || base === "mawk") return other("runs an awk program")
   if (base === "sort") return values.some((value) => WRITES_WITH.sort.some((flag) => value === flag || value.startsWith(flag + "="))) ? other("writes a file") : READ
   if (base === "uniq") return positional(args).length > 1 ? other("writes a file") : READ
@@ -614,14 +840,36 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     return other("changes files")
   }
   if (base === "kill" || base === "killall" || base === "pkill" || base === "taskkill" || base === "stop-process") return other("stops processes")
-  if (base === "yq") return values.some((value) => /^(-i|--inplace)/.test(value)) ? other("edits files in place") : READ
+  if (base === "yq") return values.some((value) => /^(--inplace|--in-place)/.test(value) || /^-[a-zA-Z]*i/.test(value)) ? other("edits files in place") : READ
   if (BUILD_TOOLS.has(base)) {
     if (base === "playwright" && first === "install") return high("downloads browsers")
     return BUILD
   }
+  if (DIRECTORY_CHANGES.has(base)) {
+    const target = positional(args)[0]
+    if (target === undefined || values.includes("-") || target.expands || outside(target.value))
+      return high("changes to a directory outside the workspace")
+    return READ
+  }
   if (INTERPRETERS.has(base)) return other("runs a program")
   if (READ_COMMANDS.has(base)) return READ
   return other("runs a program the classifier doesn't know")
+}
+
+/** Read-only only for `-n` and simple scripts: `s/a/b/g` with `/` and safe flags, or an address and `p`/`d`. */
+function sed(values: string[]): Classification {
+  if (values.some((value) => /^(-i|--in-place|-e|--expression|-f|--file|-s|--separate|-z)/.test(value) || /^-[a-zA-Z]*[ief]/.test(value)))
+    return other("runs sed with in-place, expression or script-file options")
+  const script = values.find((value) => !value.startsWith("-"))
+  if (script === undefined) return other("runs sed")
+  const address = String.raw`(\d+|\$|/(?:[^/\\]|\\.)*/)`
+  const simple = new RegExp(
+    String.raw`^\s*(` +
+      String.raw`s/(?:[^/\\]|\\.)*/(?:[^/\\]|\\.)*/[gpiI0-9]*` +
+      `|(${address}(,${address})?)?[pd=]` +
+      String.raw`)\s*$`,
+  )
+  return script.split(";").every((part) => part.trim() === "" || simple.test(part)) ? READ : other("runs a sed script that may write files or run commands")
 }
 
 function unwrap(args: Word[], wrapper: { readonly valued: ReadonlySet<string>; readonly positional?: number }, depth: number) {
@@ -639,6 +887,8 @@ function find(base: string, args: Word[], depth: number): Classification {
   const values = args.map((arg) => arg.value)
   if (values.some((value) => value === "-delete")) return high("deletes files")
   if (values.some((value) => /^-f(print|print0|printf|ls)$/.test(value))) return other("writes a file")
+  if (base !== "find" && values.some((value) => /^(--exec=|--exec-batch=|-[xX].)/.test(value)))
+    return high("runs a command that can't be checked")
   const exec = values.findIndex((value) =>
     base === "find" ? /^-(exec|execdir|ok|okdir)$/.test(value) : /^(-x|--exec|-X|--exec-batch)$/.test(value),
   )
@@ -656,12 +906,13 @@ function git(args: Word[]): Classification {
   // Global options before the subcommand.
   while (rest.length > 0 && rest[0]!.value.startsWith("-")) {
     const flag = rest[0]!.value
-    if (flag === "-c" || flag === "--config-env") configured = true
-    if (flag === "-C" || flag === "-c" || flag === "--git-dir" || flag === "--work-tree" || flag === "--namespace" || flag === "--config-env") rest = rest.slice(2)
-    else {
-      if (flag.startsWith("--git-dir=") || flag.startsWith("--work-tree=")) configured = true
-      rest = rest.slice(1)
-    }
+    // `-c core.pager=…`, `-c alias.x=!…`, `--config-env`: git configuration can run any command.
+    if (flag === "-c" || flag.startsWith("-c") || flag.startsWith("--config-env"))
+      return high("overrides git configuration, which can run commands")
+    if (flag === "--exec-path" || flag.startsWith("--exec-path=")) return high("changes where git finds its programs")
+    if (flag === "--git-dir" || flag === "--work-tree" || flag.startsWith("--git-dir=") || flag.startsWith("--work-tree=")) configured = true
+    if (flag === "-C" || flag === "--git-dir" || flag === "--work-tree" || flag === "--namespace") rest = rest.slice(2)
+    else rest = rest.slice(1)
   }
   const sub = rest[0]?.value
   const subArgs = rest.slice(1)
@@ -720,7 +971,9 @@ function git(args: Word[]): Classification {
       case "update-ref":
         return has("-d", "--stdin") ? high("deletes or rewrites refs") : other()
       case "config":
-        return has("--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin") && !has("--global", "--system") ? other("reads git configuration") : other("changes git configuration")
+        return has("--get", "--get-all", "--get-regexp", "--list", "-l", "--show-origin") && !has("--global", "--system")
+          ? other("reads git configuration")
+          : high("changes git configuration, which can run commands")
       case "status":
       case "diff":
       case "log":
@@ -735,6 +988,9 @@ function git(args: Word[]): Classification {
       case "merge-base":
       case "rev-list":
       case "grep":
+        if (values.some((value) => value.startsWith("--open-files-in-pager") || /^-[a-zA-Z]*O/.test(value)))
+          return high("opens matches in a pager program")
+        return READ
       case "show-ref":
       case "name-rev":
       case "whatchanged":
@@ -752,7 +1008,7 @@ function git(args: Word[]): Classification {
   })()
   if (result.risk === "high") return result
   if (force) return high("uses a force flag")
-  return configured ? max(result, other("overrides git configuration")) : result
+  return configured ? max(result, other("uses another git directory or work tree")) : result
 }
 
 const NODE_INSTALL = new Set([
@@ -782,10 +1038,12 @@ function nodePackageManager(base: string, args: Word[], depth: number): Classifi
   if (base === "bun" && sub === "build") return BUILD
   if (sub === "run" || sub === "run-script" || sub === "rs") {
     const script = firstPositional(after, /^(--cwd|--filter|-F|--dir|-C|--prefix|-w|--workspace)$/)
+    if (script !== undefined && RISKY_NAME.test(script)) return high(`runs the "${script}" script`)
     return buildName(script) ? BUILD : other("runs a project script")
   }
   if (base === "bun" || base === "pnpm" || base === "yarn") {
     // `bun <script|file>`, `pnpm <script>`, `yarn <script>`
+    if (RISKY_NAME.test(sub)) return high(`runs the "${sub}" script`)
     if (buildName(sub)) return BUILD
     if (base === "yarn" && sub === "workspace") return nodePackageManager(base, after.slice(1), depth)
     return other("runs a project script or program")
@@ -809,6 +1067,7 @@ function pythonPackages(base: string, args: Word[], depth: number): Classificati
     if (sub === "list" || sub === "show" || sub === "freeze" || sub === "check") return READ
     return high("installs or changes packages")
   }
+  if (base === "uv" && sub === "run") return high("syncs the environment, which can install packages")
   if (sub === "run") {
     const inner = args.slice(1)
     // Options to `uv run`/`poetry run` (`--with pkg`, …) can add packages: not checked further.
@@ -826,6 +1085,8 @@ function cargo(args: Word[]): Classification {
   const sub = positional(args).find((arg) => !arg.value.startsWith("+"))?.value
   if (sub === undefined) return READ
   if (/^(add|install|remove|rm|uninstall|publish|yank|login|logout|owner|update)$/.test(sub)) return high("installs, removes or publishes packages")
+  if (args.some((arg) => /^(--config|-Z)/.test(arg.value) || /^--(target|runner)/.test(arg.value)))
+    return other("runs cargo with changed configuration")
   if (/^(test|t|build|b|check|c|clippy|fmt|doc|bench|nextest|tree|metadata|verify-project)$/.test(sub)) return BUILD
   return other()
 }
@@ -833,7 +1094,10 @@ function cargo(args: Word[]): Classification {
 function golang(args: Word[]): Classification {
   const sub = args[0]?.value
   if (sub === "get" || sub === "install") return high("installs packages")
-  if (sub === "test" || sub === "build" || sub === "vet") return BUILD
+  if (sub === "test" || sub === "build" || sub === "vet") {
+    if (args.some((arg) => /^--?(exec|toolexec|vettool|overlay|modfile)(=|$)/.test(arg.value))) return other("runs go with a custom program")
+    return BUILD
+  }
   if (sub === "list" || sub === "version" || (sub === "env" && args.length > 1)) return READ
   if (sub === "env") return other("prints the Go environment")
   return other()

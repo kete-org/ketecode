@@ -35,6 +35,7 @@ function lookup(input: {
   rules?: Permission.Ruleset
   approved?: Permission.Ruleset
   fallback?: Mode
+  buildChanged?: Set<string>
 }): KetePermissionMode.Lookup {
   const byID = new Map(input.sessions.map((session) => [session.id as string, session]))
   return {
@@ -43,6 +44,8 @@ function lookup(input: {
       Effect.succeed({ id: Agent.ID.make("build"), permissions: input.rules ?? upstreamDefault } as unknown as Agent.Info),
     approved: Effect.succeed(input.approved ?? []),
     fallback: input.fallback ?? "default",
+    protectedRoots: ["/home/me/.config/kete", "/home/me/.local/share/kete"],
+    buildChanged: input.buildChanged ?? new Set(),
   }
 }
 
@@ -52,10 +55,11 @@ const run = (
   resources: string[],
   effect: Decision = "allow",
   sessionID = "ses_root",
+  metadata?: Record<string, unknown>,
 ) =>
   Effect.runSync(
     Effect.gen(function* () {
-      const event = { sessionID: Session.ID.make(sessionID), action, resources, effect, message: undefined as string | undefined }
+      const event = { sessionID: Session.ID.make(sessionID), action, resources, metadata, effect, message: undefined as string | undefined }
       yield* KetePermissionMode.apply(look, event)
       return event
     }),
@@ -156,12 +160,26 @@ describe("KetePermissionMode modes", () => {
     expect(decision("default", "shell", "rm -rf build", { rules })).toBe("allow")
   })
 
-  test("a saved \"always\" approval is kept", () => {
-    const approved: Permission.Ruleset = [{ action: "shell", resource: "git push *", effect: "allow" }]
-    expect(decision("default", "shell", "git push origin main", { approved })).toBe("allow")
-    // Upstream's wildcard treats a trailing " *" as optional, so the approval covers bare `git push`.
-    expect(decision("default", "shell", "git push", { approved })).toBe("allow")
+  test("a saved \"always\" approval is kept for an ordinary command", () => {
+    const approved: Permission.Ruleset = [{ action: "shell", resource: "git commit *", effect: "allow" }]
+    expect(decision("default", "shell", "git commit -m x", { approved })).toBe("allow")
+    // Upstream's wildcard treats a trailing " *" as optional, so the approval covers bare `git commit`.
+    expect(decision("default", "shell", "git commit", { approved })).toBe("allow")
     expect(decision("default", "shell", "git reset --hard", { approved })).toBe("ask")
+  })
+
+  test("a saved approval never covers a high-risk command or one that runs anything", () => {
+    const approved: Permission.Ruleset = [
+      { action: "shell", resource: "git push *", effect: "allow" },
+      { action: "shell", resource: "node *", effect: "allow" },
+      { action: "shell", resource: "bash *", effect: "allow" },
+    ]
+    expect(decision("default", "shell", "git push origin main", { approved })).toBe("ask")
+    expect(decision("default", "shell", "node -e 'x'", { approved })).toBe("ask")
+    expect(decision("default", "shell", "bash -c 'ls'", { approved })).toBe("ask")
+    // Only a configured rule can loosen a high-risk command.
+    const rules: Permission.Ruleset = [...upstreamDefault, { action: "shell", resource: "git push *", effect: "allow" }]
+    expect(decision("default", "shell", "git push origin main", { rules })).toBe("allow")
   })
 
   test("session rules count as explicit", () => {
@@ -198,5 +216,75 @@ describe("KetePermissionMode modes", () => {
     const look = lookup({ sessions: [] })
     expect(run(look, "edit", ["src/a.ts"], "allow", "ses_missing").effect).toBe("allow")
     expect(run(look, "shell", ["git push"], "allow", "ses_missing").effect).toBe("ask")
+  })
+
+  describe("PR #20 review: self-escalation and laundering", () => {
+    const withMode = (mode: Mode, extra?: Partial<Parameters<typeof lookup>[0]>) =>
+      lookup({ sessions: [fakeSession({ id: "ses_root", metadata: { [KetePermissionMode.metadataKey]: mode } })], ...extra })
+
+    test("B1: editing Kete Code's configuration, agents or .git always asks (Plan denies), even with an explicit allow", () => {
+      const rules: Permission.Ruleset = [...upstreamDefault, { action: "edit", resource: "*", effect: "allow" }]
+      for (const file of [".kete/kete.jsonc", ".kete/agent/x.md", ".kete/skill/s/SKILL.md", "kete.json", ".git/config", ".git/hooks/pre-commit", "/home/me/.config/kete/kete.json", "/home/me/.local/share/kete/auth.json"]) {
+        for (const mode of ["default", "accept-edits", "auto", "ask"] as const) {
+          const event = run(withMode(mode, { rules }), "edit", [file])
+          expect([mode, file, event.effect]).toEqual([mode, file, "ask"])
+        }
+        expect(run(withMode("plan"), "edit", [file]).effect).toBe("deny")
+      }
+      expect(run(withMode("auto"), "edit", ["src/a.ts"]).effect).toBe("allow")
+      expect(run(withMode("default"), "edit", [".gitignore"]).effect).toBe("allow")
+    })
+
+    test("B2: editing a build/test entry point asks in Default and Accept-edits, unless a rule allows it", () => {
+      expect(run(withMode("default"), "edit", ["package.json"]).effect).toBe("ask")
+      expect(run(withMode("accept-edits"), "edit", ["vitest.config.ts"]).effect).toBe("ask")
+      expect(run(withMode("default"), "edit", ["tests/conftest.py"]).effect).toBe("ask")
+      expect(run(withMode("auto"), "edit", ["package.json"]).effect).toBe("allow")
+      expect(run(withMode("default"), "edit", ["src/index.test.ts"]).effect).toBe("allow")
+      const rules: Permission.Ruleset = [...upstreamDefault, { action: "edit", resource: "package.json", effect: "allow" }]
+      expect(run(withMode("default", { rules }), "edit", ["package.json"]).effect).toBe("allow")
+    })
+
+    test("B2: after an entry point is edited, the next test/build command asks once", () => {
+      const changed = new Set<string>()
+      const look = withMode("default", { buildChanged: changed })
+      expect(run(look, "shell", ["npm test"]).effect).toBe("allow")
+      run(look, "edit", ["package.json"])
+      expect(changed.has("ses_root")).toBe(true)
+      const event = run(look, "shell", ["npm test"])
+      expect(event.effect).toBe("ask")
+      expect(event.message).toContain("build or test setup")
+      expect(run(look, "shell", ["npm test"]).effect).toBe("allow")
+      // A denied edit (Plan) doesn't count.
+      const planned = new Set<string>()
+      run(withMode("plan", { buildChanged: planned }), "edit", ["package.json"])
+      expect(planned.size).toBe(0)
+    })
+
+    test("S1: a command line that leaves the workspace with cd asks (Plan denies)", () => {
+      const meta = { command: "cd && cat Documents/secret.txt" }
+      expect(run(withMode("default"), "shell", ["cat Documents/secret.txt"], "allow", "ses_root", meta).effect).toBe("ask")
+      expect(run(withMode("auto"), "shell", ["cat Documents/secret.txt"], "allow", "ses_root", meta).effect).toBe("ask")
+      expect(run(withMode("plan"), "shell", ["cat Documents/secret.txt"], "allow", "ses_root", meta).effect).toBe("deny")
+      expect(run(withMode("default"), "shell", ["bun run test"], "allow", "ses_root", { command: "cd packages/core && bun run test" }).effect).toBe("allow")
+    })
+
+    test("S6: Plan mode denies MCP tools and worktrees, allows reads and subagents (which inherit Plan)", () => {
+      expect(run(withMode("plan"), "github_create_issue", ["*"]).effect).toBe("deny")
+      expect(run(withMode("plan"), "worktree", ["*"]).effect).toBe("deny")
+      expect(run(withMode("plan"), "read", ["src/a.ts"]).effect).toBe("allow")
+      expect(run(withMode("plan"), "subagent", ["explore"]).effect).toBe("allow")
+      expect(run(withMode("plan"), "budget", ["*"], "ask").effect).toBe("ask")
+      expect(run(withMode("default"), "github_create_issue", ["*"]).effect).toBe("allow")
+    })
+
+    test("S5: a saved approval for one web host is kept; other hosts still ask", () => {
+      const approved: Permission.Ruleset = [
+        { action: "webfetch", resource: "https://docs.example.com", effect: "allow" },
+        { action: "webfetch", resource: "https://docs.example.com/*", effect: "allow" },
+      ]
+      expect(run(withMode("default", { approved }), "webfetch", ["https://docs.example.com/guide"]).effect).toBe("allow")
+      expect(run(withMode("default", { approved }), "webfetch", ["https://docs.example.com.evil.test/x"]).effect).toBe("ask")
+    })
   })
 })

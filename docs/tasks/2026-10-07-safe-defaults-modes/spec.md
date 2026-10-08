@@ -43,10 +43,23 @@ request.
    inheritance, unattended unaffected, real-service tests with the shell tool's own parser, CLI,
    TUI, web and extension tests.
 
+## Amendment 2026-10-08 (independent review of PR #20)
+The defaults are **a guard, not a sandbox** (Wave 0b brings the local sandbox); the docs say so.
+Added after review, same approval:
+- B1: edits (and shell writes) to `.kete/**`, `kete.json(c)`, the global config/data directories and
+  `.git/**` always ask (Plan denies), even with an explicit allow rule.
+- B2: edits to build/test entry points ask in default/accept-edits unless a configured rule allows
+  them; after one, the session's next test/build command asks once.
+- B3/S1–S3: classifier gaps closed (pagers/preprocessors, sed scripts, brace expansion, dotfile
+  globs, backslash heads, `cd` out of the workspace via the whole line, env leaks, risky script
+  names, `git -c`, inline-exec flags of build tools, `uv run`, `deno` URLs, `alias`).
+- S4: no "Always allow" for high-risk commands or commands that run anything; a saved approval never
+  covers them. S5: web fetch "Always allow" is per origin. S6: Plan denies every action outside a
+  read-only allowlist (MCP tools, worktrees). S7: migration notes.
+- AC6: every repro string from the review is a test case with the expected classification.
+
 ## Out of scope
-- MCP tool calls and other non-shell mutation paths keep upstream's defaults (allowed) — noted as
-  follow-up.
-- Per-host "always" for web fetch (the tool saves `*`; an "Always allow" covers every URL).
+- MCP tool calls keep upstream's defaults (allowed) outside Plan mode — noted as follow-up.
 - Server/protocol changes (none needed: metadata is free-form).
 
 ## Acceptance criteria

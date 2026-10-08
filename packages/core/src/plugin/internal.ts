@@ -280,7 +280,7 @@ const pre = [
   KeteBudgetRule.Plugin,
   // kete_change: an unattended run's policy loosens "ask" to "allow"; before mode/ceiling so they can still tighten it back; see kete/unattended.ts
   KeteUnattended.PolicyPlugin,
-  // kete_change: tightens "allow" to "ask" for sessions in "ask" mode; see kete/permission-mode.ts
+  // kete_change: safe defaults and permission modes (only tighten); see kete/permission-mode.ts
   KetePermissionMode.Plugin,
   // kete_change: stopping a session stops its running subagents; see kete/subagents.ts
   KeteSubagents.Plugin,
