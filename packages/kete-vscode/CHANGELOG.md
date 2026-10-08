@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.6
 
 - Safer defaults: Kete Code now asks before shell commands that can change things, and always
   before high-risk ones (`git push`, `reset --hard`, deletes, package installs, network tools,
@@ -18,7 +18,14 @@
   Use `--permission-mode auto` (still stops at high-risk commands), `permissions` rules for the
   commands it needs, or `--dangerously-skip-permissions` in a throwaway environment. `--auto` no
   longer approves high-risk commands. Details: `docs/permissions.md`.
-- Kete Code's permissions are a guard, not a sandbox: anything it runs runs with your access.
+- **Sandbox:** shell commands the agent runs now run in an OS sandbox on macOS (`sandbox-exec`) and
+  Linux (bubblewrap): they can write only inside the workspace, temp and package caches, can't
+  write git hooks or config, `.kete/` or Kete's own settings, can't read SSH keys or cloud
+  credentials, and get network only when you approved the command. `kete sandbox` shows the status;
+  where no sandbox is available (Windows, some Linux setups) commands run unsandboxed and Kete Code
+  says so. Details: `docs/sandbox.md`.
+- Permissions are the first layer and the sandbox the second: a command you allow outside the
+  sandbox (`sandbox: off`, always asked) runs with your access.
 
 ## 0.2.4
 
