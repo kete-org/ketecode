@@ -1,7 +1,7 @@
 ---
 module: web-app
 paths: [packages/app/src/kete/panel.tsx, packages/app/src/kete/panel.css, packages/app/src/kete/panel-layout.tsx, packages/app/src/kete/panel-state.ts, packages/app/src/kete/mode.ts, packages/app/src/kete/composer-controls.tsx, packages/app/src/new-session/view.tsx, packages/app/src/composer/composer.tsx, packages/app/src/composer/editor/editor.tsx, packages/app/src/new-session/composer-adapter.ts]
-verified-at: 0b8a24ff25
+verified-at: f85913ed4a
 ---
 
 ## Quick answers

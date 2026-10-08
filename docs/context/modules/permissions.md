@@ -1,7 +1,7 @@
 ---
 module: permissions
 paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/shell-risk.ts, packages/util/src/kete/permission-mode.ts, packages/core/src/kete/permission-ceiling.ts, packages/core/src/permission.ts, packages/core/src/plugin/internal.ts, packages/cli/src/kete/permission-mode.ts, packages/tui/src/kete/permission-mode.tsx]
-verified-at: 0b8a24ff25
+verified-at: f85913ed4a
 ---
 ## Quick answers
 - What does Kete Code allow by default in an interactive session? Upstream's default agent allows
@@ -18,6 +18,19 @@ verified-at: 0b8a24ff25
 - How do I let users loosen a default? Any rule naming the action wins over the defaults (config
   `permissions`, agent rules, session rules, saved "always"); `"*": allow` doesn't, because it's
   indistinguishable from upstream's catch-all. `ask`/`plan` ignore explicit allows.
+- What always asks regardless of rules (PR #20 review)? Edits to `.kete/**`, `kete.json(c)`, the
+  global config/data dirs (`Lookup.protectedRoots`) and `.git/**` (`KeteShellRisk.protectedPath`),
+  in every mode but Plan (denies). Build/test entry points (`KeteShellRisk.entryPoint`) ask in
+  default/accept-edits unless a configured rule allows them; after one, the next test/build command
+  asks once (`Lookup.buildChanged`, keyed by root session). Saved approvals never cover high-risk
+  commands or ones that run anything (`KeteShellRisk.saveable`); the shell tool then offers no
+  "Always allow" (`save: []`). Web fetch saves the URL's origin (`kete/web-host.ts`).
+- How is `cd` checked when the shell tool never asks for it? The shell tool (marked edit) passes the
+  whole line as `metadata.command`; `KeteShellRisk.classifyLine` flags `cd`/`pushd` out of the
+  workspace.
+- What can Plan mode do? Only `planAllowed` actions (read, glob, grep, question, skill, budget,
+  external_directory, webfetch/websearch, read-only shell, subagent, MCP resource reads); MCP tools
+  and `worktree` are denied. Subagents inherit Plan through the root session.
 - Do the safe defaults apply in unattended runs? No — `apply()` resolves `KeteUnattendedPolicy` and
   `decide()` returns no objection for an unattended family, except explicit `ask`/`plan`.
 - Where are the clients' surfaces? CLI `--permission-mode`/`--auto` (`cli/src/kete/permission-mode.ts`,

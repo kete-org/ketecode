@@ -1,7 +1,7 @@
 ---
 module: vscode-extension
 paths: [packages/kete-vscode/**, packages/app/src/kete/vscode-*.ts, packages/app/src/kete/vscode-*.tsx]
-verified-at: 0b8a24ff25
+verified-at: f85913ed4a
 ---
 
 ## Quick answers

@@ -1,7 +1,7 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: 0b8a24ff25
+verified-at: f85913ed4a
 ---
 ## Quick answers
 - What do `--permission-mode`, `--auto` and `--dangerously-skip-permissions` do (feature/safe-defaults-modes)? Flags in upstream's `PermissionParams` (`commands/commands.ts`, marked) for `kete` and `kete run`. `kete/permission-mode.ts` `fromFlags` maps `--auto` to the `auto` mode (high-risk still asks; conflicting `--permission-mode` is an error) and `skipsPermissions` keeps the client-side bypass for `--dangerously-skip-permissions`/`--yolo` only. `kete run` sets the mode on the session (GET-merge-PATCH, read back) before the first prompt (`run/run.ts`, marked); the TUI gets it through `Args.permissionMode` (`permissions` card). In `kete run`, any prompt is rejected and the run stops.
