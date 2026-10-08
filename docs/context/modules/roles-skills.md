@@ -1,7 +1,7 @@
 ---
 module: roles-skills
 paths: [packages/core/src/kete/roles.ts, packages/core/src/kete/skill.ts, packages/core/src/kete/skill/*.md, packages/kete-tools/src/role-*.ts]
-verified-at: 508e1f85ba
+verified-at: f85913ed4a
 ---
 ## Quick answers
 - What agents does a fresh, non-signed-in install get? Code Reviewer, QA, Docs Writer (subagents), and Security and DevOps (mode `"all"` — usable as primary or delegated-to), defined in `packages/core/src/kete/roles.ts:57-154`.

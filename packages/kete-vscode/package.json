@@ -422,7 +422,7 @@
         "kete.chat.askBeforeEdits": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "New chats ask before every file edit, shell command and web fetch, even when the agent's permissions allow them. Change it for one chat with the shield in the chat's title bar. Never allows anything the agent's permissions or your organization's policy deny. Applies to new sessions after the server restarts."
+          "markdownDescription": "New chats ask before every file edit, shell command and web fetch (Ask mode), even when the agent's permissions allow them. Off: new chats use the Default mode, which edits without asking and asks before commands that can change things, high-risk commands and web requests. Change it for one chat with the shield in the chat's title bar or the mode toggle next to send. Never allows anything the agent's permissions or your organization's policy deny. Applies to new sessions after the server restarts."
         }
       }
     },

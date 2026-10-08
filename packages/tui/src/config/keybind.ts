@@ -169,6 +169,7 @@ export const Definitions = {
   "agent.list": keybind("<leader>a", "List agents"),
   "agent.cycle": keybind("shift+tab", "Next agent"),
   "agent.cycle.reverse": keybind("none", "Previous agent"),
+  "permission.mode.cycle": keybind("<leader>p", "Cycle permission mode"), // kete_change: kete/permission-mode.tsx
   "variant.cycle": keybind("ctrl+t", "Cycle model variants"),
   "variant.list": keybind("none", "List model variants"),
 

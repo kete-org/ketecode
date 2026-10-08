@@ -16,6 +16,7 @@ import { testEffect } from "./lib/effect"
 import { imagePassthrough } from "./lib/image"
 import { permissionLayer } from "./lib/permission"
 import { toolIdentity, executeTool, registerToolPlugin, toolDefinitions } from "./lib/tool"
+import { KeteWebHost } from "@opencode/core/kete/web-host" // kete_change
 
 const webFetchToolNode = makeLocationNode({
   name: "test/webfetch-tool-plugin",
@@ -425,7 +426,7 @@ describe("WebFetchTool registration", () => {
         metadata: { contentType: "text/plain" },
       })
       expect(assertions).toMatchObject([
-        { sessionID, action: "webfetch", resources: [url], save: ["*"], metadata: { url, format: "text", timeout: 4 } },
+        { sessionID, action: "webfetch", resources: [url], save: KeteWebHost.savePatterns(url), metadata: { url, format: "text", timeout: 4 } }, // kete_change: per-host Always allow
       ])
       expect(requests).toMatchObject([
         {
@@ -452,7 +453,7 @@ describe("WebFetchTool registration", () => {
         content: [{ type: "text", text: "hello" }],
       })
       expect(assertions).toMatchObject([
-        { sessionID, action: "webfetch", resources: [url], save: ["*"], metadata: { url, format: "text" } },
+        { sessionID, action: "webfetch", resources: [url], save: KeteWebHost.savePatterns(url), metadata: { url, format: "text" } }, // kete_change: per-host Always allow
       ])
       expect(requests.map((request) => request.url)).toEqual([url])
     }),
@@ -488,7 +489,7 @@ describe("WebFetchTool registration", () => {
             content: [{ type: "text", text: "redirected" }],
           })
           expect(assertions).toMatchObject([
-            { sessionID, action: "webfetch", resources: [url], save: ["*"], metadata: { url, format: "text" } },
+            { sessionID, action: "webfetch", resources: [url], save: KeteWebHost.savePatterns(url), metadata: { url, format: "text" } }, // kete_change: per-host Always allow
           ])
           expect(received).toEqual(
             Array.from({ length: 2 }, () => ({

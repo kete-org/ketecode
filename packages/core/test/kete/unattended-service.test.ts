@@ -65,7 +65,8 @@ const setup = Effect.fn(function* (input: {
   readonly policy: KeteUnattendedPolicy.Policy | undefined
   readonly rootRules: Permission.Ruleset
   readonly childRules?: Permission.Ruleset
-  /** Registers KetePermissionMode's hook in "ask" mode, between the policy hook and the ceiling. */
+  /** Runs KetePermissionMode's hook in "ask" mode (otherwise in "default" mode, whose safe defaults
+   *  must not change an unattended run's decisions), between the policy hook and the ceiling. */
   readonly askMode?: boolean
 }) {
   const { db } = yield* Database.Service
@@ -142,7 +143,8 @@ const setup = Effect.fn(function* (input: {
   // Registered in the order plugin/internal.ts wires them: policy (pre, early), mode (pre), ceiling
   // (pre, later), the late "ask becomes deny" hook (post, last).
   yield* hooks.register("permission", "evaluate", (event) => KeteUnattended.applyPolicy(policyLookup, event))
-  if (input.askMode) yield* hooks.register("permission", "evaluate", (event) => Effect.sync(() => KetePermissionMode.apply(event, "ask")))
+  const modeLookup: KetePermissionMode.Lookup = { ...ceilingLookup, fallback: input.askMode ? "ask" : "default" }
+  yield* hooks.register("permission", "evaluate", (event) => KetePermissionMode.apply(modeLookup, event))
   yield* hooks.register("permission", "evaluate", (event) => KetePermissionCeiling.apply(ceilingLookup, event))
   yield* hooks.register("permission", "evaluate", (event) => KeteUnattended.applyLate(get, event, { globalConfig }))
 })
@@ -214,10 +216,11 @@ describe("KeteUnattended with the permission service", () => {
     }),
   )
 
-  it.effect("D2: an interactive session's own edit rules are unaffected — .kete/kete.jsonc is allowed like any other path", () =>
+  it.effect("D2: an interactive session isn't denied — editing .kete/kete.jsonc asks (Kete Code's configuration always asks, kete/permission-mode.ts)", () =>
     Effect.gen(function* () {
       yield* setup({ policy: undefined, rootRules: [{ action: "edit", resource: "*", effect: "allow" }] })
-      expect((yield* ask(root, "edit", ".kete/kete.jsonc")).effect).toBe("allow")
+      expect((yield* ask(root, "edit", ".kete/kete.jsonc")).effect).toBe("ask")
+      expect((yield* ask(root, "edit", "src/a.ts")).effect).toBe("allow")
     }),
   )
 

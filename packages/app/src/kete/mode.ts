@@ -1,41 +1,35 @@
-// The chat panel's Auto -> Ask -> Plan toggle. "Auto" and "Ask" are the runtime's
-// `kete.permissionMode` session metadata (core/src/kete/permission-mode.ts, "default"/"ask" — the
-// extension's own toggle writes the same key); "Plan" is upstream's `plan` agent
-// (core/src/plugin/plan.ts), selected like any other agent. The toggle only ever narrows
-// permissions: it never writes `permissions` directly and never turns "ask" into "allow".
+// The chat panel's permission-mode toggle: Default -> Auto -> Ask -> Plan. Every state is the
+// runtime's `kete.permissionMode` session metadata (core/src/kete/permission-mode.ts enforces it;
+// the TUI, the CLI's --permission-mode and the extensions write the same key). Plan also selects
+// upstream's `plan` agent (core/src/plugin/plan.ts) when it's offered, for its planning prompt; the
+// mode is what makes it read-only. The toggle never writes `permissions` directly, and no mode turns
+// "ask" or "deny" into "allow": even Auto still asks before high-risk commands.
 
 import type { SessionMetadata } from "@opencode/client/promise"
+import { KetePermissionModes } from "@opencode/util/kete/permission-mode"
 
-export const MODES = ["auto", "ask", "plan"] as const
-export type Mode = (typeof MODES)[number]
+export type Mode = KetePermissionModes.Mode
+export const MODES = KetePermissionModes.cycle
+export const LABEL = KetePermissionModes.label
+export const DESCRIPTION = KetePermissionModes.description
 
 export const PLAN_AGENT = "plan"
-const METADATA_KEY = "kete.permissionMode"
+const METADATA_KEY = KetePermissionModes.metadataKey
 
 /** The toggle's displayed state, from the composer's current agent and the session's metadata. */
 export function derive(input: { agent?: string; metadata?: SessionMetadata; fallback?: Mode }): Mode {
   if (input.agent === PLAN_AGENT) return "plan"
-  const value = input.metadata?.[METADATA_KEY]
-  if (value === "ask") return "ask"
-  if (value === "default") return "auto"
-  return input.fallback ?? "auto"
+  return KetePermissionModes.parse(input.metadata?.[METADATA_KEY]) ?? input.fallback ?? "default"
 }
 
-/** Cycles Auto -> Ask -> Plan -> Auto, skipping Plan when the `plan` agent isn't available. */
-export function next(mode: Mode, planAvailable: boolean): Mode {
-  let index = MODES.indexOf(mode)
-  for (let step = 0; step < MODES.length; step++) {
-    index = (index + 1) % MODES.length
-    const candidate = MODES[index]!
-    if (candidate !== "plan" || planAvailable) return candidate
-  }
-  return mode
+/** Cycles Default -> Auto -> Ask -> Plan -> Default. */
+export function next(mode: Mode): Mode {
+  return KetePermissionModes.next(mode)
 }
 
-/** Merges `mode`'s permission-mode key into `metadata`, keeping every other key. Plan writes nothing
- *  here: it's an agent choice, applied separately (see `apply`). */
-export function withMode(metadata: SessionMetadata | undefined, mode: Exclude<Mode, "plan">): SessionMetadata {
-  return { ...metadata, [METADATA_KEY]: mode === "ask" ? "ask" : "default" }
+/** Merges `mode`'s permission-mode key into `metadata`, keeping every other key. */
+export function withMode(metadata: SessionMetadata | undefined, mode: Mode): SessionMetadata {
+  return { ...metadata, [METADATA_KEY]: mode }
 }
 
 /**
@@ -54,11 +48,11 @@ export namespace KeteModeDraft {
     return drafts.get(draftID)
   }
 
-  /** `session.create`'s `metadata` field for this draft: undefined when nothing (or Plan, an agent
-   *  choice) needs to travel through metadata, so other callers see no change. */
+  /** `session.create`'s `metadata` field for this draft: undefined when nothing was chosen, so other
+   *  callers see no change. */
   export function metadata(draftID: string): SessionMetadata | undefined {
     const mode = drafts.get(draftID)
-    if (mode === undefined || mode === "plan") return undefined
+    if (mode === undefined) return undefined
     return withMode(undefined, mode)
   }
 
@@ -89,29 +83,33 @@ export type ModeSDK = {
 // session on the `plan` agent.
 const rememberedAgent = new Map<string, string>()
 
-/**
- * Applies `mode` to an existing session: Auto/Ask GET-merge-PATCH `kete.permissionMode` (metadata is
- * replaced whole server-side, so the current value is read first — the same pattern the VS Code
- * extension uses, kete-vscode/src/extension.ts:1247-1276); Plan selects the `plan` agent, remembering
- * the agent it replaced so leaving Plan restores it (or the default agent, if none was remembered).
- */
-export async function apply(input: { sdk: ModeSDK; sessionID: string; mode: Mode; agent: ApplyAgent }) {
-  const { sdk, sessionID, mode, agent } = input
+/** Selects the `plan` agent for Plan (remembering the one it replaced) and restores it when leaving Plan. */
+export function selectAgent(agent: ApplyAgent, key: string, mode: Mode) {
   if (mode === "plan") {
-    rememberedAgent.set(sessionID, agent.current())
+    if (!agent.options().includes(PLAN_AGENT) || agent.current() === PLAN_AGENT) return
+    rememberedAgent.set(key, agent.current())
     agent.select(PLAN_AGENT)
     return
   }
-  if (agent.current() === PLAN_AGENT) {
-    // Nothing remembered (Plan was already selected when this session's toggle first mounted):
-    // restore the first non-Plan agent offered, as the closest thing to "the default agent".
-    const fallback = rememberedAgent.get(sessionID) ?? agent.options().find((id) => id !== PLAN_AGENT)
-    if (fallback) agent.select(fallback)
-    rememberedAgent.delete(sessionID)
-  }
+  if (agent.current() !== PLAN_AGENT) return
+  // Nothing remembered (Plan was already selected when this session's toggle first mounted):
+  // restore the first non-Plan agent offered, as the closest thing to "the default agent".
+  const fallback = rememberedAgent.get(key) ?? agent.options().find((id) => id !== PLAN_AGENT)
+  if (fallback) agent.select(fallback)
+  rememberedAgent.delete(key)
+}
+
+/**
+ * Applies `mode` to an existing session: GET-merge-PATCH `kete.permissionMode` (metadata is replaced
+ * whole server-side, so the current value is read first — the same pattern the VS Code extension
+ * uses), then selects or leaves the `plan` agent. The mode is written first, so Plan's read-only
+ * rule is in force before the agent changes.
+ */
+export async function apply(input: { sdk: ModeSDK; sessionID: string; mode: Mode; agent: ApplyAgent }) {
+  const { sdk, sessionID, mode, agent } = input
   const session = await sdk.session.get({ sessionID })
-  const metadata = withMode(session.metadata, mode)
-  await sdk.session.update({ sessionID, metadata })
+  await sdk.session.update({ sessionID, metadata: withMode(session.metadata, mode) })
+  selectAgent(agent, sessionID, mode)
 }
 
 export * as KeteMode from "./mode.js"

@@ -9,6 +9,7 @@ import { shellParserWasm } from "#shell-parser-wasm"
 import { ShellSelect } from "./select.js"
 import { lazy } from "../util/lazy.js"
 import { Wildcard } from "../util/wildcard.js"
+import { KeteShellDirectory } from "../kete/shell-directory.js" // kete_change
 
 type Part = { type: string; text: string }
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
@@ -189,6 +190,7 @@ const scanLegacy = Effect.fnUntraced(function* (command: string, shell: string, 
             const name = powershell ? tokens[0].toLowerCase() : tokens[0]
             if (CWD.has(name)) {
               result.directories.push(...directoryArgs(command, powershell, cwd, shell))
+              if (!powershell) result.directories.push(...KeteShellDirectory.implicitText(node.text, cwd)) // kete_change: cd with no or unknown target
               return result
             }
             result.commands.push({
@@ -239,6 +241,7 @@ export const scanPortable = Effect.fnUntraced(function* (command: string, shell:
           shell,
         ),
       )
+      if (!powershell) output.directories.push(...KeteShellDirectory.implicit(words, cwd)) // kete_change: cd with no or unknown target
       continue
     }
     const selected = prefix(words.slice(0, PREFIX_LENGTH))

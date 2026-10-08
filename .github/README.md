@@ -84,9 +84,15 @@ kete login                        # or sign in to a Kete account to use the gate
 - **Works in your repository.** Searches and reads only the files that matter, edits across
   files, runs commands, builds and tests, diagnoses failures and tries again, then summarizes the
   diff.
-- **Asks before it acts.** Every tool goes through allow / ask / deny permissions. Turn on "ask
-  before edits" to approve each change, and keep destructive commands, package installs and
-  `git push` behind a prompt.
+- **Asks before it acts.** Every tool goes through allow / ask / deny permissions. By default
+  Kete Code edits files in your workspace and runs read-only and test/build commands, and asks
+  before any other command, before web requests, and always before high-risk ones: `git push`,
+  `reset --hard`, deletes, package installs, network tools, containers, cloud and deploy tools,
+  databases, `sudo` and credentials. Switch modes with `--permission-mode` or `<leader>p` in the
+  terminal UI: **auto** (stops asking except for high-risk commands), **ask** (approve every edit
+  and command) or **plan** (read-only). Edits to its own configuration and `.git` always ask. It's
+  a guard, not a sandbox: what it runs runs with your access. See
+  [Permissions](../docs/permissions.md).
 - **Plans first when you want it to.** The `plan` agent drafts an approach without touching files;
   the default `build` agent carries it out. Starter role agents (Code Reviewer, QA, Docs Writer,
   Security, DevOps) cover common jobs, and subagents can work in parallel in their own git

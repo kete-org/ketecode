@@ -12,11 +12,14 @@ import { UpdatePreflight } from "../../services/update-preflight"
 import { Npm } from "@opencode/util/npm"
 import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_VERSION } from "../../version"
 import { Env } from "../../env"
+import * as KetePermissionMode from "../../kete/permission-mode" // kete_change
 
 export default Runtime.handler(Commands, (input) =>
   Effect.gen(function* () {
     const requestedDirectory = Option.getOrUndefined(input.directory)
     const requestedServer = Option.getOrUndefined(input.server)
+    // kete_change: --auto is the "auto" permission mode; --dangerously-skip-permissions is the bypass
+    const permissionMode = yield* Effect.try({ try: () => KetePermissionMode.fromFlags(input), catch: (error) => (error instanceof Error ? error : new Error(String(error))) })
     if (requestedDirectory !== undefined) process.chdir(requestedDirectory)
     const preflight = UpdatePreflight.make()
     yield* Effect.addFinalizer(() => Effect.promise(() => preflight.close()))
@@ -84,7 +87,8 @@ export default Runtime.handler(Commands, (input) =>
         continue: input.continue,
         sessionID: Option.getOrUndefined(input.session),
         prompt: Option.getOrUndefined(input.prompt),
-        auto: input.auto || input.yolo || input.dangerouslySkipPermissions,
+        auto: KetePermissionMode.skipsPermissions(input), // kete_change
+        permissionMode, // kete_change
       },
       config: {
         path: config.path,

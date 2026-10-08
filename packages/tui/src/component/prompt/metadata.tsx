@@ -9,6 +9,7 @@ export function PromptMetadataRow(props: {
   mode: "normal" | "shell"
   agent?: string
   auto: boolean
+  keteMode?: string // kete_change: the session's permission mode (kete/permission-mode.tsx), undefined for Default
   model: string
   provider: string
   variant?: string
@@ -27,6 +28,7 @@ export function PromptMetadataRow(props: {
       terminalWidth: dimensions().width,
       agent: props.agent ?? "",
       auto: props.auto,
+      keteMode: props.keteMode, // kete_change
       model: props.model,
       provider: props.provider,
       variant: props.variant,
@@ -43,8 +45,13 @@ export function PromptMetadataRow(props: {
           {(agent) => <text fg={fade(props.highlight, props.agentAlpha)}>{agent()}</text>}
         </Show>
         <Show when={props.mode === "normal" && layout().auto}>
-          <text fg={fade(theme.text.muted, props.agentAlpha)}>auto</text>
+          <text fg={fade(theme.text.muted, props.agentAlpha)}>auto-accept</text>{/* kete_change: "auto" is a permission mode now; this is the client-side bypass */}
         </Show>
+        {/* kete_change start */}
+        <Show when={props.mode === "normal" && layout().keteMode}>
+          {(mode) => <text fg={fade(theme.text.feedback.warning.base, props.agentAlpha)}>{mode()}</text>}
+        </Show>
+        {/* kete_change end */}
         <Show when={props.mode === "normal" && layout().model}>
           <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
             <Show when={layout().agent}>
@@ -93,6 +100,7 @@ function fade(color: RGBA, alpha: number) {
 type Layout = {
   agent?: string
   auto?: boolean
+  keteMode?: string // kete_change
   model: string
   provider?: string
   variant?: string
@@ -103,6 +111,7 @@ function promptMetadataLayout(input: {
   terminalWidth: number
   agent: string
   auto?: boolean
+  keteMode?: string // kete_change
   model: string
   provider: string
   variant?: string
@@ -110,7 +119,8 @@ function promptMetadataLayout(input: {
   const agent = input.terminalWidth < 44 ? undefined : input.agent
   const provider = input.terminalWidth < 44 ? "" : input.provider
   const candidates: Layout[] = [
-    { agent, auto: input.auto, model: input.model, provider, variant: input.variant },
+    { agent, auto: input.auto, keteMode: input.keteMode, model: input.model, provider, variant: input.variant }, // kete_change
+    { agent, keteMode: input.keteMode, model: input.model, provider, variant: input.variant }, // kete_change: keep the permission mode visible before dropping the provider
     { agent, model: input.model, provider, variant: input.variant },
     {
       agent,
@@ -138,7 +148,8 @@ function promptMetadataLayout(input: {
 function text(input: Layout) {
   return [
     ...(input.agent ? [input.agent] : []),
-    ...(input.auto ? ["auto"] : []),
+    ...(input.auto ? ["auto-accept"] : []), // kete_change
+    ...(input.keteMode ? [input.keteMode] : []), // kete_change
     ...(input.model ? [...(input.agent ? ["·"] : []), input.model] : []),
     ...(input.provider ? [input.provider] : []),
     ...(input.variant ? ["·", input.variant] : []),

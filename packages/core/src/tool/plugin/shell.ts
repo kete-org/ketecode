@@ -19,6 +19,7 @@ import { ShellParse } from "../../shell/parse.js"
 import { ShellSelect } from "../../shell/select.js"
 import { ShellResult } from "../../shell/result.js"
 import { KeteToolEnv } from "../../kete/tool-env.js" // kete_change
+import { KeteShellRisk } from "../../kete/shell-risk.js" // kete_change
 
 export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
@@ -141,7 +142,12 @@ export const Plugin = {
         yield* permission.assert({
           action: name,
           resources: parsed.commands.map((command) => command.resource),
-          save: parsed.commands.map((command) => command.save),
+          // kete_change start: no "Always allow" for high-risk commands or ones that run anything; the whole line for the safe defaults' `cd` check (kete/permission-mode.ts)
+          save: parsed.commands.every((command) => KeteShellRisk.saveable(command.resource))
+            ? parsed.commands.map((command) => command.save)
+            : [],
+          metadata: { command: invocation.command },
+          // kete_change end
           sessionID: context.sessionID,
           agent: context.agent,
           source,

@@ -7,7 +7,21 @@ import type { Status } from "./server"
 
 export type AccountState = Account | { readonly error: string } | undefined
 
-export function statusBar(server: Status, account: AccountState, waiting = 0, askBeforeEdits = false) {
+/** A chat's permission mode (core/src/kete/permission-mode.ts); "default" shows nothing. */
+export type PermissionMode = "default" | "accept-edits" | "auto" | "ask" | "plan"
+
+const MODE_TEXT: Readonly<Record<PermissionMode, { readonly text: string; readonly tooltip: string } | undefined>> = {
+  default: undefined,
+  "accept-edits": { text: "$(edit) Accept edits", tooltip: "This chat edits files without asking; commands and web requests follow the defaults" },
+  auto: {
+    text: "$(zap) Auto",
+    tooltip: "This chat runs edits and commands without asking; high-risk commands (push, deletes, installs, deploys, databases, sudo) still ask. Scripts it runs can do anything you can.",
+  },
+  ask: { text: "$(shield) Ask", tooltip: "This chat asks before every edit, command and web fetch" },
+  plan: { text: "$(eye) Plan", tooltip: "This chat is read-only: edits and commands that change anything are blocked" },
+}
+
+export function statusBar(server: Status, account: AccountState, waiting = 0, permissionMode: PermissionMode = "default") {
   const icon = {
     stopped: "$(circle-outline)",
     starting: "$(sync~spin)",
@@ -18,13 +32,14 @@ export function statusBar(server: Status, account: AccountState, waiting = 0, as
   const who =
     account === undefined ? "" : "error" in account ? "" : account.signedIn ? ` · ${account.organization}` : " · Signed out"
   const approvals = waiting > 0 ? ` · $(bell-dot) ${waiting}` : ""
-  const mode = askBeforeEdits ? " · $(shield) Ask" : ""
+  const shown = MODE_TEXT[permissionMode]
+  const mode = shown ? ` · ${shown.text}` : ""
   return {
     text: `${icon} $(kete-mark) Kete${who}${approvals}${mode}`,
     tooltip: [
       serverLine(server),
       accountLine(account),
-      ...(askBeforeEdits ? ["This chat asks before every edit, command and web fetch"] : []),
+      ...(shown ? [shown.tooltip] : []),
       ...(waiting > 0 ? [`${waiting} waiting for your approval in the chat`] : []),
     ].join("\n"),
     error: server.state === "failed",

@@ -11,6 +11,7 @@ import { runNonInteractivePrompt } from "./noninteractive"
 import { UI } from "./ui"
 import { Env } from "../env"
 import { errorMessage } from "../util/error"
+import * as KetePermissionMode from "../kete/permission-mode" // kete_change
 
 export type RunCommandInput = {
   server: ServerConnection.Resolved
@@ -25,6 +26,7 @@ export type RunCommandInput = {
   title?: string
   thinking?: boolean
   auto?: boolean
+  permissionMode?: KetePermissionMode.Mode // kete_change
 }
 
 type FilePart = {
@@ -125,6 +127,18 @@ async function execute(input: RunCommandInput, prepared: Prepared, endpoint: End
     return undefined
   })
   if (!target) return
+  // kete_change start: set the session's permission mode before the first prompt
+  if (input.permissionMode !== undefined) {
+    const applied = await KetePermissionMode.apply(client.session, target.session.id, input.permissionMode).then(
+      () => true,
+      (error) => {
+        reportRunError(input, `couldn't set permission mode: ${errorMessage(error)}`, target.session.id)
+        return false
+      },
+    )
+    if (!applied) return
+  }
+  // kete_change end
   const model = target.model ? { providerID: target.model.providerID, modelID: target.model.id } : undefined
   const variant = target.model?.variant
   if (!target.resume && input.title !== undefined) {
