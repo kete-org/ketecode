@@ -332,11 +332,6 @@ export const apply = Effect.fnUntraced(function* (
   })
   const final = stricter(event.effect, outcome.effect)
   tighten(event, outcome)
-  // A shell command a person approves (asked now, or every part saved with "Always allow") may use
-  // the network inside the OS sandbox (kete/sandbox.ts); later hooks can only turn "ask" into "deny".
-  const saved = resources.length > 0 && resources.every((resource) => resource.source === "saved")
-  if (event.action === "shell" && final !== "deny" && (final === "ask" || saved))
-    KeteSandboxActions.markApproved(event.metadata)
   if (outcome.buildCheck) lookup.buildChanged?.delete(root)
   // A change to a build/test entry point that may go ahead (an edit, `npm pkg set`, `> package.json`):
   // the next test/build command asks once. Instruction files (AGENTS.md) ask but don't count.

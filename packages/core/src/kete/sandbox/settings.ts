@@ -29,6 +29,8 @@ export interface Settings {
   readonly modeSource: "default" | "global config" | typeof publicName | "project config"
   readonly network: Network
   readonly caches: boolean
+  /** Without network, whether this machine's loopback services stay reachable (macOS). */
+  readonly loopback: boolean
   readonly allowWrite: ReadonlyArray<string>
   readonly allowRead: ReadonlyArray<string>
   readonly denyRead: ReadonlyArray<string>
@@ -70,6 +72,7 @@ export function resolve(input: {
   let modeSource: Settings["modeSource"] = "default"
   let network: Network = "approved"
   let caches = true
+  let loopback = true
   const allowWrite: string[] = []
   const allowRead: string[] = []
   const denyRead: string[] = []
@@ -83,6 +86,7 @@ export function resolve(input: {
     }
     if (sandbox.network) network = sandbox.network
     if (sandbox.caches !== undefined) caches = sandbox.caches
+    if (sandbox.loopback !== undefined) loopback = sandbox.loopback
     if (sandbox.allowWrite) allowWrite.splice(0, allowWrite.length, ...sandbox.allowWrite)
     if (sandbox.allowRead) allowRead.splice(0, allowRead.length, ...sandbox.allowRead)
     denyRead.push(...(sandbox.denyRead ?? []))
@@ -117,6 +121,8 @@ export function resolve(input: {
     }
     if (sandbox.caches === false) caches = false
     else if (sandbox.caches === true && !caches) ignored.push("caches true")
+    if (sandbox.loopback === false) loopback = false
+    else if (sandbox.loopback === true && !loopback) ignored.push("loopback true")
     if (sandbox.allowWrite?.length) ignored.push("allowWrite")
     if (sandbox.allowRead?.length) ignored.push("allowRead")
     denyRead.push(...(sandbox.denyRead ?? []))
@@ -128,6 +134,7 @@ export function resolve(input: {
     modeSource,
     network,
     caches,
+    loopback,
     allowWrite,
     allowRead,
     denyRead,

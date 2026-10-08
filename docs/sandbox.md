@@ -11,9 +11,9 @@ Decision record: [ADR 0013](adr/0013-local-os-sandbox.md).
 
 | | Allowed | Not allowed |
 | --- | --- | --- |
-| **Write** | The workspace (the project's folder), temp directories, package-manager and build caches (npm, bun, pnpm, yarn, pip, uv, cargo, Go, Gradle, Maven), paths you add | Anywhere else. Inside the workspace too: Kete Code's configuration (`.kete/`, `kete.json`, `kete.jsonc`, `.claude/`, `.agents/`), git's `.git/config`, `.git/hooks/` (and the `core.hooksPath` folder, e.g. `.husky/_`), `.git/info/attributes`, the `.git` folder itself, Kete Code's own folders |
+| **Write** | The workspace (the project's folder), a private temp directory for the session (`TMPDIR`, `TMP`, `TEMP` point there; on macOS also the shared temp directories), package-manager and build caches (npm, bun, pnpm, yarn, pip, uv, cargo, Go, Gradle, Maven), paths you add | Anywhere else. Inside the workspace too: Kete Code's configuration (`.kete/`, `kete.json`, `kete.jsonc`, `.claude/`, `.agents/`), git's `.git/config`, `.git/hooks/` (and the `core.hooksPath` folder, e.g. `.husky/_`), `.git/info/attributes`, the `.git` folder itself, Kete Code's own folders |
 | **Read** | Everything else, including the workspace's `.env` (tests load it; reading it is still governed by permissions) | Credentials: `~/.ssh` (except `known_hosts` and `config`), `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.gnupg`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.yarnrc.yml`, `~/.pypirc`, `~/.pgpass`, `~/.git-credentials`, `~/.config/gh`, cargo and gem credentials, Terraform and Vault tokens, `~/.password-store`, keychains, Kete Code's config, data and log folders |
-| **Network** | Commands a person approved: you allowed the prompt, saved "Always allow" for it, or an unattended run's policy allows it | Everything else. Without network a command reaches only this machine (macOS: loopback and this machine's own addresses; Linux: the sandbox's own loopback) |
+| **Network** | Commands a person approved just now (you allowed the prompt), or that an unattended run's policy allows. A saved "Always allow" lets a command run without asking but **doesn't** give it network: ask for it with `sandbox: "network"`, or set `network: "all"` | Everything else. Without network a command reaches only this machine (macOS: loopback and this machine's own addresses, unless `loopback: false`; Linux: the sandbox's own loopback) and Unix sockets in the workspace and its private temp directory — not the SSH or GPG agent, the session bus, VS Code's or tmux's sockets (on Linux `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and `DBUS_SESSION_BUS_ADDRESS` are removed and `$XDG_RUNTIME_DIR` is hidden) |
 | **Other processes** | Its own children | macOS: opening apps (`open`), AppleScript, the clipboard, the keychain, launchd jobs. Linux: seeing or signalling other processes |
 
 Git keeps working: `git status`, `diff`, `add`, `commit`, `branch`, `checkout`, `stash` and `log`
@@ -54,6 +54,7 @@ Common cases:
 - `npm install` / `pip install` from a private registry: add the credentials file to `allowRead`.
 - Docker, `ps`, `sudo` and other setuid tools on macOS, `open`, `osascript`: `"off"`.
 - A tool cache not in the list (e.g. `~/.gradle/wrapper`, `~/.rustup`): add it to `allowWrite`.
+- Linux: `/tmp` and `/var/tmp` are private to each command (empty at the start); use `$TMPDIR`, which is private to the session and keeps its files between commands.
 - Linux: a process started with `&` ends when the command ends — use the shell tool's background
   mode. A dev server started without network can't be reached from your browser; approve its
   command (approved commands share the host's network) or set `network: "all"`.
@@ -70,6 +71,7 @@ Common cases:
       "mode": "auto",          // "auto" (default) | "required" | "off"
       "network": "approved",   // "approved" (default) | "none" | "all"
       "caches": true,          // let commands write package-manager caches
+      "loopback": true,        // macOS without network: reach services on this machine
       "allowWrite": ["~/.gradle"],
       "allowRead": ["~/.npmrc"],
       "denyRead": ["~/secrets"],
@@ -105,6 +107,14 @@ requires the sandbox:
 A policy denying `sandbox_network` stops commands from asking for network access.
 
 ## What the sandbox doesn't cover
+
+- **Services on this machine.** On macOS, a command without network can still connect to anything
+  listening on 127.0.0.1 or this machine's own addresses — a local database, a dev server, Docker if
+  it exposes TCP — because test suites start and call local servers. Set `"loopback": false` to block
+  that (Unix sockets in the workspace and private temp directory still work). On Linux the sandbox
+  has its own loopback, so the host's local services are out of reach without network.
+- macOS's per-user cache directory (`/private/var/folders/…/C`) is writable (Apple's tools need it),
+  so it is a place a command could leave something for later, like the package caches.
 
 - Only the agent's shell commands. Your own terminal and `!` commands, MCP servers, formatters,
   language servers and Kete Code's own git calls run as before.

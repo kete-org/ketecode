@@ -324,6 +324,40 @@ describe.skipIf(!probe.available)("the local OS sandbox through the shell tool",
     )
 
   it.live(
+    "Unix sockets: not in the shared temp directory, yes in the workspace; TMPDIR is private",
+    () =>
+      inRepository((dir, run) =>
+        Effect.gen(function* () {
+          const shared = path.join(process.platform === "darwin" ? "/private/tmp" : "/tmp", `kete-sock-${process.pid}-${Date.now()}.sock`)
+          const handler = { socket: { data() {}, open(socket: { end: () => void }) { socket.end() } } }
+          const servers = [Bun.listen({ unix: shared, ...handler })]
+          const previous = process.cwd()
+          process.chdir(dir)
+          try {
+            servers.push(Bun.listen({ unix: "local.sock", ...handler }))
+          } finally {
+            process.chdir(previous)
+          }
+          try {
+            const connect = (target: string) =>
+              run({ command: `python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); print('CON' + 'NECTED')" "${target}"` })
+            const blocked = yield* connect(shared)
+            expect(blocked.text).not.toContain("CONNECTED")
+            // Relative: the workspace path is longer than a Unix socket address may be on macOS.
+            const allowed = yield* connect("local.sock")
+            expect(allowed.text, allowed.text).toContain("CONNECTED")
+            const tmp = yield* run({ command: 'echo "TMP=$TMPDIR"' })
+            expect(tmp.text).toContain("kete-sandbox-")
+          } finally {
+            for (const server of servers) server.stop(true)
+            yield* Effect.promise(() => fs.rm(shared, { force: true }))
+          }
+        }),
+      ),
+    { timeout: 30_000 },
+  )
+
+  it.live(
     'sandbox: "off" runs the command outside the sandbox',
     () =>
       inRepository((dir, run) =>

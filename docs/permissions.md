@@ -206,5 +206,6 @@ the mode, so they can deny what a mode or rule would allow. No mode turns `ask` 
   shared names in `packages/util/src/kete/permission-mode.ts`.
 - The OS sandbox: `docs/sandbox.md`, `packages/core/src/kete/sandbox.ts`. Its permission actions
   `sandbox_off` and `sandbox_network` always ask when the agent requests them, and approving a shell
-  command that asked lets it use the network inside the sandbox.
+  command that asked lets it use the network inside the sandbox. A saved "Always allow" doesn't: it
+  lets the command run without asking, without network.
 - Knowledge-base card: `docs/context/modules/permissions.md`.

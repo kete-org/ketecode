@@ -201,9 +201,9 @@ export const applyPolicy = Effect.fnUntraced(function* (lookup: PolicyLookup, ev
 
   if (event.effect === "ask" && KeteUnattendedPolicy.allows(policy, event.action, event.resources)) {
     event.effect = "allow"
-    // The run's policy is the person's approval in advance: the command may use the network inside
-    // the OS sandbox (kete/sandbox.ts), as an approved one does in an interactive session.
-    if (event.action === "shell") KeteSandboxActions.markApproved(event.metadata)
+    // The run's policy is the person's approval in advance; the sandbox's last hook turns this into
+    // network access if the decision is still "allow" at the end (kete/sandbox.ts).
+    if (event.action === "shell") KeteSandboxActions.markPolicyAllowed(event.metadata)
   }
 })
 

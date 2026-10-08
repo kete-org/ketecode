@@ -23,8 +23,10 @@ const resolve = (documents: KeteSandboxSettings.Document[], env: Record<string, 
   KeteSandboxSettings.resolve({ documents, globalDirectory: GLOBAL, env })
 
 describe("sandbox settings", () => {
-  test("defaults: auto, network for approved commands, caches writable", () => {
-    expect(resolve([])).toMatchObject({ mode: "auto", network: "approved", caches: true, ignored: [] })
+  test("defaults: auto, network for approved commands, caches writable, loopback reachable", () => {
+    expect(resolve([])).toMatchObject({ mode: "auto", network: "approved", caches: true, loopback: true, ignored: [] })
+    expect(resolve([project({ loopback: false })]).loopback).toBe(false)
+    expect(resolve([user({ loopback: false }), project({ loopback: true })])).toMatchObject({ loopback: false, ignored: ["loopback true"] })
   })
 
   test("the user's global config and KETE_SANDBOX may loosen", () => {
@@ -82,7 +84,9 @@ const policy = (overrides: Partial<Policy> = {}): Policy => ({
   ],
   visible: ["/home/me/.ssh/known_hosts"],
   network: false,
-  sockets: ["/work/repo", "/tmp"],
+  loopback: true,
+  tmpfs: ["/tmp", "/var/tmp"],
+  sockets: ["/work/repo", "/tmp/kete-sandbox-x"],
   ...overrides,
 })
 
@@ -105,6 +109,7 @@ describe("Seatbelt profile", () => {
     const off = KeteSeatbelt.profile(policy()).profile
     expect(off).toContain("(deny network-outbound)")
     expect(off).toContain('(allow network-outbound (remote ip "localhost:*"))')
+    expect(KeteSeatbelt.profile(policy({ loopback: false })).profile).not.toContain('remote ip "localhost:*"')
     const on = KeteSeatbelt.profile(policy({ network: true })).profile
     expect(on).not.toContain("(deny network-outbound)")
     for (const text of [off, on]) {
@@ -140,7 +145,9 @@ describe("bwrap arguments", () => {
   test("namespaces, then writable, pinned and read-only binds in that order", () => {
     const args = KeteBubblewrap.args(policy(), "/work/repo/src")
     expect(args).toContain("--unshare-net")
-    expect(args.slice(0, 3)).toEqual(["--die-with-parent", "--unshare-pid", "--unshare-ipc"])
+    expect(args.slice(0, 4)).toEqual(["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc"])
+    // The private /tmp comes before the workspace bound inside it.
+    expect(args.join(" ")).toContain("--tmpfs /tmp")
     const index = (option: string, value: string) => args.findIndex((arg, i) => arg === option && args[i + 1] === value)
     expect(index("--bind", "/work/repo")).toBeLessThan(index("--bind", "/work/repo/.git"))
     expect(index("--bind", "/work/repo/.git")).toBeLessThan(index("--ro-bind", "/home/me/.config/kete"))
@@ -207,7 +214,7 @@ describe("escape decisions", () => {
   })
 })
 
-// Approval marks: the permission-mode hook marks a shell request a person approves.
+// Approval marks: set only by the last hook (KeteSandbox.ApprovalPlugin), from the final decision.
 const upstreamDefault: Permission.Ruleset = [{ action: "*", resource: "*", effect: "allow" }]
 function lookup(approved: Permission.Ruleset = [], mode?: KetePermissionMode.Mode): KetePermissionMode.Lookup {
   const session = {
@@ -222,30 +229,58 @@ function lookup(approved: Permission.Ruleset = [], mode?: KetePermissionMode.Mod
     buildChanged: new Set(),
   }
 }
-const evaluate = (look: KetePermissionMode.Lookup, action: string, resources: string[]) =>
+type Event = { sessionID: ReturnType<typeof Session.ID.make>; action: string; resources: string[]; metadata: Record<string, unknown>; effect: Permission.Rule["effect"]; message?: string }
+/** Runs hooks in order, as PluginHooks.trigger does, with the approval hook last. */
+const pipeline = (look: KetePermissionMode.Lookup, action: string, resources: string[], between: Array<(event: Event) => void> = []) =>
   Effect.runSync(
     Effect.gen(function* () {
-      const metadata: Record<string, unknown> = { command: resources.join(" && ") }
-      const event = { sessionID: Session.ID.make("ses_root"), action, resources, metadata, effect: "allow" as Permission.Rule["effect"], message: undefined as string | undefined }
+      const event: Event = { sessionID: Session.ID.make("ses_root"), action, resources, metadata: { command: resources.join(" && ") }, effect: "allow" }
       yield* KetePermissionMode.apply(look, event)
-      return { effect: event.effect, approved: KeteSandboxActions.approved(metadata) }
+      for (const hook of between) hook(event)
+      KeteSandboxActions.approve(event)
+      return { effect: event.effect, approved: KeteSandboxActions.approved(event.metadata) }
     }),
   )
 
 describe("approval marks", () => {
   test("a command that asks is marked; one the defaults allow is not", () => {
-    expect(evaluate(lookup(), "shell", ["npm install"])).toEqual({ effect: "ask", approved: true })
-    expect(evaluate(lookup(), "shell", ["npm test"])).toEqual({ effect: "allow", approved: false })
-    expect(evaluate(lookup(), "shell", ["ls"])).toEqual({ effect: "allow", approved: false })
+    expect(pipeline(lookup(), "shell", ["npm install"])).toEqual({ effect: "ask", approved: true })
+    expect(pipeline(lookup(), "shell", ["npm test"])).toEqual({ effect: "allow", approved: false })
+    expect(pipeline(lookup(), "shell", ["ls"])).toEqual({ effect: "allow", approved: false })
   })
   test("auto mode runs other commands without asking: not marked", () => {
-    expect(evaluate(lookup([], "auto"), "shell", ["node script.js"])).toEqual({ effect: "allow", approved: false })
+    expect(pipeline(lookup([], "auto"), "shell", ["node script.js"])).toEqual({ effect: "allow", approved: false })
   })
-  test("a saved Always allow counts as approval", () => {
+  test("a saved Always allow grants running the command, not network", () => {
     const saved: Permission.Ruleset = [{ action: "shell", resource: "make serve", effect: "allow" }]
-    expect(evaluate(lookup(saved), "shell", ["make serve"])).toEqual({ effect: "allow", approved: true })
+    expect(pipeline(lookup(saved), "shell", ["make serve"])).toEqual({ effect: "allow", approved: false })
+  })
+  test("a hook that turns ask into allow after permission-mode doesn't pass on network", () => {
+    const loosen = (event: Event) => {
+      if (event.effect === "ask") event.effect = "allow"
+    }
+    expect(pipeline(lookup(), "shell", ["npm install"], [loosen])).toEqual({ effect: "allow", approved: false })
+  })
+  test("a later deny is never marked; an unattended policy allow is", () => {
+    const deny = (event: Event) => {
+      event.effect = "deny"
+    }
+    expect(pipeline(lookup(), "shell", ["npm install"], [deny])).toEqual({ effect: "deny", approved: false })
+    const policy = (event: Event) => KeteSandboxActions.markPolicyAllowed(event.metadata)
+    expect(pipeline(lookup(), "shell", ["npm ci"], [policy, (event) => void (event.effect = "allow")]).approved).toBe(true)
   })
   test("sandbox actions are left to the sandbox's own hook, also in Plan", () => {
-    expect(evaluate(lookup([], "plan"), "sandbox_off", ["ls"]).effect).toBe("allow")
+    expect(pipeline(lookup([], "plan"), "sandbox_off", ["ls"]).effect).toBe("allow")
+  })
+})
+
+describe("sandboxed environment", () => {
+  test("temp variables point at the private directory; agents only with network", () => {
+    const env = { PATH: "/bin", TMPDIR: "/tmp", SSH_AUTH_SOCK: "/tmp/agent.sock", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1/bus" }
+    const without = KeteSandbox.environment(env, "/tmp/kete-sandbox-x", false)
+    expect(without).toMatchObject({ PATH: "/bin", TMPDIR: "/tmp/kete-sandbox-x", TMP: "/tmp/kete-sandbox-x", TEMP: "/tmp/kete-sandbox-x" })
+    expect(without.SSH_AUTH_SOCK).toBeUndefined()
+    expect(without.DBUS_SESSION_BUS_ADDRESS).toBeUndefined()
+    expect(KeteSandbox.environment(env, "/t", true).SSH_AUTH_SOCK).toBe("/tmp/agent.sock")
   })
 })

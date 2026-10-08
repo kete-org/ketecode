@@ -7,9 +7,11 @@ verified-at: 62cd364869
 ## Quick answers
 - What runs in the sandbox? Only the shell tool's commands (`core/src/tool/plugin/shell.ts`), outside job mode. The user's `!` commands, PTY, MCP servers, formatters, LSP and the runtime's own git are unchanged (no plan attached → `KeteSandboxPlans.wrap` returns the command as is).
 - Which mechanism? macOS `/usr/bin/sandbox-exec` with a generated Seatbelt profile (`sandbox/seatbelt.ts`); Linux `bwrap` (`sandbox/bubblewrap.ts`); probed once per process (`sandbox/probe.ts`, `KeteSandbox.availability`). Windows: unavailable.
-- How is network decided? `kete.sandbox.network` "approved" (default): network iff the shell request's metadata carries `kete.sandbox.approved`, set by `KetePermissionMode.apply` (final effect "ask", or every part saved) and `KeteUnattended.applyPolicy` (policy allowed). `sandbox: "network"` asks `sandbox_network`.
+- How is network decided? `kete.sandbox.network` "approved" (default): network iff the shell request's metadata carries `kete.sandbox.approved`, set only by `KeteSandbox.ApprovalPlugin` — the last `evaluate` hook, after `KeteUnattended.Plugin` — when the final effect is "ask" or "allow" with the unattended policy's mark (`KeteUnattended.applyPolicy` → `markPolicyAllowed`). Saved approvals don't grant network. `sandbox: "network"` asks `sandbox_network`.
 - How does an org require the sandbox? A policy denying `sandbox_off`: every unsandboxed command asserts it (reason `disabled`/`unavailable` doesn't ask; `requested` always asks).
 - Why can't a repository turn it off? `KeteSandboxSettings.resolve` lets only documents under the global config dir and `KETE_SANDBOX` loosen; project documents only tighten (`ignored` lists the rest).
+- What about temp and Unix sockets? Each session gets a private temp dir (`mkdtemp` in the OS temp dir, `KeteSandbox.make`), set as TMPDIR/TMP/TEMP; without network only sockets in the workspace and that dir can be connected (macOS rule; Linux: `/tmp`,`/var/tmp` are tmpfs, `$XDG_RUNTIME_DIR`/`/run/user/<uid>`/`SSH_AUTH_SOCK` hidden, agent variables removed by `KeteSandbox.environment`).
+- Which bwrap? `/usr/bin`, `/bin`, `/usr/local/bin` first; PATH entries under HOME or temp dirs are never used (`probe.ts findBubblewrap`).
 - Where are Linux placeholders? `KeteSandboxResolve.Placeholders` (`shared`): missing `.kete`/`.claude`/`.agents` (empty dirs) and `kete.json(c)` (`{}` mode 000) in the config search path, counted, removed when unchanged.
 
 ## Purpose
@@ -66,6 +68,7 @@ Contain the agent's shell commands (ADR 0013, `docs/sandbox.md`): writes only to
 - Apple's xcrun shims (/usr/bin/git) write to `/private/var/folders/*/*/T` whatever TMPDIR says; those dirs are writable.
 - Seatbelt matches resolved paths: `.GIT/config` on a case-insensitive volume is still denied.
 - Path rules apply parent first (bwrap mounts and Seatbelt rules sorted by depth): Kete worktrees live in the hidden, read-only data directory and must stay writable workspaces (found by the harness run-mode test in CI).
+- Linux git placeholders: missing `commondir` ("."), `gitdir`, `config.worktree`, `info/attributes` (empty) are created mode 644 and bound read-only; `modules`/`worktrees` are pinned. Seatbelt also denies writes to the `modules`/`worktrees` entries (rename-away-and-back).
 - Linux file placeholders are masked with /dev/null and listed in a copy of `info/exclude` bound over the real one: git's `add -A` refuses character devices (and a non-root git can't read a mode-000 file), found in CI.
 - bwrap: processes started with `&` die with the command (PID namespace); without network the host's loopback is unreachable.
 - The isolated test HOME lives in macOS's per-user temp dir (writable in the sandbox): tests use `/Users/Shared` as an "outside" path there.

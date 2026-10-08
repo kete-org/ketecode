@@ -45,3 +45,29 @@ Open / follow-ups:
 - Landlock / Windows / per-host allowlist: see ADR 0013 "Revisit".
 - The shell permission prompt doesn't say that approving grants network inside the sandbox
   (documented in docs/sandbox.md and docs/permissions.md).
+
+## 2026-10-08 implementer (security review fixes)
+
+Review of PR #24 (two blockers, should-fixes, nits), all addressed:
+- B1 Unix sockets in shared temp: each session gets a private temp dir (TMPDIR/TMP/TEMP); without
+  network macOS allows socket connects only in the workspace and that dir; Linux mounts a private
+  tmpfs on /tmp and /var/tmp, hides `$XDG_RUNTIME_DIR`, `/run/user/<uid>` and `SSH_AUTH_SOCK`, and
+  the child loses `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GPG_AGENT_INFO`, `DBUS_SESSION_BUS_ADDRESS`
+  (kept with network). Test: a socket server in shared /tmp is unreachable, one in the workspace works.
+- B2 Linux missing git internals: `commondir` ("."), `gitdir`, `config.worktree`, `info/attributes`
+  get placeholders (mode 644; git treats them as absent — checked commit, worktree list,
+  rev-parse) bound read-only; `modules`/`worktrees` pinned. Test: `echo … > .git/commondir` fails.
+- S3 bwrap from /usr/bin, /bin, /usr/local/bin first; PATH entries under HOME or temp dirs ignored.
+- S4 saved "Always allow" no longer grants network.
+- S5 the approval mark moved to a new last hook (`KeteSandbox.ApprovalPlugin`, guarded, after
+  `KeteUnattended.Plugin`); permission-mode no longer marks; unattended policy sets a separate flag
+  the last hook honours only if the decision is still "allow". Test: a hook turning ask→allow before
+  it leaves no mark.
+- S6 loopback kept open on macOS by default, documented; `kete.sandbox.loopback: false` blocks it
+  (project config may set false only).
+- Nits: `--new-session` for bwrap; the macOS per-user cache dir documented as a persistence spot;
+  Seatbelt denies writes to `.git/modules` and `.git/worktrees` entries (rename-away-and-back);
+  macOS test for renaming a nested repository's parent (config still protected) and `.git/commondir`.
+- Residual: a disk plugin's `evaluate` hook registered after the internal ones could still loosen
+  a decision after the approval hook; plugins are runtime code the user installed (repository
+  `.kete/plugins` is write-protected by the sandbox).

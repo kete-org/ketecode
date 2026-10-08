@@ -23,6 +23,8 @@
 
 export * as KeteSandbox from "./sandbox.js"
 
+import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { define } from "@opencode/plugin/effect/plugin"
 import { KeteSandboxRpc } from "@opencode/schema/kete/sandbox"
@@ -129,6 +131,17 @@ export interface Prepared {
 
 const NONE: Effect.Effect<void> = Effect.void
 
+/** Agent and session-bus variables: a command without network must not reach the SSH or GPG agent or
+ * the session bus through them. With network (a person approved) they stay, so `git push` over SSH works. */
+export const agentVariables = ["SSH_AUTH_SOCK", "SSH_AGENT_PID", "GPG_AGENT_INFO", "DBUS_SESSION_BUS_ADDRESS"] as const
+
+/** The sandboxed command's environment: temp variables point at the private temp directory. */
+export function environment(env: Record<string, string | undefined>, tmp: string, network: boolean) {
+  const next: Record<string, string | undefined> = { ...env, TMPDIR: tmp, TMP: tmp, TEMP: tmp }
+  if (!network) for (const name of agentVariables) delete next[name]
+  return next
+}
+
 export class RefusedError extends Schema.TaggedError<RefusedError>()("KeteSandbox.RefusedError", {
   message: Schema.String,
 }) {}
@@ -138,8 +151,23 @@ export function make(deps: Deps) {
   const placeholders = KeteSandboxResolve.shared
   const env = deps.env ?? process.env
 
+  // One private temp directory per session (kept while the runtime runs, so files in TMPDIR survive
+  // between a session's commands): TMPDIR/TMP/TEMP inside the sandbox, the only temp place where Unix
+  // sockets can be used without network.
+  const privateTmps = new Map<string, Promise<string>>()
+  const privateTmp = (sessionID: string) => {
+    let existing = privateTmps.get(sessionID)
+    if (!existing) {
+      existing = fs.mkdtemp(path.join(os.tmpdir(), "kete-sandbox-"))
+      privateTmps.set(sessionID, existing)
+      existing.catch(() => privateTmps.delete(sessionID))
+    }
+    return existing
+  }
+
   const prepare = Effect.fnUntraced(function* (
-    invocation: { readonly cwd: string },
+    invocation: { readonly cwd: string; env: Record<string, string | undefined> },
+    sessionID: string,
     request: Request | undefined,
     ask: Ask,
   ) {
@@ -176,6 +204,7 @@ export function make(deps: Deps) {
     const mechanism = available.mechanism
     const resolved = yield* Effect.tryPromise({
       try: async () => {
+        const tmp = await privateTmp(sessionID)
         const result = await KeteSandboxResolve.resolve(
           {
             platform: mechanism === "seatbelt" ? "darwin" : "linux",
@@ -186,6 +215,7 @@ export function make(deps: Deps) {
             shellOutput: path.join(deps.shellDirectory, deps.location.projectID),
             settings,
             network,
+            privateTmp: tmp,
             env,
           },
           placeholders,
@@ -197,7 +227,7 @@ export function make(deps: Deps) {
           await result.release()
           throw error
         }
-        return { ...result, plan }
+        return { ...result, plan, tmp }
       },
       catch: (cause) =>
         new RefusedError({
@@ -205,6 +235,7 @@ export function make(deps: Deps) {
         }),
     })
     KeteSandboxPlans.attach(invocation, resolved.plan)
+    invocation.env = environment(invocation.env, resolved.tmp, network)
     return {
       outcome: { kind: "sandboxed", network } as Outcome,
       release: Effect.promise(() => resolved.release()),
@@ -310,5 +341,17 @@ export const Plugin = define({
       if (current.ignored.length > 0)
         yield* Effect.logWarning(`Ignored project sandbox settings that would loosen it: ${current.ignored.join(", ")}.`)
     }
+  }),
+})
+
+/**
+ * The sandbox's approval mark (sandbox/actions.ts `approve`), registered last of all `evaluate` hooks
+ * (after KeteUnattended.Plugin), so the decision it sees is final: no hook can turn its "ask" into
+ * "allow" afterwards, and a command marked here runs only if a person allows the prompt. Guarded.
+ */
+export const ApprovalPlugin = define({
+  id: "kete.sandbox.approval",
+  effect: Effect.fn(function* (ctx) {
+    yield* ctx.permission.hook("evaluate", (event) => Effect.sync(() => KeteSandboxActions.approve(event)))
   }),
 })

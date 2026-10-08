@@ -43,6 +43,8 @@ export interface Input {
   readonly shellOutput: string
   readonly settings: KeteSandboxSettings.Settings
   readonly network: boolean
+  /** The session's private temp directory (TMPDIR inside the sandbox; Unix sockets may be used there). */
+  readonly privateTmp: string
   readonly env?: Record<string, string | undefined>
 }
 
@@ -196,51 +198,81 @@ export async function gitLayout(workspace: string, home: string): Promise<GitLay
   return { ...layout, ...(resolvedHooks ? { hooksPath: resolvedHooks } : {}) }
 }
 
-/** The files in a git directory that run code, existing ones only, for bwrap (seatbelt uses patterns). */
-async function gitInternals(directory: string): Promise<string[]> {
-  const out: string[] = []
+// The files in a git directory through which git runs code or finds another git directory. A missing
+// one gets a placeholder git treats as absent or harmless: `commondir` "." (the git directory itself),
+// empty `gitdir`, `config.worktree` and `info/attributes`. Otherwise a command could create
+// `.git/commondir` and point the next unsandboxed git at a config it wrote.
+const GIT_FILES: ReadonlyArray<{ readonly name: string; readonly content: string }> = [
+  { name: "commondir", content: ".\n" },
+  { name: "gitdir", content: "" },
+  { name: "config.worktree", content: "" },
+  { name: "info/attributes", content: "" },
+]
+
+/** Linux: the protected files and directories of a git directory (and its submodules and worktrees),
+ * created as placeholders where missing; `modules` and `worktrees` are pinned so they can't be renamed. */
+async function gitInternals(directory: string, placeholders: Placeholders, releases: Array<() => Promise<void>>) {
+  const readOnly: string[] = []
+  const pinned: string[] = []
   let budget = 400
   const visit = async (dir: string, depth: number) => {
-    for (const name of ["config", "config.worktree", "commondir", "gitdir", "hooks", "info/attributes"]) {
+    for (const name of ["config", "hooks"]) {
       const candidate = path.join(dir, name)
-      if (await exists(candidate)) out.push(candidate)
+      if (name === "hooks" && !(await exists(candidate))) await fs.mkdir(candidate).catch(() => undefined)
+      if (await exists(candidate)) readOnly.push(candidate)
     }
-    if (depth >= 4) return
+    for (const file of GIT_FILES) {
+      const candidate = path.join(dir, file.name)
+      await fs.mkdir(path.dirname(candidate), { recursive: true }).catch(() => undefined)
+      releases.push(await placeholders.acquire(candidate, { kind: "file", content: file.content, mode: 0o644 }))
+      readOnly.push(candidate)
+    }
     for (const group of ["modules", "worktrees"]) {
-      const entries = await fs.readdir(path.join(dir, group), { withFileTypes: true }).catch(() => [])
+      const groupDir = path.join(dir, group)
+      const entries = await fs.readdir(groupDir, { withFileTypes: true }).catch(() => undefined)
+      if (!entries) continue
+      pinned.push(groupDir)
+      if (depth >= 4) continue
       for (const entry of entries) {
         if (!entry.isDirectory() || budget-- <= 0) continue
-        await visit(path.join(dir, group, entry.name), depth + 1)
+        await visit(path.join(groupDir, entry.name), depth + 1)
       }
     }
   }
   await visit(directory, 0)
-  return out
+  return { readOnly, pinned }
 }
 
+/** What a placeholder is: an empty directory, or a file with fixed content and mode. */
+export type Placeholder = { readonly kind: "directory" } | { readonly kind: "file"; readonly content: string; readonly mode: number }
+
+/** `kete.json(c)`: `{}` with mode 000 — the runtime's config loader reads an unreadable file as missing. */
+export const CONFIG_PLACEHOLDER: Placeholder = { kind: "file", content: "{}\n", mode: 0o000 }
+const DIRECTORY: Placeholder = { kind: "directory" }
+
 /** Counted placeholders for missing protected paths (Linux). Shared by the whole process (`shared`):
- * two locations whose search paths meet (both under /tmp) must not remove each other's placeholder
- * while a command still relies on it. */
+ * two locations whose search paths meet must not remove each other's placeholder while a command
+ * still relies on it. */
 export class Placeholders {
   private readonly held = new Map<string, { count: number; readonly created: Promise<boolean> }>()
 
   /** Makes sure `target` exists until the returned release function runs. Synchronous bookkeeping
    * first, so two commands asking at once share one placeholder. */
-  async acquire(target: string, directory: boolean): Promise<() => Promise<void>> {
+  async acquire(target: string, spec: Placeholder): Promise<() => Promise<void>> {
     let entry = this.held.get(target)
     if (entry) entry.count++
     else {
-      entry = { count: 1, created: create(target, directory) }
+      entry = { count: 1, created: create(target, spec) }
       this.held.set(target, entry)
     }
     const current = entry
     try {
       await current.created
     } catch (error) {
-      await this.release(target, directory, current)
+      await this.release(target, spec, current)
       throw error
     }
-    return () => this.release(target, directory, current)
+    return () => this.release(target, spec, current)
   }
 
   /** Whether `target` is currently a placeholder this registry created (not a real file). */
@@ -249,34 +281,36 @@ export class Placeholders {
     return entry ? await entry.created.catch(() => false) : false
   }
 
-  private async release(target: string, directory: boolean, entry: { count: number; readonly created: Promise<boolean> }) {
+  private async release(target: string, spec: Placeholder, entry: { count: number; readonly created: Promise<boolean> }) {
     entry.count--
     if (entry.count > 0) return
     if (this.held.get(target) === entry) this.held.delete(target)
     if (!(await entry.created.catch(() => false))) return
     // Only an unchanged placeholder is removed.
-    if (directory) {
+    if (spec.kind === "directory") {
       await fs.rmdir(target).catch(() => undefined)
       return
     }
     const stat = await fs.lstat(target).catch(() => undefined)
-    if (stat?.isFile() && (stat.mode & 0o777) === 0 && stat.size === PLACEHOLDER.length)
-      await fs.unlink(target).catch(() => undefined)
+    if (!stat?.isFile() || (stat.mode & 0o777) !== spec.mode || stat.size !== Buffer.byteLength(spec.content)) return
+    if (spec.mode & 0o400) {
+      const text = await fs.readFile(target, "utf8").catch(() => undefined)
+      if (text !== spec.content) return
+    }
+    await fs.unlink(target).catch(() => undefined)
   }
 }
 
-const PLACEHOLDER = "{}\n"
-
 /** Creates a placeholder; false if something already exists there. */
-async function create(target: string, directory: boolean): Promise<boolean> {
+async function create(target: string, spec: Placeholder): Promise<boolean> {
   if (await exists(target)) return false
   try {
-    if (directory) await fs.mkdir(target)
+    if (spec.kind === "directory") await fs.mkdir(target)
     else {
       const handle = await fs.open(target, "wx", 0o600)
       try {
-        await handle.writeFile(PLACEHOLDER)
-        await handle.chmod(0o000)
+        await handle.writeFile(spec.content)
+        await handle.chmod(spec.mode)
       } finally {
         await handle.close()
       }
@@ -329,13 +363,15 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
   const homeRelative = (value: string) => real(path.join(home, value))
   const expand = (value: string) => real(Settings.expand(value, home, workspace))
 
-  // Temp directories: TMPDIR, /tmp, and on macOS the per-user cache directory next to TMPDIR (clang modules, xcrun).
+  // Temp directories. Each session has a private one (TMPDIR, TMP, TEMP point there, sandbox.ts).
+  // macOS: the shared ones stay writable (tools hard-code /tmp), but Unix sockets there can't be
+  // reached without network (other programs' sockets live there: VS Code's git credential handoff,
+  // tmux, ssh-agent). Linux: /tmp and /var/tmp are a private tmpfs per command instead.
+  const privateTmp = await real(input.privateTmp)
   const tmpCandidates = [os.tmpdir(), env.TMPDIR, "/tmp", "/var/tmp"].filter((value): value is string => !!value)
-  const tmp = unique(await Promise.all(tmpCandidates.map(real)))
-  if (input.platform === "darwin") {
-    const userTemp = tmp.find((value) => value.startsWith("/private/var/folders/") && path.basename(value) === "T")
-    if (userTemp) tmp.push(path.join(path.dirname(userTemp), "C"))
-  }
+  const sharedTmp = linux ? [] : unique(await Promise.all(tmpCandidates.map(real)))
+  const tmp = unique([privateTmp, ...sharedTmp])
+  const tmpfs = linux ? ["/tmp", "/var/tmp"] : []
 
   const cacheDirs = input.settings.caches
     ? await Promise.all(caches(input.platform, env).map((value) => (path.isAbsolute(value) ? real(value) : homeRelative(value))))
@@ -374,7 +410,7 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
       for (const dir of chain)
         for (const item of configNames) {
           const target = path.join(dir, item.name)
-          releases.push(await placeholders.acquire(target, item.directory))
+          releases.push(await placeholders.acquire(target, item.directory ? DIRECTORY : CONFIG_PLACEHOLDER))
           // A file placeholder is covered with /dev/null and listed in git's exclude file (below), so
           // `git add -A` in the sandbox doesn't try to add it; a real file or a directory (git ignores
           // empty ones) is bound read-only onto itself.
@@ -390,9 +426,9 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
       }
       const gitDirs = [...(git.local ? [git.local] : []), ...gitExternal]
       for (const gitDir of gitDirs) {
-        const hooks = path.join(gitDir, "hooks")
-        if (!(await exists(hooks))) await fs.mkdir(hooks).catch(() => undefined)
-        readOnly.push(...(await gitInternals(gitDir)))
+        const internals = await gitInternals(gitDir, placeholders, releases)
+        readOnly.push(...internals.readOnly)
+        pinned.push(...internals.pinned)
       }
       if (git.local) pinned.push(git.local)
       if (git.linked) readOnly.push(git.linked.file)
@@ -414,8 +450,16 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
       ...allowRead,
     ]).filter((value) => hiddenPaths.some((hidden) => within(value, hidden) && value !== hidden))
 
+    // Without network, also the user's runtime directory and agent sockets: the session bus, systemd,
+    // and the SSH and GPG agents live there (Linux; macOS blocks Unix sockets outside the workspace
+    // and the private temp directory instead). With network an approved `git push` may use the SSH agent.
+    if (linux && !input.network) {
+      const uid = typeof process.getuid === "function" ? process.getuid() : undefined
+      for (const value of [env.XDG_RUNTIME_DIR, uid !== undefined ? `/run/user/${uid}` : undefined, env.SSH_AUTH_SOCK])
+        if (value && path.isAbsolute(value)) hiddenPaths.push(await real(value))
+    }
     const hidden: Hidden[] = []
-    for (const value of hiddenPaths) {
+    for (const value of unique(hiddenPaths)) {
       const stat = await fs.stat(value).catch(() => undefined)
       if (linux && !stat) continue
       hidden.push({ path: value, directory: stat ? stat.isDirectory() : true })
@@ -444,7 +488,9 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
       hidden,
       visible,
       network: input.network,
-      sockets: unique([workspace, ...tmp]),
+      loopback: input.settings.loopback,
+      tmpfs,
+      sockets: unique([workspace, privateTmp]),
     }
     return {
       policy,

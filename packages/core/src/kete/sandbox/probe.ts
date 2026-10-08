@@ -11,6 +11,7 @@ export * as KeteSandboxProbe from "./probe.js"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import path from "node:path"
+import { tmpdir } from "node:os"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
 import { KeteSeatbelt } from "./seatbelt.js"
 import { KeteBubblewrap } from "./bubblewrap.js"
@@ -54,10 +55,18 @@ function run(file: string, args: ReadonlyArray<string>): Promise<{ code: number 
 
 const short = (value: string) => (value.length > MAX_REASON ? value.slice(0, MAX_REASON) + "…" : value)
 
-/** The first `bwrap` on PATH, then the usual locations. */
+/**
+ * The system's `bwrap`: /usr/bin, /bin, /usr/local/bin first; then PATH, but never a PATH entry in the
+ * home directory or a temp directory, where a sandboxed command could plant its own `bwrap`.
+ */
 export function findBubblewrap(env: Record<string, string | undefined> = process.env) {
-  const dirs = [...(env.PATH ?? "").split(path.delimiter).filter((dir) => path.isAbsolute(dir)), "/usr/bin", "/usr/local/bin", "/bin"]
-  for (const dir of dirs) {
+  for (const candidate of ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"]) if (existsSync(candidate)) return candidate
+  const unsafe = [env.HOME, "/tmp", "/var/tmp", env.TMPDIR, tmpdir()].filter(
+    (value): value is string => typeof value === "string" && path.isAbsolute(value),
+  )
+  const inside = (dir: string, root: string) => dir === root || dir.startsWith(root.endsWith("/") ? root : root + "/")
+  for (const dir of (env.PATH ?? "").split(path.delimiter)) {
+    if (!path.isAbsolute(dir) || unsafe.some((root) => inside(path.resolve(dir), root))) continue
     const candidate = path.join(dir, KeteBubblewrap.name)
     if (existsSync(candidate)) return candidate
   }
@@ -77,7 +86,7 @@ export async function probe(platform: NodeJS.Platform = process.platform): Promi
     const truePath = ["/usr/bin/true", "/bin/true"].find((candidate) => existsSync(candidate)) ?? "true"
     // The same namespaces a sandboxed command uses, network off (the stricter case).
     const result = await run(executable, [
-      "--die-with-parent", "--unshare-pid", "--unshare-ipc", "--unshare-net",
+      "--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-net",
       "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--", truePath,
     ])
     if (result.code === 0) return { available: true, mechanism: "bubblewrap", executable }

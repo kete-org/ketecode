@@ -69,6 +69,7 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   "packages/core/src/plugin/module.ts": { category: "off-in-job", reason: "disk plugins; ConfigPluginSource is empty in job mode" },
   "packages/core/src/shell/select.ts": { category: "not-worktree", reason: "checks the shell binary's path" },
   "packages/core/src/kete/sandbox/probe.ts": { category: "off-in-job", reason: "checks for sandbox-exec/bwrap; the local sandbox never runs in job mode" },
+  "packages/core/src/kete/sandbox.ts": { category: "off-in-job", reason: "creates a session's private temp directory for the local sandbox; never runs in job mode" },
   "packages/core/src/kete/sandbox/resolve.ts": { category: "off-in-job", reason: "the local sandbox's policy (git layout, placeholders); never runs in job mode" },
   "packages/core/src/database/v1-migration.bun.ts": { category: "not-worktree", reason: "legacy database migration in the data dir" },
   "packages/core/src/database/migration/20260805200742_import_legacy_credentials.ts": {

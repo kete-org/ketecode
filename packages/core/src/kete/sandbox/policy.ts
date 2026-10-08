@@ -35,7 +35,12 @@ export interface Policy {
   /** Whether the command may use the network. Without it, only this machine (macOS: loopback and
    * Unix sockets in `sockets`; Linux: the sandbox's own loopback) is reachable. */
   readonly network: boolean
-  /** macOS without network: where Unix sockets may still be connected (workspace, temp). */
+  /** Without network, whether this machine's loopback (macOS: and own addresses) is reachable.
+   * Linux has its own loopback in the sandbox's network namespace either way. */
+  readonly loopback: boolean
+  /** Linux: directories replaced by an empty private tmpfs (/tmp, /var/tmp). */
+  readonly tmpfs: ReadonlyArray<string>
+  /** Without network: where Unix sockets may still be connected (workspace, private temp). */
   readonly sockets: ReadonlyArray<string>
 }
 

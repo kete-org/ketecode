@@ -13288,6 +13288,9 @@
                   "caches": {
                     "type": "boolean"
                   },
+                  "loopback": {
+                    "type": "boolean"
+                  },
                   "allowWrite": {
                     "type": "array",
                     "items": {

@@ -26,7 +26,8 @@ const within = (child: string, parent: string) => child === parent || child.star
  * bwrap takes every source from the host's file system, so binding below a tmpfs works.
  */
 export function args(policy: Policy, cwd: string): string[] {
-  const out: string[] = ["--die-with-parent", "--unshare-pid", "--unshare-ipc"]
+  // --new-session: no controlling terminal to inject keystrokes into (TIOCSTI), defence in depth.
+  const out: string[] = ["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc"]
   if (!policy.network) out.push("--unshare-net")
   out.push("--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc")
 
@@ -36,6 +37,7 @@ export function args(policy: Policy, cwd: string): string[] {
   const hiddenDirectories = policy.hidden.filter((item) => item.directory).map((item) => item.path)
   // A read-only rule inside a hidden directory would bring its content back: hidden is read-only anyway.
   const hidden = (value: string) => hiddenDirectories.some((directory) => within(value, directory))
+  for (const value of policy.tmpfs) add(value, 0, ["--tmpfs", value])
   for (const item of policy.hidden)
     if (item.directory) add(item.path, 0, ["--tmpfs", item.path])
     else add(item.path, 0, ["--ro-bind", "/dev/null", item.path])

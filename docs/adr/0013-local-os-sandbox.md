@@ -42,14 +42,21 @@ real loop — installs, tests, builds, git — on macOS, Linux and Windows, with
    keychains, Kete Code's config, data, state and log directories (except this project's shell
    output). A workspace's `.env` stays readable (tests load it) and governed by permission rules.
 5. **Network is allowed only for commands a person approved** (`kete.sandbox.network:
-   "approved"`): the permission check asked and was allowed, every part matched a saved "Always
-   allow", or an unattended run's policy allowed it. Everything else — including the test and build
+   "approved"`): the permission check asked and a person allowed it, or an unattended run's policy
+   allowed it. The mark is set by the last `evaluate` hook of all, from the final decision, so no
+   hook can turn the "ask" into an "allow" that inherits network. A saved "Always allow" grants
+   running a command, not network (amended after the security review of PR #24). Everything else — including the test and build
    commands the defaults allow without asking — reaches only this machine (macOS: loopback and the
    machine's own addresses, Unix sockets in the workspace and temp; Linux: the sandbox's own
    loopback). The model can ask for network (`sandbox: "network"`) or to run outside the sandbox
    (`sandbox: "off"`) for one command; both are new permission actions (`sandbox_network`,
    `sandbox_off`) that **always ask**, can't be saved, can't be pre-approved by a rule (repository
    config can carry rules), are blocked in Plan mode and denied in unattended runs.
+   Unix sockets count as network: without it, only sockets in the workspace and the session's
+   private temp directory are reachable (not the SSH or GPG agents, the session bus, VS Code's or
+   tmux's sockets in the shared temp directories); agent variables are removed and, on Linux,
+   `$XDG_RUNTIME_DIR` is hidden and `/tmp` is private per command. On macOS this machine's loopback
+   stays reachable unless `kete.sandbox.loopback: false`.
 6. **Fallback:** where no sandbox works, commands run unsandboxed and this is visible: a warning when
    the runtime starts, an "Unsandboxed" footer in the TUI, `kete sandbox` (exit 1). With
    `kete.sandbox.mode: "required"` they are refused instead. Every unsandboxed command passes a

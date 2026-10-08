@@ -326,6 +326,8 @@ const post = [
   KeteJobPlugin.Plugin,
   // kete_change: last, after every hook that could still turn "ask" into "allow"; see kete/unattended.ts
   KeteUnattended.Plugin,
+  // kete_change: after every other hook: marks a shell request a person will approve (network in the OS sandbox); see kete/sandbox.ts
+  KeteSandbox.ApprovalPlugin,
 ] as const satisfies readonly InternalPlugin[]
 
 // Repository config must not switch off policy enforcement or the Console connection that delivers
@@ -339,6 +341,7 @@ export const guarded: ReadonlySet<string> = new Set([
   KeteJobPlugin.Plugin.id,
   KeteOffline.Plugin.id,
   KeteSandbox.Plugin.id,
+  KeteSandbox.ApprovalPlugin.id,
 ])
 // kete_change end
 

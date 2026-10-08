@@ -379,12 +379,14 @@ describe("KeteUnattended.applyPolicy and the OS sandbox", () => {
         const metadata: Record<string, unknown> = {}
         const event = { sessionID: root, action: "shell", resources, metadata, effect: "ask" as Permission.Rule["effect"] }
         yield* KeteUnattended.applyPolicy(lookup, event)
+        KeteSandboxActions.approve(event) // the sandbox's last hook
         return { effect: event.effect, approved: KeteSandboxActions.approved(metadata) }
       }),
     )
 
   test("a command the run's policy allows counts as approved (network in the sandbox)", () => {
     expect(run(["npm ci"])).toEqual({ effect: "allow", approved: true })
-    expect(run(["curl example.com"])).toEqual({ effect: "ask", approved: false })
+    // Not allowed by the policy: still "ask" for the late unattended hook to deny; no policy mark.
+    expect(run(["curl example.com"]).effect).toBe("ask")
   })
 })

@@ -242,7 +242,7 @@ export const Plugin = {
                     finalTimeout = yield* prepare(invocation, context)
                     invocation.env = yield* KeteToolEnv.forSession(toolEnv, context.sessionID, invocation.env) // kete_change
                     // kete_change start: sandboxed, asking first when it must run with network or outside the sandbox
-                    sandboxed = yield* sandbox.prepare(invocation, input.sandbox, ({ action, reason }) =>
+                    sandboxed = yield* sandbox.prepare(invocation, context.sessionID, input.sandbox, ({ action, reason }) =>
                       permission.assert({
                         action,
                         resources: [invocation.command],

@@ -18,8 +18,9 @@
 //     pasteboard and the keychain reach processes outside the sandbox (tested: `open -a` launched
 //     an app, AppleEvents reached Finder);
 //   - AppleEvents and launchd job creation;
-//   - outbound network when it isn't allowed, except loopback and Unix sockets in the workspace and
-//     temp directories (DNS goes through a Unix socket in /var/run and is blocked with it).
+//   - outbound network when it isn't allowed, except loopback (unless `loopback: false`) and Unix
+//     sockets in the workspace and the session's private temp directory — not the shared /tmp or
+//     TMPDIR, where other programs' sockets live (DNS goes through a socket in /var/run: blocked).
 
 export * as KeteSeatbelt from "./seatbelt.js"
 
@@ -56,6 +57,8 @@ const quote = (value: string) => `"${value.replace(/[\\"]/g, "\\$&")}"`
 // core.hooksPath, aliases, filters), hooks, the files that point git at another git directory, attributes.
 const GIT_INTERNALS = [
   "((modules|worktrees)/.+/)?(config|config\\.worktree|commondir|gitdir)$",
+  // Renaming these away and back would let a command edit the files above under another name.
+  "((modules|worktrees)/.+/)?(modules|worktrees)$",
   "((modules|worktrees)/.+/)?hooks(/|$)",
   "info/attributes$",
 ]
@@ -157,9 +160,9 @@ export function profile(policy: Policy): Profile {
   if (!policy.network) {
     lines.push(
       "",
-      "; Network: this machine only.",
+      policy.loopback ? "; Network: this machine only." : "; Network: none (Unix sockets in the workspace and private temp only).",
       "(deny network-outbound)",
-      '(allow network-outbound (remote ip "localhost:*"))',
+      ...(policy.loopback ? ['(allow network-outbound (remote ip "localhost:*"))'] : []),
     )
     if (policy.sockets.length > 0) lines.push(`(allow network-outbound ${subpaths(policy.sockets).join(" ")})`)
   }

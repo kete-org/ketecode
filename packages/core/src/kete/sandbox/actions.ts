@@ -8,9 +8,12 @@
 //   organization requires the sandbox.
 // - `sandbox_network`: a command the model asked to run with network access. Always asks.
 //
-// `approvedKey` is set on a shell request's metadata by the permission hooks when a person approved
-// the command — it asked and was allowed, every part matched a saved "Always allow", or an unattended
-// run's policy allowed it. Such commands may use the network (`kete.sandbox.network: "approved"`).
+// `approvedKey` is set on a shell request's metadata by the sandbox's approval hook, the last
+// `evaluate` hook of all (`KeteSandbox.ApprovalPlugin`), when the final decision is a person's: it is
+// "ask" (so the command runs only if a person allows it; nothing after that hook can change it), or
+// "allow" because an unattended run's policy allowed it (`policyKey`, set by kete/unattended.ts).
+// A saved "Always allow" grants running the command, not network. Approved commands may use the
+// network inside the sandbox (`kete.sandbox.network: "approved"`).
 
 export * as KeteSandboxActions from "./actions.js"
 
@@ -21,6 +24,7 @@ export const reasons = ["requested", "disabled", "unavailable"] as const
 export type Reason = (typeof reasons)[number]
 
 export const approvedKey = "kete.sandbox.approved"
+export const policyKey = "kete.sandbox.policyAllowed"
 
 /** Whether `action` is one of the sandbox's own permission actions. */
 export function isSandboxAction(action: string) {
@@ -35,6 +39,17 @@ export function automatic(action: string, metadata: Readonly<Record<string, unkn
 /** Records that a person approved the shell request carrying `metadata`. */
 export function markApproved(metadata: Record<string, unknown> | undefined) {
   if (metadata) metadata[approvedKey] = true
+}
+
+/** Records that an unattended run's policy allowed the shell request carrying `metadata`. */
+export function markPolicyAllowed(metadata: Record<string, unknown> | undefined) {
+  if (metadata) metadata[policyKey] = true
+}
+
+/** The approval hook's rule, given the final decision. */
+export function approve(event: { readonly action: string; readonly effect: string; readonly metadata?: Record<string, unknown> }) {
+  if (event.action !== "shell" || !event.metadata) return
+  if (event.effect === "ask" || (event.effect === "allow" && event.metadata[policyKey] === true)) markApproved(event.metadata)
 }
 
 export function approved(metadata: Readonly<Record<string, unknown>> | undefined) {

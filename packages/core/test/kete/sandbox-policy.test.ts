@@ -25,6 +25,8 @@ const outsideDir = process.platform === "darwin" ? "/Users/Shared" : path.join(i
 const settings = KeteSandboxSettings.resolve({ documents: [], globalDirectory: "/nonexistent", env: {} })
 
 let root: Awaited<ReturnType<typeof tmpdir>>
+let privateDir: string | undefined
+const privateTmp = async () => (privateDir ??= await fs.mkdtemp(path.join(base, "private-tmp-")))
 let base: string
 
 beforeAll(async () => {
@@ -83,6 +85,7 @@ async function sandboxed(
       shellOutput: path.join(kete, "data", "shell", "project"),
       settings,
       network: input.network ?? false,
+      privateTmp: await privateTmp(),
       env: { TMPDIR: process.env.TMPDIR },
     },
     KeteSandboxResolve.shared,
@@ -122,6 +125,9 @@ describe.skipIf(!probe.available)("sandbox policy, run for real", () => {
     for (const command of [
       "echo x >> .git/config",
       "echo x > .git/hooks/post-checkout",
+      "echo /tmp/evil > .git/commondir",
+      "echo x > .git/config.worktree",
+      "mkdir -p .git/info && echo '* filter=x' > .git/info/attributes",
       "mv .git .git2",
       "echo {} > kete.jsonc",
       "echo {} > kete.json",
@@ -216,6 +222,29 @@ describe.skipIf(!probe.available)("sandbox policy, run for real", () => {
     expect(config.exit).not.toBe(0)
     const sibling = await sandboxed(inside, `echo x > "${env.kete}/data/worktree/abc/other.txt"`)
     expect(sibling.exit).not.toBe(0)
+  })
+
+  test("git still works with the placeholders, and they are gone afterwards", async () => {
+    const env = await setup("git-placeholders")
+    const result = await sandboxed(env, "git status --porcelain && git rev-parse --git-common-dir && git worktree list && echo ok")
+    expect(result.out, result.out).toContain("ok")
+    for (const name of ["commondir", "gitdir", "config.worktree"]) expect(await exists(path.join(env.workspace, ".git", name)), name).toBe(false)
+  })
+
+  test("renaming a nested repository's parent doesn't free its git config", async () => {
+    const env = await setup("nested")
+    const nested = path.join(env.workspace, "sub", "inner")
+    await fs.mkdir(nested, { recursive: true })
+    git(nested, "init", "-q")
+    const moved = await sandboxed(env, "mv sub sub2 && echo moved")
+    // macOS: the move works and the config is still protected; Linux protects only the workspace's own .git.
+    if (probe.available && probe.mechanism === "seatbelt") {
+      expect(moved.out).toContain("moved")
+      const config = await sandboxed(env, "echo x >> sub2/inner/.git/config")
+      expect(config.exit).not.toBe(0)
+      const rename = await sandboxed(env, "mv sub2/inner/.git/worktrees x 2>/dev/null; mkdir -p sub2/inner/.git/worktrees && echo made")
+      expect(rename.out).not.toContain("made")
+    }
   })
 
   test("a workspace name can't inject rules into the profile", async () => {
