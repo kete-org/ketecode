@@ -1,0 +1,17 @@
+apiVersion: v2
+name: kete-runner
+description: >-
+  Kete Code enterprise runner for Kubernetes: the kete-job-host controller (job-host-v2) that runs
+  each unattended job in its own VM-isolated pod. Piece P1: controller, RBAC, admission policy,
+  NetworkPolicies; the VM-isolated pod driver arrives in P2.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/kete-org/ketecode
+sources:
+  - https://github.com/kete-org/ketecode/tree/main/packages/kete-runner-chart
+  - https://github.com/kete-org/ketecode/tree/main/packages/kete-job-host
+keywords: [kete, ai-coding-agent, runner, kata]
+annotations:
+  kete.dev/contract: job-host-v2

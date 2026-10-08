@@ -54,6 +54,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | egress | the Go egress proxy and nftables rules for cloud jobs: per-user ports, per-phase host allowlists, per-VM CA, registry rules, capped request log |
 | job-entrypoint | the Go root entrypoint of a cloud job: machine config env, setup, firewall and proxy restarts, claim, clone, `kete job run`, outcomes, credentials, safe bundle, uploads |
 | job-host | the self-hosted job host agent `kete-job-host` (ADR 0023, P2 + P4 + P5 agent side): enroll, signed poll/report, desired state, HPKE-sealed configs, deadline killer, reconcile; the `firecracker` driver, host nftables table, image fetch + cosign verification, guest kernel, packaging, KVM tests; the `dedicated` driver (reaper, namespaces, loop overlay root), one job per generation, R1 boot enrollment, R2 interface; contract `docs/platform/job-host-v1.md` and shared test vectors |
+| kubernetes-runner | the enterprise Kubernetes runner (ADR 0011, P1): `kete-job-host kubernetes` on job-host-v2, Lease, state and keys in Secrets, proxy/CA, the pod driver with the boot-ID Secret, the test-only placeholder driver, the `kete-runner` Helm chart (RBAC, admission policy, NetworkPolicies), kind e2e |
 | job-image | The cloud job image: Dockerfile, build and e2e scripts, the `kete-job-image.yml` workflow, the release `image` job (GHCR push by digest) |
 | server-sdk | local server guard, isolated server tests, protocol and client generation |
 | ui-branding | web UI and TUI branding and themes |

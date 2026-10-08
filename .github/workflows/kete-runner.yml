@@ -1,0 +1,176 @@
+# Kete-owned. The enterprise Kubernetes runner (packages/kete-runner-chart + the `kubernetes` mode
+# of packages/kete-job-host; enterprise runtime piece P1). Path-filtered to protect the shared CI
+# minutes budget (see kete-build.yml). Two ubuntu-latest jobs:
+#   chart  helm lint, helm template + kubeconform (Kubernetes 1.30 and 1.32), values refusals, and
+#          the controller's Go tests built with the test-only placeholder pod driver
+#          (-tags kete_testdriver; the module's other tests run in kete-job-host.yml). ~2 min.
+#   e2e    a kind cluster with a local registry: the chart installed against the fake platform
+#          (job-host-v2 over TLS, its CA as the chart's CA bundle, reached through a CONNECT proxy),
+#          enrollment, poll, placeholder machines started and stopped, exit, repository_unknown,
+#          orphan kill across a controller restart, the deadline kill (deadline + 5 min grace), RBAC
+#          and the admission policy refusing shared-kernel pods (ci/e2e.sh). ~12 min.
+name: kete-runner
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/kete-runner-chart/**"
+      - "packages/kete-job-host/**"
+      - ".github/workflows/kete-runner.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/kete-runner-chart/**"
+      - "packages/kete-job-host/**"
+      - ".github/workflows/kete-runner.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+# Every tool and image is pinned (versions verified by Go's checksum database, images by digest).
+env:
+  KIND_VERSION: v0.27.0
+  KIND_NODE_IMAGE: kindest/node:v1.32.2@sha256:142f543559cc55d64e1ab9341df08e5ced84bd2e893736da8f51320f26f5950b
+  KUBECONFORM_VERSION: v0.6.7
+  HELM_VERSION: v3.17.3
+  REGISTRY_IMAGE: registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+  BUSYBOX_A: busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+  BUSYBOX_B: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/kete-job-host/go.mod
+          cache-dependency-path: packages/kete-job-host/go.sum
+
+      - name: Setup Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform (Go module, checksum-verified)
+        run: go install "github.com/yannh/kubeconform/cmd/kubeconform@${KUBECONFORM_VERSION}"
+
+      - name: helm lint and kubeconform
+        working-directory: packages/kete-runner-chart
+        run: |
+          helm version
+          helm lint . --strict -f ci/lint-values.yaml
+          for v in 1.30.0 1.32.0; do
+            helm template kete-runner . -n kete-system -f ci/lint-values.yaml \
+              | "$(go env GOPATH)/bin/kubeconform" -strict -summary -kubernetes-version "$v"
+          done
+
+      - name: Values the chart must refuse
+        working-directory: packages/kete-runner-chart
+        run: |
+          refuse() {
+            if helm template kete-runner . -n kete-system -f ci/lint-values.yaml "$@" >/dev/null 2>&1; then
+              echo "accepted: $*"; exit 1
+            fi
+          }
+          refuse --set image.digest=latest
+          refuse --set-json 'jobs.runtimeClassNames=["runc"]'
+          refuse --set-json 'jobs.images=["registry.corp.example/kete/job:latest"]'
+          refuse --set jobs.slots=129
+          refuse --set boundary.summary=everything
+          refuse --set platform.url=http://portal.kete.example
+          refuse --set jobs.namespace=kete-system
+          refuse --set-json 'networkPolicy.apiServer.cidrs=[]'
+          refuse --set proxy.url=http://user:pw@proxy.corp.example:3128
+          refuse --set admissionPolicy.enabled=false
+          refuse --set-json 'jobs.egress.cidrs=["0.0.0.0/0"]'
+          refuse --set-json 'jobs.egress.cidrs=["::/0"]'
+          refuse --set-json 'jobs.egress.cidrs=["169.254.169.254/32"]'
+          refuse --set-json 'jobs.egress.cidrs=["10.0.0.0/4"]'
+          refuse --set "controller.serviceAccountName=a'b"
+          refuse --set "image.repository=a'b"
+          refuse --set-json 'networkPolicy.platform.cidrs=["not-a-cidr"]'
+          refuse --set caBundle.existingSecret=A_B
+
+      - name: Controller tests (placeholder pod driver build)
+        working-directory: packages/kete-job-host
+        run: |
+          go vet -tags kete_testdriver ./...
+          go test -race -tags kete_testdriver ./internal/kube/... ./internal/runner/... ./internal/driver/kubernetes/...
+          # The release build refuses the placeholder driver.
+          go test -race ./internal/runner/...
+          # The config package's file tests need root (kete-job-host.yml runs them); these don't.
+          go test -race ./internal/config/... -run Kubernetes
+
+  e2e:
+    needs: chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/kete-job-host/go.mod
+          cache-dependency-path: packages/kete-job-host/go.sum
+
+      - name: Build the test binaries
+        working-directory: packages/kete-job-host
+        run: |
+          CGO_ENABLED=0 go build -trimpath -tags kete_testdriver -o ../kete-runner-chart/ci/kete-job-host ./cmd/kete-job-host
+          CGO_ENABLED=0 go build -trimpath -o ../kete-runner-chart/ci/kete-fake-platform ./internal/fakeplatform/cmd/kete-fake-platform
+
+      - name: Setup Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kind (Go module, checksum-verified)
+        run: go install "sigs.k8s.io/kind@${KIND_VERSION}"
+
+      - name: Local registry and kind cluster
+        run: |
+          docker run -d --restart=always -p 127.0.0.1:5001:5000 --name kind-registry "$REGISTRY_IMAGE"
+          "$(go env GOPATH)/bin/kind" create cluster --image "$KIND_NODE_IMAGE" --config packages/kete-runner-chart/ci/kind.yaml --wait 180s
+          for node in $("$(go env GOPATH)/bin/kind" get nodes); do
+            docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
+            printf '[host."http://kind-registry:5000"]\n' | docker exec -i "$node" cp /dev/stdin /etc/containerd/certs.d/localhost:5001/hosts.toml
+          done
+          docker network connect kind kind-registry
+          kubectl version
+          kubectl get nodes -o wide
+
+      - name: Images by digest
+        run: |
+          digest() { docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$1" | grep '^localhost:5001/' | head -1; }
+          docker build -t localhost:5001/kete-runner:e2e packages/kete-runner-chart/ci
+          docker push -q localhost:5001/kete-runner:e2e
+          for v in "a=$BUSYBOX_A" "b=$BUSYBOX_B"; do
+            docker pull -q "${v#*=}"
+            docker tag "${v#*=}" "localhost:5001/busybox-${v%%=*}:e2e"
+            docker push -q "localhost:5001/busybox-${v%%=*}:e2e"
+          done
+          {
+            echo "RUNNER_IMAGE=$(digest localhost:5001/kete-runner:e2e)"
+            echo "IMAGE_A=$(digest localhost:5001/busybox-a:e2e)"
+            echo "IMAGE_B=$(digest localhost:5001/busybox-b:e2e)"
+          } | tee -a "$GITHUB_ENV"
+
+      - name: e2e
+        run: packages/kete-runner-chart/ci/e2e.sh

@@ -76,6 +76,27 @@ type Options struct {
 	IsolationEvery time.Duration
 	// DriverTimeouts bound each driver call.
 	DriverTimeouts DriverTimeouts
+	// Store persists the state (nil: the state file under Config.StateDir).
+	Store state.Store
+	// V2 runs the agent under job-host-v2 (the Kubernetes runner, ADR 0011): v2 reports and
+	// responses, the v2 seal label, the run machine's repository rules. nil: job-host-v1.
+	V2 *V2
+}
+
+// V2 is what a job-host-v2 agent adds to its reports and assignment checks
+// (`docs/platform/job-host-v2.md` "Poll").
+type V2 struct {
+	// Kubernetes is the API server's version (versions.kubernetes, kubernetes driver only).
+	Kubernetes string
+	// RuntimeClasses are the VM-isolated RuntimeClasses the host allows (kubernetes driver only).
+	RuntimeClasses []string
+	// Repositories are the runtime repository names the host serves. A run machine naming another
+	// fails repository_unknown before anything starts.
+	Repositories []string
+	// Advertise reports Repositories (else the report's repositories is null).
+	Advertise bool
+	// Boundary is the host's effective data boundary.
+	Boundary contract.DataBoundary
 }
 
 // ErrHalted means the agent stopped polling and holds no machine: the operator must act
@@ -84,10 +105,10 @@ var ErrHalted = errors.New("agent halted")
 
 // Agent is the host agent.
 type Agent struct {
-	o         Options
-	t         DriverTimeouts
-	allow     image.Allowlist
-	statePath string
+	o     Options
+	t     DriverTimeouts
+	allow image.Allowlist
+	store state.Store
 
 	mu         sync.Mutex
 	idle       *sync.Cond // signalled when active drops to 0
@@ -135,8 +156,16 @@ func New(o Options) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := state.Path(o.Config.StateDir)
-	st, err := state.Load(path)
+	store := o.Store
+	if store == nil {
+		store = state.FileStore{Path: state.Path(o.Config.StateDir)}
+	}
+	if o.V2 != nil {
+		if err := o.V2.Boundary.Validate(); err != nil {
+			return nil, fmt.Errorf("agent: %w", err)
+		}
+	}
+	st, err := store.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +176,7 @@ func New(o Options) (*Agent, error) {
 		return nil, errors.New("agent: the stored keys are not the keys this host enrolled with")
 	}
 	a := &Agent{
-		o: o, t: o.DriverTimeouts.withDefaults(), allow: allow, statePath: path, st: st, phase: map[string]*phase.Buffer{},
+		o: o, t: o.DriverTimeouts.withDefaults(), allow: allow, store: store, st: st, phase: map[string]*phase.Buffer{},
 		busy: map[string]bool{}, again: map[string]bool{}, pending: map[string]*driver.Spec{}, cleanup: map[string]bool{},
 		prep: map[string]*prepJob{}, cancels: map[string]context.CancelFunc{},
 	}
@@ -243,7 +272,11 @@ func (a *Agent) startsBlocked() string {
 		return contract.BlockedGenerationSpent
 	}
 	if b, ok := a.o.Driver.(driver.Blocker); ok {
-		if r := b.StartsBlocked(); contract.ValidStartsBlocked(r) {
+		valid := contract.ValidStartsBlocked
+		if a.o.V2 != nil {
+			valid = contract.ValidStartsBlockedV2
+		}
+		if r := b.StartsBlocked(); valid(r) {
 			return r
 		}
 	}
@@ -251,7 +284,7 @@ func (a *Agent) startsBlocked() string {
 }
 
 func (a *Agent) save() {
-	if err := state.Save(a.statePath, a.st); err != nil {
+	if err := a.store.Save(a.st); err != nil {
 		if !a.saveFailed {
 			a.o.Log.Error("state_save_failed", "error", err.Error())
 		}
@@ -519,12 +552,12 @@ func (a *Agent) step(ctx context.Context, id string) {
 
 // prepJob is an accepted assignment whose slower checks run in the machine's worker.
 type prepJob struct {
-	rm       contract.RunMachine
+	rm       contract.RunMachineV2
 	deadline time.Time
 }
 
 // checkCheap runs the assignment checks that need no I/O, in the contract's order (a.mu held).
-func (a *Agent) checkCheap(rm contract.RunMachine, deadline time.Time) string {
+func (a *Agent) checkCheap(rm contract.RunMachineV2, deadline time.Time) string {
 	switch {
 	case !a.o.Now().Before(deadline):
 		return contract.ReasonDeadlinePassed
@@ -535,18 +568,47 @@ func (a *Agent) checkCheap(rm contract.RunMachine, deadline time.Time) string {
 	case !a.allow.Allowed(rm.Image):
 		return contract.ReasonImageNotAllowed
 	}
+	if a.o.V2 != nil {
+		return a.checkV2(rm)
+	}
+	return ""
+}
+
+// checkV2 applies job-host-v2's run machine rules after v1's (a.mu held; no I/O): the machine's
+// own shape (JobHostV2RunMachine; JobHostV2KubernetesRunMachine on a kubernetes host: a repository
+// is required) → config_invalid; a repository outside the host's registry → repository_unknown.
+// This build has no publisher (P3 of the enterprise runtime): a machine asking for a push is
+// refused config_invalid rather than run and silently never published.
+func (a *Agent) checkV2(rm contract.RunMachineV2) string {
+	check := rm.Validate
+	if a.o.Config.Driver == contract.DriverKubernetes {
+		check = rm.ValidateKubernetes
+	}
+	if check() != nil {
+		return contract.ReasonConfigInvalid
+	}
+	if rm.Repository != nil && !slices.Contains(a.o.V2.Repositories, rm.Repository.Name) {
+		return contract.ReasonRepositoryUnknown
+	}
+	if rm.Publish != nil {
+		return contract.ReasonConfigInvalid
+	}
 	return ""
 }
 
 // checkSealed opens and checks the sealed configuration (a.mu held; no I/O) and returns the failed
 // reason, or "" and the configuration's canonical JSON (the caller clears it).
-func (a *Agent) checkSealed(rm contract.RunMachine) (string, []byte) {
+func (a *Agent) checkSealed(rm contract.RunMachineV2) (string, []byte) {
 	if rm.Config == nil {
 		return contract.ReasonConfigInvalid, nil
 	}
 	sk := a.o.Keys.SealingPrivate()
 	defer clear(sk)
-	pt, err := seal.Open(sk, seal.Binding{HostID: a.st.HostID, MachineID: rm.MachineID, JobID: rm.JobID, Generation: a.st.Generation}, *rm.Config)
+	open, validate := seal.Open, seal.MachineConfig.Validate
+	if a.o.V2 != nil {
+		open, validate = seal.OpenV2, seal.MachineConfig.ValidateV2
+	}
+	pt, err := open(sk, seal.Binding{HostID: a.st.HostID, MachineID: rm.MachineID, JobID: rm.JobID, Generation: a.st.Generation}, *rm.Config)
 	if err != nil {
 		return contract.ReasonConfigUndecryptable, nil
 	}
@@ -559,7 +621,7 @@ func (a *Agent) checkSealed(rm contract.RunMachine) (string, []byte) {
 	if cfg.PlatformURL != a.o.Config.Origin {
 		return contract.ReasonPlatformMismatch, nil
 	}
-	if cfg.Validate() != nil {
+	if validate(cfg) != nil {
 		return contract.ReasonConfigInvalid, nil
 	}
 	canon, err := cfg.Canonical()
@@ -695,7 +757,7 @@ func (a *Agent) prepare(ctx context.Context, id string) {
 	}
 }
 
-func (a *Agent) assign(ctx context.Context, rm contract.RunMachine) {
+func (a *Agent) assign(ctx context.Context, rm contract.RunMachineV2) {
 	now := a.o.Now().UTC()
 	deadline, _ := time.Parse(time.RFC3339Nano, rm.Deadline) // validated by PollResponse.Validate
 	a.st.Machines = append(a.st.Machines, state.Machine{
@@ -717,13 +779,13 @@ func (a *Agent) assign(ctx context.Context, rm contract.RunMachine) {
 
 // apply applies a fresh, accepted desired state. sentTerminal holds the machine ids the
 // answered report carried in a terminal state (tombstones that may now be forgotten).
-func (a *Agent) apply(ctx context.Context, d contract.DesiredState, sentTerminal map[string]bool) {
+func (a *Agent) apply(ctx context.Context, d desiredState, sentTerminal map[string]bool) {
 	run := map[string]bool{}
-	for _, rm := range *d.Run {
+	for _, rm := range d.Run {
 		run[rm.MachineID] = true
 	}
 	destroy := map[string]bool{}
-	for _, id := range *d.Destroy {
+	for _, id := range d.Destroy {
 		destroy[id] = true
 	}
 	// ADR 0023 rule 12: every held machine the desired state doesn't run is destroyed.
@@ -732,7 +794,7 @@ func (a *Agent) apply(ctx context.Context, d contract.DesiredState, sentTerminal
 			a.requestStop(ctx, id, contract.ReasonDesired)
 		}
 	}
-	for _, rm := range *d.Run {
+	for _, rm := range d.Run {
 		if a.find(rm.MachineID) != nil || destroy[rm.MachineID] {
 			continue // held, or a tombstone: a machine id is never started twice
 		}
@@ -747,14 +809,15 @@ func (a *Agent) apply(ctx context.Context, d contract.DesiredState, sentTerminal
 		kept = append(kept, m)
 	}
 	a.st.Machines = kept
-	rev := *d.Revision
+	rev := d.Revision
 	a.st.AppliedRevision = &rev
 	a.save()
 }
 
 // ---------------------------------------------------------------- report and poll
 
-func (a *Agent) buildReport() (contract.Report, map[string]bool, map[string]bool) {
+// buildReport builds the report in v2's shape (a superset of v1's; poll writes v1's for a v1 host).
+func (a *Agent) buildReport() (contract.ReportV2, map[string]bool, map[string]bool) {
 	ms := slices.Clone(a.st.Machines)
 	sort.SliceStable(ms, func(i, j int) bool {
 		ti, tj := contract.Terminal(ms[i].State), contract.Terminal(ms[j].State)
@@ -763,20 +826,39 @@ func (a *Agent) buildReport() (contract.Report, map[string]bool, map[string]bool
 		}
 		return ms[i].AcceptedAt.Before(ms[j].AcceptedAt)
 	})
-	if len(ms) > contract.ReportMaxMachines {
-		ms = ms[:contract.ReportMaxMachines]
+	limit := contract.ReportMaxMachines
+	if a.o.V2 != nil {
+		limit = contract.V2ReportMaxMachines
+	}
+	if len(ms) > limit {
+		ms = ms[:limit]
 	}
 	sent, sentTerminal := map[string]bool{}, map[string]bool{}
-	r := contract.Report{
-		Generation: a.st.Generation, Versions: a.o.Versions,
-		Slots:           contract.Slots{Total: a.o.Config.Slots, Free: a.freeSlots()},
-		AppliedRevision: a.st.AppliedRevision, Machines: []contract.ObservedMachine{},
+	v := a.o.Versions
+	r := contract.ReportV2{
+		Version: contract.V2Version, Generation: a.st.Generation,
+		Versions:        contract.VersionsV2{Agent: v.Agent, Firecracker: v.Firecracker, GuestKernel: v.GuestKernel, HostKernel: v.HostKernel},
+		Slots:           contract.SlotsV2{Total: a.o.Config.Slots, Free: a.freeSlots()},
+		AppliedRevision: a.st.AppliedRevision, Machines: []contract.ObservedMachineV2{},
+	}
+	if v2 := a.o.V2; v2 != nil {
+		r.Versions.Kubernetes = v2.Kubernetes
+		r.RuntimeClasses = slices.Clone(v2.RuntimeClasses)
+		r.Images = slices.Clone(a.o.Config.ImageAllowlist)
+		if v2.Advertise {
+			repos := slices.Clone(v2.Repositories)
+			if repos == nil {
+				repos = []string{}
+			}
+			r.Repositories = &repos
+		}
+		r.Boundary = v2.Boundary
 	}
 	if b := a.startsBlocked(); b != "" {
 		r.StartsBlocked = &b
 	}
 	for _, m := range ms {
-		om := contract.ObservedMachine{MachineID: m.MachineID, State: m.State, Since: contract.FormatTime(m.Since), Reason: m.Reason}
+		om := contract.ObservedMachineV2{MachineID: m.MachineID, State: m.State, Since: contract.FormatTime(m.Since), Reason: m.Reason}
 		if m.JobID != "" {
 			jid := m.JobID
 			om.JobID = &jid
@@ -871,10 +953,7 @@ func (a *Agent) poll(ctx context.Context) Result {
 	report, sent, sentTerminal := a.buildReport()
 	hostID, revision := a.st.HostID, a.st.AppliedRevision
 	a.mu.Unlock()
-	body, err := json.Marshal(report)
-	if err == nil {
-		err = report.Validate()
-	}
+	body, err := a.encodeReport(report)
 	if err != nil {
 		a.mu.Lock()
 		a.settlePhase(sent, false)
@@ -889,16 +968,16 @@ func (a *Agent) poll(ctx context.Context) Result {
 		a.mu.Unlock()
 		return a.handleError(ctx, err)
 	}
-	var pr contract.PollResponse
+	pr, perr := a.decodeResponse(resp.Body)
 	why := ""
 	switch {
-	case json.Unmarshal(resp.Body, &pr) != nil || pr.Validate() != nil:
+	case perr != nil:
 		why = "invalid"
 	case pr.InReplyTo != resp.Nonce:
 		why = "in_reply_to"
 	case pr.HostID != hostID:
 		why = "host_id"
-	case revision != nil && *pr.Desired.Revision < *revision:
+	case revision != nil && pr.Desired.Revision < *revision:
 		why = "stale_revision"
 	}
 	a.mu.Lock()
@@ -911,7 +990,7 @@ func (a *Agent) poll(ctx context.Context) Result {
 	a.settlePhase(sent, true)
 	a.backoff.Reset()
 	a.apply(ctx, pr.Desired, sentTerminal)
-	a.o.Log.Debug("poll_applied", "revision", *pr.Desired.Revision, "status", pr.Status, "request_id", resp.RequestID)
+	a.o.Log.Debug("poll_applied", "revision", pr.Desired.Revision, "status", pr.Status, "request_id", resp.RequestID)
 	return Result{Outcome: OutcomeApplied, Delay: a.o.Interval(pr.NextPollAfter)}
 }
 
@@ -931,11 +1010,14 @@ func (a *Agent) handleError(ctx context.Context, err error) Result {
 	case contract.ErrHostDisabled:
 		a.destroyAll(ctx, contract.ReasonHostDisabled)
 		res.Delay = a.o.Interval(60)
-	case contract.ErrHostRevoked, contract.ErrGenerationMismatch:
+	case contract.ErrHostRevoked, contract.ErrGenerationMismatch, contract.ErrContractMismatch:
 		a.destroyAll(ctx, contract.ReasonHostDisabled)
 		a.st.Halted = state.HaltRevoked
-		if ae.Reason == contract.ErrGenerationMismatch {
+		switch ae.Reason {
+		case contract.ErrGenerationMismatch:
 			a.st.Halted = state.HaltGenerationMismatch
+		case contract.ErrContractMismatch:
+			a.st.Halted = state.HaltContractMismatch
 		}
 		a.save()
 		a.o.Log.Error("halted", "reason", ae.Reason, "action", "the host must be re-enrolled (kete-job-host enroll --replace)")
@@ -1159,4 +1241,82 @@ func sleep(ctx context.Context, d time.Duration) error {
 	case <-t.C:
 		return nil
 	}
+}
+
+// ---------------------------------------------------------------- wire (job-host-v1 or v2)
+
+// desiredState is a fresh desired state in v2's shape (v1's run machines carry no repository or
+// publish).
+type desiredState struct {
+	Revision int64
+	Run      []contract.RunMachineV2
+	Destroy  []string
+}
+
+// pollResponse is a validated poll response, either contract.
+type pollResponse struct {
+	InReplyTo     string
+	HostID        string
+	Status        string
+	NextPollAfter int
+	Desired       desiredState
+}
+
+// encodeReport validates the report under the agent's contract and marshals it: v2 as built, v1
+// as v1's Report (the same fields, no version and no v2 additions).
+func (a *Agent) encodeReport(r contract.ReportV2) ([]byte, error) {
+	if a.o.V2 != nil {
+		if err := r.Validate(); err != nil {
+			return nil, err
+		}
+		return json.Marshal(r)
+	}
+	v1 := contract.Report{
+		Generation: r.Generation,
+		Versions:   contract.Versions{Agent: r.Versions.Agent, Firecracker: r.Versions.Firecracker, GuestKernel: r.Versions.GuestKernel, HostKernel: r.Versions.HostKernel},
+		Slots:      contract.Slots{Total: r.Slots.Total, Free: r.Slots.Free}, StartsBlocked: r.StartsBlocked,
+		AppliedRevision: r.AppliedRevision, Machines: make([]contract.ObservedMachine, 0, len(r.Machines)),
+	}
+	for _, m := range r.Machines {
+		v1.Machines = append(v1.Machines, contract.ObservedMachine{
+			MachineID: m.MachineID, JobID: m.JobID, State: m.State, Since: m.Since, Reason: m.Reason,
+			PhaseLines: m.PhaseLines, PhaseLinesDropped: m.PhaseLinesDropped,
+		})
+	}
+	if err := v1.Validate(); err != nil {
+		return nil, err
+	}
+	return json.Marshal(v1)
+}
+
+// decodeResponse decodes and validates a poll response under the agent's contract. A v2 response
+// without `version: 2` is refused (discarded, like a wrong in_reply_to).
+func (a *Agent) decodeResponse(body []byte) (pollResponse, error) {
+	if a.o.V2 != nil {
+		p, err := contract.ParsePollResponseV2(body)
+		if err != nil {
+			return pollResponse{}, err
+		}
+		return pollResponse{
+			InReplyTo: p.InReplyTo, HostID: p.HostID, Status: p.Status, NextPollAfter: p.NextPollAfter,
+			Desired: desiredState{Revision: p.Desired.Revision, Run: p.Desired.Run, Destroy: p.Desired.Destroy},
+		}, nil
+	}
+	var p contract.PollResponse
+	if err := json.Unmarshal(body, &p); err != nil {
+		return pollResponse{}, err
+	}
+	if err := p.Validate(); err != nil {
+		return pollResponse{}, err
+	}
+	run := make([]contract.RunMachineV2, 0, len(*p.Desired.Run))
+	for _, m := range *p.Desired.Run {
+		run = append(run, contract.RunMachineV2{
+			MachineID: m.MachineID, JobID: m.JobID, Image: m.Image, Deadline: m.Deadline, Resources: m.Resources, Config: m.Config,
+		})
+	}
+	return pollResponse{
+		InReplyTo: p.InReplyTo, HostID: p.HostID, Status: p.Status, NextPollAfter: p.NextPollAfter,
+		Desired: desiredState{Revision: *p.Desired.Revision, Run: run, Destroy: *p.Desired.Destroy},
+	}, nil
 }

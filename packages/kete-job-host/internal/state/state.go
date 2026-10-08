@@ -29,6 +29,9 @@ const maxFile = 1 << 20
 const (
 	HaltRevoked            = "host_revoked"
 	HaltGenerationMismatch = "generation_mismatch"
+	// HaltContractMismatch (job-host-v2): the platform holds this host under another contract
+	// version; it must be enrolled again under v2.
+	HaltContractMismatch = "contract_mismatch"
 )
 
 // Machine is one machine record.
@@ -79,7 +82,7 @@ func (s State) Validate() error {
 	if s.GenerationSpentBy != "" && (!s.Enrolled() || !contract.ValidUUID(s.GenerationSpentBy)) {
 		return errors.New("state: invalid generation_spent_by")
 	}
-	if s.Halted != "" && s.Halted != HaltRevoked && s.Halted != HaltGenerationMismatch {
+	if s.Halted != "" && s.Halted != HaltRevoked && s.Halted != HaltGenerationMismatch && s.Halted != HaltContractMismatch {
 		return errors.New("state: unknown halt")
 	}
 	seen := map[string]bool{}
@@ -90,7 +93,9 @@ func (s State) Validate() error {
 		seen[m.MachineID] = true
 		terminal := contract.Terminal(m.State)
 		switch {
-		case terminal && m.State == contract.StateFailed && !contract.FailedReason(m.Reason),
+		// v2's failed reasons are a superset of v1's; the report's own validation keeps a v1 host
+		// to v1's (the v1 agent never produces the others).
+		case terminal && m.State == contract.StateFailed && !contract.FailedReasonV2(m.Reason),
 			terminal && m.State == contract.StateDestroyed && !contract.DestroyedReason(m.Reason),
 			!terminal && m.Reason != "",
 			m.State == contract.StateStopping && !contract.DestroyedReason(m.StopReason):
@@ -102,6 +107,23 @@ func (s State) Validate() error {
 	return nil
 }
 
+// Store persists the state: the root-only file on a VM host (FileStore), a Secret for the
+// Kubernetes runner (internal/kube). Save is called with the agent's lock held, so it must not
+// block on the network (the Kubernetes store writes behind and reports its last failure).
+type Store interface {
+	Load() (State, error)
+	Save(State) error
+}
+
+// FileStore is the state file at Path.
+type FileStore struct{ Path string }
+
+// Load implements Store.
+func (f FileStore) Load() (State, error) { return Load(f.Path) }
+
+// Save implements Store.
+func (f FileStore) Save(s State) error { return Save(f.Path, s) }
+
 // Load reads the state file; a missing file is an empty, unenrolled state.
 func Load(path string) (State, error) {
 	data, err := fsutil.ReadPrivate(path, maxFile)
@@ -110,6 +132,17 @@ func Load(path string) (State, error) {
 	}
 	if err != nil {
 		return State{}, err
+	}
+	return Decode(data)
+}
+
+// MaxBytes bounds a stored state document.
+const MaxBytes = maxFile
+
+// Decode parses and validates a state document (strict, no trailing data).
+func Decode(data []byte) (State, error) {
+	if len(data) > maxFile {
+		return State{}, errors.New("state: too large")
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -131,15 +164,27 @@ func Load(path string) (State, error) {
 
 // Save writes the state file atomically (0600) after validating it.
 func Save(path string, s State) error {
+	data, err := Encode(s)
+	if err != nil {
+		return err
+	}
+	return fsutil.WritePrivate(path, data)
+}
+
+// Encode validates s and returns its stored form.
+func Encode(s State) ([]byte, error) {
 	if s.Machines == nil {
 		s.Machines = []Machine{}
 	}
 	if err := s.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return fsutil.WritePrivate(path, append(data, '\n'))
+	if len(data) >= maxFile {
+		return nil, errors.New("state: too large")
+	}
+	return append(data, '\n'), nil
 }

@@ -1,0 +1,27 @@
+# Values for `helm lint` / `helm template` + kubeconform in CI: a full production-shaped install
+# (placeholder digests; nothing here is a real secret or endpoint).
+platform:
+  url: https://portal.kete.example
+image:
+  repository: registry.corp.example/kete/runner
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000001
+enrollment:
+  tokenSecret: kete-runner-enrollment
+proxy:
+  url: http://proxy.corp.example:3128
+caBundle:
+  existingSecret: corp-ca
+jobs:
+  runtimeClassNames: [kata, kata-qemu]
+  images:
+    - registry.corp.example/kete/job@sha256:0000000000000000000000000000000000000000000000000000000000000002
+  egress:
+    cidrs: [10.20.0.10/32]
+repositories: ["gitlab:payments/api"]
+podDriver: placeholder
+networkPolicy:
+  apiServer:
+    cidrs: [10.0.0.1/32]
+  platform:
+    cidrs: [10.20.0.10/32]
+    ports: [3128]

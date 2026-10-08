@@ -4,6 +4,7 @@
 //
 //	kete-job-host enroll [--config PATH] [--replace] [--token-file PATH]   token on stdin or in the file
 //	kete-job-host run [--config PATH] [--debug]
+//	kete-job-host kubernetes [--config PATH] [--debug]                    the Kubernetes runner (non-root pod)
 //	kete-job-host doctor [--config PATH]
 //	kete-job-host fingerprint [--config PATH]
 //	kete-job-host version
@@ -32,6 +33,8 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/fsutil"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/image"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/keys"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/kube"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/runner"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/sig"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/state"
 )
@@ -39,11 +42,13 @@ import (
 // version is set at build time (-ldflags "-X main.version=…").
 var version = "0.0.0-dev"
 
-const usage = `usage: kete-job-host <enroll|run|doctor|fingerprint|version> [--config PATH]
+const usage = `usage: kete-job-host <enroll|run|kubernetes|doctor|fingerprint|version> [--config PATH]
   enroll       generate the host keys and enroll with the token read from stdin
                (--token-file PATH: from a root-only file, removed once the platform answered;
                a dedicated host's boot enrollment after a provider rebuild)
   run          run the agent (the systemd service)
+  kubernetes   run the Kubernetes runner's controller (driver kubernetes; a non-root pod of the
+               kete-runner Helm chart: Lease, keys and state in Secrets, enrolls from a token Secret)
   doctor       check the configuration, keys, state and host
   fingerprint  print the host key fingerprint
   version      print the agent version`
@@ -93,6 +98,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdEnroll(cfg, *replace, *tokenFile, stdin, stdout, stderr, log)
 	case "run":
 		return cmdRun(cfg, stderr, log)
+	case "kubernetes":
+		return cmdKubernetes(cfg, stderr, log)
 	case "doctor":
 		return cmdDoctor(cfg, stdout)
 	case "fingerprint":
@@ -161,6 +168,49 @@ func cmdEnroll(cfg config.Config, replace bool, tokenFile string, stdin io.Reade
 		return 1
 	}
 	return 0
+}
+
+// cmdKubernetes runs the Kubernetes runner (internal/runner). Unlike `run` it must not be root and
+// never runs the VM host guard: it is a pod by design (internal/runner package comment).
+func cmdKubernetes(cfg config.Config, stderr io.Writer, log *slog.Logger) int {
+	if cfg.Driver != contract.DriverKubernetes {
+		fmt.Fprintln(stderr, "kete-job-host: `kubernetes` needs a configuration with driver kubernetes")
+		return 2
+	}
+	if os.Geteuid() == 0 {
+		fmt.Fprintln(stderr, "kete-job-host: the Kubernetes runner refuses to run as root (Pod Security restricted)")
+		return 2
+	}
+	kc, err := kube.InCluster()
+	if err != nil {
+		fmt.Fprintf(stderr, "kete-job-host: %v\n", err)
+		return 2
+	}
+	hk, err := hostKernel()
+	if err != nil {
+		fmt.Fprintf(stderr, "kete-job-host: %v\n", err)
+		return 1
+	}
+	id := os.Getenv("KETE_RUNNER_POD_NAME")
+	if id == "" {
+		id, _ = os.Hostname()
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	err = runner.Run(ctx, runner.Options{
+		Config: cfg, Kube: kc, Identity: id, AgentVersion: version, HostKernel: hk, Arch: runtime.GOARCH,
+		Clock: clock.System(), Log: log,
+	})
+	switch {
+	case errors.Is(err, agent.ErrHalted):
+		fmt.Fprintf(stderr, "kete-job-host: %v\n", err)
+		return 3
+	case errors.Is(err, context.Canceled) || err == nil:
+		log.Info("stopped")
+		return 0
+	}
+	fmt.Fprintf(stderr, "kete-job-host: %v\n", err)
+	return 1
 }
 
 func cmdRun(cfg config.Config, stderr io.Writer, log *slog.Logger) int {

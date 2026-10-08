@@ -1,8 +1,10 @@
-// Package client is the agent's HTTPS client for the two job-host-v1 routes. Every request is a
-// signed `POST` (package sig) to the configured platform origin; responses are authenticated only
-// by TLS to that origin, so certificate verification is always on and redirects are never
-// followed (`docs/platform/job-host-v1.md` "Responses are not signed"). Each request has a 15 s
-// timeout and reads at most 1 MiB of response.
+// Package client is the agent's HTTPS client for the two job-host routes (v1, or v2 with
+// Options.V2). Every request is a signed `POST` (package sig) to the configured platform origin;
+// responses are authenticated only by TLS to that origin, so certificate verification is always
+// on and redirects are never followed (`docs/platform/job-host-v1.md` "Responses are not signed").
+// Each request has a 15 s timeout and reads at most 1 MiB (v2: 2 MiB) of response. The only proxy
+// is an explicitly configured one (Options.Proxy, the Kubernetes runner's enterprise proxy, HTTP
+// CONNECT); the environment's proxy variables are never read.
 package client
 
 import (
@@ -18,6 +20,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"time"
@@ -29,10 +32,17 @@ import (
 // RequestTimeout is each request's budget.
 const RequestTimeout = 15 * time.Second
 
-// Options are test seams. Production leaves both nil: the system roots and the normal dialer.
+// Options configure the client. A VM host leaves them zero: v1, the system roots, the normal
+// dialer, no proxy. RootCAs and DialContext are also test seams.
 type Options struct {
 	RootCAs     *x509.CertPool
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+	// V2 signs under job-host-v2's profile (sig.V2) with its body and response limits and error
+	// reasons.
+	V2 bool
+	// Proxy is the upstream HTTP proxy the platform connection goes through (CONNECT; TLS to the
+	// platform stays end to end and verified). nil: direct.
+	Proxy *url.URL
 }
 
 // Client signs and sends requests.
@@ -41,13 +51,18 @@ type Client struct {
 	authority string
 	http      *http.Client
 	now       func() time.Time
+	v2        bool
 }
 
 // New returns a client for origin (`https://host`) whose `@authority` is authority; now is the
 // clock for signature times (nil: time.Now).
 func New(origin, authority string, now func() time.Time, o Options) *Client {
+	var proxy func(*http.Request) (*url.URL, error) // never an environment proxy
+	if o.Proxy != nil {
+		proxy = http.ProxyURL(o.Proxy)
+	}
 	tr := &http.Transport{
-		Proxy:                 nil, // never an environment proxy: the agent talks only to its configured origin
+		Proxy:                 proxy,
 		DialContext:           o.DialContext,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: o.RootCAs},
 		TLSHandshakeTimeout:   10 * time.Second,
@@ -63,7 +78,7 @@ func New(origin, authority string, now func() time.Time, o Options) *Client {
 		tr.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	}
 	return &Client{
-		origin: origin, authority: authority, now: now,
+		origin: origin, authority: authority, now: now, v2: o.V2,
 		http: &http.Client{
 			Transport:     tr,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -108,7 +123,10 @@ func SafeRequestID(s string) string {
 // Post signs body with key under keyID and sends it to path. want is the success status
 // (201 enroll, 200 poll).
 func (c *Client) Post(ctx context.Context, path, keyID string, key ed25519.PrivateKey, body []byte, want int) (Response, error) {
-	limit := contract.PollMaxBytes
+	limit, readMax, profile, knownReason := contract.PollMaxBytes, contract.ResponseMaxBytes, sig.V1, contract.ValidErrorReason
+	if c.v2 {
+		limit, readMax, profile, knownReason = contract.V2PollMaxBytes, contract.V2ResponseMaxBytes, sig.V2, contract.ValidErrorReasonV2
+	}
 	if path == contract.EnrollPath {
 		limit = contract.EnrollMaxBytes
 	}
@@ -120,7 +138,7 @@ func (c *Client) Post(ctx context.Context, path, keyID string, key ed25519.Priva
 		return Response{}, err
 	}
 	created := c.now().Unix()
-	h, _, err := sig.Sign(key, c.authority, path, body, sig.Params{Created: created, Expires: created + contract.SignatureWindow, Nonce: nonce, KeyID: keyID})
+	h, _, err := profile.Sign(key, c.authority, path, body, sig.Params{Created: created, Expires: created + contract.SignatureWindow, Nonce: nonce, KeyID: keyID})
 	if err != nil {
 		return Response{}, err
 	}
@@ -139,12 +157,12 @@ func (c *Client) Post(ctx context.Context, path, keyID string, key ed25519.Priva
 		return Response{}, fmt.Errorf("client: %s: %w", path, scrub(err))
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, contract.ResponseMaxBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(readMax)+1))
 	if err != nil {
 		return Response{}, fmt.Errorf("client: reading %s response: %w", path, scrub(err))
 	}
-	if len(data) > contract.ResponseMaxBytes {
-		return Response{}, fmt.Errorf("client: %s response over %d bytes", path, contract.ResponseMaxBytes)
+	if len(data) > readMax {
+		return Response{}, fmt.Errorf("client: %s response over %d bytes", path, readMax)
 	}
 	rid := SafeRequestID(resp.Header.Get("x-kete-request-id"))
 	if resp.StatusCode == want {
@@ -152,7 +170,7 @@ func (c *Client) Post(ctx context.Context, path, keyID string, key ed25519.Priva
 	}
 	e := &APIError{Status: resp.StatusCode, RequestID: rid, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), c.now())}
 	var body2 contract.ErrorResponse
-	if json.Unmarshal(data, &body2) == nil && contract.ValidErrorReason(body2.Error.Reason) {
+	if json.Unmarshal(data, &body2) == nil && knownReason(body2.Error.Reason) {
 		e.Reason = body2.Error.Reason
 		if e.RequestID == "" {
 			e.RequestID = SafeRequestID(body2.Error.RequestID)

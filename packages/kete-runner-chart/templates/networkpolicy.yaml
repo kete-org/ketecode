@@ -1,0 +1,79 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- if not .Values.networkPolicy.apiServer.cidrs }}{{ fail "networkPolicy.apiServer.cidrs is required when networkPolicy.enabled (the controller must reach the API server)" }}{{ end }}
+{{- if not .Values.networkPolicy.platform.cidrs }}{{ fail "networkPolicy.platform.cidrs is required when networkPolicy.enabled (the platform, or the proxy)" }}{{ end }}
+# Controller: no ingress at all (it never listens); egress to DNS, the API server and the
+# platform (or the enterprise proxy) only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kete-runner-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kete-runner.selector" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        {{- range .Values.networkPolicy.apiServer.cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ int .Values.networkPolicy.apiServer.port }}}
+    - to:
+        {{- range .Values.networkPolicy.platform.cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.platform.ports }}
+        - {protocol: TCP, port: {{ int . }}}
+        {{- end }}
+---
+# Jobs namespace: default deny both ways; job pods may reach DNS and the configured egress
+# (proxy, GitLab, model endpoints, registry mirrors). The in-pod firewall stays the inner layer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kete-jobs-default
+  namespace: {{ .Values.jobs.namespace | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    {{- if .Values.jobs.egress.cidrs }}
+    - to:
+        {{- range .Values.jobs.egress.cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        {{- range .Values.jobs.egress.ports }}
+        - {protocol: TCP, port: {{ int . }}}
+        {{- end }}
+    {{- end }}
+{{- end }}
