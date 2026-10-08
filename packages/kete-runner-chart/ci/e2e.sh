@@ -187,7 +187,7 @@ CASES
 secret() { jq -n --arg n "$1" --arg ns "$2" --arg t "${3:-Opaque}" '{apiVersion: "v1", kind: "Secret", metadata: {name: $n, namespace: $ns}, type: $t, data: {k: "eA=="}}'; }
 denied "a machine-named Secret created by an admin" kubectl create -f <(secret kete-job-squat $JOBS)
 denied "another Secret by the controller in the jobs namespace" kubectl --as=$SA create -f <(secret other $JOBS)
-denied "a non-Opaque machine Secret" kubectl --as=$SA create -f <(secret kete-job-tls $JOBS kubernetes.io/basic-auth)
+denied "a non-Opaque machine Secret" kubectl --as=$SA create -f <(secret kete-job-typed $JOBS example.com/custom)
 denied "another Secret by the controller in its own namespace" kubectl --as=$SA create -f <(secret other $SYS)
 
 # --- machines
