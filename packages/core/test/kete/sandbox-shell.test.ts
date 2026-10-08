@@ -6,6 +6,7 @@
 // permission hooks (sandbox.test.ts covers those).
 import path from "path"
 import fs from "fs/promises"
+import os from "os"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Money } from "@opencode/schema/money"
@@ -193,12 +194,12 @@ describe.skipIf(!probe.available)("the local OS sandbox through the shell tool",
         Effect.gen(function* () {
           const write = yield* run({ command: "mkdir -p src && echo hello > src/a.txt && cat src/a.txt" })
           expect(write.text).toContain("hello")
-          expect(write.exit).toBe(0)
+          expect(write.exit, write.text).toBe(0)
           const commit = yield* run({
             command:
               "git add -A && git -c user.email=t@example.com -c user.name=t commit -q -m work && git branch -q topic && git log --oneline | wc -l",
           })
-          expect(commit.exit).toBe(0)
+          expect(commit.exit, commit.text).toBe(0)
           expect(commit.text).toMatch(/\b2\b/)
           expect(yield* Effect.promise(() => fs.readFile(path.join(dir, "src", "a.txt"), "utf8"))).toBe("hello\n")
         }),
@@ -270,8 +271,9 @@ describe.skipIf(!probe.available)("the local OS sandbox through the shell tool",
           const hosts = yield* run({ command: `cat "${home}/.ssh/known_hosts"` })
           expect(hosts.text).toContain("github.com")
 
-          // The isolated test home sits in macOS's per-user temp directory, which the sandbox may write.
-          const outside = path.join(process.platform === "darwin" ? "/Users/Shared" : home, `outside-${Date.now()}.txt`)
+          // The isolated test home sits in a temp directory, which the sandbox may write: use the real
+          // home on Linux (from the user database, not $HOME) and the shared folder on macOS.
+          const outside = path.join(process.platform === "darwin" ? "/Users/Shared" : os.userInfo().homedir, `outside-${Date.now()}.txt`)
           const write = yield* run({ command: `echo x > "${outside}"` })
           expect(write.exit).not.toBe(0)
           expect(yield* Effect.promise(() => Bun.file(outside).exists())).toBe(false)
