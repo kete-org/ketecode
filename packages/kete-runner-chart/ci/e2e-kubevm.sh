@@ -206,13 +206,15 @@ fake_job() { jq -r ".$2" "$STATE/$1/runtime-job.json"; }
 M1=7b3c4d5e-6f7a-4b8c-9d0e-000000000001 M3=7b3c4d5e-6f7a-4b8c-9d0e-000000000003
 assign $M1 "$(fake_job lifecycle job_id)" "$JOB_IMAGE" ",\"claim_token\":\"$(fake_job lifecycle claim_token)\""
 assign $M3 7e6f7a8b-9c0d-4e1f-8a2b-000000000003 "$MISSING_IMAGE"
-wait_for 240 "M1 running" is_state $M1 running/
-wait_for 60 "M1's Secret deleted once running" bash -c "! kubectl -n $JOBS get secret kete-job-$M1"
+# The job may finish before a poll sees it running (a whole job takes seconds under runc): check
+# the pod as soon as it exists.
+wait_for 240 "M1 pod created" kubectl -n $JOBS get pod kete-job-$M1
 kubectl -n $JOBS get pod kete-job-$M1 -o json | jq -e '.spec.runtimeClassName == "kete-test" and .spec.automountServiceAccountToken == false and
   (.spec.containers[0].securityContext.capabilities.add | length) == 11 and .spec.containers[0].securityContext.privileged == false and
   ([.spec.volumes[].persistentVolumeClaim.claimName // empty] == ["kete-outbox-'$M1'"])' >/dev/null || fail "M1 pod spec"
 wait_for 900 "fake: finish accepted" test -s "$STATE/lifecycle/finished"
 wait_for 180 "M1 exited" is_state $M1 destroyed/exited
+wait_for 60 "M1's Secret gone" bash -c "! kubectl -n $JOBS get secret kete-job-$M1"
 docker exec kete-fake true # still serving: the controller polls through it
 lines=$(phase_lines $M1)
 for want in setup_host setup_kubevm host_boundary egress_nft isolation claim clone clone_done agent result bundle outbox finish; do
