@@ -285,6 +285,7 @@ const CREDENTIAL = [
   /(^|[\\/])\.(netrc|npmrc|pypirc|pgpass|git-credentials)$/i,
   /(^|[\\/])\.config[\\/]kete([\\/]|$)/i,
   /(^|[\\/])\.local[\\/]share[\\/]kete([\\/]|$)/i,
+  /(^|[\\/])proc[\\/][^\\/]+[\\/]environ$/i,
 ]
 
 /** Whether `value` names a credential or secret file (`.env`, `~/.ssh`, keys, cloud credentials, …). */
@@ -314,9 +315,12 @@ const basename = (value: string) => segments(value).at(-1) ?? value
  * `.git/**`; the global config and data directories are credential paths (`credential`). Callers
  * also pass the global config directory as an absolute path (`permission-mode.ts`).
  */
-export function protectedPath(value: string) {
-  const parts = segments(value).map(lower)
-  if (parts.includes(".git") || parts.includes(".kete")) return true
+export function protectedPath(value: string, glob = false) {
+  // Windows also opens `.git` as `.git.`, `.git `, `GIT~1` (8.3 name) or `.git::$INDEX_ALLOCATION`.
+  const parts = segments(value).map((part) => lower(part).replace(/::\$[a-z_]+$/, "").replace(/[. ]+$/, ""))
+  if (parts.some((part) => part === ".git" || part === ".kete" || /^(git|kete)~\d+$/.test(part))) return true
+  // A glob in a dot-name (`.gi?`, `.[g]it`, `.k*`) can match `.git` or `.kete`.
+  if (glob && parts.some((part) => part.startsWith(".") && /[*?[]/.test(part))) return true
   const name = parts.at(-1) ?? ""
   return name === "kete.json" || name === "kete.jsonc"
 }
@@ -326,7 +330,22 @@ const ENTRY_POINT_NAMES = new Set([
   "setup.py", "setup.cfg", "conftest.py", "tox.ini", "noxfile.py", ".npmrc", ".yarnrc", ".yarnrc.yml",
   "bunfig.toml", "deno.json", "deno.jsonc", ".envrc", "rakefile", "gemfile", "build.gradle",
   "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "pom.xml", "pnpm-workspace.yaml",
+  "turbo.json", "nx.json", "project.json", "lerna.json", "composer.json", "cargo.toml", "gradlew", "mvnw",
+  "gradlew.bat", "mvnw.cmd", "gradle-wrapper.properties", "package.swift", "cmakelists.txt", "meson.build",
+  "build", "build.bazel", "workspace", "workspace.bazel", ".bazelrc", "babel.config.json", "babel.config.js",
+  "jest.config.json", "pytest.ini", "phpunit.xml", "phpunit.xml.dist", ".rspec", "karma.conf.js",
+  "sitecustomize.py", "usercustomize.py", ".pre-commit-config.yaml", "lefthook.yml", ".lefthook.yml",
+  "lefthook.yaml", "gruntfile.js", "gulpfile.js", ".pnpmfile.cjs", "jest-preset.js", "mix.exs", "rebar.config",
+  "build.sbt", "spec_helper.rb", "rails_helper.rb", "test_helper.rb", ".mise.toml", "mise.toml",
+  ".gitlab-ci.yml", "jenkinsfile", "agents.md", "claude.md", ".gitmodules", ".gitattributes", "go.mod",
+  "go.work", "manage.py", "stack.yaml", "package.yaml", "setup.hs",
 ])
+
+/** Persistent instructions the agent reads every session: editing them asks like an entry point. */
+export function instructionFile(value: string) {
+  const name = lower(basename(value))
+  return name === "agents.md" || name === "claude.md"
+}
 
 /**
  * Whether `value` is a file the project's build, test or install commands run or load as code:
@@ -342,8 +361,13 @@ export function entryPoint(value: string) {
   if (/lock/.test(name) && /\.(json|ya?ml|lockb?|toml)$|\.lock$/.test(name)) return true
   if (/\.mk$/.test(name) || /^taskfile/.test(name)) return true
   if (/\.config\.(js|cjs|mjs|ts|cts|mts)$/.test(name)) return true
+  if (/^\.[a-z0-9-]+rc(\.(js|cjs|mjs|ts|json|ya?ml))?$/.test(name) && /^\.(eslint|babel|mocha|prettier|stylelint|swc|lintstaged|yarn|npm)rc/.test(name)) return true
+  if (/^(vitest\.workspace|jest\.setup|vitest\.setup|global-?setup|global-?teardown)\./.test(name)) return true
+  if (/\.(pth|cabal)$/.test(name)) return true
   const path = parts.join("/")
-  return path.includes(".github/workflows/") || parts.includes(".husky")
+  if (parts.includes("node_modules") || parts.includes(".mvn") || parts.includes(".husky")) return true
+  if (path.includes(".cargo/config") || path.includes(".github/workflows/") || path.endsWith(".vscode/tasks.json")) return true
+  return path === "project/plugins.sbt" || path.endsWith("/project/plugins.sbt")
 }
 
 /** Expands `{a,b}` brace expressions (bounded); `{a..b}` ranges are left as they are. */
@@ -523,9 +547,9 @@ export function classifyLine(command: string): Classification {
     const words = segment.words.filter((word, index) => index > 0 || !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value))
     const head = words[0]
     if (!head || !DIRECTORY_CHANGES.has(lower(head.value))) continue
-    const target = words.slice(1).find((word) => !word.value.startsWith("-") || word.value === "-")
+    const target = words.slice(1).find((word) => !word.value.startsWith("-") || word.value === "-" || /^[+-]\d+$/.test(word.value))
     if (target === undefined) return high("changes to the home directory, outside the workspace")
-    if (target.value === "-" || target.expands || target.brace || outside(target.value))
+    if (target.value === "-" || /^[+-]\d+$/.test(target.value) || target.expands || target.brace || outside(target.value))
       return high("changes to a directory outside the workspace")
   }
   return READ
@@ -541,7 +565,28 @@ const RUNS_ANYTHING = new Set([
   "python", "python3", "py", "ruby", "perl", "php", "deno", "bun", "bunx", "npx", "pnpx", "tsx", "ts-node",
   "env", "xargs", "sudo", "doas", "eval", "exec", "command", "builtin", "nohup", "time", "timeout", "nice",
   "find", "fd", "awk", "gawk", "sed", "invoke-expression", "iex", "start-process", "source", ".", "watch",
+  "java", "lua", "rscript", "julia", "tmux", "screen", "script", "parallel", "vim", "nvim", "vi", "emacs",
+  "open", "xdg-open", "start", "enable", "trap", "tar", "bsdtar", "unzip", "7z", "patch", "ruby", "perl", "php",
+  "less", "more", "man",
 ])
+
+/** `<tool> <sub>` pairs that run anything or write files their arguments don't show. */
+const RUNS_ANYTHING_SUB: Readonly<Record<string, ReadonlySet<string>>> = {
+  go: new Set(["run", "generate", "tool"]),
+  cargo: new Set(["run", "r", "script"]),
+  dotnet: new Set(["run", "exec", "tool"]),
+  poetry: new Set(["run", "shell"]),
+  pipenv: new Set(["run", "shell"]),
+  pdm: new Set(["run"]),
+  hatch: new Set(["run", "shell"]),
+  rye: new Set(["run"]),
+  bundle: new Set(["exec"]),
+  git: new Set(["apply", "am", "submodule", "filter-branch", "difftool", "mergetool", "bisect"]),
+  npm: new Set(["pkg", "config", "set", "set-script", "exec", "x"]),
+  pnpm: new Set(["pkg", "config", "exec", "dlx"]),
+  yarn: new Set(["config", "exec", "dlx"]),
+  bun: new Set(["pm", "x"]),
+}
 
 /**
  * Whether an "Always allow" answer may be saved for `command`: not for a high-risk command, and not
@@ -555,7 +600,10 @@ export function saveable(command: string) {
     const words = segment.words.filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value))
     const head = words[0]
     if (!head) return true
-    return !RUNS_ANYTHING.has(lower(basename(head.value)).replace(/\.(exe|cmd|bat|ps1)$/, ""))
+    const name = lower(basename(head.value)).replace(/\.(exe|cmd|bat|ps1)$/, "")
+    if (RUNS_ANYTHING.has(name)) return false
+    const sub = words.slice(1).find((word) => !word.value.startsWith("-"))?.value
+    return !(sub !== undefined && RUNS_ANYTHING_SUB[name]?.has(sub))
   })
 }
 
@@ -573,13 +621,14 @@ function classifySegment(segment: Segment, depth: number): Classification {
       if (SAFE_DEVICES.has(value)) continue
       if (credential(value) || dotGlob(value, target.glob)) return high("writes a credential or secret file")
       if (outside(value) || target.expands) return high("writes a file outside the workspace")
-      if (protectedPath(value)) return high("writes Kete Code's configuration or git's internals")
+      if (protectedPath(value, target.glob)) return high("writes Kete Code's configuration or git's internals")
       result = max(result, other("writes a file"))
     }
   }
   const words = [...segment.words]
   let assigned = false
   while (words.length > 0 && !words[0]!.quoted && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]!.value)) {
+    if (/^(CDPATH|OLDPWD|HOME)=/.test(words[0]!.value)) return high("changes where cd goes")
     if (/^(LD_PRELOAD|LD_LIBRARY_PATH|DYLD_[A-Z_]+|PATH|GIT_SSH_COMMAND|GIT_SSH|GIT_EXEC_PATH|GIT_CONFIG[A-Z_]*|BASH_ENV|ENV|PROMPT_COMMAND|NODE_OPTIONS|PYTHONSTARTUP|PAGER|GIT_PAGER|EDITOR|VISUAL)=/.test(words[0]!.value))
       result = max(result, other("changes how the command is loaded"))
     words.shift()
@@ -618,8 +667,22 @@ function classifyWords(words: Word[], depth: number): Classification {
     if (values.some((value) => value.startsWith("-"))) return high("builds a flag with brace expansion")
     expanded.set(arg, values)
   }
-  const result = classifyCommand(base, args, depth, pathy)
+  let result = classifyCommand(base, args, depth, pathy)
   if (result.risk === "high") return result
+  // Each brace expansion is a command of its own: `git p{ush,}` is also `git push`.
+  if (expanded.size > 0) {
+    let variants: Word[][] = [[]]
+    for (const arg of args) {
+      const options = expanded.get(arg) ?? [arg.value]
+      variants = variants
+        .flatMap((variant) => options.map((value) => [...variant, { ...arg, value, brace: false }]))
+        .slice(0, 32)
+    }
+    for (const variant of variants) {
+      result = max(result, classifyWords([head, ...variant], depth))
+      if (result.risk === "high") return result
+    }
+  }
   const values = (arg: Word) => (expanded.get(arg) ?? [arg.value]).map((value) => value.replace(/^--?[A-Za-z-]+=/, ""))
   // Credential files, whatever the command.
   for (const arg of args) {
@@ -627,7 +690,11 @@ function classifyWords(words: Word[], depth: number): Classification {
       return high("touches a credential or secret file")
   }
   // Writes to Kete Code's configuration or git's internals.
-  if (rank[result.risk] >= rank.other && args.some((arg) => values(arg).some(protectedPath)))
+  // (Also each whitespace-separated part, for scripts like sed's `w .git/config`.)
+  if (
+    rank[result.risk] >= rank.build &&
+    args.some((arg) => values(arg).some((value) => [value, ...value.split(/\s+/)].some((part) => protectedPath(part, arg.glob))))
+  )
     return high("may change Kete Code's configuration or git's internals")
   let checked = result
   if (expanded.size > 0) checked = max(checked, other("uses brace expansion"))
@@ -675,6 +742,35 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     return values.length === 0 || (base === "alias" && values.every((value) => !value.includes("=")))
       ? READ
       : high("redefines commands")
+  if ((base === "export" || base === "declare" || base === "typeset" || base === "readonly" || base === "local") && values.some((value) => /^(CDPATH|OLDPWD|HOME|PATH|BASH_ENV|ENV|PROMPT_COMMAND|LD_PRELOAD|DYLD_[A-Z_]+)=/.test(value)))
+    return high("changes where commands or cd go")
+  if (base === "trap") {
+    const action = positional(args)[0]
+    return action === undefined || values.every((value) => value.startsWith("-"))
+      ? READ
+      : max(other("runs a command on a signal"), classify(action.value, depth + 1))
+  }
+  if (base === "enable" || base === "hash")
+    return values.some((value) => value === "-f" || value === "-p" || value.startsWith("-f") || value.startsWith("-p"))
+      ? high("redefines commands")
+      : READ
+  if (base === "tmux" || base === "screen" || base === "nohup-detached" || base === "disown" || base === "setsid")
+    return high("runs commands in a detached session beyond Kete Code's control")
+  if (base === "script") {
+    const index = values.findIndex((value) => value === "-c" || value === "--command")
+    return index === -1 ? other("records a shell session") : max(other("runs a command"), classify(values[index + 1] ?? "", depth + 1))
+  }
+  if (base === "parallel") {
+    const end = values.indexOf(":::")
+    const inner = args.slice(0, end === -1 ? undefined : end).filter((arg, index) => index > 0 || !arg.value.startsWith("-"))
+    return inner.length === 0 ? other("runs commands in parallel") : max(other("runs commands in parallel"), classifyWords(inner, depth))
+  }
+  if (["vim", "nvim", "vi", "emacs", "nano", "open", "xdg-open", "start", "code", "cursor"].includes(base))
+    return other("opens an editor or program that can run commands")
+  if (base === "awk" || base === "gawk" || base === "mawk")
+    return values.some((value) => /ENVIRON|system\s*\(|\|\s*getline|print\s*>/.test(value))
+      ? high("reads environment variables or runs commands from awk")
+      : other("runs an awk program")
   if (base === "time") {
     // GNU time writes its report to a file with -o/--output (-a appends).
     const index = values.findIndex((value) => value === "-o" || value === "--output" || value.startsWith("--output="))
@@ -746,6 +842,8 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
   if (base === "rg" || base === "ripgrep") {
     if (values.some((value) => value === "--pre" || value.startsWith("--pre=")))
       return high("runs a preprocessor program on every file")
+    if (values.some((value) => /^-[a-zA-Z]*u/.test(value) || /^--(hidden|no-ignore)/.test(value)))
+      return other("searches hidden and ignored files, which can include secrets")
     return READ
   }
   if (base === "bat" || base === "batcat") {
@@ -754,7 +852,7 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     return READ
   }
   if (base === "xxd") return values.some((value) => /^-[a-zA-Z]*r/.test(value) || value === "-revert") ? other("writes a file") : READ
-  if (base === "tree") return values.some((value) => value === "-o" || value.startsWith("-o")) ? other("writes a file") : READ
+  if (base === "tree") return values.some((value) => /^-[a-zA-Z]*o/.test(value)) ? other("writes a file") : READ
   if (["npm", "pnpm", "yarn", "bun", "cnpm"].includes(base)) return nodePackageManager(base, args, depth)
   if (["npx", "bunx", "pnpx"].includes(base)) {
     if (values.some((value) => value === "--no-install" || value === "--no")) {
@@ -773,6 +871,8 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     if (first === "exec") return classifyWords(args.slice(1), depth)
     return high("installs or changes packages")
   }
+  if (base === "dotnet" && values.some((value) => /^([-/]p:|--property|-property)/i.test(value)))
+    return other("runs the build with changed MSBuild properties")
   if (base === "dotnet") {
     if (first === "add" || first === "remove" || first === "tool" || first === "nuget" || first === "workload" || first === "new")
       return high("installs or changes packages")
@@ -801,7 +901,7 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
   }
   if (base === "deno") {
     if (/^(install|add|remove|uninstall|upgrade|publish|compile)$/.test(first ?? "")) return high("installs or changes packages")
-    if (values.some((value) => /^(https?|npm|jsr):/i.test(value))) return high("runs remote code")
+    if (values.some((value) => /(^|=)(https?|npm|jsr):/i.test(value))) return high("runs remote code")
     return /^(test|check|lint|bench)$/.test(first ?? "") || (first === "fmt" && values.includes("--check")) ? BUILD : other("runs a program")
   }
   if (base === "swift") return /^(build|test)$/.test(first ?? "") ? BUILD : other()
@@ -815,6 +915,7 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     if (first === "-m") {
       const module = values[1]
       if (module === "pip") return pythonPackages("pip", args.slice(2), depth)
+      if (module === "pytest" && values.some((value) => /^(-p|-o|--override-ini)/.test(value))) return other("runs the tests with extra plugins or settings")
       if (module !== undefined && /^(pytest|unittest|mypy|ruff|black|flake8|pyright|pylint|isort|compileall|tox|nox|doctest)$/.test(module)) return BUILD
       if (module === "http.server" || module === "venv" || module === "ensurepip") return other()
       return other("runs a Python module")
@@ -840,14 +941,19 @@ function classifyCommand(base: string, args: Word[], depth: number, pathy: boole
     return other("changes files")
   }
   if (base === "kill" || base === "killall" || base === "pkill" || base === "taskkill" || base === "stop-process") return other("stops processes")
+  if (base === "yq" && values.some((value) => /(^|[^A-Za-z0-9_])(str)?env\s*\(|\$ENV|(^|[^A-Za-z0-9_.])env([^A-Za-z0-9_(]|$)/.test(value)))
+    return high("reads environment variables, which can hold secrets")
   if (base === "yq") return values.some((value) => /^(--inplace|--in-place)/.test(value) || /^-[a-zA-Z]*i/.test(value)) ? other("edits files in place") : READ
+  if ((base === "pytest" || base === "py.test" || base === "tox") && values.some((value) => /^(-p|-o|-x|--override-ini|--plugins?)/.test(value)))
+    return other("runs the tests with extra plugins or settings")
   if (BUILD_TOOLS.has(base)) {
     if (base === "playwright" && first === "install") return high("downloads browsers")
     return BUILD
   }
+  if (base === "popd" || base === "dirs") return READ
   if (DIRECTORY_CHANGES.has(base)) {
     const target = positional(args)[0]
-    if (target === undefined || values.includes("-") || target.expands || outside(target.value))
+    if (target === undefined || values.includes("-") || values.some((value) => /^[+-]\d+$/.test(value)) || target.expands || outside(target.value))
       return high("changes to a directory outside the workspace")
     return READ
   }
@@ -919,6 +1025,11 @@ function git(args: Word[]): Classification {
   const values = subArgs.map((arg) => arg.value)
   const has = (...names: string[]) => values.some((value) => names.includes(value) || names.some((name) => name.startsWith("--") && value.startsWith(name + "=")))
   const force = values.some((value) => value === "--force" || value.startsWith("--force-") || value === "--force-with-lease" || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(value))
+  // Read-only subcommands still write a file with --output and run programs with --ext-diff/--textconv.
+  const readOnly = (): Classification =>
+    values.some((value) => value.startsWith("--output") || value === "--ext-diff" || value === "--textconv")
+      ? other("writes a file or runs an external tool")
+      : READ
   const result = ((): Classification => {
     if (sub === undefined) return READ
     switch (sub) {
@@ -990,7 +1101,7 @@ function git(args: Word[]): Classification {
       case "grep":
         if (values.some((value) => value.startsWith("--open-files-in-pager") || /^-[a-zA-Z]*O/.test(value)))
           return high("opens matches in a pager program")
-        return READ
+        return readOnly()
       case "show-ref":
       case "name-rev":
       case "whatchanged":
@@ -1001,7 +1112,7 @@ function git(args: Word[]): Classification {
       case "help":
       case "version":
       case "--version":
-        return values.some((value) => value.startsWith("--output") || value === "--ext-diff") ? other("writes a file or runs an external tool") : READ
+        return readOnly()
       default:
         return force ? high("uses a force flag") : other()
     }
@@ -1032,6 +1143,7 @@ function nodePackageManager(base: string, args: Word[], depth: number): Classifi
   const after = rest.slice(1)
   if (sub === undefined) return base === "yarn" ? high("installs packages") : READ
   if (NODE_INSTALL.has(sub)) return high("installs, removes or publishes packages")
+  if (packageConfigWrite(sub, after.map((arg) => arg.value))) return high("changes package scripts or package-manager settings")
   if (sub === "audit") return after.some((arg) => arg.value === "fix") ? high("installs packages") : other("contacts the registry")
   if (sub === "test" || sub === "t" || sub === "tst") return BUILD
   if (sub === "ls" || sub === "list" || sub === "why" || sub === "explain" || sub === "ll" || sub === "la") return READ
@@ -1059,6 +1171,36 @@ function firstPositional(args: Word[], valued: RegExp) {
   }
   return undefined
 }
+
+function packageConfigWrite(sub: string, rest: string[]) {
+  if (sub === "set-script" || sub === "set") return true
+  if (sub === "pkg") return rest.some((value) => value === "set" || value === "delete" || value === "fix")
+  if (sub === "config" || sub === "c") return rest.some((value) => /^(set|delete|edit|rm|unset)$/.test(value))
+  return false
+}
+
+/**
+ * Whether `command` changes what the project's build or test commands run: package-manager script
+ * or config writes (`npm pkg set scripts.test=…`, `npm config set …`), or a write to an entry point
+ * (`echo … > package.json`). The permission mode then makes the next test/build command ask once.
+ */
+export function changesBuild(command: string) {
+  const parsed = tokenize(command, { posix: true })
+  if (!parsed.ok) return false
+  return parsed.segments.some((segment) => {
+    const words = segment.words.filter((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value))
+    const head = lower(basename(words[0]?.value ?? ""))
+    if (["npm", "pnpm", "yarn", "bun", "cnpm"].includes(head)) {
+      const rest = words.slice(1).map((word) => word.value).filter((value) => !value.startsWith("-"))
+      if (rest[0] !== undefined && packageConfigWrite(rest[0], rest.slice(1))) return true
+    }
+    if (segment.redirects.some((redirect) => redirect.target && !redirect.op.includes("<") && entryPoint(redirect.target.value)))
+      return true
+    return classify(command).risk !== "read" && words.slice(1).some((word) => entryPoint(word.value)) && !READ_ONLY_HEADS.has(head)
+  })
+}
+
+const READ_ONLY_HEADS = new Set(["cat", "head", "tail", "less", "grep", "rg", "wc", "diff", "jq", "git", "ls", "stat"])
 
 function pythonPackages(base: string, args: Word[], depth: number): Classification {
   const values = args.map((arg) => arg.value)

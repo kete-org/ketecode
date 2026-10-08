@@ -452,7 +452,8 @@ unattended families keep their own policy. User guide: `docs/permissions.md`.
 | `tui/src/component/prompt/index.tsx`         | New sessions are created with the mode's metadata; the status row gets the mode                                         |
 | `tui/src/component/prompt/metadata.tsx`      | Shows the session's permission mode (not for Default); the client-side bypass's label is now `auto-accept`              |
 | `core/src/tool/plugin/shell.ts`              | Passes the whole command line as `metadata.command` (the defaults' `cd` check); `save` is empty — no "Always allow" — when a command is high-risk or runs anything (`KeteShellRisk.saveable`) |
-| `core/src/tool/plugin/webfetch.ts`           | `save` is the URL's origin (`kete/web-host.ts`) instead of `*`, so "Always allow" covers one site                       |
+| `core/src/tool/plugin/webfetch.ts`           | `save` is the URL's origin (`kete/web-host.ts`) instead of `*`, so "Always allow" covers one site; fetches with `redirect: "manual"` and follows redirects in `kete/web-redirect.ts`, asking before a hop to another origin |
+| `core/src/shell/parse.ts`                    | Both scanners add `KeteShellDirectory.implicit*` directories for a POSIX `cd`/`pushd` with no or an unknown target (home, or the filesystem root), so `external_directory` asks |
 | `core/test/tool-webfetch.test.ts`            | Expects the per-origin `save`                                                                                           |
 | `core/src/plugin/internal.ts`                | Comment on the existing `KetePermissionMode.Plugin` line updated                                                        |
 

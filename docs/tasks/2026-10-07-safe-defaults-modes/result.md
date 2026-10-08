@@ -62,3 +62,16 @@ the comment in `core/src/plugin/internal.ts`. New Kete file `core/src/kete/web-h
 | `verify --base main` | 0 new failures (core 6274 pass / 30 fail vs main 5868 / 30, same environment-dependent failures) |
 
 Still open: MCP tools outside Plan keep upstream's default (allowed); no live model run.
+
+## Re-review fixes (2026-10-08, round 3)
+N1 (git `--output` regression) and should-fixes 1–8 plus the cheap nits are addressed (handoff
+round 3). New upstream edits (marked, recorded): `core/src/shell/parse.ts` (implicit `cd`
+directories); `core/src/tool/plugin/webfetch.ts` (manual redirects, cross-origin asks). New Kete
+files: `kete/shell-directory.ts`, `kete/web-redirect.ts`. Accepted residual risk documented.
+
+| Check | Result |
+|---|---|
+| core `test/kete` + `tool-webfetch` | PASS (1223); new `shell-risk-review.test.ts` (307: every t2/t3 repro), `shell-directory.test.ts`, `web-redirect.test.ts` |
+| core shell tool / scanner tests | only the 7 compound-syntax failures that main also has |
+| lint, `upstream:check --base origin/main`, `card-check` | PASS |
+| `verify --base main` | 0 new failures (core 6593 pass / 30 fail vs main 5868 / 30) |

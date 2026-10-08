@@ -55,3 +55,17 @@ Addressed the independent review of PR #20 (B1–B3, S1–S7, nits). Decisions:
   allowed because they resolve the root's Plan mode (tested), and the Plan agent uses them.
 - `$((…))` arithmetic is now parsed (needed so upstream's shell-tool test keeps its save pattern).
 - `git --git-dir ../x/.git log` is high (a protected path in a non-read command).
+
+## 2026-10-08 implementer (re-review fixes)
+
+- N1 fixed: the `grep` case returns through a shared `readOnly()` check (no fallthrough).
+- `cd`: done in `shell/parse.ts` (both scanners) rather than in `classifyLine`, since tree-sitter
+  already finds every `cd`; legacy uses the command's source text because its parts drop
+  number-only words (`cd 123`). `classifyLine` stays as a second check for simple lines.
+- Edits' real path goes through `FSUtil` (wrapped in job mode), not `fs` (job-fs-sites test).
+- Web fetch: redirects are followed by `kete/web-redirect.ts` with `redirect: "manual"`; the
+  upstream `execute` helper is left in place, unused, to keep the upstream diff small.
+- Plan allowlist checked against every action that asserts a permission in core (todo and LSP
+  tools don't ask permission, so they're unaffected).
+- Residual risk (ordinary test files run code under `npm test`) accepted by the coordinator;
+  documented in `docs/permissions.md` and the spec; containment is Wave 0b's sandbox.

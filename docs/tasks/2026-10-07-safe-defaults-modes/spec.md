@@ -58,6 +58,18 @@ Added after review, same approval:
   read-only allowlist (MCP tools, worktrees). S7: migration notes.
 - AC6: every repro string from the review is a test case with the expected classification.
 
+## Amendment 2026-10-08 (re-review of PR #20)
+- N1: git's read-only subcommands keep the `--output`/`--ext-diff`/`--textconv` check.
+- `cd` in compound syntax: the shell parser (marked edit, `kete/shell-directory.ts`) reports home or
+  the filesystem root for `cd` with no or an unknown target, so `external_directory` asks.
+- Protected-path checks for build commands and globbed dot-names; edits are checked on their real
+  path (symlinks). Package-manager config writes are high-risk and flag the build. More entry points
+  and "runs anything" commands; `yq env()`; web fetch asks before a cross-origin redirect.
+- **Accepted residual risk (coordinator decision):** editing an ordinary test file and then running
+  `npm test` runs that code without a prompt. "First build after any edit asks" would break the
+  edit-test loop. Containment comes from Wave 0b's OS sandbox, which must block writes to protected
+  paths and network for build/test commands. Documented in `docs/permissions.md`.
+
 ## Out of scope
 - MCP tool calls keep upstream's defaults (allowed) outside Plan mode — noted as follow-up.
 - Server/protocol changes (none needed: metadata is free-form).

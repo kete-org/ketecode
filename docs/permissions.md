@@ -30,9 +30,26 @@ command. These **build and test entry points** are: `package.json`, lockfiles, `
 `justfile`, `Taskfile*`, `build.rs`, `pyproject.toml`, `setup.py`/`setup.cfg`, `conftest.py`,
 `tox.ini`, `noxfile.py`, `*.config.{js,cjs,mjs,ts,cts,mts}` (Vite, Vitest, Jest, ESLint, …),
 `.npmrc`, `.yarnrc*`, `bunfig.toml`, `deno.json(c)`, `.envrc`, Gradle and Maven build files,
-`Gemfile`/`Rakefile`, `.github/workflows/**` and `.husky/**`. Ordinary source and test files are
-not on the list (the tool would be unusable), so a test file the agent edits can still run code
-when the tests run.
+`Gemfile`/`Rakefile`, `.github/workflows/**` and `.husky/**`, plus `turbo.json`, `nx.json`,
+`project.json`, `lerna.json`, `composer.json`, `Cargo.toml`, `.cargo/config`, `go.mod`/`go.work`,
+Gradle/Maven wrappers (`gradlew`, `mvnw`, `.mvn/**`), `Package.swift`, `CMakeLists.txt`, Bazel files,
+Babel/ESLint/Mocha/Prettier rc files, `jest.config.json`, `vitest.workspace.*`, test setup files
+(`jest.setup.*`, `vitest.setup.*`, `global-setup.*`), `pytest.ini`, `phpunit.xml`, `.rspec`,
+`spec_helper.rb`, `karma.conf.js`, `manage.py`, `node_modules/**`, `sitecustomize.py`, `*.pth`,
+`.pre-commit-config.yaml`, `lefthook.yml`, `.vscode/tasks.json`, `.mise.toml`, `.gitmodules`,
+`.gitattributes`, CI files (`.gitlab-ci.yml`, `Jenkinsfile`), and the instruction files `AGENTS.md`
+and `CLAUDE.md` (they ask, but don't count as a build change). Package-manager writes such as
+`npm pkg set` or `npm config set` are high-risk and count as a build change too. Kete Code checks the
+real path of an edit, so a symlink in the repository (`cfg -> .git`) doesn't get around these rules.
+The "build changed" note is kept in the running runtime's memory per session family: restarting
+the runtime forgets it.
+
+**Accepted residual risk (decided 2026-10-08).** Ordinary source and test files are not on the list,
+so an edited test file can run any code the next time the tests run, without a prompt. Asking before
+the first build after *any* edit would break the edit-and-test loop, so this risk is accepted for
+now. Containment comes from the local OS sandbox (Wave 0b, the next task), which must block writes
+to the protected paths and network access for build and test commands. Until then, use `ask` mode
+for work you don't trust.
 
 **Kete Code's own configuration and git's internals always ask** in every mode (Plan blocks them),
 even when a rule allows edits: `.kete/**` (config, agents, skills, plugins, commands),
@@ -62,8 +79,11 @@ itself a permission rule. Shell commands that write there (`echo … > .kete/ket
   expansion), `~/.ssh`, `~/.aws`, `printenv`/`env`, `jq env`, `ps e`, `%VAR%`, `$env:`, `env:`, keychains
 - Commands that run another program the classifier can't see: `rg --pre`, `git grep -O`,
   `bat --pager`, `fd --exec=…`
-- Leaving the workspace: `cd` alone, `cd -`, `cd ..` or `cd /elsewhere` (also when it's followed
-  by other commands); writing outside the workspace (`> /etc/…`, `>> ~/.bashrc`)
+- Leaving the workspace: `cd` alone, `cd -`, `cd ..`, `pushd +1` or `cd /elsewhere` (also inside
+  subshells, loops, functions and conditions — the shell tool's own directory check now treats a
+  `cd` with no or an unknown target as going home or anywhere); `CDPATH=…`; writing outside the
+  workspace (`> /etc/…`, `>> ~/.bashrc`); build output into protected paths (`go build -o
+  .git/hooks/…`, `tsc --outDir .kete`)
 - Anything the classifier can't check: command substitution (`$(…)`, backticks), subshells,
   heredocs, a command named by a variable or built with brace expansion, unbalanced quotes
 
@@ -143,10 +163,13 @@ A rule `{ "action": "*", "resource": "*", "effect": "allow" }` looks the same as
 built-in catch-all, so it does **not** turn the defaults off; name the action (`"shell"`, `"edit"`,
 `"webfetch"`) instead.
 
-An agent's own `permissions` and a session's rules count the same way. Answering **Always allow**
+An agent's own `permissions` and a session's rules count the same way. Web fetches follow redirects themselves: a redirect to another site asks first, like a new fetch.
+
+Answering **Always allow**
 to a prompt saves an approval for the project, with limits: it isn't offered for high-risk
-commands or for commands that run anything (`bash`, `node`, `python`, `npx`, `env`, `xargs`,
-`sudo`, …), and a saved approval never covers a high-risk command — only a configured rule can.
+commands or for commands that run anything or write files their arguments don't show (`bash`,
+`node`, `python`, `java`, `npx`, `env`, `xargs`, `sudo`, `go run`, `cargo run`, `poetry run`,
+`bundle exec`, `tmux`, `vim`, `tar`, `unzip`, `patch`, `git apply`, `npm pkg`, …), and a saved approval never covers a high-risk command — only a configured rule can.
 For a web fetch it covers that site (scheme, host and port), not every URL.
 
 Tightening always wins: a `deny` rule is decided before any mode runs, and your organization's

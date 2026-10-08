@@ -42,6 +42,8 @@ import { define } from "@opencode/plugin/effect/plugin"
 import type { Permission as PermissionSchema } from "@opencode/schema/permission"
 import { KetePermissionModes } from "@opencode/util/kete/permission-mode"
 import { Effect, Option } from "effect"
+import path from "path"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Agent } from "../agent.js"
 import { Location } from "../location.js"
@@ -218,8 +220,18 @@ export interface Lookup {
   readonly fallback: Mode
   /** Absolute directories that are Kete Code's own (global config and data). */
   readonly protectedRoots?: ReadonlyArray<string>
-  /** Session families (by root session ID) that edited a build/test entry point since the last check. */
+  /**
+   * Session families (by root session ID) that changed a build/test entry point since the last check.
+   * In memory, per runtime process: a restart forgets it (the next test/build command then doesn't
+   * ask for an earlier edit).
+   */
   readonly buildChanged?: Set<string>
+  /**
+   * An edit target's real path (symlinks resolved, through its deepest existing parent): relative to
+   * the real workspace when inside it, absolute otherwise. `FileAccess` resolves edit paths lexically,
+   * so `cfg -> .git` would otherwise let `cfg/config` through.
+   */
+  readonly realpath?: (value: string) => Effect.Effect<string | undefined>
 }
 
 /** The family's root session and the mode of the root-most session that has one (else the fallback). */
@@ -244,7 +256,12 @@ export const resolveMode = (lookup: Lookup, sessionID: SessionSchema.ID) =>
 
 const catchAll = (rule: Permission.Rule) => rule.action === "*" && rule.resource === "*" && rule.effect === "allow"
 
-const normalize = (value: string) => value.split("\\").join("/").replace(/\/+$/, "")
+// macOS and Windows file systems are case-insensitive by default.
+const caseless = process.platform === "darwin" || process.platform === "win32"
+const normalize = (value: string) => {
+  const slashed = value.split("\\").join("/").replace(/\/+$/, "")
+  return caseless ? slashed.toLowerCase() : slashed
+}
 
 function isProtected(value: string, roots: ReadonlyArray<string>) {
   if (KeteShellRisk.protectedPath(value)) return true
@@ -285,12 +302,21 @@ export const apply = Effect.fnUntraced(function* (
   const approved = yield* lookup.approved
   const all = [...configured, ...approved]
   const roots = lookup.protectedRoots ?? []
-  const resources = event.resources.map((value): Resource => {
-    const rule = Permission.evaluate(event.action, value, all)
-    const source: Source = approved.includes(rule) ? "saved" : catchAll(rule) ? "catch-all" : "explicit"
-    if (event.action !== "edit") return { value, source }
-    return { value, source, protected: isProtected(value, roots), entryPoint: KeteShellRisk.entryPoint(value) }
-  })
+  const resources = yield* Effect.forEach(event.resources, (value) =>
+    Effect.gen(function* () {
+      const rule = Permission.evaluate(event.action, value, all)
+      const source: Source = approved.includes(rule) ? "saved" : catchAll(rule) ? "catch-all" : "explicit"
+      if (event.action !== "edit") return { value, source } satisfies Resource
+      const real = lookup.realpath ? yield* lookup.realpath(value) : undefined
+      const paths = real === undefined || real === value ? [value] : [value, real]
+      return {
+        value,
+        source,
+        protected: paths.some((candidate) => isProtected(candidate, roots)),
+        entryPoint: paths.some(KeteShellRisk.entryPoint),
+      } satisfies Resource
+    }),
+  )
   const line = event.action === "shell" && typeof event.metadata?.command === "string" ? event.metadata.command : undefined
   const outcome = decide({
     mode,
@@ -303,9 +329,41 @@ export const apply = Effect.fnUntraced(function* (
   const final = stricter(event.effect, outcome.effect)
   tighten(event, outcome)
   if (outcome.buildCheck) lookup.buildChanged?.delete(root)
-  // An edit to a build/test entry point that may go ahead: the next test/build command asks once.
-  if (event.action === "edit" && final !== "deny" && resources.some((resource) => resource.entryPoint))
-    lookup.buildChanged?.add(root)
+  // A change to a build/test entry point that may go ahead (an edit, `npm pkg set`, `> package.json`):
+  // the next test/build command asks once. Instruction files (AGENTS.md) ask but don't count.
+  if (final !== "deny") {
+    const edited =
+      event.action === "edit" &&
+      resources.some((resource) => resource.entryPoint && !KeteShellRisk.instructionFile(resource.value))
+    const shell = event.action === "shell" && [...event.resources, ...(line ? [line] : [])].some(KeteShellRisk.changesBuild)
+    if (edited || shell) lookup.buildChanged?.add(root)
+  }
+})
+
+/**
+ * `value` with symlinks resolved through its deepest existing ancestor; see `Lookup.realpath`.
+ * Through `FSUtil` (wrapped in job mode, kete/job-fs-util.ts), never `fs` directly.
+ */
+export const realTarget = Effect.fnUntraced(function* (
+  files: Pick<FSUtil.Interface, "existsSafe" | "resolve">,
+  directory: string,
+  value: string,
+) {
+  const absolute = path.resolve(directory, value)
+  let existing = absolute
+  const rest: string[] = []
+  while (!(yield* files.existsSafe(existing))) {
+    const parent = path.dirname(existing)
+    if (parent === existing) return undefined
+    rest.unshift(path.basename(existing))
+    existing = parent
+  }
+  const real = path.join(yield* files.resolve(existing), ...rest)
+  const root = yield* files.resolve(directory)
+  const relative = path.relative(root, real)
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+    ? relative.split(path.sep).join("/")
+    : real
 })
 
 export const Plugin = define({
@@ -320,6 +378,7 @@ export const Plugin = define({
     const saved = yield* PermissionSaved.Service
     const location = yield* Location.Service
     const global = yield* Global.Service
+    const files = yield* FSUtil.Service
     const lookup: Lookup = {
       session: (sessionID) => sessions.get(sessionID).pipe(Effect.option),
       agent: (agentID) => agents.resolve(agentID),
@@ -332,6 +391,7 @@ export const Plugin = define({
         ),
       fallback,
       protectedRoots: [global.config, global.data],
+      realpath: (value) => realTarget(files, location.directory, value),
       // Per runtime process, keyed by root session; entries are removed when the check fires.
       buildChanged: new Set(),
     }

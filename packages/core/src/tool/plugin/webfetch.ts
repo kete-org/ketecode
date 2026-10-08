@@ -4,12 +4,13 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { ToolFailure } from "@opencode/ai"
 import { Duration, Effect, Schema } from "effect"
-import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http" // kete_change: FetchHttpClient and HttpClientError as values (kete/web-redirect.ts)
 import { Parser } from "htmlparser2"
 import { Permission } from "../../permission.js"
 import { convertHTMLToMarkdown, MAX_MARKDOWN_BYTES } from "../html-markdown.js"
 import { collectBoundedResponseBody } from "../http-body.js"
 import { KeteWebHost } from "../../kete/web-host.js" // kete_change
+import { KeteWebRedirect } from "../../kete/web-redirect.js" // kete_change
 
 export const name = "webfetch"
 export const MAX_RESPONSE_BYTES = MAX_MARKDOWN_BYTES
@@ -133,10 +134,35 @@ export const Plugin = {
                 source: { type: "tool", messageID: context.messageID, id: context.id },
               })
 
+              // kete_change start: redirects to another origin ask first (kete/web-redirect.ts)
+              const fetchChecked = (userAgent?: string) =>
+                KeteWebRedirect.follow({
+                  url: input.url,
+                  fetch: (url) =>
+                    http
+                      .execute(request(url, input.format, userAgent))
+                      .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" })),
+                  approve: (url) =>
+                    permission.assert({
+                      action: name,
+                      resources: [url],
+                      save: KeteWebHost.savePatterns(url),
+                      metadata: { ...input, url },
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.messageID, id: context.id },
+                    }),
+                }).pipe(Effect.flatMap(HttpClientResponse.filterStatusOk))
+              // kete_change end
               const { body, contentType } = yield* Effect.gen(function* () {
-                const response = yield* execute(http, input.url, input.format).pipe(
-                  Effect.catchIf(isCloudflareChallenge, () => execute(http, input.url, input.format, Brand.cliName)), // kete_change
+                // kete_change start
+                const response = yield* fetchChecked().pipe(
+                  Effect.catchIf(
+                    (error) => HttpClientError.isHttpClientError(error) && isCloudflareChallenge(error),
+                    () => fetchChecked(Brand.cliName),
+                  ),
                 )
+                // kete_change end
                 const contentType = response.headers["content-type"] || ""
                 const mime = mimeFrom(contentType)
                 if (isImageAttachment(mime))

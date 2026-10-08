@@ -287,4 +287,37 @@ describe("KetePermissionMode modes", () => {
       expect(run(withMode("default", { approved }), "webfetch", ["https://docs.example.com.evil.test/x"]).effect).toBe("ask")
     })
   })
+  describe("PR #20 re-review", () => {
+    const withMode = (mode: Mode, extra?: Partial<Parameters<typeof lookup>[0]>) =>
+      lookup({ sessions: [fakeSession({ id: "ses_root", metadata: { [KetePermissionMode.metadataKey]: mode } })], ...extra })
+
+    test("SF4: npm pkg set / config set make the next test command ask once", () => {
+      const changed = new Set<string>()
+      const look = withMode("default", { buildChanged: changed })
+      expect(run(look, "shell", ["npm pkg set scripts.test=id"]).effect).toBe("ask")
+      expect(changed.has("ses_root")).toBe(true)
+      expect(run(look, "shell", ["npm test"]).effect).toBe("ask")
+      expect(run(look, "shell", ["npm test"]).effect).toBe("allow")
+    })
+
+    test("SF6: AGENTS.md and CLAUDE.md edits ask in Default but don't flag the build", () => {
+      const changed = new Set<string>()
+      expect(run(withMode("default", { buildChanged: changed }), "edit", ["AGENTS.md"]).effect).toBe("ask")
+      expect(changed.size).toBe(0)
+    })
+
+    test("SF3: a symlink to .git is protected through its real path", () => {
+      const look: KetePermissionMode.Lookup = {
+        ...withMode("auto"),
+        realpath: (value) => Effect.succeed(value.startsWith("cfg/") ? ".git/" + value.slice(4) : value),
+      }
+      expect(run(look, "edit", ["cfg/config"]).effect).toBe("ask")
+      expect(run(look, "edit", ["src/a.ts"]).effect).toBe("allow")
+    })
+
+    test("nit: protected roots compare case-insensitively on macOS and Windows", () => {
+      const event = run(withMode("auto"), "edit", ["/HOME/ME/.config/KETE/kete.json"])
+      expect(event.effect).toBe(process.platform === "darwin" || process.platform === "win32" ? "ask" : "allow")
+    })
+  })
 })
