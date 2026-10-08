@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/kete-org/ketecode/packages/kete-egress/internal/config"
 	"github.com/kete-org/ketecode/packages/kete-egress/internal/phase"
@@ -91,11 +92,14 @@ func TestV2ForbiddenAndBlockedRules(t *testing.T) {
 // connectProxy is a fake enterprise proxy: it records each CONNECT's target and
 // Proxy-Authorization and tunnels to dst (or answers status when non-zero).
 type connectProxy struct {
-	ln     net.Listener
-	mu     sync.Mutex
-	seen   []string
-	auth   []string
-	status int
+	ln net.Listener
+	// chunked: answer 200 with "Transfer-Encoding: chunked", as some proxies (and Go's own server,
+	// hijacking after WriteHeader) do.
+	chunked bool
+	mu      sync.Mutex
+	seen    []string
+	auth    []string
+	status  int
 }
 
 func newConnectProxy(t *testing.T, dst string, status int) *connectProxy {
@@ -132,7 +136,11 @@ func newConnectProxy(t *testing.T, dst string, status int) *connectProxy {
 					return
 				}
 				defer up.Close()
-				_, _ = io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n")
+				if cp.chunked {
+					_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+				} else {
+					_, _ = io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n")
+				}
 				go func() { _, _ = io.Copy(up, br) }()
 				_, _ = io.Copy(c, up)
 			}()
@@ -188,6 +196,25 @@ func TestV2UpstreamProxyCarriesTheConnection(t *testing.T) {
 	}
 	if strings.Contains(h.log.String(), "s3cret") || strings.Contains(h.log.String(), "c3ZjOnMzY3JldA") {
 		t.Error("the proxy credentials were logged")
+	}
+}
+
+// A proxy that labels its 200 with a body framing still tunnels: the answer's body is never read.
+func TestV2UpstreamProxyChunked200(t *testing.T) {
+	h := newHarness(t, hopts{v2: withUpstream()})
+	cp := newConnectProxy(t, h.up.srv.Listener.Addr().String(), 0)
+	cp.chunked = true
+	h.p.upstreamProxyPort = cp.port()
+	h.phase(t, phase.Agent)
+	done := make(chan int, 1)
+	go func() { st, _ := v2Get(t, h, "https://gateway.test/"); done <- st }()
+	select {
+	case st := <-done:
+		if st != 200 {
+			t.Errorf("status %d", st)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("the request hung on the CONNECT answer")
 	}
 }
 

@@ -208,7 +208,9 @@ func (p *Proxy) dialViaUpstream(ctx context.Context, up *config.Upstream, host s
 		c.Close()
 		return nil, &dialError{policy.ReasonUpstreamProxy, err}
 	}
-	resp.Body.Close()
+	// The body is never read: a 2xx answer to CONNECT has none whatever its headers say (RFC 9110
+	// §9.3.6; some proxies send Transfer-Encoding anyway, and reading would wait for tunnel data),
+	// and a refusal's body is the proxy's and is dropped with the connection.
 	if resp.StatusCode/100 != 2 {
 		c.Close()
 		// Never the answer's body or headers: a proxy's error page may echo credentials.
