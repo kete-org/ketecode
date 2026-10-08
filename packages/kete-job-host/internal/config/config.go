@@ -14,7 +14,9 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/fsutil"
@@ -48,7 +50,68 @@ type File struct {
 	// Dedicated configures the dedicated driver (optional for it, every field has a default;
 	// refused for firecracker).
 	Dedicated *DedicatedFile `json:"dedicated,omitempty"`
+	// Kubernetes configures the kubernetes driver, the enterprise runner (required by it; refused
+	// for the others). Written by the Helm chart (packages/kete-runner-chart) into a ConfigMap.
+	Kubernetes *KubernetesFile `json:"kubernetes,omitempty"`
 }
+
+// KubernetesFile is the kubernetes driver's section (ADR 0011; spec §4).
+type KubernetesFile struct {
+	Namespace           string                 `json:"namespace"`
+	JobsNamespace       string                 `json:"jobs_namespace"`
+	KeysSecret          string                 `json:"keys_secret,omitempty"`
+	StateSecret         string                 `json:"state_secret,omitempty"`
+	EnrollmentSecret    string                 `json:"enrollment_secret,omitempty"`
+	Lease               string                 `json:"lease,omitempty"`
+	RuntimeClassNames   []string               `json:"runtime_class_names"`
+	Proxy               string                 `json:"proxy,omitempty"`
+	CABundle            string                 `json:"ca_bundle,omitempty"`
+	Repositories        []string               `json:"repositories,omitempty"`
+	AdvertiseRepos      bool                   `json:"advertise_repositories,omitempty"`
+	Boundary            *contract.DataBoundary `json:"boundary,omitempty"`
+	PodDriver           string                 `json:"pod_driver"`
+	Placeholder         *PlaceholderFile       `json:"placeholder,omitempty"`
+	StartTimeoutSeconds int                    `json:"start_timeout_seconds,omitempty"`
+}
+
+// PlaceholderFile configures the test-only placeholder pod driver (built with the kete_testdriver
+// tag): each machine is a pod running its image's `sleep`, for the controller's kind e2e.
+type PlaceholderFile struct {
+	// ExitAfter makes machines of an image exit by themselves after Seconds (else they run until
+	// stopped).
+	ExitAfter []PlaceholderExit `json:"exit_after,omitempty"`
+}
+
+// PlaceholderExit is one ExitAfter entry.
+type PlaceholderExit struct {
+	Image   string `json:"image"`
+	Seconds int    `json:"seconds"`
+}
+
+// Kubernetes is the validated kubernetes section.
+type Kubernetes struct {
+	Namespace        string
+	JobsNamespace    string
+	KeysSecret       string
+	StateSecret      string
+	EnrollmentSecret string // "" = none configured
+	Lease            string
+	RuntimeClasses   []string
+	// Proxy is the enterprise HTTP proxy for the platform connection (nil: direct).
+	Proxy *url.URL
+	// CABundle is a PEM file of extra roots for the platform connection ("" = system roots only).
+	CABundle        string
+	Repositories    []string
+	AdvertiseRepos  bool
+	Boundary        contract.DataBoundary
+	PodDriver       string
+	PlaceholderExit map[string]int
+	StartTimeout    time.Duration
+}
+
+// PodDriverPlaceholder is the test-only placeholder pod driver; the VM-isolated pod driver is
+// piece P2 of the enterprise runtime.
+const PodDriverPlaceholder = "placeholder"
 
 // DedicatedFile is the dedicated driver's section.
 type DedicatedFile struct {
@@ -129,12 +192,17 @@ type Config struct {
 	FC *Firecracker
 	// Ded is the dedicated section with its defaults (set exactly for the dedicated driver).
 	Ded *Dedicated
+	// Kube is the kubernetes section with its defaults (set exactly for the kubernetes driver).
+	Kube *Kubernetes
 }
 
 // HostProfile is the machine configuration profile this host's driver runs.
 func (c Config) HostProfile() string {
-	if c.Driver == contract.DriverDedicated {
+	switch c.Driver {
+	case contract.DriverDedicated:
 		return "dedicated"
+	case contract.DriverKubernetes:
+		return "kubevm"
 	}
 	return "microvm"
 }
@@ -214,10 +282,23 @@ func Parse(data []byte) (Config, error) {
 		if c.Firecracker != "" || c.GuestKernel != "" {
 			return Config{}, errors.New("config: firecracker versions only for the firecracker driver")
 		}
+	case contract.DriverKubernetes:
+		if c.Reset != contract.ResetNone {
+			return Config{}, errors.New("config: a kubernetes host declares reset none")
+		}
+		if c.Firecracker != "" || c.GuestKernel != "" || c.Generation != "" || f.StateDir != "" || len(f.Resolvers) > 0 || len(f.KernelAllowlist) > 0 {
+			return Config{}, errors.New("config: versions, generation, state_dir, resolvers and kernel_allowlist are not for the kubernetes driver")
+		}
+		if c.Slots < 1 || c.Slots > contract.V2MaxSlots {
+			return Config{}, fmt.Errorf("config: slots must be 1-%d", contract.V2MaxSlots)
+		}
+		if n := len(f.ImageAllowlist); n < 1 || n > contract.V2MaxImages {
+			return Config{}, fmt.Errorf("config: a kubernetes host allows 1-%d images", contract.V2MaxImages)
+		}
 	default:
-		return Config{}, errors.New("config: driver must be firecracker or dedicated")
+		return Config{}, errors.New("config: driver must be firecracker, dedicated or kubernetes")
 	}
-	if c.Slots < 1 || c.Slots > contract.MaxSlots {
+	if c.Driver != contract.DriverKubernetes && (c.Slots < 1 || c.Slots > contract.MaxSlots) {
 		return Config{}, fmt.Errorf("config: slots must be 1-%d", contract.MaxSlots)
 	}
 	if c.Generation != "" && !contract.ValidGeneration(c.Generation) {
@@ -264,6 +345,16 @@ func Parse(data []byte) (Config, error) {
 	}
 	if f.Dedicated != nil && c.Driver != contract.DriverDedicated {
 		return Config{}, errors.New("config: the dedicated section is only for the dedicated driver")
+	}
+	if (f.Kubernetes != nil) != (c.Driver == contract.DriverKubernetes) {
+		return Config{}, errors.New("config: the kubernetes section is exactly for the kubernetes driver")
+	}
+	if f.Kubernetes != nil {
+		k, err := parseKubernetes(*f.Kubernetes, c.ImageAllowlist)
+		if err != nil {
+			return Config{}, err
+		}
+		c.Kube = &k
 	}
 	if c.Driver == contract.DriverDedicated {
 		d, err := parseDedicated(f.Dedicated)
@@ -444,3 +535,110 @@ func NormalizeOrigin(raw string) (string, string, error) {
 	}
 	return "https://" + host, host, nil
 }
+
+func parseKubernetes(f KubernetesFile, images []string) (Kubernetes, error) {
+	str := func(v, d string) string {
+		if v == "" {
+			return d
+		}
+		return v
+	}
+	k := Kubernetes{
+		Namespace: f.Namespace, JobsNamespace: f.JobsNamespace,
+		KeysSecret: str(f.KeysSecret, "kete-runner-keys"), StateSecret: str(f.StateSecret, "kete-runner-state"),
+		EnrollmentSecret: f.EnrollmentSecret, Lease: str(f.Lease, "kete-runner"),
+		CABundle: f.CABundle, AdvertiseRepos: f.AdvertiseRepos, Boundary: contract.DefaultDataBoundary,
+		PodDriver: f.PodDriver, StartTimeout: 10 * time.Minute,
+	}
+	for _, n := range []string{k.Namespace, k.JobsNamespace} {
+		if !dns1123Label(n) {
+			return Kubernetes{}, fmt.Errorf("config: kubernetes namespace %q is not a DNS-1123 label", n)
+		}
+	}
+	if k.Namespace == k.JobsNamespace {
+		return Kubernetes{}, errors.New("config: the controller and jobs namespaces must differ")
+	}
+	names := []string{k.KeysSecret, k.StateSecret, k.Lease}
+	if k.EnrollmentSecret != "" {
+		names = append(names, k.EnrollmentSecret)
+	}
+	for _, n := range names {
+		if !contract.ValidKubernetesName(n) {
+			return Kubernetes{}, fmt.Errorf("config: kubernetes object name %q is invalid", n)
+		}
+	}
+	if k.KeysSecret == k.StateSecret || k.KeysSecret == k.EnrollmentSecret || k.StateSecret == k.EnrollmentSecret {
+		return Kubernetes{}, errors.New("config: the keys, state and enrollment Secrets must differ")
+	}
+	k.RuntimeClasses = append([]string(nil), f.RuntimeClassNames...)
+	if n := len(k.RuntimeClasses); n < 1 || n > contract.V2MaxRuntimeClasses {
+		return Kubernetes{}, fmt.Errorf("config: runtime_class_names must name 1-%d RuntimeClasses", contract.V2MaxRuntimeClasses)
+	}
+	seen := map[string]bool{}
+	for _, n := range k.RuntimeClasses {
+		if !contract.ValidKubernetesName(n) || seen[n] {
+			return Kubernetes{}, fmt.Errorf("config: runtime class %q is invalid or repeated", n)
+		}
+		seen[n] = true
+	}
+	if f.Proxy != "" {
+		u, err := url.Parse(f.Proxy)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Hostname() == "" ||
+			u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			// Credentials never sit in the configuration (a ConfigMap): proxy authentication is a
+			// later addition through a Secret.
+			return Kubernetes{}, errors.New("config: kubernetes proxy must be http(s)://host[:port] without credentials, path or query")
+		}
+		k.Proxy = u
+	}
+	if k.CABundle != "" && !absClean(k.CABundle) {
+		return Kubernetes{}, errors.New("config: kubernetes ca_bundle must be a clean absolute path")
+	}
+	seen = map[string]bool{}
+	for _, r := range f.Repositories {
+		if !contract.ValidRuntimeRepoName(r) || seen[r] {
+			return Kubernetes{}, fmt.Errorf("config: repository %q is invalid or repeated", r)
+		}
+		seen[r] = true
+		k.Repositories = append(k.Repositories, r)
+	}
+	if len(k.Repositories) > contract.V2MaxRepositories {
+		return Kubernetes{}, fmt.Errorf("config: at most %d repositories", contract.V2MaxRepositories)
+	}
+	if f.Boundary != nil {
+		if err := f.Boundary.Validate(); err != nil {
+			return Kubernetes{}, fmt.Errorf("config: kubernetes %w", err)
+		}
+		k.Boundary = *f.Boundary
+	}
+	switch k.PodDriver {
+	case PodDriverPlaceholder:
+	case "":
+		return Kubernetes{}, errors.New("config: kubernetes pod_driver is required (the VM-isolated pod driver is not built yet; placeholder is for test builds)")
+	default:
+		return Kubernetes{}, fmt.Errorf("config: unknown kubernetes pod_driver %q", k.PodDriver)
+	}
+	if f.Placeholder != nil && k.PodDriver != PodDriverPlaceholder {
+		return Kubernetes{}, errors.New("config: the placeholder section is only for the placeholder pod driver")
+	}
+	k.PlaceholderExit = map[string]int{}
+	if f.Placeholder != nil {
+		for _, e := range f.Placeholder.ExitAfter {
+			if !slices.Contains(images, e.Image) || e.Seconds < 1 || e.Seconds > 86_400 || k.PlaceholderExit[e.Image] != 0 {
+				return Kubernetes{}, errors.New("config: placeholder exit_after entries name an allowlisted image once, 1-86400 seconds")
+			}
+			k.PlaceholderExit[e.Image] = e.Seconds
+		}
+	}
+	if f.StartTimeoutSeconds != 0 {
+		if f.StartTimeoutSeconds < 30 || f.StartTimeoutSeconds > 3_600 {
+			return Kubernetes{}, errors.New("config: kubernetes start_timeout_seconds must be 30-3600")
+		}
+		k.StartTimeout = time.Duration(f.StartTimeoutSeconds) * time.Second
+	}
+	return k, nil
+}
+
+var dns1123LabelRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+
+func dns1123Label(s string) bool { return dns1123LabelRe.MatchString(s) }

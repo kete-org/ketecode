@@ -1,0 +1,7 @@
+# kind cluster for the runner e2e, with the local registry as a mirror (images by digest).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"

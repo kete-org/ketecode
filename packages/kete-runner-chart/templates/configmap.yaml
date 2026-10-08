@@ -1,0 +1,35 @@
+{{- include "kete-runner.checks" . -}}
+{{- $k := dict
+  "namespace" .Release.Namespace
+  "jobs_namespace" .Values.jobs.namespace
+  "keys_secret" .Values.controller.keysSecret
+  "state_secret" .Values.controller.stateSecret
+  "lease" .Values.controller.leaseName
+  "runtime_class_names" .Values.jobs.runtimeClassNames
+  "advertise_repositories" .Values.advertiseRepositories
+  "boundary" (dict "summary" .Values.boundary.summary "denials" .Values.boundary.denials "publish_refs" .Values.boundary.publishRefs)
+  "pod_driver" .Values.podDriver
+  "start_timeout_seconds" (int .Values.jobs.startTimeoutSeconds)
+-}}
+{{- with .Values.enrollment.tokenSecret }}{{ $_ := set $k "enrollment_secret" . }}{{ end -}}
+{{- with .Values.proxy.url }}{{ $_ := set $k "proxy" . }}{{ end -}}
+{{- if .Values.caBundle.existingSecret }}{{ $_ := set $k "ca_bundle" (printf "/etc/kete-runner/ca/%s" .Values.caBundle.key) }}{{ end -}}
+{{- with .Values.repositories }}{{ $_ := set $k "repositories" . }}{{ end -}}
+{{- if .Values.placeholder.exitAfter }}{{ $_ := set $k "placeholder" (dict "exit_after" .Values.placeholder.exitAfter) }}{{ end -}}
+{{- $cfg := dict
+  "platform_url" (trimSuffix "/" .Values.platform.url)
+  "driver" "kubernetes"
+  "slots" (int .Values.jobs.slots)
+  "reset" "none"
+  "image_allowlist" .Values.jobs.images
+  "kubernetes" $k
+-}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kete-runner-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+data:
+  config.json: {{ toJson $cfg | quote }}

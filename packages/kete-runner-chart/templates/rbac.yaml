@@ -1,0 +1,112 @@
+# Least privilege (spec §4.3, "S0 findings" 2). No pods/exec, no cluster-wide Secrets, no
+# workloads; the only cluster-scoped right is `get nodes` (the node boot ID for the kubevm check).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kete-runner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+rules:
+  # Host keys and state: only these two Secrets may be read or written.
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ .Values.controller.keysSecret | quote }}, {{ .Values.controller.stateSecret | quote }}]
+    verbs: [get, update]
+  # Creating them the first time (create can't be limited by name).
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  {{- with .Values.enrollment.tokenSecret }}
+  # The enrollment token: read once, deleted once spent.
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ . | quote }}]
+    verbs: [get, delete]
+  {{- end }}
+  # Single active replica.
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [{{ .Values.controller.leaseName | quote }}]
+    verbs: [get, update]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kete-runner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kete-runner
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controller.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kete-runner
+  namespace: {{ .Values.jobs.namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+rules:
+  # Job pods (one per machine) and their per-machine Secrets. No exec, attach or port-forward.
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, list, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, get, delete]
+  # Kubernetes Events on job pods (kubectl describe shows the controller's actions).
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kete-runner
+  namespace: {{ .Values.jobs.namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kete-runner
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controller.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ printf "kete-runner-%s-nodes" .Release.Namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "kete-runner-%s-nodes" .Release.Namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ printf "kete-runner-%s-nodes" .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controller.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}

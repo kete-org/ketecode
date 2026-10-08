@@ -398,6 +398,19 @@ ADR 0023 rule 8. A dedicated host's identity (keys, `generation`) is good for **
   route/field carrying the nonce and the quote, the signed read-only host image (UKI, Secure Boot,
   dm-verity root, tmpfs overlay, per-boot encrypted scratch) and reboot-after-job, CI with `swtpm`.
 
+## Kubernetes runner (`kete-job-host kubernetes`)
+
+The enterprise runner (ADR 0011; enterprise runtime piece P1): the same agent under
+**job-host-v2**, run as a **non-root pod** by the Helm chart `packages/kete-runner-chart`. It
+differs from a VM host in where things live, not in the rules: a Lease (one active replica), keys
+and state in Secrets (`internal/kube`), enrollment from a token Secret, an explicit enterprise
+proxy and CA bundle for the platform connection, and machines as labelled pods
+(`internal/driver/kubernetes`, with the node boot-ID Secret handoff). It never runs the VM host
+guard (`internal/hostguard`): it is a pod by design and isolates nothing itself; each job pod is
+VM-isolated (RuntimeClass, the chart's admission policy, the entrypoint's boot-ID check). P1
+ships only a test-only placeholder pod driver (`-tags kete_testdriver`); release builds refuse it.
+See the chart README and `docs/context/modules/kubernetes-runner.md`.
+
 ## Guest kernel
 
 `kernel/`: Linux **6.18 LTS** (Firecracker supports 6.18 from v1.16.1; its 6.1 support ended

@@ -1,0 +1,37 @@
+# The e2e's fake world: a RuntimeClass mapped to runc (the placeholder driver's stand-in for a
+# VM-isolated class; only kind CI defines it), and the fake platform (TLS job-host-v2 routes, admin
+# API, CONNECT proxy) in its own namespace. @IMAGE@ is the test image by digest.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata: {name: kete-test}
+handler: runc
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: kete-e2e}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: platform, namespace: kete-e2e}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: platform}}
+  template:
+    metadata: {labels: {app: platform}}
+    spec:
+      containers:
+        - name: platform
+          image: "@IMAGE@"
+          command: [/usr/local/bin/kete-fake-platform, -authority, platform.kete-e2e.svc.cluster.local]
+          ports: [{containerPort: 8443}, {containerPort: 8080}, {containerPort: 3128}]
+          readinessProbe: {tcpSocket: {port: 8080}, periodSeconds: 2}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: platform, namespace: kete-e2e}
+spec:
+  selector: {app: platform}
+  ports:
+    - {name: https, port: 443, targetPort: 8443}
+    - {name: admin, port: 8080, targetPort: 8080}
+    - {name: proxy, port: 3128, targetPort: 3128}

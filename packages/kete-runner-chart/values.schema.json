@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["platform", "image", "jobs", "boundary", "podDriver"],
+  "properties": {
+    "platform": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {"url": {"type": "string", "pattern": "^(https://[a-z0-9.-]+(:443)?/?)?$"}},
+      "additionalProperties": false
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {"type": "string"},
+        "digest": {"type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$"},
+        "pullPolicy": {"enum": ["IfNotPresent", "Always", "Never"]}
+      },
+      "additionalProperties": false
+    },
+    "imagePullSecrets": {"type": "array"},
+    "enrollment": {"type": "object", "properties": {"tokenSecret": {"type": "string"}}, "additionalProperties": false},
+    "proxy": {
+      "type": "object",
+      "properties": {"url": {"type": "string", "pattern": "^(https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?)?$"}},
+      "additionalProperties": false
+    },
+    "caBundle": {
+      "type": "object",
+      "properties": {"existingSecret": {"type": "string"}, "key": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    },
+    "jobs": {
+      "type": "object",
+      "properties": {
+        "namespace": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"},
+        "createNamespace": {"type": "boolean"},
+        "runtimeClassNames": {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "not": {"enum": ["runc", "runsc", "gvisor"]}}},
+        "images": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9.:-]+/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$"}},
+        "slots": {"type": "integer", "minimum": 1, "maximum": 128},
+        "startTimeoutSeconds": {"type": "integer", "minimum": 30, "maximum": 3600},
+        "allowedCapabilities": {"type": "array", "uniqueItems": true, "items": {"enum": ["NET_ADMIN", "SYS_ADMIN", "SYS_RESOURCE", "SETUID", "SETGID", "KILL", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "NET_BIND_SERVICE"]}},
+        "egress": {"type": "object", "properties": {"cidrs": {"type": "array", "items": {"type": "string"}}, "ports": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 65535}}}}
+      },
+      "additionalProperties": false
+    },
+    "repositories": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,19}:[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$"}},
+    "advertiseRepositories": {"type": "boolean"},
+    "boundary": {
+      "type": "object",
+      "properties": {
+        "summary": {"enum": ["none", "redacted", "full"]},
+        "denials": {"enum": ["count", "actions", "full"]},
+        "publishRefs": {"enum": ["omit", "send"]}
+      },
+      "additionalProperties": false
+    },
+    "podDriver": {"enum": ["", "placeholder"]},
+    "placeholder": {"type": "object"},
+    "controller": {"type": "object"},
+    "networkPolicy": {"type": "object"},
+    "admissionPolicy": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}
+  }
+}

@@ -4,7 +4,11 @@
 // that behaves like the platform's (`docs/platform/job-host-v1.md` "Acknowledgements"): a
 // machine's sealed config is sent until the host reports it running or terminal, a withdrawn
 // machine stays in `destroy` until the host reports it terminal, and `revision` increases on every
-// change. Hooks let tests tamper with responses. Tests only.
+// change. Hooks let tests tamper with responses. With V2 set it serves job-host-v2 instead
+// (`docs/platform/job-host-v2.md`: the v2 signature tag, `version: 2` bodies, v2 facts and report,
+// run machines with a repository, the v2 seal label); a v1-signed request is then
+// signature_malformed, as the platform's v2 verifier answers. Tests only (and the kind e2e's
+// fake platform server, cmd/kete-fake-platform).
 package fakeplatform
 
 import (
@@ -13,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
@@ -27,6 +32,7 @@ import (
 // Machine is the platform's row for one machine.
 type Machine struct {
 	Run            contract.RunMachine
+	RunV2          *contract.RunMachineV2 // v2 platforms
 	DesiredRunning bool
 	Config         *contract.SealedConfig // deleted once reported running or terminal
 	Observed       string
@@ -49,6 +55,8 @@ type Host struct {
 	Machines   map[string]*Machine
 	Unknown    map[string]contract.ObservedMachine
 	Reports    []contract.Report
+	FactsV2    contract.FactsV2
+	ReportsV2  []contract.ReportV2
 }
 
 // Recorded is one request as received.
@@ -63,6 +71,8 @@ type Recorded struct {
 type Platform struct {
 	Authority string
 	Now       func() time.Time
+	// V2 serves job-host-v2 (set before the first request).
+	V2 bool
 
 	mu       sync.Mutex
 	tokens   map[string]bool
@@ -216,6 +226,8 @@ func (p *Platform) HostSnapshot(hostID string) Host {
 		h.Machines[id] = &c
 	}
 	h.Reports = append([]contract.Report(nil), p.hosts[hostID].Reports...)
+	h.ReportsV2 = append([]contract.ReportV2(nil), p.hosts[hostID].ReportsV2...)
+	h.Unknown = maps.Clone(p.hosts[hostID].Unknown)
 	return h
 }
 
@@ -237,6 +249,7 @@ func (p *Platform) Requests() []Recorded {
 }
 
 var statusFor = map[string]int{
+	contract.ErrContractMismatch: 403,
 	contract.ErrMalformedRequest: 400, contract.ErrBodyTooLarge: 400, contract.ErrDigestMismatch: 400, contract.ErrSignatureMalformed: 400,
 	contract.ErrSignatureInvalid: 401, contract.ErrClockSkew: 401, contract.ErrNonceReplayed: 401, contract.ErrEnrollmentTokenInvalid: 401,
 	contract.ErrHostPending: 403, contract.ErrHostDisabled: 403, contract.ErrHostRevoked: 403, contract.ErrGenerationMismatch: 403,
@@ -284,6 +297,9 @@ func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		panic(http.ErrAbortHandler)
 	}
 	limit := contract.PollMaxBytes
+	if p.V2 {
+		limit = contract.V2PollMaxBytes
+	}
 	if r.URL.Path == contract.EnrollPath {
 		limit = contract.EnrollMaxBytes
 	} else if r.URL.Path != contract.PollPath || r.Method != http.MethodPost {
@@ -312,11 +328,16 @@ func (p *Platform) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			SignatureInput: r.Header.Get("Signature-Input"), Signature: r.Header.Get("Signature"),
 		},
 	}
-	if r.URL.Path == contract.EnrollPath {
+	switch {
+	case p.V2 && r.URL.Path == contract.EnrollPath:
+		p.enrollV2(w, req)
+	case p.V2:
+		p.pollV2(w, req)
+	case r.URL.Path == contract.EnrollPath:
 		p.enroll(w, req)
-		return
+	default:
+		p.poll(w, req)
 	}
-	p.poll(w, req)
 }
 
 func (p *Platform) checkNonce(params sig.Params, now int64) bool {
@@ -478,4 +499,174 @@ func (p *Platform) poll(w http.ResponseWriter, r sig.Request) {
 		p.TamperPoll(&resp)
 	}
 	p.ok(w, r.Path, r.Body, 200, resp)
+}
+
+// ---------------------------------------------------------------- job-host-v2
+
+// AssignV2 adds a v2 machine with a configuration sealed under the v2 label.
+func (p *Platform) AssignV2(hostID string, run contract.RunMachineV2, cfg seal.MachineConfig) error {
+	js, err := cfg.Canonical()
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	h := p.hosts[hostID]
+	p.mu.Unlock()
+	if h == nil {
+		return errors.New("fakeplatform: unknown host")
+	}
+	pub, ok := sig.DecodeKey(h.SealingKey)
+	if !ok {
+		return errors.New("fakeplatform: bad sealing key")
+	}
+	sc, err := seal.SealV2(pub, seal.Binding{HostID: hostID, MachineID: run.MachineID, JobID: run.JobID, Generation: h.Generation}, js)
+	if err != nil {
+		return err
+	}
+	run.Config = &sc
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if h.Status != "active" {
+		return fmt.Errorf("fakeplatform: host is %s", h.Status)
+	}
+	h.Machines[run.MachineID] = &Machine{RunV2: &run, DesiredRunning: true, Config: run.Config}
+	return nil
+}
+
+// Hosts lists the host ids.
+func (p *Platform) Hosts() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ids := make([]string, 0, len(p.hosts))
+	for id := range p.hosts {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (p *Platform) enrollV2(w http.ResponseWriter, r sig.Request) {
+	params, fp, err := sig.V2.VerifyEnrollment(r)
+	if err != nil {
+		p.fail(w, r.Path, r.Body, err.Error())
+		return
+	}
+	if !p.checkNonce(params, r.Now) {
+		p.fail(w, r.Path, r.Body, contract.ErrNonceReplayed)
+		return
+	}
+	var req contract.EnrollRequestV2
+	if contract.Decode(r.Body, &req) != nil || req.Validate() != nil {
+		p.fail(w, r.Path, r.Body, contract.ErrMalformedRequest)
+		return
+	}
+	valid := p.tokens[req.EnrollmentToken]
+	delete(p.tokens, req.EnrollmentToken)
+	if !valid {
+		p.fail(w, r.Path, r.Body, contract.ErrEnrollmentTokenInvalid)
+		return
+	}
+	if _, used := p.byKey[req.SigningKey]; used {
+		p.fail(w, r.Path, r.Body, contract.ErrKeyInUse)
+		return
+	}
+	id := fmt.Sprintf("7d0f3c2e-5b1a-4c8e-9f60-%012x", len(p.hosts)+1)
+	p.hosts[id] = &Host{
+		ID: id, SigningKey: req.SigningKey, SealingKey: req.SealingKey, Generation: req.Facts.Generation,
+		Status: "pending", FactsV2: req.Facts, Machines: map[string]*Machine{}, Unknown: map[string]contract.ObservedMachine{},
+	}
+	p.byKey[req.SigningKey] = id
+	p.ok(w, r.Path, r.Body, 201, contract.EnrollResponseV2{Version: 2, HostID: id, Status: "pending", Fingerprint: fp, NextPollAfter: 30})
+}
+
+func (p *Platform) pollV2(w http.ResponseWriter, r sig.Request) {
+	params, err := sig.V2.Verify(r, func(keyid string) string {
+		if h := p.hosts[keyid]; h != nil {
+			return h.SigningKey
+		}
+		return ""
+	})
+	if err != nil {
+		p.fail(w, r.Path, r.Body, err.Error())
+		return
+	}
+	if !p.checkNonce(params, r.Now) {
+		p.fail(w, r.Path, r.Body, contract.ErrNonceReplayed)
+		return
+	}
+	h := p.hosts[params.KeyID]
+	switch h.Status {
+	case "pending":
+		p.fail(w, r.Path, r.Body, contract.ErrHostPending)
+		return
+	case "disabled":
+		p.fail(w, r.Path, r.Body, contract.ErrHostDisabled)
+		return
+	case "revoked":
+		p.fail(w, r.Path, r.Body, contract.ErrHostRevoked)
+		return
+	}
+	var rep contract.ReportV2
+	if contract.Decode(r.Body, &rep) != nil || rep.Validate() != nil {
+		p.fail(w, r.Path, r.Body, contract.ErrMalformedRequest)
+		return
+	}
+	if rep.Generation != h.Generation {
+		p.fail(w, r.Path, r.Body, contract.ErrGenerationMismatch)
+		return
+	}
+	if p.ForceError != "" {
+		p.fail(w, r.Path, r.Body, p.ForceError)
+		return
+	}
+	h.ReportsV2 = append(h.ReportsV2, rep)
+	for _, om := range rep.Machines {
+		m := h.Machines[om.MachineID]
+		if m == nil {
+			h.Unknown[om.MachineID] = contract.ObservedMachine{MachineID: om.MachineID, JobID: om.JobID, State: om.State, Since: om.Since, Reason: om.Reason}
+			continue
+		}
+		m.Observed, m.ObservedReason = om.State, om.Reason
+		m.PhaseLines = append(m.PhaseLines, om.PhaseLines...)
+		m.Dropped += om.PhaseLinesDropped
+		if om.State == contract.StateRunning || contract.Terminal(om.State) {
+			m.Config = nil
+		}
+		if contract.Terminal(om.State) {
+			m.Terminal = true
+		}
+	}
+	run, destroy := []contract.RunMachineV2{}, []string{}
+	ids := make([]string, 0, len(h.Machines))
+	for id := range h.Machines {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var key strings.Builder
+	for _, id := range ids {
+		m := h.Machines[id]
+		switch {
+		case m.Terminal || m.RunV2 == nil:
+		case m.DesiredRunning:
+			rm := *m.RunV2
+			rm.Config = m.Config
+			run = append(run, rm)
+			fmt.Fprintf(&key, "r%s%v;", id, m.Config != nil)
+		default:
+			destroy = append(destroy, id)
+			fmt.Fprintf(&key, "d%s;", id)
+		}
+	}
+	if key.String() != h.lastKey {
+		h.Revision++
+		h.lastKey = key.String()
+	}
+	status := "active"
+	if h.Status == "draining" {
+		status = "draining"
+	}
+	p.ok(w, r.Path, r.Body, 200, contract.PollResponseV2{
+		Version: 2, InReplyTo: params.Nonce, HostID: h.ID, Status: status, NextPollAfter: 10,
+		Desired: contract.DesiredStateV2{Revision: h.Revision, Run: run, Destroy: destroy},
+	})
 }

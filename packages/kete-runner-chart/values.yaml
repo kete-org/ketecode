@@ -1,0 +1,107 @@
+# Kete Code runner (enterprise private runtime, ADR 0011). Every credential is referenced by the
+# name of a Secret you create (or sync with External Secrets / the Secrets Store CSI driver); the
+# chart never takes a secret value. See README.md.
+
+platform:
+  # The Kete platform origin the runner enrolls with and polls (https, no path). Required.
+  url: ""
+
+image:
+  # The runner image, pinned by digest (tags are refused). Mirrors are fine
+  # (registry.corp/kete/runner@sha256:…).
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+enrollment:
+  # Name of a Secret in the release namespace with key `token`: the single-use enrollment token
+  # from the portal (kete_jhe_…). The controller reads it once, enrolls, and deletes it. Leave it
+  # set after enrollment (the Secret is gone; nothing happens).
+  tokenSecret: ""
+
+proxy:
+  # Upstream HTTP proxy for the platform connection (HTTP CONNECT; TLS to the platform stays end
+  # to end). http(s)://host:port, no credentials. The Kubernetes API is always reached directly.
+  url: ""
+
+caBundle:
+  # Secret with extra trusted roots (PEM) for the platform connection, e.g. a TLS-inspecting
+  # proxy's CA. Added to the system roots; verification is never disabled.
+  existingSecret: ""
+  key: ca.crt
+
+jobs:
+  # Namespace for job pods: Pod Security `privileged` (job pods need capabilities inside their
+  # own VM, spec S0 findings) with the admission policy below carrying every rule.
+  namespace: kete-jobs
+  createNamespace: true
+  # VM-isolated RuntimeClasses job pods may use (Kata Containers or a managed equivalent). Never
+  # runc or gVisor.
+  runtimeClassNames: [kata]
+  # Job images the runner accepts, by digest (1-16). The platform names one of them per job.
+  images: []
+  # Concurrent jobs (1-128).
+  slots: 16
+  # A job pod still Pending after this long is destroyed.
+  startTimeoutSeconds: 600
+  # Capabilities a job pod may add (inside its own VM). The S0-measured set.
+  allowedCapabilities:
+    [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE, SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE, FOWNER, FSETID, NET_BIND_SERVICE]
+  # Egress allowed to job pods besides DNS (enterprise proxy, GitLab, model endpoints, registry
+  # mirrors). Everything else is denied by NetworkPolicy; the in-pod firewall is the inner layer.
+  egress:
+    cidrs: []
+    ports: [443]
+
+# Runtime repository names this runner serves (e.g. gitlab:payments/api). A job naming another is
+# refused (repository_unknown) before anything starts. URLs and credentials arrive in P3.
+repositories: []
+# Report the names above to the platform (names only).
+advertiseRepositories: false
+
+# What may leave the enterprise (spec §3). The platform can only narrow it.
+boundary:
+  summary: none      # none | redacted | full
+  denials: actions   # count | actions | full
+  publishRefs: send  # omit | send
+
+# The pod driver. P1 has only `placeholder`, which exists in test builds of the runner image
+# (kind CI); a release image refuses it. The VM-isolated job pod driver is P2.
+podDriver: ""
+placeholder:
+  # [{image: <allowlisted digest ref>, seconds: N}]: placeholder machines of that image exit after N s.
+  exitAfter: []
+
+controller:
+  serviceAccountName: kete-runner
+  # Lease the single active replica holds (never two pollers on one key).
+  leaseName: kete-runner
+  keysSecret: kete-runner-keys
+  stateSecret: kete-runner-state
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 256Mi}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+networkPolicy:
+  enabled: true
+  # The Kubernetes API server's endpoint addresses (kubectl get endpoints kubernetes -n default)
+  # and port, for the controller's egress. Required when enabled.
+  apiServer:
+    cidrs: []
+    port: 6443
+  # The platform, or the proxy when proxy.url is set: CIDRs and ports.
+  platform:
+    cidrs: []
+    ports: [443]
+  dns:
+    namespace: kube-system
+    podLabels: {k8s-app: kube-dns}
+
+admissionPolicy:
+  enabled: true

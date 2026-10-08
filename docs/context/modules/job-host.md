@@ -5,6 +5,9 @@ verified-at: c377dd3136
 ---
 
 ## Quick answers
+- Kubernetes? The `kubernetes` driver and `kete-job-host kubernetes` (job-host-v2, Secrets instead of
+  `/var/lib`, Lease) are the `kubernetes-runner` card. The agent core is shared: `agent.Options.Store`
+  (`state.Store`; `FileStore` here) and `agent.Options.V2` (nil = v1, unchanged wire bytes).
 - What is this module? `kete-job-host`, the self-hosted job host agent of kete-code-platform ADR
   0023 (rules 6, 9–13, 17, 19): a root systemd service on servers Kete operates. It enrolls the
   host, polls the platform with RFC 9421-signed requests, runs one machine per job through a

@@ -1,0 +1,15 @@
+{{- if .Values.jobs.createNamespace }}
+# Job pods add capabilities inside their own VM, which Pod Security `baseline` forbids, so this
+# namespace is `privileged` and the admission policy (admission-policy.yaml) carries every rule
+# (spec "S0 findings" 1).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.jobs.namespace }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+    kete.dev/jobs-namespace: "true"
+{{- end }}
