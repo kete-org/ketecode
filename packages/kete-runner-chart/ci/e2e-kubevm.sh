@@ -50,7 +50,14 @@ fail() {
   echo "--- pods" >&2; kubectl get pods -A -o wide >&2 || true
   for p in $(kubectl -n $JOBS get pods -o name 2>/dev/null); do echo "--- $p" >&2; kubectl -n $JOBS logs "$p" --tail=80 >&2 || true; done
   echo "--- events ($JOBS)" >&2; kubectl -n $JOBS get events --sort-by=.lastTimestamp >&2 || true
-  for c in kete-jh-fake kete-fake; do echo "--- docker logs $c" >&2; docker logs --tail 60 "$c" >&2 || true; done
+  echo "--- docker logs kete-jh-fake (not polls)" >&2; docker logs kete-jh-fake 2>&1 | grep -v 'job-hosts/poll' | tail -40 >&2 || true
+  if docker stop -t 20 kete-fake >/dev/null 2>&1; then # writes its records
+    for d in "$STATE"/*/; do
+      [ -f "$d/calls.json" ] || continue
+      echo "--- fake $(basename "$d"): calls" >&2; jq -c '[.[] | {kind, status}]' "$d/calls.json" >&2 || true
+      echo "--- fake $(basename "$d"): contract errors" >&2; cat "$d/contract.json" >&2 || true
+    done
+  fi
   exit 1
 }
 wait_for() {
@@ -165,6 +172,30 @@ wait_for 90 "v2 reports" bash -c "curl -sf $ADMIN/hosts | jq -e '.[0].Reports > 
 [ "$(kubectl auth can-i --as=$SA get pods --subresource=log -n $JOBS)" = yes ] || fail "no pods/log"
 [ "$(kubectl auth can-i --as=$SA get runtimeclasses.node.k8s.io/kete-test)" = yes ] || fail "no get runtimeclasses"
 [ "$(kubectl auth can-i --as=$SA get secrets/other -n $SYS)" = no ] || fail "RBAC allows reading other Secrets"
+
+# Diagnostics (never fail the run): what a pod in the jobs namespace reaches under its
+# NetworkPolicy, before any job — DNS through the cluster resolver, the proxy, a CONNECT through it.
+cat >"$STATE/netprobe.py" <<PY
+import socket
+try:
+    print("dns", socket.getaddrinfo("platform.kete.test", 443)[0][4])
+except Exception as e:
+    print("dns error", e)
+try:
+    s = socket.create_connection(("$JH_IP", 3128), 5)
+    s.sendall(b"CONNECT platform.kete.test:443 HTTP/1.1\r\nHost: platform.kete.test:443\r\n\r\n")
+    s.settimeout(10)
+    print("connect", s.recv(64))
+except Exception as e:
+    print("connect error", e)
+PY
+jq -n --arg ns $JOBS --arg img "$JOB_IMAGE" --rawfile py "$STATE/netprobe.py" '{apiVersion: "v1", kind: "Pod", metadata: {name: "kete-job-netprobe", namespace: $ns},
+  spec: {runtimeClassName: "kete-test", restartPolicy: "Never", automountServiceAccountToken: false, enableServiceLinks: false,
+    containers: [{name: "job", image: $img, command: ["python3", "-c", $py], securityContext: {capabilities: {drop: ["ALL"]}}}]}}' \
+  | kubectl --as=$SA create -f - >/dev/null || true
+for _ in $(seq 60); do kubectl -n $JOBS get pod kete-job-netprobe -o jsonpath='{.status.phase}' 2>/dev/null | grep -Eq 'Succeeded|Failed' && break; sleep 1; done
+log "netprobe: $(kubectl -n $JOBS logs kete-job-netprobe 2>&1 | tr '\n' ' ')"
+kubectl -n $JOBS delete pod kete-job-netprobe --wait=false >/dev/null 2>&1 || true
 
 assign() { # assign <machine> <job> <image> [extra JSON]
   curl -sf -X POST $ADMIN/assign -d "{\"host_id\":\"$HOST\",\"machine_id\":\"$1\",\"job_id\":\"$2\",\"image\":\"$3\",\"deadline_seconds\":1500,\"repository\":\"$REPO\"${4:-}}" >/dev/null

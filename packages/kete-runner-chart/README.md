@@ -140,6 +140,11 @@ in spike S0. Per platform, before production:
 
 ## Proxy and CA
 
+Prefer an `https://` proxy when it takes credentials: over `http://` the `Proxy-Authorization`
+header crosses your network in clear (as with any HTTP proxy). Jobs send `CONNECT host:port` by
+name, so the proxy resolves the destination itself: kete-egress checks the addresses it resolves,
+and you trust the proxy's own resolution and policy for the rest.
+
 `proxy.url` is used by the controller (platform connection, job image verification through
 `HTTPS_PROXY`) and by every job's kete-egress as its upstream (`CONNECT`). Credentials come from
 `proxy.authSecret` (a key holding `username:password`), never from the URL. `caBundle` adds roots

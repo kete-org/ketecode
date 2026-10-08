@@ -89,6 +89,12 @@ func mountedAt(mountinfo, dir string) (bool, error) {
 // bundle for kete-egress (root, group kete-proxy, 0440, in a 0750 directory: only the proxy user
 // reads them), and the outbox volume (empty, root, group layout.OutboxGID, 0750).
 func kubeVMDirs(cfg layout.Config, ids sysusers.IDs, boot bootenv.Values) error {
+	// The outbox's group must be none of the job's: else a job user could read the outputs.
+	for _, g := range []uint32{ids.Kete.GID, ids.Tool.GID, ids.Proxy.GID, ids.JobGID} {
+		if g == layout.OutboxGID {
+			return errors.New("the outbox group is one of the job users' groups")
+		}
+	}
 	if err := setup.MakeDirs([]setup.Dir{{Path: cfg.UpstreamDir, GID: ids.Proxy.GID, Mode: 0o750}}); err != nil {
 		return err
 	}
