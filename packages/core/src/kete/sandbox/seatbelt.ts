@@ -47,6 +47,9 @@ export function escapeRegex(value: string) {
   return value.replace(/[\\^$.|?*+()[\]{}]/g, "\\$&")
 }
 
+const depth = (value: string) => value.split("/").filter((part) => part !== "").length
+const within = (child: string, parent: string) => child === parent || child.startsWith(parent.endsWith("/") ? parent : parent + "/")
+
 const quote = (value: string) => `"${value.replace(/[\\"]/g, "\\$&")}"`
 
 // Git internals that run commands when git reads them, relative to a git directory: the config (core.fsmonitor,
@@ -75,14 +78,25 @@ export function profile(policy: Policy): Profile {
   const subpaths = (values: ReadonlyArray<string>) => values.map((value) => `(subpath ${path(value)})`)
 
   const workspace = policy.workspace
+  // Path rules in depth order, parent first: Seatbelt applies the last matching rule, so a deeper
+  // rule wins (a Kete worktree inside the read-only, hidden data directory is writable and readable;
+  // a `denyWrite` path inside the workspace is not writable). Same depth: deny after allow.
+  const ordered = (rules: ReadonlyArray<{ readonly path: string; readonly allow: boolean }>, operation: string) =>
+    rules
+      .map((rule, index) => ({ rule, index }))
+      .sort(
+        (a, b) =>
+          depth(a.rule.path) - depth(b.rule.path) || Number(a.rule.allow === false) - Number(b.rule.allow === false) || a.index - b.index,
+      )
+      .map(({ rule }) => `(${rule.allow ? "allow" : "deny"} ${operation} (subpath ${path(rule.path)}))`)
+
   const lines = [
     "(version 1)",
     "(allow default)",
     "",
-    "; Writes: only the writable roots and a few devices.",
+    "; Writes: only the writable roots and a few devices; read-only paths inside them.",
     "(deny file-write*)",
     `(allow file-write* ${[
-      ...subpaths(policy.writable),
       '(literal "/dev/null")',
       '(literal "/dev/zero")',
       '(literal "/dev/dtracehelper")',
@@ -93,8 +107,15 @@ export function profile(policy: Policy): Profile {
       // tools write there whatever TMPDIR says (the xcrun shims behind /usr/bin/git, clang's modules).
       '(regex "^/private/var/folders/[^/]+/[^/]+/[TC]/")',
     ].join(" ")})`,
+    ...ordered(
+      [
+        ...policy.writable.map((value) => ({ path: value, allow: true })),
+        ...policy.readOnly.map((value) => ({ path: value, allow: false })),
+      ],
+      "file-write*",
+    ),
     "",
-    "; Never writable: Kete Code's configuration anywhere, git internals, read-only paths.",
+    "; Never writable, wherever: Kete Code's configuration, git internals.",
     `(deny file-write* ${[
       '(regex "/\\\\.kete(/|$)")',
       '(regex "/kete\\\\.jsonc?$")',
@@ -104,13 +125,24 @@ export function profile(policy: Policy): Profile {
         regex(directory, "$"),
         ...GIT_INTERNALS.map((internal) => regex(directory, `/${internal}`)),
       ]),
-      ...subpaths(policy.readOnly),
     ].join(" ")})`,
   ]
 
   if (policy.hidden.length > 0) {
-    lines.push("", "; Credentials.", `(deny file-read* ${subpaths(policy.hidden.map((item) => item.path)).join(" ")})`)
-    if (policy.visible.length > 0) lines.push(`(allow file-read* ${subpaths(policy.visible).join(" ")})`)
+    const hidden = policy.hidden.map((item) => item.path)
+    const insideHidden = (value: string) => hidden.some((parent) => value !== parent && within(value, parent))
+    lines.push(
+      "",
+      "; Credentials (and Kete Code's private directories), with exceptions.",
+      ...ordered(
+        [
+          ...hidden.map((value) => ({ path: value, allow: false })),
+          ...policy.visible.map((value) => ({ path: value, allow: true })),
+          ...policy.writable.filter(insideHidden).map((value) => ({ path: value, allow: true })),
+        ],
+        "file-read*",
+      ),
+    )
   }
 
   lines.push(

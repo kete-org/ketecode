@@ -65,6 +65,7 @@ Contain the agent's shell commands (ADR 0013, `docs/sandbox.md`): writes only to
 - Seatbelt's `(remote ip "localhost:*")` also matches the machine's own LAN addresses.
 - Apple's xcrun shims (/usr/bin/git) write to `/private/var/folders/*/*/T` whatever TMPDIR says; those dirs are writable.
 - Seatbelt matches resolved paths: `.GIT/config` on a case-insensitive volume is still denied.
+- Path rules apply parent first (bwrap mounts and Seatbelt rules sorted by depth): Kete worktrees live in the hidden, read-only data directory and must stay writable workspaces (found by the harness run-mode test in CI).
 - Linux file placeholders are masked with /dev/null and listed in a copy of `info/exclude` bound over the real one: git's `add -A` refuses character devices (and a non-root git can't read a mode-000 file), found in CI.
 - bwrap: processes started with `&` die with the command (PID namespace); without network the host's loopback is unreachable.
 - The isolated test HOME lives in macOS's per-user temp dir (writable in the sandbox): tests use `/Users/Shared` as an "outside" path there.

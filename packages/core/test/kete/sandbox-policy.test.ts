@@ -198,6 +198,26 @@ describe.skipIf(!probe.available)("sandbox policy, run for real", () => {
     expect(await fs.readFile(path.join(worktree, ".git"), "utf8")).toStartWith("gitdir:")
   })
 
+  test("a Kete worktree inside Kete Code's (hidden, read-only) data directory is a normal workspace", async () => {
+    const env = await setup("data-main")
+    const worktree = path.join(env.kete, "data", "worktree", "abc", "job-1")
+    await fs.mkdir(path.dirname(worktree), { recursive: true })
+    await fs.writeFile(path.join(env.kete, "data", "auth.json"), "DATA-SECRET")
+    git(env.workspace, "worktree", "add", "-q", "-b", "job", worktree)
+    const inside = { ...env, workspace: worktree }
+    const ok = await sandboxed(
+      inside,
+      "echo hi > a.txt && cat a.txt && git add -A && git -c user.email=t@example.com -c user.name=t commit -q -m job && echo committed",
+    )
+    expect(ok.out, ok.out).toContain("committed")
+    const secret = await sandboxed(inside, `cat "${env.kete}/data/auth.json"`)
+    expect(secret.out).not.toContain("DATA-SECRET")
+    const config = await sandboxed(inside, `echo x >> "${env.workspace}/.git/config"`)
+    expect(config.exit).not.toBe(0)
+    const sibling = await sandboxed(inside, `echo x > "${env.kete}/data/worktree/abc/other.txt"`)
+    expect(sibling.exit).not.toBe(0)
+  })
+
   test("a workspace name can't inject rules into the profile", async () => {
     const name = `inj a") (allow file-write* (subpath "/")) ; [x]*+?{}|^$\\ 'q'`
     const env = await setup(name)

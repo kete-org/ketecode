@@ -16,24 +16,41 @@ import { checkPath, type Policy } from "./policy.js"
 
 export const name = "bwrap"
 
-/** The arguments before the command. */
+const depth = (value: string) => value.split("/").filter((part) => part !== "").length
+const within = (child: string, parent: string) => child === parent || child.startsWith(parent.endsWith("/") ? parent : parent + "/")
+
+/**
+ * The arguments before the command. Mounts are applied parent first (by path depth), so a deeper rule
+ * wins: a workspace inside Kete Code's data directory (a Kete worktree) is writable although the data
+ * directory is hidden and read-only, and the workspace's `.git/config` is read-only again inside it.
+ * bwrap takes every source from the host's file system, so binding below a tmpfs works.
+ */
 export function args(policy: Policy, cwd: string): string[] {
   const out: string[] = ["--die-with-parent", "--unshare-pid", "--unshare-ipc"]
   if (!policy.network) out.push("--unshare-net")
   out.push("--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc")
-  const bind = (option: string, value: string) => out.push(option, checkPath(value), value)
-  for (const value of policy.writable) bind("--bind", value)
-  for (const value of policy.pinned) bind("--bind", value)
-  for (const value of policy.readOnly) bind("--ro-bind", value)
-  for (const value of policy.masked) out.push("--ro-bind", "/dev/null", checkPath(value))
-  for (const item of policy.overlays) out.push("--ro-bind", checkPath(item.source), checkPath(item.target))
-  const files = policy.hidden.filter((item) => !item.directory)
-  const directories = policy.hidden.filter((item) => item.directory)
-  for (const item of files) out.push("--ro-bind", "/dev/null", checkPath(item.path))
-  for (const item of directories) out.push("--tmpfs", checkPath(item.path))
-  // Exceptions are bound into the (still writable) tmpfs before it is made read-only.
-  for (const value of policy.visible) bind("--ro-bind", value)
-  for (const item of directories) out.push("--remount-ro", item.path)
+
+  type Mount = { readonly target: string; readonly rank: number; readonly args: string[] }
+  const mounts: Mount[] = []
+  const add = (target: string, rank: number, args: string[]) => mounts.push({ target: checkPath(target), rank, args })
+  const hiddenDirectories = policy.hidden.filter((item) => item.directory).map((item) => item.path)
+  // A read-only rule inside a hidden directory would bring its content back: hidden is read-only anyway.
+  const hidden = (value: string) => hiddenDirectories.some((directory) => within(value, directory))
+  for (const item of policy.hidden)
+    if (item.directory) add(item.path, 0, ["--tmpfs", item.path])
+    else add(item.path, 0, ["--ro-bind", "/dev/null", item.path])
+  for (const value of policy.writable) add(value, 1, ["--bind", value, value])
+  for (const value of policy.pinned) add(value, 2, ["--bind", value, value])
+  for (const value of policy.readOnly) if (!hidden(value) || policy.writable.some((root) => within(value, root) && hidden(root))) add(value, 3, ["--ro-bind", value, value])
+  for (const value of policy.masked) add(value, 4, ["--ro-bind", "/dev/null", value])
+  for (const item of policy.overlays) add(item.target, 4, ["--ro-bind", checkPath(item.source), item.target])
+  for (const value of policy.visible) add(value, 5, ["--ro-bind", value, value])
+  mounts
+    .map((mount, index) => ({ mount, index }))
+    .sort((a, b) => depth(a.mount.target) - depth(b.mount.target) || a.mount.rank - b.mount.rank || a.index - b.index)
+    .forEach(({ mount }) => out.push(...mount.args))
+  // Last, so the binds inside them could still be created.
+  for (const directory of hiddenDirectories) out.push("--remount-ro", directory)
   out.push("--chdir", checkPath(cwd))
   return out
 }
