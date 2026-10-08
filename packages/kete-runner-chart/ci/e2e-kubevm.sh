@@ -7,7 +7,8 @@
 #   MISSING_IMAGE  an allowlisted job image digest the registry doesn't have (image_pull_failed)
 #   FAKE_IMAGE     a local Docker image: the job image plus kete-job-fake-platform (the jobs-v1 fake)
 #
-# The world, outside the cluster like an enterprise's own services, on the `kind` Docker network:
+# The world, outside the cluster like an enterprise's own services, on a Docker network
+# (172.30.0.0/24) the kind nodes join:
 #   FAKE_IP  the jobs-v1 fake (cmd/kete-job-fake-platform): platform.kete.test (claim, events,
 #            result, finish, sync), gateway.kete.test (the scripted model), github.kete.test (git),
 #            *.kete.test DNS; it forwards /api/v1/job-hosts/ to the job-host fake, so one platform
@@ -70,15 +71,17 @@ mstate() { curl -sf $ADMIN/hosts | jq -r --arg m "$1" '.[0].Machines[$m] | "\(.S
 is_state() { [ "$(mstate "$1")" = "$2" ]; }
 phase_lines() { curl -sf $ADMIN/hosts | jq -c --arg m "$1" '.[0].Machines[$m].PhaseLines // []'; }
 
-# --- the world on the kind network
-subnet=$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
-prefix=$(cut -d. -f1-2 <<<"$subnet")
-[ "${subnet#*/}" -le 16 ] || fail "the kind network $subnet is narrower than /16"
-FAKE_IP=$prefix.0.200 JH_IP=$prefix.0.201
+# --- the world: its own Docker network (fixed addresses need a user-configured subnet; kind's has
+# none), a private range like an enterprise's, which the kind nodes join as a second interface.
+NET=kete-e2e-world SUBNET=172.30.0.0/24
+FAKE_IP=172.30.0.200 JH_IP=172.30.0.201
+docker rm -f kete-jh-fake kete-fake >/dev/null 2>&1 || true
+docker network rm $NET >/dev/null 2>&1 || true
+docker network create --subnet $SUBNET $NET >/dev/null
+for node in kind-control-plane $WORKER; do docker network connect $NET "$node"; done
 hosts=(--add-host "platform.kete.test:$FAKE_IP" --add-host "gateway.kete.test:$FAKE_IP" --add-host "github.kete.test:$FAKE_IP" --add-host "storage.kete.test:$FAKE_IP")
 rm -rf "$STATE" && mkdir -p "$STATE"
-docker rm -f kete-jh-fake kete-fake >/dev/null 2>&1 || true
-docker run -d --name kete-jh-fake --network kind --ip "$JH_IP" "${hosts[@]}" -p 127.0.0.1:18081:8080 \
+docker run -d --name kete-jh-fake --network $NET --ip "$JH_IP" "${hosts[@]}" -p 127.0.0.1:18081:8080 \
   --entrypoint /usr/local/bin/kete-fake-platform "$RUNNER_IMAGE" -authority platform.kete.test >/dev/null
 wait_for 30 "job-host fake" curl -sf $ADMIN/hosts
 curl -sf $ADMIN/ca.pem >"$STATE/jh-ca.pem"
@@ -88,7 +91,7 @@ start_fake() {
   local name=$1; shift
   docker rm -f kete-fake >/dev/null 2>&1 || true
   mkdir -p "$STATE/$name"
-  docker run -d --name kete-fake --network kind --ip "$FAKE_IP" -v "$STATE/$name:/state" -v "$STATE/jh-ca.pem:/jh-ca.pem:ro" -v "$STATE/ca:/ca" \
+  docker run -d --name kete-fake --network $NET --ip "$FAKE_IP" -v "$STATE/$name:/state" -v "$STATE/jh-ca.pem:/jh-ca.pem:ro" -v "$STATE/ca:/ca" \
     --entrypoint /usr/local/libexec/kete-e2e/kete-job-fake-platform "$FAKE_IMAGE" \
     -addr "$FAKE_IP" -state /state -scenario lifecycle -deadline 25m -policy-timeout 10 -runtime-repo "$REPO" \
     -job-hosts "https://$JH_IP:8443" -job-hosts-ca /jh-ca.pem -ca-dir /ca "$@" >/dev/null

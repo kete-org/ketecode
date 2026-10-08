@@ -44,7 +44,7 @@ crosses the re-exec and is a Fly signal ("Host profiles").
 | `KETE_JOB_CLAIM_TOKEN` | the single-use claim token, printable ASCII, 32-512 bytes |
 | `KETE_JOB_STORAGE_HOST` | a plain DNS host: the **only** host signed upload URLs may name (`https`, port 443). The claim is refused (`invalid claim response: storage_host`) if it equals the gateway, clone or clone-API host, so no job user or clone ever reaches it |
 
-| `KETE_JOB_HOST_PROFILE` | optional: `fly`, `microvm`, `dedicated` or `cloudvm` ("Host profiles"). Unset means `fly` when a Fly signal is present, else exit 2. Today's Fly adapter doesn't set it; it sets `fly` once an image that knows it is pinned |
+| `KETE_JOB_HOST_PROFILE` | optional: `fly`, `microvm`, `dedicated`, `cloudvm` or `kubevm` ("Host profiles", "kubevm"). Unset means `fly` when a Fly signal is present, else exit 2. Today's Fly adapter doesn't set it; it sets `fly` once an image that knows it is pinned |
 
 **Config pipe** (`--config-fd <n>`, any fd that is a pipe; a file, socket or terminal is refused):
 one JSON object, at most 4096 bytes, no other field, nothing after it:
@@ -60,6 +60,11 @@ With the pipe, none of the four `KETE_JOB_*` variables may also be set, and `KET
 if set (the dedicated agent sets it), must equal `host_profile`. The microvm config disk carries
 the same object after the line `kete-job-config v1` ("kete-job-init"); cloudvm user data is the
 object itself. This is the shape the host-agent contract (program phase P2.0) adopts.
+
+**Config file** (`--config-file /run/kete-config/config.json`, exactly that path; kubevm only): the
+Kubernetes runner's per-job Secret, at most 48 KiB, the pipe's fields with `host_profile: kubevm`
+plus `node_boot_id` and the runner's `local` section ("kubevm"). The pipe refuses `kubevm`, the
+file anything else.
 
 The boot stage validates them, writes them to a pipe and re-executes itself (`/proc/self/exe __run
 <fd>`) with only `PATH` in its environment: `unsetenv` can't clear the kernel's copy of the initial
@@ -380,6 +385,72 @@ naming `Authorization`, cut to 300 bytes.
 | Clone token | `claim` | memory → the clone's `GIT_CONFIG_VALUE_n` (root-only: `hidepid`, ptrace) → dropped after the revoke (GitHub) or `clone-done` (Harness Code) | disk, a URL, argv, logs, `kete`, the git host's API (Harness Code) |
 | Gateway key | `claim` | memory → a pipe that is `kete`'s fd 3 (`KETE_JOB_GATEWAY_KEY_FD=3`; `kete` reads it once and closes it, then holds it in memory and hands it to its server child the same way; both are non-dumpable) | any environment (`kete`'s included), the tool user, the helper, files, argv |
 | Signed URLs | `uploads` | memory | logs (a failed PUT never reports its URL) |
+
+## kubevm
+
+The profile of the Kubernetes runner's job pods (enterprise runtime spec §4, ADR 0011;
+`packages/kete-job-host` `internal/driver/kubernetes`, `packages/kete-runner-chart`): a pod in a
+VM-isolated RuntimeClass (Kata), the job's kernel the guest's own.
+
+**Configuration** (`--config-file`): the platform's sealed fields (`job_id`, `platform_url`,
+`claim_token`, `storage_host`, `host_profile: kubevm`), `node_boot_id` (the node's boot ID, read by
+the runner after scheduling) and `local`, which never comes from or goes to the platform:
+
+| `local` field | Value |
+|---|---|
+| `repository` | `name` (the runtime repository name the claim must carry), `clone_url` (https, plain DNS host, optional port, path), `ref`, `username`, `token` (the runner's read credential) |
+| `boundary` | the runner's data boundary: `summary` (`none`/`redacted`/`full`), `denials` (`count`/`actions`/`full`), `publish_refs` |
+| `egress` | optional: `proxy` (`http(s)://host:port`), `proxy_auth` (`username:password`), `ca_bundle` (PEM, ≤ 32 KiB; needs a proxy), `internal` (`[{cidr, ports}]`, egress configuration v2) |
+| `node_addresses` | the node's IP addresses (≤ 16): host-boundary and isolation targets |
+| `shared_kernel_test` | the test-only shared-kernel mode: **refused by a release build** (below) |
+
+**Steps** (the differences from the other profiles):
+
+1. **`setup_host` first, before anything is written:** the pod's boot ID
+   (`/proc/sys/kernel/random/boot_id`) must be a UUID and **differ** from `node_boot_id`; equal,
+   missing or malformed → `shared_kernel`, exit 1. Virtio and DMI signals are not used (spike S0: a
+   runc pod on a VM node shows the same).
+2. **`setup_kubevm`:** `umount` the Secret's volume (`/run/kete-config`) and prove it gone (no mount
+   point, empty directory; else `config_secret`), then remount `/proc/sys` and `/sys/fs/cgroup`
+   read-write (CRI mounts both read-only).
+3. The machine steps as for every profile; `host_boundary` also probes the Kubernetes API
+   (`KUBERNETES_SERVICE_HOST:PORT`, `kube_api`) and each node address on the gateway sample ports
+   (`node`), and **retries for up to 30 s** (every 2 s, a `note` per failed round) while a
+   NetworkPolicy may not be enforced yet; it passes only once every target is unreachable. It runs
+   as root before the in-guest firewall, so what it can't reach no job user reaches afterwards.
+4. `setup_dirs` also prepares `/run/kete-upstream` (root, group `kete-proxy`, 0750: the proxy's
+   credentials and CA bundle, 0440) and the **outbox** (`/var/lib/kete-outbox`, which must be a
+   mounted, empty volume; root, group 65532, 0750).
+5. kete-egress gets **configuration v2**: allowlist entries may be `host:port`, the upstream proxy,
+   its credentials file, the CA bundle file, the internal ranges. The storage host is never in an
+   allowlist.
+6. **Claim:** announces `clone_revoke_callback`, `runtime_repo`, `runtime_publish` and accepts only a
+   `JobRuntimeClaimResponse` for exactly `local.repository.name`, this machine's platform URL and a
+   deadline ahead (`ParseRuntimeClaimResponse`). Anything else (a `clone`, another name or provider)
+   → `claim` failed `repository`, exit 1, **no result, no finish, nothing cloned** (as on a 404).
+7. **Clone** from `local.repository` (its credential in `http.extraHeader` as always), then the base
+   is the commit `ref` named (`git rev-parse`), verified like every pristine copy. No revoke call;
+   `clone_done` still goes to the platform (the runner revokes a minted token on that phase line,
+   P3).
+8. **Result:** parsed with the runtime schema and bounded by `boundary` before it is sent
+   (`BoundRunResult`; `redacted` sends what `none` does — no Go redactor yet, so stricter, never
+   wider).
+9. **Outbox instead of uploads** (step `outbox`): `result.json` (the full result), `audit.jsonl`,
+   `proxy.jsonl`, `bundle.tar.gz` (when built), then `manifest.json` written last and atomically:
+   `{version: 1, job_id, repository, ref, base_sha, branch, outcome, exit_code, push_error?, files:
+   {result|audit|proxy_log|bundle: {name, size, sha256}}, notes, written_at}`. Files are root,
+   group 65532, 0640, created exclusively, never through a symlink. The runner's publisher (P3)
+   reads the volume after the pod has ended and treats it as hostile.
+10. **Finish** is `{"outbox":true}`; `uploads` is never called.
+
+**Test-only shared-kernel mode.** kind CI has no Kata, so CI runs job pods under a runc-backed
+`kete-test` RuntimeClass with an entrypoint built with `-tags kete_testdriver`. With
+`local.shared_kernel_test`, that build requires the pod's boot ID to **equal** the node's (so the
+check still proves the runner read this pod's node) and leaves the host-wide sysctls alone (note
+`setup_sysctl`/`shared_kernel`: in a shared kernel they would change the node). A release build
+refuses the configuration (`local.shared_kernel_test: this build runs only in VM-isolated pods`) and
+would refuse the mode in `setup_host` too (`hostprofile.SharedKernelTestBuild` is false). The runner
+writes the flag only for `kete-test`, which only its own test build accepts.
 
 ## Bundle
 
