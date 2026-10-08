@@ -1,7 +1,7 @@
 ---
 module: permissions
 paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/shell-risk.ts, packages/util/src/kete/permission-mode.ts, packages/core/src/kete/permission-ceiling.ts, packages/core/src/permission.ts, packages/core/src/plugin/internal.ts, packages/cli/src/kete/permission-mode.ts, packages/tui/src/kete/permission-mode.tsx]
-verified-at: f85913ed4a
+verified-at: 72d051b365
 ---
 ## Quick answers
 - What does Kete Code allow by default in an interactive session? Upstream's default agent allows
@@ -28,6 +28,12 @@ verified-at: f85913ed4a
 - How is `cd` checked when the shell tool never asks for it? The shell tool (marked edit) passes the
   whole line as `metadata.command`; `KeteShellRisk.classifyLine` flags `cd`/`pushd` out of the
   workspace.
+- How are `cd` in subshells/loops, symlinks and redirects handled (re-review)? `shell/parse.ts`
+  (marked) adds `kete/shell-directory.ts` directories for `cd`/`pushd` with no or an unknown target,
+  so `external_directory` asks; edits are also checked on their real path (`realTarget`, through
+  `FSUtil`); web fetch follows redirects itself (`kete/web-redirect.ts`) and asks before another
+  origin. `KeteShellRisk.changesBuild` flags `npm pkg set` etc. Accepted residual risk: edited test
+  files run under `npm test` (`docs/permissions.md`; Wave 0b's sandbox contains it).
 - What can Plan mode do? Only `planAllowed` actions (read, glob, grep, question, skill, budget,
   external_directory, webfetch/websearch, read-only shell, subagent, MCP resource reads); MCP tools
   and `worktree` are denied. Subagents inherit Plan through the root session.
