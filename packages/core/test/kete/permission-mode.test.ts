@@ -316,7 +316,7 @@ describe("KetePermissionMode modes", () => {
     })
 
     test("nit: protected roots compare case-insensitively on macOS and Windows", () => {
-      const event = run(withMode("auto"), "edit", ["/HOME/ME/.config/KETE/kete.json"])
+      const event = run(withMode("auto"), "edit", ["/HOME/ME/.config/KETE/agent/x.md"])
       expect(event.effect).toBe(process.platform === "darwin" || process.platform === "win32" ? "ask" : "allow")
     })
   })
