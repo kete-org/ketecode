@@ -3,7 +3,6 @@ import os from "os"
 import path from "path"
 import { Effect } from "effect"
 import { KeteShellDirectory } from "@opencode/core/kete/shell-directory"
-import { KetePermissionMode } from "@opencode/core/kete/permission-mode"
 import { ShellParse } from "@opencode/core/shell/parse"
 
 const root = path.parse(process.cwd()).root
@@ -32,13 +31,35 @@ describe("KeteShellDirectory", () => {
     })
 })
 
-describe("realTarget", () => {
-  test("resolves through the deepest existing parent", async () => {
-    const files = {
-      existsSafe: (value: string) => Effect.succeed(value === "/w" || value === "/w/cfg"),
-      resolve: (value: string) => Effect.succeed(value === "/w/cfg" ? "/w/.git" : value),
+describe("PR #20 follow-up: cd targets that can't be known", () => {
+  for (const portable of [false, true])
+    test(`${portable ? "portable" : "legacy"} scanner`, async () => {
+      for (const command of ["if :; then cd {~,}; fi; cat Documents/x", "{ cd ~root; }", "cd .?", "cd s*", "CDPATH=/ cd etc", "cd ~+/x"]) {
+        const result = await Effect.runPromise(ShellParse.scan(command, "/bin/bash", "/w", { portable }))
+        expect([command, result.directories.includes(root)]).toEqual([command, true])
+      }
+      for (const command of ["cd sub", "cd ~/x", "cd 'a{b,c}'", "cd '~root'", "x=1 cd sub"]) {
+        const result = await Effect.runPromise(ShellParse.scan(command, "/bin/bash", "/w", { portable }))
+        expect([command, result.directories.includes(root)]).toEqual([command, false])
+      }
+    })
+
+  test("PowerShell Set-Location with no path or `-` (portable scanner)", async () => {
+    for (const command of ["Set-Location", "Set-Location -", "Push-Location"]) {
+      const result = await Effect.runPromise(ShellParse.scan(command, "pwsh", "/w", { portable: true }))
+      expect([command, result.directories.includes(root)]).toEqual([command, true])
     }
-    expect(await Effect.runPromise(KetePermissionMode.realTarget(files, "/w", "cfg/hooks/pre-commit"))).toBe(".git/hooks/pre-commit")
-    expect(await Effect.runPromise(KetePermissionMode.realTarget(files, "/w", "src/a.ts"))).toBe("src/a.ts")
+    const named = await Effect.runPromise(ShellParse.scan("Set-Location src", "pwsh", "/w", { portable: true }))
+    expect(named.directories.includes(root)).toBe(false)
+  })
+
+  test("implicit and implicitPowerShell directly", () => {
+    expect(KeteShellDirectory.implicit([{ value: "cd" }, { value: "x", glob: true }], "/w")).toEqual([path.parse("/w").root])
+    expect(KeteShellDirectory.implicit(["cd", "~root"], "/w")).toEqual([path.parse("/w").root])
+    expect(KeteShellDirectory.implicit(["cd", "etc"], "/w", { cdpath: true })).toEqual([path.parse("/w").root])
+    expect(KeteShellDirectory.implicit(["cd", "./etc"], "/w", { cdpath: true })).toEqual([])
+    expect(KeteShellDirectory.implicitPowerShell(["Set-Location"], "/w")).toEqual([path.parse("/w").root])
+    expect(KeteShellDirectory.implicitPowerShell(["Set-Location", "-Path", "src"], "/w")).toEqual([])
+    expect(KeteShellDirectory.implicitPowerShell(["Pop-Location"], "/w")).toEqual([])
   })
 })

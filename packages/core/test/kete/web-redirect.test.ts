@@ -37,4 +37,18 @@ describe("KeteWebRedirect.follow", () => {
     expect(run({ "https://a.example/start": response(302, "file:///etc/passwd") }).result._tag).toBe("Failure")
     expect(run({ "https://a.example/start": response(302, "/start") }).result._tag).toBe("Failure")
   })
+  test("an invalid Location is a RedirectError, and redirect bodies are discarded", () => {
+    const discarded: string[] = []
+    const result = Effect.runSync(
+      KeteWebRedirect.follow({
+        url: "https://a.example/start",
+        fetch: (url) => Effect.succeed(url.endsWith("/start") ? response(302, "/next") : url.endsWith("/next") ? response(302, "http://[bad") : response(200)),
+        approve: () => Effect.void,
+        discard: (item) => Effect.sync(() => void discarded.push(String(item.status))),
+      }).pipe(Effect.result),
+    )
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") expect(result.failure).toBeInstanceOf(KeteWebRedirect.RedirectError)
+    expect(discarded).toEqual(["302", "302"])
+  })
 })

@@ -340,30 +340,55 @@ export const apply = Effect.fnUntraced(function* (
   }
 })
 
+/** What `realTarget` returns when a symlink chain can't be followed: a protected path, so the edit asks. */
+export const UNRESOLVED = ".kete/(unresolved symlink)"
+
+/** Symlinks followed for one edit target before giving up. */
+const MAX_LINKS = 32
+
 /**
- * `value` with symlinks resolved through its deepest existing ancestor; see `Lookup.realpath`.
- * Through `FSUtil` (wrapped in job mode, kete/job-fs-util.ts), never `fs` directly.
+ * Where an edit to `value` would really write; see `Lookup.realpath`. The deepest existing ancestor
+ * is resolved with `resolve` (realpath); the remaining components are walked one by one, and a
+ * symlink among them — including a dangling one whose target doesn't exist yet, like
+ * `notes.json -> .kete/kete.jsonc` — is followed with `readLink`. A chain longer than `MAX_LINKS`
+ * gives `UNRESOLVED`. Through `FSUtil` (wrapped in job mode, kete/job-fs-util.ts), never `fs` directly.
  */
 export const realTarget = Effect.fnUntraced(function* (
-  files: Pick<FSUtil.Interface, "existsSafe" | "resolve">,
+  files: Pick<FSUtil.Interface, "existsSafe" | "resolve" | "readLink">,
   directory: string,
   value: string,
 ) {
-  const absolute = path.resolve(directory, value)
-  let existing = absolute
-  const rest: string[] = []
-  while (!(yield* files.existsSafe(existing))) {
-    const parent = path.dirname(existing)
-    if (parent === existing) return undefined
-    rest.unshift(path.basename(existing))
-    existing = parent
+  let target = path.resolve(directory, value)
+  for (let hops = 0; hops <= MAX_LINKS; hops++) {
+    let existing = target
+    const rest: string[] = []
+    while (!(yield* files.existsSafe(existing))) {
+      const parent = path.dirname(existing)
+      if (parent === existing) return undefined
+      rest.unshift(path.basename(existing))
+      existing = parent
+    }
+    let current = yield* files.resolve(existing)
+    let next: string | undefined
+    for (const [index, part] of rest.entries()) {
+      const candidate = path.join(current, part)
+      const link = yield* files.readLink(candidate).pipe(Effect.option)
+      if (link._tag === "Some") {
+        next = path.resolve(path.dirname(candidate), link.value, ...rest.slice(index + 1))
+        break
+      }
+      current = candidate
+    }
+    if (next === undefined) {
+      const root = yield* files.resolve(directory)
+      const relative = path.relative(root, current)
+      return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+        ? relative.split(path.sep).join("/")
+        : current
+    }
+    target = next
   }
-  const real = path.join(yield* files.resolve(existing), ...rest)
-  const root = yield* files.resolve(directory)
-  const relative = path.relative(root, real)
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
-    ? relative.split(path.sep).join("/")
-    : real
+  return UNRESOLVED
 })
 
 export const Plugin = define({

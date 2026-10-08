@@ -504,6 +504,40 @@ describe("WebFetchTool registration", () => {
     )
   })
 
+  // kete_change start: a redirect to another origin asks first (kete/web-redirect.ts)
+  live.effect("asks again before following a redirect to another origin", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const target = Bun.serve({
+          port: 0,
+          fetch: () => new Response("other origin", { headers: { "content-type": "text/plain" } }),
+        })
+        const start = Bun.serve({
+          port: 0,
+          fetch: () => new Response("moved", { status: 302, headers: { location: new URL("/landing", target.url).toString() } }),
+        })
+        return { start, target }
+      }),
+      ({ start, target }) =>
+        Effect.gen(function* () {
+          reset()
+          const registry = yield* Tool.Service
+          const url = new URL("/start", start.url).toString()
+          const landing = new URL("/landing", target.url).toString()
+          expect(yield* executeTool(registry, call({ url, format: "text" }))).toMatchObject({
+            status: "completed",
+            content: [{ type: "text", text: "other origin" }],
+          })
+          expect(assertions).toMatchObject([
+            { action: "webfetch", resources: [url], save: KeteWebHost.savePatterns(url) },
+            { action: "webfetch", resources: [landing], save: KeteWebHost.savePatterns(landing), metadata: { url: landing } },
+          ])
+        }),
+      ({ start, target }) => Effect.promise(() => Promise.all([start.stop(true), target.stop(true)])),
+    ),
+  )
+  // kete_change end
+
   it.effect("rejects non-HTTP schemes before permission or transport", () =>
     Effect.gen(function* () {
       reset()
