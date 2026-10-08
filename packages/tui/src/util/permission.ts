@@ -136,6 +136,22 @@ export function permissionPresentation(
     }
   }
 
+  // kete_change start: the OS sandbox's escapes (core/src/kete/sandbox.ts)
+  if (source.action === "sandbox_off" || source.action === "sandbox_network") {
+    const command = text(metadata.command) || resources[0] || ""
+    return {
+      icon: "!",
+      title: source.action === "sandbox_off" ? "Run outside the OS sandbox" : "Use the network from the OS sandbox",
+      lines: [
+        ...(command ? [`$ ${command}`] : []),
+        source.action === "sandbox_off"
+          ? "It can then change any of your files, read your credentials and use the network."
+          : "It could send data from this machine.",
+      ],
+    }
+  }
+  // kete_change end
+
   return {
     icon: "⚙",
     title: `Call tool ${source.action}`,

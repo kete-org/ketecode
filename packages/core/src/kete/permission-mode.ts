@@ -51,6 +51,7 @@ import { Permission } from "../permission.js"
 import { PermissionSaved } from "../permission/saved.js"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
+import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteShellRisk } from "./shell-risk.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
 
@@ -287,6 +288,9 @@ export const apply = Effect.fnUntraced(function* (
 ) {
   if (event.effect === "deny") return
   if (!guarded.has(event.action)) {
+    // The sandbox's own checks (kete/sandbox.ts) decide Plan mode themselves: a command that runs
+    // unsandboxed because the platform has no sandbox is still a read-only command there.
+    if (KeteSandboxActions.isSandboxAction(event.action)) return
     // Only Plan mode does anything outside the guarded actions.
     const { mode } = yield* resolveFamily(lookup, event.sessionID)
     if (mode === "plan") tighten(event, decide({ mode, action: event.action, resources: [], unattended: false }))
@@ -328,6 +332,11 @@ export const apply = Effect.fnUntraced(function* (
   })
   const final = stricter(event.effect, outcome.effect)
   tighten(event, outcome)
+  // A shell command a person approves (asked now, or every part saved with "Always allow") may use
+  // the network inside the OS sandbox (kete/sandbox.ts); later hooks can only turn "ask" into "deny".
+  const saved = resources.length > 0 && resources.every((resource) => resource.source === "saved")
+  if (event.action === "shell" && final !== "deny" && (final === "ask" || saved))
+    KeteSandboxActions.markApproved(event.metadata)
   if (outcome.buildCheck) lookup.buildChanged?.delete(root)
   // A change to a build/test entry point that may go ahead (an edit, `npm pkg set`, `> package.json`):
   // the next test/build command asks once. Instruction files (AGENTS.md) ask but don't count.

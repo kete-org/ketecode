@@ -103,6 +103,7 @@ import { KeteBudgetRule } from "../kete/budget-rule.js" // kete_change
 import { KeteAttribution } from "../kete/attribution.js" // kete_change
 import { KeteAgentSync } from "../kete/sync/plugin.js" // kete_change
 import { KetePermissionMode } from "../kete/permission-mode.js" // kete_change
+import { KeteSandbox } from "../kete/sandbox.js" // kete_change
 import { KeteRoles } from "../kete/roles.js" // kete_change
 import { KeteSubagents } from "../kete/subagents.js" // kete_change
 import { KeteWorktrees } from "../kete/worktrees.js" // kete_change
@@ -282,6 +283,8 @@ const pre = [
   KeteUnattended.PolicyPlugin,
   // kete_change: safe defaults and permission modes (only tighten); see kete/permission-mode.ts
   KetePermissionMode.Plugin,
+  // kete_change: the OS sandbox's escapes always ask (Plan blocks them); its status RPC; see kete/sandbox.ts
+  KeteSandbox.Plugin,
   // kete_change: stopping a session stops its running subagents; see kete/subagents.ts
   KeteSubagents.Plugin,
   // kete_change: guards worktree removal, keeps sessions out of subagent worktrees; see kete/worktrees.ts
@@ -335,6 +338,7 @@ export const guarded: ReadonlySet<string> = new Set([
   KeteUnattended.Plugin.id,
   KeteJobPlugin.Plugin.id,
   KeteOffline.Plugin.id,
+  KeteSandbox.Plugin.id,
 ])
 // kete_change end
 

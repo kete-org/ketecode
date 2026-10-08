@@ -17,6 +17,10 @@ supersedes it and set the old one's status to `Superseded by NNNN`.
 | [0007](0007-job-credentials.md)             | Jobs use short-lived, job-scoped credentials    | Accepted |
 | [0008](0008-unattended-runs-fail-closed.md) | Unattended runs fail closed                     | Accepted |
 | [0009](0009-public-cli-distribution.md)     | Public CLI distribution and verified self-update | Accepted |
+| [0010](0010-open-source-the-runtime.md)     | Open-source the runtime                         | Accepted |
+| [0011](0011-enterprise-private-runtime.md)  | Enterprise private runtime: a Kubernetes runner | Accepted |
+| [0012](0012-cross-runner-orchestration.md)  | Agent orchestration across runners              | Proposed |
+| [0013](0013-local-os-sandbox.md)            | Local OS sandbox for the agent's shell commands | Accepted |
 
 ## Not yet written
 
@@ -27,7 +31,6 @@ is actually made; until then the architecture reference describes direction only
 - Agent architecture
 - Skills architecture
 - MCP security
-- Sandbox architecture (the cloud shape is ADR 0005; local sandboxing is still open)
 
 ## Writing an ADR
 

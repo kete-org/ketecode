@@ -98,6 +98,8 @@ const shellPluginSupervisor = makeLocationNode({
     Shell.node,
     ShellSelect.node,
     Tool.node,
+    Global.node,
+    Location.node,
   ],
 })
 

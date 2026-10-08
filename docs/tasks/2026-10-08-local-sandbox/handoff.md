@@ -1,0 +1,47 @@
+# Handoff: Local OS sandbox (Wave 0b)
+
+<!-- Append only. Each entry: `## <date> <agent>` then done / decisions / open questions. Never rewrite earlier entries. -->
+
+## 2026-10-08 implementer (single agent)
+
+Decisions:
+- **.git handling:** `.git` stays writable so git works; protected are the files through which git
+  runs commands: `config`, `config.worktree`, `hooks/`, `info/attributes`, `commondir`, `gitdir`
+  (also under `modules/*` and `worktrees/*`), the `.git` entry itself (no rename/replace, no nested
+  `.git` on macOS), and `core.hooksPath` (read from the config file at spawn). Linked worktrees: the
+  gitdir and common dir are writable with the same protections. Considered and rejected: writes to
+  `.git` only for classifier-approved git commands (a test can run git too), and protecting all of
+  `.git` (breaks commit).
+- **Network default:** approved commands only. "Approved" is decided by the permission hooks marking
+  the shell request's metadata (`kete.sandbox.approved`): permission-mode when the final effect is
+  "ask" (later hooks can only turn ask into deny) or every part is a saved Always allow; the
+  unattended policy hook when its policy allows. Explicit config rules don't count (repository config
+  can carry them). macOS without network keeps loopback, the machine's own addresses (Seatbelt's
+  "localhost" covers them — verified) and Unix sockets in workspace/temp; DNS goes through
+  /var/run/mDNSResponder and is blocked. Linux uses a new network namespace.
+- **macOS Mach services:** default-deny with a small allowlist. Measured on macOS 26: with
+  `(allow default)` alone, `open -a` launched an app and AppleEvents reached Finder; with
+  `(deny mach-lookup)` + allowlist both fail, as do pbcopy/pbpaste; launchctl submit already fails
+  inside sandbox-exec. Added `(deny appleevent-send)` and `(deny job-creation)` anyway.
+- **macOS temp:** the per-user `/private/var/folders/*/*/{T,C}` are writable (Apple's xcrun shims
+  behind /usr/bin/git write there regardless of TMPDIR — found by a failing test).
+- **Fallback:** no sandbox → warn once at start, TUI footer, `kete sandbox` exit 1; commands pass a
+  `sandbox_off` check with reason `unavailable`/`disabled` that doesn't ask, so an org policy
+  denying `sandbox_off` makes the sandbox required. `mode: "required"` refuses locally.
+- **Linux placeholders** for missing protected names in the config search path: empty dirs, and for
+  `kete.json(c)` a `{}` file with mode 000 (the config loader reads EACCES as missing); counted
+  process-wide and removed when unchanged.
+- **Notice:** appended only when a sandboxed command failed with EPERM/EROFS/DNS-style errors, to keep
+  upstream outputs (and their tests) unchanged otherwise.
+- Instruction files (AGENTS.md, CLAUDE.md) are not write-protected by the sandbox (ordinary repository
+  text; edits ask via permissions). `.vscode/`/`.idea/` not protected (documented gap).
+
+Open / follow-ups:
+- VS Code / JetBrains / web: no sandbox status indicator yet (the shell tool notice, the permission
+  prompt text, `kete sandbox` and the runtime's start-up warning cover it); add one via the RPC.
+- Permission system gap noticed: `.claude/**` and `.agents/**` are loaded as configuration but aren't
+  in `KeteShellRisk.protectedPath` (edits there don't always ask). The sandbox protects them for
+  commands; the edit-tool rule should follow.
+- Landlock / Windows / per-host allowlist: see ADR 0013 "Revisit".
+- The shell permission prompt doesn't say that approving grants network inside the sandbox
+  (documented in docs/sandbox.md and docs/permissions.md).

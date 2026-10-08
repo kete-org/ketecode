@@ -33,6 +33,7 @@ const Handlers = Runtime.handlers(Commands, {
   login: () => import("./kete/login"), // kete_change
   logout: () => import("./kete/logout"), // kete_change
   whoami: () => import("./kete/whoami"), // kete_change
+  sandbox: () => import("./kete/sandbox"), // kete_change
   sync: () => import("./kete/sync"), // kete_change
   // kete_change start: `kete job run` (kete/job.ts)
   job: { run: () => import("./kete/job") },

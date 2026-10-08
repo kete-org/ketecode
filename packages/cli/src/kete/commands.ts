@@ -118,6 +118,16 @@ export const specs = [
       ),
     },
   }),
+  Spec.make("sandbox", {
+    description: `Show whether the shell commands the agent runs go through ${Brand.displayName}'s OS sandbox (docs/sandbox.md)`,
+    params: {
+      ...ServerParams,
+      format: Flag.choice("format", ["default", "json"]).pipe(
+        Flag.withDescription("Output format"),
+        Flag.withDefault("default"),
+      ),
+    },
+  }),
   Spec.make("job", {
     description: "Run unattended jobs (ADR 0005/0008)",
     commands: [

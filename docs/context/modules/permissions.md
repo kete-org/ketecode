@@ -4,6 +4,7 @@ paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/shell-
 verified-at: ad8739fb7a
 ---
 ## Quick answers
+- Is there a sandbox behind the permission decision? Yes since feature/local-sandbox: the `sandbox` card (ADR 0013). `KetePermissionMode.apply` marks a shell request's metadata `kete.sandbox.approved` when its final effect is "ask" or every part is a saved approval (network inside the sandbox), and returns early for `sandbox_off`/`sandbox_network`, which `KeteSandbox.Plugin` decides (always ask when requested; Plan denies).
 - What does Kete Code allow by default in an interactive session? Upstream's default agent allows
   everything (`schema/src/agent.ts` `default`, `"*": allow`); Kete's safe defaults are applied on the
   `evaluate` hook by `permission-mode.ts` `apply()` (`:164`) only where that catch-all is the winning
