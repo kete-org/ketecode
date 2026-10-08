@@ -113,7 +113,7 @@ log "ok: platform traffic went through the CONNECT proxy"
 # --- RBAC: least privilege
 can() { kubectl auth can-i --as=$SA "$@" 2>/dev/null; }
 [ "$(can get nodes)" = yes ] || fail "cannot get nodes"
-for args in "list nodes" "create pods/exec -n $JOBS" "get secrets -n default" "list secrets -n $SYS" "create pods -n $SYS" \
+for args in "list nodes" "create pods --subresource=exec -n $JOBS" "create pods --subresource=attach -n $JOBS" "get secrets -n default" "list secrets -n $SYS" "create pods -n $SYS" \
             "delete deployments -n $SYS" "get secrets/other -n $SYS" "update pods -n $JOBS" "create pods -n default"; do
   # shellcheck disable=SC2086
   [ "$(can $args)" = no ] || fail "RBAC allows: $args"
