@@ -2176,6 +2176,16 @@ export type ConfigEntry =
           }
           integrations?: { slack?: { clientId?: string } }
           unattended?: { passEnv?: Array<string> }
+          sandbox?: {
+            mode?: "auto" | "required" | "off"
+            network?: "approved" | "none" | "all"
+            caches?: boolean
+            loopback?: boolean
+            allowWrite?: Array<string>
+            allowRead?: Array<string>
+            denyRead?: Array<string>
+            denyWrite?: Array<string>
+          }
         }
       }
     }

@@ -88,7 +88,22 @@ jobs:
           $null = [System.Management.Automation.Language.Parser]::ParseFile("$PWD/packages/kete-tools/distribution/install.ps1", [ref]$null, [ref]$errors)
           if ($errors) { $errors | ForEach-Object { Write-Error $_.ToString() }; exit 1 }
 
+      # The local OS sandbox's Linux tests (core/test/kete/sandbox-*.test.ts) run bwrap for real.
+      # Ubuntu 24.04 restricts unprivileged user namespaces with AppArmor; allow them on this runner.
+      # KETE_SANDBOX_TESTS=required makes those tests fail instead of skipping if bwrap doesn't work.
+      - name: Install bubblewrap
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --die-with-parent --unshare-pid --unshare-ipc --unshare-net --ro-bind / / --dev /dev --proc /proc -- /usr/bin/true
+
       - name: Kete-owned tests
+        env:
+          KETE_SANDBOX_TESTS: required
         run: |
           set -euo pipefail
           suite() {

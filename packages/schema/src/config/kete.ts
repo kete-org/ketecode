@@ -86,6 +86,41 @@ export class Unattended extends Schema.Class<Unattended>("ConfigKete.Unattended"
   }),
 }) {}
 
+const SandboxPaths = Schema.String.pipe(Schema.Array, optional)
+
+export class Sandbox extends Schema.Class<Sandbox>("ConfigKete.Sandbox")({
+  mode: Schema.Literals(["auto", "required", "off"]).pipe(optional).annotate({
+    description:
+      'The OS sandbox for shell commands the agent runs (docs/sandbox.md). "auto" (the default): sandboxed where the platform supports it (macOS, Linux with bubblewrap), otherwise run unsandboxed and shown as such. "required": refuse commands when no sandbox is available. "off": no sandbox. Only the global config (or KETE_SANDBOX) can turn it off; a project config can only make it stricter.',
+  }),
+  network: Schema.Literals(["approved", "none", "all"]).pipe(optional).annotate({
+    description:
+      'Network access inside the sandbox. "approved" (the default): only commands a person approved (a prompt, a saved "Always allow" or an unattended policy) can use the network; the rest reach only this machine. "none": never. "all": always. Only the global config can loosen it.',
+  }),
+  caches: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Whether sandboxed commands may write the package managers' and build tools' caches (npm, bun, pnpm, yarn, pip, uv, cargo, Go, Gradle, Maven). Defaults to true. A project config can only turn it off.",
+  }),
+  loopback: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "macOS: whether sandboxed commands without network may still reach services on this machine (127.0.0.1 and its own addresses: databases, dev servers, a TCP-exposed Docker). Defaults to true (test suites connect to local servers). false blocks them; a project config can set false but not true. Linux sandboxes have their own loopback either way.",
+  }),
+  allowWrite: SandboxPaths.annotate({
+    description:
+      "More paths sandboxed commands may write (absolute, or starting with ~/). Protected paths (.git internals, Kete Code configuration) stay read-only. Read only from the global config.",
+  }),
+  allowRead: SandboxPaths.annotate({
+    description:
+      "Credential paths sandboxed commands may read after all (e.g. ~/.npmrc for a private registry). Read only from the global config.",
+  }),
+  denyRead: SandboxPaths.annotate({
+    description: "More paths sandboxed commands can't read (absolute, ~/, or relative to the workspace).",
+  }),
+  denyWrite: SandboxPaths.annotate({
+    description: "More paths sandboxed commands can't write (absolute, ~/, or relative to the workspace).",
+  }),
+}) {}
+
 export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   offline: Schema.Boolean.pipe(optional).annotate({
     description:
@@ -103,5 +138,8 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   }),
   unattended: Unattended.pipe(optional).annotate({
     description: "Settings for unattended runs (kete job run)",
+  }),
+  sandbox: Sandbox.pipe(optional).annotate({
+    description: "The OS sandbox for shell commands the agent runs (docs/sandbox.md)",
   }),
 }) {}

@@ -51,6 +51,7 @@ import { Permission } from "../permission.js"
 import { PermissionSaved } from "../permission/saved.js"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
+import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteShellRisk } from "./shell-risk.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
 
@@ -287,6 +288,9 @@ export const apply = Effect.fnUntraced(function* (
 ) {
   if (event.effect === "deny") return
   if (!guarded.has(event.action)) {
+    // The sandbox's own checks (kete/sandbox.ts) decide Plan mode themselves: a command that runs
+    // unsandboxed because the platform has no sandbox is still a read-only command there.
+    if (KeteSandboxActions.isSandboxAction(event.action)) return
     // Only Plan mode does anything outside the guarded actions.
     const { mode } = yield* resolveFamily(lookup, event.sessionID)
     if (mode === "plan") tighten(event, decide({ mode, action: event.action, resources: [], unattended: false }))

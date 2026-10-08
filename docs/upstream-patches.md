@@ -941,3 +941,27 @@ Kete-owned `schema/src/config/kete.ts`. `kete job run`'s project-config trust ch
 callback, keep both calls: the first on every shell, the second with the tool's `context.sessionID`. If
 upstream adds another agent-driven way to spawn commands (a new tool), route its environment through
 `KeteToolEnv.forSession` too. Test: `core/test/kete/tool-env-shell.test.ts`.
+
+## Local OS sandbox (feature/local-sandbox)
+
+The agent's shell commands run in `sandbox-exec` (macOS) or `bwrap` (Linux) — ADR 0013,
+`docs/sandbox.md`, `docs/tasks/2026-10-08-local-sandbox`. The logic is Kete-owned
+(`core/src/kete/sandbox.ts`, `core/src/kete/sandbox/*`, `schema/src/kete/sandbox.ts`,
+`schema/src/config/kete.ts`, `cli/src/kete/sandbox.ts`, `tui/src/kete/sandbox-status.tsx`); the
+approval mark is set in the Kete-owned `permission-mode.ts` and `unattended.ts`.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/shell.ts` | Import; `const sandboxed = KeteSandboxPlans.wrap(invocation, invocation.shell, args)` and `ChildProcess.make(sandboxed.file, sandboxed.args, …)` (2 marked lines) | the `shell.create.before` hook can change the shell and command but not the spawned program and its arguments; the plan is keyed by the invocation object, so commands the shell tool didn't plan (the user's `!` commands) are unchanged |
+| `core/src/tool/plugin/shell.ts` | Imports; input field `sandbox` (`"network" \| "off"`); a marked block creating the sandboxer (needs `Global`, `Location`); the permission check's metadata held in a variable and `KeteSandbox.remember(invocation, metadata)` (the hooks mark a person's approval on it); in `before`, `sandbox.prepare(invocation, context.sessionID, …)` with a `permission.assert` for `sandbox_off`/`sandbox_network`; release of Linux placeholders on error and after the command; a marked block appending the sandbox notice to the output | only the shell tool knows the session, the permission outcome and the command's cwd at spawn time |
+| `core/src/plugin/internal.ts` | Import; `KeteSandbox.Plugin` in `pre` after `KetePermissionMode.Plugin`; `KeteSandbox.ApprovalPlugin` last in `post` (after `KeteUnattended.Plugin`); both ids in `guarded` | internal plugin registration list; guarded so repository config can't remove the hook that makes requested escapes ask |
+| `core/src/permission.ts` | Import; a marked block in `reply`: a "once"/"always" reply to a shell request marks that request's metadata `kete.sandbox.approved` (network in the sandbox); requests an "always" resolves without showing them are not marked | the reply is the only place that knows a person answered this very request; hooks see only "ask" |
+| `tui/src/util/permission.ts` | A marked block: prompt title and lines for `sandbox_off`/`sandbox_network` (the command and what approving means) | the presentation switch has no extension point; otherwise the prompt says only "Call tool sandbox_off" |
+| `app/src/runtime/i18n/en.ts` | Two marked keys: `settings.permissions.tool.sandbox_{off,network}.description` | the web/VS Code/JetBrains permission dock reads its description from these keys |
+| `core/test/tool-shell.test.ts` | Two marked lines: `Global.node`, `Location.node` in the shell plugin's test deps | the shell tool now requires them |
+
+**Sync checklist:** if upstream changes how `Shell.create` spawns (`ChildProcess.make` arguments) or
+the shell tool's `before` callback / permission metadata, keep: the wrap at the spawn, `remember`
+after the shell permission check, `prepare` after `KeteToolEnv.forSession`, and the release. If
+upstream adds another agent-driven command tool, route it through `KeteSandbox` too. Tests:
+`core/test/kete/sandbox*.test.ts` (the integration ones run the real sandbox; CI installs bubblewrap).

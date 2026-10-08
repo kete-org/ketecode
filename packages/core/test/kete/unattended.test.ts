@@ -12,6 +12,8 @@ import { Project } from "@opencode/core/project"
 import { Session } from "@opencode/core/session"
 import { KeteUnattended } from "@opencode/core/kete/unattended"
 import { KeteUnattendedPolicy } from "@opencode/core/kete/unattended-policy"
+import { KeteSandboxActions } from "@opencode/core/kete/sandbox/actions"
+import type { Permission } from "@opencode/core/permission"
 import type { SessionSchema } from "@opencode/core/session/schema"
 import { it } from "../lib/effect"
 
@@ -363,4 +365,28 @@ describe("KeteUnattended.watch", () => {
       expect(interrupted).toEqual([])
     }),
   )
+})
+
+describe("KeteUnattended.applyPolicy and the OS sandbox", () => {
+  const run = (resources: string[]) =>
+    Effect.runSync(
+      Effect.gen(function* () {
+        const policy = { version: 1, budget: 5, timeout: 60, allow: [{ action: "shell", resource: "npm ci" }] }
+        const lookup: KeteUnattended.PolicyLookup = {
+          session: mapGet([info({ id: root, metadata: { "kete.unattended": policy } })]),
+          agent: () => Effect.succeed({ permissions: [{ action: "*", resource: "*", effect: "allow" as const }] }),
+        }
+        const metadata: Record<string, unknown> = {}
+        const event = { sessionID: root, action: "shell", resources, metadata, effect: "ask" as Permission.Rule["effect"] }
+        yield* KeteUnattended.applyPolicy(lookup, event)
+        KeteSandboxActions.approve(event) // the sandbox's last hook
+        return { effect: event.effect, approved: KeteSandboxActions.approved(metadata) }
+      }),
+    )
+
+  test("a command the run's policy allows counts as approved (network in the sandbox)", () => {
+    expect(run(["npm ci"])).toEqual({ effect: "allow", approved: true })
+    // Not allowed by the policy: still "ask" for the late unattended hook to deny; no policy mark.
+    expect(run(["curl example.com"]).effect).toBe("ask")
+  })
 })

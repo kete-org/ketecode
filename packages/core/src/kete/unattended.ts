@@ -39,6 +39,7 @@ import { SessionStore } from "../session/store.js"
 import { KeteAudit } from "./audit.js"
 import { KeteBudget } from "./budget.js"
 import { KetePermissionCeiling } from "./permission-ceiling.js"
+import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
 
 /** Longest family cost walk; mirrors unattended-policy.ts's ancestor-chain guard. */
@@ -198,8 +199,12 @@ export const applyPolicy = Effect.fnUntraced(function* (lookup: PolicyLookup, ev
     if (KetePermissionCeiling.decide(event.action, event.resources, rules) !== "allow") event.effect = "ask"
   }
 
-  if (event.effect === "ask" && KeteUnattendedPolicy.allows(policy, event.action, event.resources))
+  if (event.effect === "ask" && KeteUnattendedPolicy.allows(policy, event.action, event.resources)) {
     event.effect = "allow"
+    // The run's policy is the person's approval in advance; the sandbox's last hook turns this into
+    // network access if the decision is still "allow" at the end (kete/sandbox.ts).
+    if (event.action === "shell") KeteSandboxActions.markPolicyAllowed(event.metadata)
+  }
 })
 
 /** What `applyLate` needs to recognize a Kete-configuration target (D2). */

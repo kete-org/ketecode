@@ -103,6 +103,7 @@ import { KeteBudgetRule } from "../kete/budget-rule.js" // kete_change
 import { KeteAttribution } from "../kete/attribution.js" // kete_change
 import { KeteAgentSync } from "../kete/sync/plugin.js" // kete_change
 import { KetePermissionMode } from "../kete/permission-mode.js" // kete_change
+import { KeteSandbox } from "../kete/sandbox.js" // kete_change
 import { KeteRoles } from "../kete/roles.js" // kete_change
 import { KeteSubagents } from "../kete/subagents.js" // kete_change
 import { KeteWorktrees } from "../kete/worktrees.js" // kete_change
@@ -282,6 +283,8 @@ const pre = [
   KeteUnattended.PolicyPlugin,
   // kete_change: safe defaults and permission modes (only tighten); see kete/permission-mode.ts
   KetePermissionMode.Plugin,
+  // kete_change: the OS sandbox's escapes always ask (Plan blocks them); its status RPC; see kete/sandbox.ts
+  KeteSandbox.Plugin,
   // kete_change: stopping a session stops its running subagents; see kete/subagents.ts
   KeteSubagents.Plugin,
   // kete_change: guards worktree removal, keeps sessions out of subagent worktrees; see kete/worktrees.ts
@@ -323,6 +326,8 @@ const post = [
   KeteJobPlugin.Plugin,
   // kete_change: last, after every hook that could still turn "ask" into "allow"; see kete/unattended.ts
   KeteUnattended.Plugin,
+  // kete_change: after every other hook: marks a shell request a person will approve (network in the OS sandbox); see kete/sandbox.ts
+  KeteSandbox.ApprovalPlugin,
 ] as const satisfies readonly InternalPlugin[]
 
 // Repository config must not switch off policy enforcement or the Console connection that delivers
@@ -335,6 +340,8 @@ export const guarded: ReadonlySet<string> = new Set([
   KeteUnattended.Plugin.id,
   KeteJobPlugin.Plugin.id,
   KeteOffline.Plugin.id,
+  KeteSandbox.Plugin.id,
+  KeteSandbox.ApprovalPlugin.id,
 ])
 // kete_change end
 

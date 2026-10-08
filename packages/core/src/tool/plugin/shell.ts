@@ -1,6 +1,7 @@
 export * as ShellTool from "./shell.js"
 
 import { ToolFailure } from "@opencode/ai"
+import path from "path" // kete_change
 import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
 import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
@@ -20,6 +21,9 @@ import { ShellSelect } from "../../shell/select.js"
 import { ShellResult } from "../../shell/result.js"
 import { KeteToolEnv } from "../../kete/tool-env.js" // kete_change
 import { KeteShellRisk } from "../../kete/shell-risk.js" // kete_change
+import { KeteSandbox } from "../../kete/sandbox.js" // kete_change
+import { Global } from "@opencode/util/global" // kete_change
+import { Location } from "../../location.js" // kete_change
 
 export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
@@ -59,6 +63,7 @@ export const Input = Schema.Struct({
     description:
       "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion.",
   }),
+  sandbox: Schema.optionalKey(KeteSandbox.Request).annotate({ description: KeteSandbox.requestDescription }), // kete_change
 })
 
 const StructuredOutput = Schema.Struct({
@@ -118,6 +123,15 @@ export const Plugin = {
       session: (id) => sessions.get(id).pipe(Effect.option),
       config: Effect.map(config.entries(), (entries) => Config.latest(entries, "kete")),
     }
+    // The local OS sandbox for the commands this tool runs (kete/sandbox.ts)
+    const global = yield* Global.Service
+    const location = yield* Location.Service
+    const sandbox = KeteSandbox.make({
+      config,
+      global,
+      location: { workspace: location.project.directory, directory: location.directory, projectID: location.project.id },
+      shellDirectory: path.join(global.data, Shell.DIRECTORY),
+    })
     // kete_change end
 
     const prepare = Effect.fn("ShellTool.prepare")(function* (invocation: ShellCreateBefore, context: Tool.Context) {
@@ -138,6 +152,7 @@ export const Plugin = {
         }),
       )
       yield* access.authorizeExternal([target, ...directories], context)
+      const keteMetadata: Record<string, unknown> = { command: invocation.command } // kete_change: the permission hooks mark a person's approval here (kete/sandbox.ts)
       if (parsed.commands.length > 0)
         yield* permission.assert({
           action: name,
@@ -146,12 +161,13 @@ export const Plugin = {
           save: parsed.commands.every((command) => KeteShellRisk.saveable(command.resource))
             ? parsed.commands.map((command) => command.save)
             : [],
-          metadata: { command: invocation.command },
+          metadata: keteMetadata,
           // kete_change end
           sessionID: context.sessionID,
           agent: context.agent,
           source,
         })
+      KeteSandbox.remember(invocation, keteMetadata) // kete_change
       // Approval can outlive the directory, so validate immediately before spawning.
       const workdir = yield* Environment.typeFollowing(environment.files, target.absolute).pipe(
         Effect.catchTag("Environment.NotFound", () =>
@@ -209,6 +225,10 @@ export const Plugin = {
             Effect.gen(function* () {
               const timeout = input.background === true ? (input.timeout ?? 0) : (input.timeout ?? DEFAULT_TIMEOUT_MS)
               let finalTimeout = timeout
+              // kete_change start: the local OS sandbox (kete/sandbox.ts)
+              let sandboxed: KeteSandbox.Prepared | undefined
+              const releaseSandbox = Effect.suspend(() => sandboxed?.release ?? Effect.void)
+              // kete_change end
               const info = yield* shell.create(
                 {
                   command: input.command,
@@ -221,8 +241,21 @@ export const Plugin = {
                   Effect.gen(function* () {
                     finalTimeout = yield* prepare(invocation, context)
                     invocation.env = yield* KeteToolEnv.forSession(toolEnv, context.sessionID, invocation.env) // kete_change
+                    // kete_change start: sandboxed, asking first when it must run with network or outside the sandbox
+                    sandboxed = yield* sandbox.prepare(invocation, context.sessionID, input.sandbox, ({ action, reason }) =>
+                      permission.assert({
+                        action,
+                        resources: [invocation.command],
+                        save: [],
+                        metadata: { command: invocation.command, ...(reason ? { reason } : {}) },
+                        sessionID: context.sessionID,
+                        agent: context.agent,
+                        source: { type: "tool", messageID: context.messageID, id: context.id },
+                      }),
+                    )
+                    // kete_change end
                   }),
-              )
+              ).pipe(Effect.onError(() => releaseSandbox)) // kete_change
               yield* context.progress({ shellID: info.id })
 
               const settled = yield* Deferred.make<Output>()
@@ -230,14 +263,19 @@ export const Plugin = {
                 const result = yield* shell.result(info)
                 if (!result.capture) return yield* new Shell.NotFoundError({ id: info.id })
                 const output = ShellResult.output(result)
+                // kete_change start: a line about the sandbox when a sandboxed command failed (kete/sandbox.ts)
+                const keteNotice = sandboxed ? KeteSandbox.notice(sandboxed.outcome, output.exit, output.output) : undefined
+                const text = output.timeout
+                  ? `${output.output}\n\nCommand exceeded timeout of ${finalTimeout} ms. Retry with a larger timeout if the command is expected to take longer.`
+                  : output.output
                 return {
                   ...output,
-                  output: output.timeout
-                    ? `${output.output}\n\nCommand exceeded timeout of ${finalTimeout} ms. Retry with a larger timeout if the command is expected to take longer.`
-                    : output.output,
+                  output: keteNotice ? `${text}${text ? "\n\n" : ""}${keteNotice}` : text,
                   status: "completed" as const,
                 }
+                // kete_change end
               }).pipe(
+                Effect.ensuring(releaseSandbox), // kete_change
                 Effect.tap((output) => Deferred.succeed(settled, output)),
                 Effect.map((output) => resultMessages(output).join("\n\n")),
                 Effect.onInterrupt(() => shell.remove(info.id).pipe(Effect.ignore)),

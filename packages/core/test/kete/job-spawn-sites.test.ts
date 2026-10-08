@@ -149,6 +149,10 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   // kete-guard: a direct spawn outside the shared service, guarded by its own refuseSpawn call.
   "packages/util/src/kete/secret-store.ts": { category: "kete-guard", reason: "OS keychain CLI" },
   "packages/cli/src/kete/job-git.ts": { category: "kete-guard", reason: "git worktree add for kete job run" },
+  "packages/core/src/kete/sandbox/probe.ts": {
+    category: "kete-guard",
+    reason: "checks sandbox-exec/bwrap once; never called in job mode (the job's own sandbox applies)",
+  },
 
   // self: the runtime's own child, fixed argv, not a tool.
   "packages/cli/src/services/standalone.ts": { category: "self", reason: "the runtime's own kete serve --stdio; inherits OPENCODE_JOB_MODE" },
@@ -183,6 +187,7 @@ describe("AC1: each kete-guard file calls KeteJobMode.refuseSpawn before its spa
   const spawnCall: Readonly<Record<string, RegExp>> = {
     "packages/util/src/kete/secret-store.ts": /\bspawn\(/,
     "packages/cli/src/kete/job-git.ts": /\bexecFile\(/,
+    "packages/core/src/kete/sandbox/probe.ts": /\bspawn\(/,
   }
 
   for (const [file, category] of Object.entries(allowlist)) {

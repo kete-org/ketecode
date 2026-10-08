@@ -1493,6 +1493,8 @@ export const dict = {
   "settings.permissions.tool.websearch.description": "Search the web",
   "settings.permissions.tool.external_directory.title": "External Directory",
   "settings.permissions.tool.external_directory.description": "Access files outside the project directory",
+  "settings.permissions.tool.sandbox_off.description": "Run this command outside the OS sandbox: it can change any of your files, read your credentials and use the network", // kete_change
+  "settings.permissions.tool.sandbox_network.description": "Let this command use the network from inside the OS sandbox: it could send data from this machine", // kete_change
   "settings.permissions.tool.doom_loop.title": "Doom Loop",
   "settings.permissions.tool.doom_loop.description": "Detect repeated tool calls with identical input",
 

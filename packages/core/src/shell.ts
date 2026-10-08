@@ -23,6 +23,7 @@ import { Config } from "./config.js"
 import { ToolOutput } from "./tool-output.js"
 import { ShellResult } from "./shell/result.js"
 import { KeteToolEnv } from "./kete/tool-env.js" // kete_change
+import { KeteSandboxPlans } from "./kete/sandbox/plans.js" // kete_change
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.NotFoundError", {
   id: Shell.ID,
@@ -275,6 +276,7 @@ const layer = () =>
 
         const id = Shell.ID.ascending()
         const args = ShellSelect.args(invocation.shell, invocation.command)
+        const sandboxed = KeteSandboxPlans.wrap(invocation, invocation.shell, args) // kete_change: the shell tool's commands run in the local OS sandbox (kete/sandbox.ts)
         const file = path.join(outputDir, `${id}.out`)
 
         const info: Info = {
@@ -297,7 +299,7 @@ const layer = () =>
             Effect.gen(function* () {
               const handle = yield* environment.spawner
                 .spawn(
-                  ChildProcess.make(invocation.shell, args, {
+                  ChildProcess.make(sandboxed.file, sandboxed.args, { // kete_change: sandboxed command line
                     cwd: invocation.cwd,
                     env: invocation.env,
                     stdin: "ignore",

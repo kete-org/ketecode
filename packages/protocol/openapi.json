@@ -13273,6 +13273,50 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "sandbox": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": ["auto", "required", "off"]
+                  },
+                  "network": {
+                    "type": "string",
+                    "enum": ["approved", "none", "all"]
+                  },
+                  "caches": {
+                    "type": "boolean"
+                  },
+                  "loopback": {
+                    "type": "boolean"
+                  },
+                  "allowWrite": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "allowRead": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "denyRead": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "denyWrite": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

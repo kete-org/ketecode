@@ -38,6 +38,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | gateway | the `kete` provider, model discovery, prices, credit balance |
 | budget | `kete.budget.session` pause-and-ask |
 | permissions | permission mode ("ask before edits") and the subagent permission ceiling |
+| sandbox | the local OS sandbox for the agent's shell commands (ADR 0013): sandbox-exec / bwrap, `kete.sandbox` settings, `sandbox_off`/`sandbox_network`, approval marks, `kete sandbox`, TUI footer |
 | roles-skills | starter role agents, built-in skills, role-check |
 | attribution-hosted | provider attribution headers, hosted services off by default |
 | local-models | local model servers (Ollama, LM Studio, vLLM): env hosts, `kete.local-models` status RPC, `kete models pull`, no-tools models, offline mode, pickers and first-run offer |

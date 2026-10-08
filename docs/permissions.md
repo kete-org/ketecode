@@ -4,10 +4,13 @@ Every tool call Kete Code makes goes through allow / ask / deny permissions. Thi
 Kete Code does without asking by default, the five permission modes, how to switch between them in
 each client, and how you and your organization can loosen or tighten the defaults.
 
-**This is a guard, not a sandbox.** Kete Code reads each command before it runs and asks before the
-risky ones, but anything it is allowed to run — a test, a build, a script — runs with your user's
-full access. A local sandbox is planned; until then, use `ask` mode or a throwaway environment for
-work you don't trust.
+**This is a guard; the sandbox is the containment.** Kete Code reads each command before it runs and
+asks before the risky ones. What it lets run — a test, a build, a script — then runs in the
+[OS sandbox](sandbox.md) (macOS, and Linux with bubblewrap): it can write only the workspace, temp
+directories and package caches, never Kete Code's configuration or git's config and hooks, can't read
+your credentials, and has network only if you approved the command. Where there is no sandbox
+(Windows, Linux without bubblewrap, or turned off) commands run with your full access, and Kete Code
+shows it; use `ask` mode or a throwaway environment for work you don't trust there.
 
 ## The default: safe for interactive work
 
@@ -48,10 +51,11 @@ the runtime forgets it.
 
 **Accepted residual risk (decided 2026-10-08).** Ordinary source and test files are not on the list,
 so an edited test file can run any code the next time the tests run, without a prompt. Asking before
-the first build after *any* edit would break the edit-and-test loop, so this risk is accepted for
-now. Containment comes from the local OS sandbox (Wave 0b, the next task), which must block writes
-to the protected paths and network access for build and test commands. Until then, use `ask` mode
-for work you don't trust.
+the first build after *any* edit would break the edit-and-test loop, so this risk is accepted.
+Containment comes from the [OS sandbox](sandbox.md) ([ADR 0013](adr/0013-local-os-sandbox.md)): such
+code can't write Kete Code's configuration or git's config and hooks, can't read credentials and has
+no network, because nobody approved the test command. Without a sandbox (see `kete sandbox`), use
+`ask` mode for work you don't trust.
 
 **Kete Code's own configuration and git's internals always ask** in every mode (Plan blocks them),
 even when a rule allows edits: `.kete/**` (config, agents, skills, plugins, commands),
@@ -200,4 +204,8 @@ the mode, so they can deny what a mode or rule would allow. No mode turns `ask` 
 - Runtime: `packages/core/src/kete/permission-mode.ts` (modes and defaults),
   `packages/core/src/kete/shell-risk.ts` (command classification, protected paths, entry points),
   shared names in `packages/util/src/kete/permission-mode.ts`.
+- The OS sandbox: `docs/sandbox.md`, `packages/core/src/kete/sandbox.ts`. Its permission actions
+  `sandbox_off` and `sandbox_network` always ask when the agent requests them, and approving a shell
+  command that asked lets it use the network inside the sandbox. A saved "Always allow" doesn't: it
+  lets the command run without asking, without network.
 - Knowledge-base card: `docs/context/modules/permissions.md`.
