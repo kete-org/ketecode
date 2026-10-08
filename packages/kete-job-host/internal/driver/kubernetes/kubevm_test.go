@@ -189,3 +189,17 @@ func TestOutboxKeptThenCollected(t *testing.T) {
 		t.Fatalf("collect = %d %v", n, err)
 	}
 }
+
+// An internal range holding the node's address or pod range is refused before any Secret.
+func TestKubeVMInternalRangeOverNode(t *testing.T) {
+	for _, cidr := range []string{"172.18.0.0/16", "10.244.0.0/16"} {
+		srv := kubetest.New()
+		o := kubeVMOptions(map[string]map[string][]byte{"read": {"username": []byte("u"), "token": []byte("t")}})
+		o.JobPod.Internal = []config.InternalRangeFile{{CIDR: cidr, Ports: []int{443}}}
+		d := kubeVMDriver(t, srv, o)
+		if err := d.Start(context.Background(), spec()); err == nil || srv.Get("secrets", ns, kd.PodName(mid)) != nil {
+			t.Errorf("%s: Start = %v", cidr, err)
+		}
+		srv.Close()
+	}
+}

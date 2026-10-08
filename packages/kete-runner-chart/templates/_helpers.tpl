@@ -56,5 +56,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if not (has . $names) -}}{{- fail (printf "repository %q has no repositorySources entry (podDriver kubevm clones only from a configured source)" .) -}}{{- end -}}
 {{- end -}}
 {{- end -}}
+{{- if eq .Values.podDriver "kubevm" -}}
+{{- if not .Values.jobs.outbox.storageClass -}}{{- fail "jobs.outbox.storageClass is required: a StorageClass that enforces capacity and mounts nosuid,nodev,noexec (README \"Outbox storage\")" -}}{{- end -}}
+{{- if and .Values.jobs.proxy.authSecret.name (not .Values.proxy.url) -}}{{- fail "jobs.proxy.authSecret needs proxy.url" -}}{{- end -}}
+{{- if and .Values.jobs.proxy.authSecret.name (eq .Values.jobs.proxy.authSecret.name .Values.proxy.authSecret.name) (eq .Values.jobs.proxy.authSecret.key .Values.proxy.authSecret.key) -}}{{- fail "jobs.proxy.authSecret must be a credential distinct from proxy.authSecret" -}}{{- end -}}
+{{- end -}}
 {{- if and .Values.proxy.authSecret.name (not .Values.proxy.url) -}}{{- fail "proxy.authSecret needs proxy.url" -}}{{- end -}}
 {{- end -}}

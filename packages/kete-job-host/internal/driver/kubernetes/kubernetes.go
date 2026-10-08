@@ -68,6 +68,7 @@ type SecretFunc func(ctx context.Context, spec driver.Spec, node kube.NodeInfo) 
 // and deleted by CollectOutboxes once Hold has passed after the machine's deadline.
 type OutboxOptions struct {
 	Size, StorageClass, MountPath string
+	AccessMode                    string // ReadWriteOncePod (default) or ReadWriteOnce
 	Hold                          time.Duration
 }
 
@@ -257,7 +258,10 @@ func (d *Driver) createOutbox(ctx context.Context, s driver.Spec) error {
 			kube.LabelManaged: kube.ManagedBy, LabelRole: RoleOutbox, LabelInstance: d.o.Instance,
 			LabelMachineID: s.MachineID, LabelJobID: s.JobID, LabelDeadline: strconv.FormatInt(s.Deadline.Unix(), 10),
 		}},
-		Spec: kube.PVCSpec{AccessModes: []string{"ReadWriteOnce"}, Resources: &kube.Resources{Requests: map[string]string{"storage": ob.Size}}},
+		Spec: kube.PVCSpec{AccessModes: []string{ob.AccessMode}, Resources: &kube.Resources{Requests: map[string]string{"storage": ob.Size}}},
+	}
+	if ob.AccessMode == "" {
+		pvc.Spec.AccessModes = []string{"ReadWriteOncePod"}
 	}
 	if ob.StorageClass != "" {
 		pvc.Spec.StorageClassName = &ob.StorageClass

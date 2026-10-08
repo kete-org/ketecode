@@ -33,8 +33,13 @@ verified-at: 99f9825fb1
 - Outbox lifetime? Created before the pod, kept after `Stop`; `CollectOutboxes` (runner goroutine,
   every 10 min) deletes it once deadline + grace + 1 min + `outbox_hold_hours` passed and no pod
   exists. P3's publisher will read and delete it earlier.
-- RuntimeClass guard? `policyGuard.check` also gets every configured RuntimeClass
-  (`kube.RuntimeClassExists`): missing → `runtime_class_missing`, error → `cluster_unhealthy`.
+- RuntimeClass and storage guard? `policyGuard.check` also gets every configured RuntimeClass
+  (`kube.RuntimeClassHandler`): missing → `runtime_class_missing`, error or (release builds) a
+  shared-kernel handler (runc, crun, youki, runsc, gvisor) → `cluster_unhealthy`; and the outbox
+  StorageClass (`checkStorageClass`): release builds refuse node-directory provisioners and classes
+  without `nosuid,nodev,noexec`. Release builds also require `outbox_storage_class` and refuse
+  internal ranges holding the API address; the driver refuses ranges holding the node or its pod
+  range. Jobs' proxy credential: `job_proxy_auth_file`, never the controller's.
 - Test-only RuntimeClass? `kete-test` (kind: runc). `runner.Run` refuses it unless
   `kdriver.TestBuild` (`-tags kete_testdriver`); only then does the Secret ask for the entrypoint's
   test-only shared-kernel mode. Test builds also verify images with accept-all

@@ -2,11 +2,13 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -152,6 +154,9 @@ func (p *Proxy) dialUpstream(ctx context.Context, network, addr string) (net.Con
 // verified against the upstream roots) with the configured credentials, and returns the tunnel.
 // Any answer but 2xx refuses the connection (no retry, no other credentials).
 func (p *Proxy) dialViaUpstream(ctx context.Context, up *config.Upstream, host string, port uint16) (net.Conn, error) {
+	if until := p.proxyAuthBlockedUntil.Load(); until != 0 && time.Now().UnixNano() < until {
+		return nil, &dialError{policy.ReasonUpstreamProxy, errors.New("the proxy refused the credentials (407) recently")}
+	}
 	proxyHost := up.Host
 	if up.Addr.IsValid() {
 		proxyHost = up.Addr.String()
@@ -202,7 +207,10 @@ func (p *Proxy) dialViaUpstream(ctx context.Context, up *config.Upstream, host s
 		c.Close()
 		return nil, &dialError{policy.ReasonUpstreamProxy, err}
 	}
-	br := bufio.NewReaderSize(c, 4096)
+	// The answer's head is read through a limit (a hostile or broken proxy can't make the proxy
+	// buffer without bound); the tunnel then reads the connection itself, after any bytes the
+	// reader buffered past the head.
+	br := bufio.NewReaderSize(&io.LimitedReader{R: c, N: maxProxyAnswer}, 4096)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
 	if err != nil {
 		c.Close()
@@ -213,20 +221,34 @@ func (p *Proxy) dialViaUpstream(ctx context.Context, up *config.Upstream, host s
 	// and a refusal's body is the proxy's and is dropped with the connection.
 	if resp.StatusCode/100 != 2 {
 		c.Close()
+		if resp.StatusCode == http.StatusProxyAuthRequired {
+			// The credentials are wrong: retrying them on every connection could lock the account
+			// out. Every upstream dial fails fast until the breaker's time has passed.
+			p.proxyAuthBlockedUntil.Store(time.Now().Add(ProxyAuthBackoff).UnixNano())
+		}
 		// Never the answer's body or headers: a proxy's error page may echo credentials.
 		return nil, &dialError{policy.ReasonUpstreamProxy, fmt.Errorf("CONNECT answered %d", resp.StatusCode)}
 	}
 	_ = c.SetDeadline(time.Time{})
-	if br.Buffered() > 0 {
-		return &bufferedConn{Conn: c, r: br}, nil
+	if n := br.Buffered(); n > 0 {
+		rest, _ := br.Peek(n)
+		return &bufferedConn{Conn: c, r: io.MultiReader(bytes.NewReader(append([]byte(nil), rest...)), c)}, nil
 	}
 	return c, nil
 }
 
+// Limits of the upstream proxy path.
+const (
+	// maxProxyAnswer bounds a CONNECT answer's head.
+	maxProxyAnswer = 16 << 10
+	// ProxyAuthBackoff is how long upstream dials fail fast after a 407.
+	ProxyAuthBackoff = time.Minute
+)
+
 // bufferedConn reads what the CONNECT answer's reader already buffered first.
 type bufferedConn struct {
 	net.Conn
-	r *bufio.Reader
+	r io.Reader
 }
 
 func (c *bufferedConn) Read(b []byte) (int, error) { return c.r.Read(b) }

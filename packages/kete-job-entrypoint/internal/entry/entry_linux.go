@@ -186,7 +186,7 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 	}
 	m := &machine{cfg: cfg, ids: ids, cg: cg, git: git, resolvers: base.Resolvers, profile: profile, kubeAPI: boot.KubeAPI}
 	if boot.Local != nil {
-		m.nodes = boot.Local.NodeAddresses
+		m.nodes, m.internalPorts = boot.Local.NodeAddresses, internalPorts(boot)
 	}
 	pc := platform.New(platform.Options{
 		BaseURL: boot.PlatformURL, JobID: boot.JobID, StorageHost: boot.StorageHost, ProxyURL: proxyURL, Timeout: cfg.HTTPTimeout,
@@ -345,26 +345,37 @@ func hostBoundary(ctx context.Context, log *pl.Logger, cfg layout.Config, profil
 	}
 	// kubevm: also the Kubernetes API and the node's addresses; and a NetworkPolicy may be
 	// enforced only after the pod started (spec "S0 findings" 5), so a failed probe is retried
-	// for a bounded time and passes only once every target is unreachable. Nothing secret exists
-	// before claim, so waiting costs nothing. The probe runs as root before the in-guest firewall:
-	// what root can't reach now, no user reaches after it.
+	// for a bounded time and passes only after two consecutive rounds in which every target was
+	// unreachable. The claim token (in memory) hasn't been used and no job code runs before claim,
+	// so waiting exposes nothing new. The probe runs as root before the in-guest firewall: what
+	// root can't reach now, no user reaches after it.
 	var nodes []string
 	if boot.Local != nil {
 		nodes = boot.Local.NodeAddresses
 	}
-	probes = append(probes, hostprofile.KubeTargets(boot.KubeAPI, nodes)...)
+	probes = append(probes, hostprofile.KubeTargets(boot.KubeAPI, nodes, internalPorts(boot))...)
 	until := time.Now().Add(cfg.BoundaryRetry)
+	clean := 0
 	for {
 		code := isolation.Check(ctx, isolation.NewRequest(probes), isolation.SysNet{})
 		if code == isolation.OK {
-			log.OK(pl.StepBoundary)
-			return true
+			if clean++; clean >= 2 {
+				log.OK(pl.StepBoundary)
+				return true
+			}
+		} else {
+			clean = 0
 		}
 		if ctx.Err() != nil || !time.Now().Add(cfg.BoundaryEvery).Before(until) {
+			if code == isolation.OK {
+				code = pl.CodeProbe // one clean round only: not proven twice in the window
+			}
 			log.Fail(pl.StepBoundary, code)
 			return false
 		}
-		log.Note(pl.StepBoundary, code)
+		if code != isolation.OK {
+			log.Note(pl.StepBoundary, code)
+		}
 		select {
 		case <-ctx.Done():
 		case <-time.After(cfg.BoundaryEvery):
@@ -509,15 +520,16 @@ func (e *egressImpl) Start(_ context.Context, inst egress.Instance) (job.Proxy, 
 }
 
 type machine struct {
-	kubeAPI   string   // kubevm
-	nodes     []string // kubevm
-	cfg       layout.Config
-	ids       sysusers.IDs
-	cg        cgroup.Layout
-	git       gitops.Runner
-	resolvers []string
-	audit     *auditReader
-	profile   hostprofile.Name
+	kubeAPI       string   // kubevm
+	nodes         []string // kubevm
+	internalPorts []uint16 // kubevm
+	cfg           layout.Config
+	ids           sysusers.IDs
+	cg            cgroup.Layout
+	git           gitops.Runner
+	resolvers     []string
+	audit         *auditReader
+	profile       hostprofile.Name
 }
 
 // CheckIsolation runs the isolation probe as the tool user, in the tool cgroup, against every
@@ -568,7 +580,7 @@ func (m *machine) CheckIsolation(ctx context.Context) error {
 		if m.profile == hostprofile.KubeVM {
 			// The Kubernetes API, the node, the (unmounted) config volume, the outbox and the
 			// enterprise proxy's credentials: none for the tool user.
-			in.Extra = append(in.Extra, hostprofile.KubeTargets(m.kubeAPI, m.nodes)...)
+			in.Extra = append(in.Extra, hostprofile.KubeTargets(m.kubeAPI, m.nodes, m.internalPorts)...)
 			for _, d := range []string{m.cfg.OutboxDir, m.cfg.UpstreamDir} {
 				in.Extra = append(in.Extra, isolation.Probe{Kind: isolation.KindDir, Target: d, Reason: pl.CodeGuardedPath})
 			}

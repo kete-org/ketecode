@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
@@ -64,7 +65,8 @@ func ValidCloneURL(raw string) bool {
 			return false
 		}
 	}
-	return u.Path != "" && u.Path != "/"
+	// As the entrypoint's CloneTarget: no `..` in the escaped path.
+	return u.Path != "" && u.Path != "/" && !strings.Contains(u.EscapedPath(), "..")
 }
 
 func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
@@ -77,6 +79,12 @@ func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
 	if f.JobPod == nil {
 		return errors.New("config: the kubevm pod driver needs job_pod")
 	}
+	if k.Proxy != nil {
+		// kete-egress configuration v2 takes a DNS name or an IPv4 literal for its upstream proxy.
+		if a, err := netip.ParseAddr(k.Proxy.Hostname()); err == nil && !a.Is4() {
+			return errors.New("config: the kubevm pod driver's jobs need a proxy named by DNS or an IPv4 address (egress configuration v2)")
+		}
+	}
 	jp := f.JobPod
 	for name, q := range map[string]string{"cpu": jp.CPU, "memory": jp.Memory, "ephemeral_storage": jp.EphemeralStorage, "outbox_size": jp.OutboxSize} {
 		if !quantityRe.MatchString(q) {
@@ -85,6 +93,14 @@ func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
 	}
 	if jp.OutboxStorageClass != "" && !contract.ValidKubernetesName(jp.OutboxStorageClass) {
 		return errors.New("config: job_pod outbox_storage_class is not a valid name")
+	}
+	mode := jp.OutboxAccessMode
+	switch mode {
+	case "":
+		mode = "ReadWriteOncePod"
+	case "ReadWriteOncePod", "ReadWriteOnce":
+	default:
+		return errors.New("config: job_pod outbox_access_mode must be ReadWriteOncePod or ReadWriteOnce")
 	}
 	hold := 24
 	if jp.OutboxHoldHours != 0 {
@@ -119,7 +135,7 @@ func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
 	}
 	k.JobPod = &JobPod{
 		CPU: jp.CPU, Memory: jp.Memory, EphemeralStorage: jp.EphemeralStorage, OutboxSize: jp.OutboxSize,
-		OutboxStorageClass: jp.OutboxStorageClass, OutboxHold: time.Duration(hold) * time.Hour, Internal: jp.Internal,
+		OutboxStorageClass: jp.OutboxStorageClass, OutboxAccessMode: mode, OutboxHold: time.Duration(hold) * time.Hour, Internal: jp.Internal,
 	}
 	k.Sources = map[string]RepositorySourceFile{}
 	for _, src := range f.RepositorySources {
@@ -137,4 +153,36 @@ func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
 		}
 	}
 	return nil
+}
+
+// InternalOverlaps returns the first internal range containing an address, or "".
+func InternalOverlaps(ranges []InternalRangeFile, addrs []netip.Addr) string {
+	for _, r := range ranges {
+		p, err := netip.ParsePrefix(r.CIDR)
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			if p.Contains(a.Unmap()) {
+				return r.CIDR
+			}
+		}
+	}
+	return ""
+}
+
+// InternalOverlapsPrefix returns the first internal range overlapping a prefix, or "".
+func InternalOverlapsPrefix(ranges []InternalRangeFile, prefixes []netip.Prefix) string {
+	for _, r := range ranges {
+		p, err := netip.ParsePrefix(r.CIDR)
+		if err != nil {
+			continue
+		}
+		for _, q := range prefixes {
+			if p.Overlaps(q) {
+				return r.CIDR
+			}
+		}
+	}
+	return ""
 }

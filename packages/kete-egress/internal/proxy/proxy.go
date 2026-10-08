@@ -75,8 +75,10 @@ type Proxy struct {
 	// upstreamProxyPort replaces the v2 upstream proxy's port when dialling (in-package tests).
 	upstreamProxyPort int
 	proxyAuth         string
-	streamIdle        time.Duration
-	transports        map[config.Port]*http.Transport
+	// proxyAuthBlockedUntil (UnixNano) is the 407 breaker: upstream dials fail fast until then.
+	proxyAuthBlockedUntil atomic.Int64
+	streamIdle            time.Duration
+	transports            map[config.Port]*http.Transport
 
 	mu      sync.Mutex
 	conns   map[*clientConn]struct{}

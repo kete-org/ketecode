@@ -487,11 +487,16 @@ func (c *Client) NodeBootID(ctx context.Context, node string) (string, error) {
 type NodeInfo struct {
 	BootID    string
 	Addresses []string // InternalIP and ExternalIP addresses, as the API lists them
+	PodCIDRs  []string // spec.podCIDRs (or podCIDR)
 }
 
 // Node reads a Node's boot ID and IP addresses.
 func (c *Client) Node(ctx context.Context, node string) (NodeInfo, error) {
 	var n struct {
+		Spec struct {
+			PodCIDR  string   `json:"podCIDR"`
+			PodCIDRs []string `json:"podCIDRs"`
+		} `json:"spec"`
 		Status struct {
 			NodeInfo struct {
 				BootID string `json:"bootID"`
@@ -508,7 +513,10 @@ func (c *Client) Node(ctx context.Context, node string) (NodeInfo, error) {
 	if n.Status.NodeInfo.BootID == "" {
 		return NodeInfo{}, fmt.Errorf("kube: node %s reports no boot ID", node)
 	}
-	out := NodeInfo{BootID: n.Status.NodeInfo.BootID}
+	out := NodeInfo{BootID: n.Status.NodeInfo.BootID, PodCIDRs: n.Spec.PodCIDRs}
+	if len(out.PodCIDRs) == 0 && n.Spec.PodCIDR != "" {
+		out.PodCIDRs = []string{n.Spec.PodCIDR}
+	}
 	for _, a := range n.Status.Addresses {
 		if a.Type == "InternalIP" || a.Type == "ExternalIP" {
 			out.Addresses = append(out.Addresses, a.Address)
@@ -562,14 +570,29 @@ func (c *Client) raw(ctx context.Context, path string, query url.Values, max int
 	return data, nil
 }
 
-// RuntimeClassExists reports whether a RuntimeClass exists (a 404 is false, any other error an
-// error).
-func (c *Client) RuntimeClassExists(ctx context.Context, name string) (bool, error) {
-	err := c.do(ctx, http.MethodGet, "/apis/node.k8s.io/v1/runtimeclasses/"+url.PathEscape(name), nil, nil, nil)
-	if IsNotFound(err) {
-		return false, nil
+// RuntimeClassHandler returns a RuntimeClass's handler, or found false (a 404; any other error
+// is an error).
+func (c *Client) RuntimeClassHandler(ctx context.Context, name string) (string, bool, error) {
+	var rc struct {
+		Handler string `json:"handler"`
 	}
-	return err == nil, err
+	err := c.do(ctx, http.MethodGet, "/apis/node.k8s.io/v1/runtimeclasses/"+url.PathEscape(name), nil, nil, &rc)
+	if IsNotFound(err) {
+		return "", false, nil
+	}
+	return rc.Handler, err == nil, err
+}
+
+// StorageClass is the part of a StorageClass the controller checks for outboxes.
+type StorageClass struct {
+	Provisioner  string   `json:"provisioner"`
+	MountOptions []string `json:"mountOptions"`
+}
+
+// GetStorageClass reads a StorageClass.
+func (c *Client) GetStorageClass(ctx context.Context, name string) (StorageClass, error) {
+	var sc StorageClass
+	return sc, c.do(ctx, http.MethodGet, "/apis/storage.k8s.io/v1/storageclasses/"+url.PathEscape(name), nil, nil, &sc)
 }
 
 // PVC is the subset of a PersistentVolumeClaim the controller builds and reads.

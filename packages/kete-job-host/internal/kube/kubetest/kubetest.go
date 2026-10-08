@@ -51,8 +51,11 @@ type Server struct {
 	Logs map[string]string
 }
 
-// NodeAddress is the fake node's InternalIP.
-const NodeAddress = "172.18.0.3"
+// NodeAddress is the fake node's InternalIP, PodCIDR its pod range.
+const (
+	NodeAddress = "172.18.0.3"
+	PodCIDR     = "10.244.1.0/24"
+)
 
 // New starts the server.
 func New() *Server {
@@ -105,9 +108,17 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			status(w, 404, "NotFound")
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]any{"name": Node}, "status": map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]any{"name": Node}, "spec": map[string]any{"podCIDR": PodCIDR}, "status": map[string]any{
 			"nodeInfo": map[string]any{"bootID": BootID}, "addresses": []any{map[string]any{"type": "InternalIP", "address": NodeAddress}, map[string]any{"type": "Hostname", "address": Node}},
 		}})
+		return
+	case strings.HasPrefix(p, "/apis/storage.k8s.io/v1/storageclasses/") && r.Method == http.MethodGet:
+		o, found := s.objs[key{"storageclasses", "", strings.TrimPrefix(p, "/apis/storage.k8s.io/v1/storageclasses/")}]
+		if !found {
+			status(w, 404, "NotFound")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(o)
 		return
 	case strings.HasPrefix(p, "/apis/node.k8s.io/v1/runtimeclasses/") && r.Method == http.MethodGet:
 		o, found := s.objs[key{"runtimeclasses", "", strings.TrimPrefix(p, "/apis/node.k8s.io/v1/runtimeclasses/")}]
@@ -377,9 +388,17 @@ func (s *Server) AddAdmissionPolicy(name string) {
 	s.Put("validatingadmissionpolicybindings", "", map[string]any{"metadata": map[string]any{"name": name}, "spec": map[string]any{"policyName": name, "validationActions": []any{"Deny"}}})
 }
 
-// AddRuntimeClass stores a RuntimeClass.
-func (s *Server) AddRuntimeClass(name string) {
-	s.Put("runtimeclasses", "", map[string]any{"metadata": map[string]any{"name": name}, "handler": "runc"})
+// AddRuntimeClass stores a RuntimeClass with handler kata (AddRuntimeClassHandler for another).
+func (s *Server) AddRuntimeClass(name string) { s.AddRuntimeClassHandler(name, "kata") }
+
+// AddRuntimeClassHandler stores a RuntimeClass with a handler.
+func (s *Server) AddRuntimeClassHandler(name, handler string) {
+	s.Put("runtimeclasses", "", map[string]any{"metadata": map[string]any{"name": name}, "handler": handler})
+}
+
+// AddStorageClass stores a StorageClass.
+func (s *Server) AddStorageClass(name, provisioner string, mountOptions ...string) {
+	s.Put("storageclasses", "", map[string]any{"metadata": map[string]any{"name": name}, "provisioner": provisioner, "mountOptions": mountOptions})
 }
 
 // SetPodStatus replaces a pod's status.

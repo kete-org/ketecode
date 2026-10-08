@@ -64,3 +64,31 @@
     the CA is wired but not exercised in CI (the test build accepts all images).
   - P3: the GitLab writer Secret's exception in the jobs-namespace Secret policy; publisher pods'
     admission; minted token revoke on `clone_done` (the phase line now reaches the controller).
+
+## 2026-10-08 implementer (Claude) — security review round
+- Fixed on the branch (coordinator's review of #23): S1 outbox storage (StorageClass required and
+  pinned by admission, node-directory provisioners and classes without `nosuid,nodev,noexec`
+  refused by release builds, `ReadWriteOncePod` default, `jobs.outbox.maxSize` enforced by the
+  admission policy with CEL `quantity`); S2 a failed outbox manifest sends no finish (exit 1,
+  fixed event); S3 host-boundary coverage (internal ports on the node and the API,
+  `KUBERNETES_SERVICE_HOST` required, two consecutive clean rounds; the controller refuses internal
+  ranges holding the API address, a node address or the node's pod range); S4 documented in
+  egress-config-v2.md (kete-code amendment) and the chart README — `CONNECT` to the validated
+  address was **not** implemented (it would be a contract change to v2); S5 `jobs.proxy.authSecret`
+  separate from the controller's. Nits: token dropped after clone, comment fixed, 16 KiB cap on the
+  CONNECT answer head, 407 breaker (1 min), RuntimeClass handlers runc/crun/youki/runsc/gvisor
+  refused by release builds, `ValidCloneURL` refuses `..`, IPv6 proxy literals refused for kubevm
+  (egress v2 takes DNS or IPv4), `kete-release.yml` asserts with `go version -m` that the released
+  job binaries lack `kete_testdriver`, the image-verification-behind-an-authenticating-proxy
+  limitation documented.
+- **Service CIDR** is not discovered (no portable API before ServiceCIDR GA); only the API's own
+  address is checked against internal ranges.
+- **The egress-config-v2.md copy now differs from the platform's** (host-boundary ordering and
+  coverage, DNS trust): carry the amendment into kete-code-platform `docs/contracts/egress-config-v2.md`.
+- **For P3:** the publisher must mount an outbox **read-only with `nosuid,nodev,noexec`**, as the
+  only pod after the job (ReadWriteOncePod), treat every file and the manifest as hostile, and check
+  sizes and SHA-256 against the manifest. The jobs-namespace PVC policy admits only
+  `kete-outbox-<machine-id>` claims; the publisher pod's own admission (runner image, role label,
+  read-only outbox, writer Secret) is P3's.
+- The release-workflow assertion can't run in PR CI (tags only); the `go version -m` detection was
+  checked locally on a tagged and an untagged build.

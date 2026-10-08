@@ -328,6 +328,11 @@ func FromConfig(c Config, getenv func(string) string) (Values, error) {
 	v.Profile, v.Source, v.Provider, v.Generation = c.HostProfile, string(hostprofile.SourceFor(hostprofile.Name(c.HostProfile))), c.HostProvider, c.HostGeneration
 	if c.HostProfile == string(hostprofile.KubeVM) {
 		v.NodeBootID, v.Local, v.KubeAPI = c.NodeBootID, c.Local, KubeAPIFromEnv(getenv)
+		if v.KubeAPI == "" {
+			// The kubelet sets it in every pod: without it the host-boundary probe would skip the
+			// Kubernetes API. Refused, never skipped.
+			return Values{}, errors.New("kubevm needs KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT (a host-boundary target)")
+		}
 	}
 	return v, nil
 }
@@ -373,7 +378,7 @@ func Decode(r io.Reader) (Values, error) {
 	if err := validateKubeVM(v.Profile, v.NodeBootID, v.Local); err != nil {
 		return Values{}, err
 	}
-	if !validKubeAPI(v.KubeAPI) || (v.KubeAPI != "" && v.Profile != string(hostprofile.KubeVM)) {
+	if !validKubeAPI(v.KubeAPI) || ((v.KubeAPI != "") != (v.Profile == string(hostprofile.KubeVM))) {
 		return Values{}, errors.New("kube_api")
 	}
 	out.Profile, out.Source, out.Provider, out.Generation = v.Profile, v.Source, v.Provider, v.Generation

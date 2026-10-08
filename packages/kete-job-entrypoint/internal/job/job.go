@@ -600,6 +600,9 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		return r.failClone(ctx, final{result: Synth("error", 1, msg)})
 	}
 	r.log.OK(pl.StepClone)
+	if r.d.Runtime != nil {
+		r.d.Runtime.Repo.Token = "" // the read credential's only other copy (c.CloneToken goes after verify)
+	}
 
 	r.log.Start(pl.StepVerify)
 	if r.d.Runtime != nil {
@@ -920,7 +923,15 @@ func (r *runner) finalize(ctx context.Context, f final) int {
 	// 6d (kubevm): the outbox, never uploads. Local files only, so also while a job process is
 	// alive (no proxy restart is needed); the bundle exists only when none was.
 	if r.d.Runtime != nil {
-		r.writeOutbox(result, b, pushError)
+		if err := r.writeOutbox(result, b, pushError); err != nil {
+			// No manifest: the job's outputs aren't in the outbox, so finish {"outbox":true} would
+			// claim what isn't there (contract: it is the only runtime finish). No finish: exit 1,
+			// and the platform's sweeper marks the job lost.
+			_ = r.event(ctx, platform.Event{Phase: "report", Message: "outbox not written"})
+			r.stopHeartbeat()
+			r.stopAll()
+			return 1
+		}
 		goto finish
 	}
 
@@ -1067,8 +1078,8 @@ func (r *runner) boundResult(full []byte) []byte {
 // writeOutbox is step outbox (kubevm): the full result, the audit log, the proxy log and the
 // bundle (when one was built) into the runner's outbox, then the manifest naming them. A file
 // that can't be written is a note in the manifest; a manifest that can't be written fails the
-// step (the runner's publisher then finds no manifest and publishes nothing).
-func (r *runner) writeOutbox(result []byte, b *bundle.Result, pushError string) {
+// step and is returned: the job then sends no finish (the runner's publisher finds no manifest).
+func (r *runner) writeOutbox(result []byte, b *bundle.Result, pushError string) error {
 	rt := r.d.Runtime
 	r.log.Start(pl.StepOutbox)
 	m := OutboxManifest{
@@ -1119,7 +1130,8 @@ func (r *runner) writeOutbox(result []byte, b *bundle.Result, pushError string) 
 	m.WrittenAt = r.d.Now().UTC().Format(time.RFC3339)
 	if err := rt.Outbox.Commit(m); err != nil {
 		r.log.FailErr(pl.StepOutbox, pl.CodeOutbox, err)
-		return
+		return err
 	}
 	r.log.OK(pl.StepOutbox)
+	return nil
 }

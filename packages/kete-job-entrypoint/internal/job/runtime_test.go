@@ -21,9 +21,10 @@ type fakeRuntime struct {
 	resp     *platform.RuntimeClaimResponse
 	name     string // the local name the claim was checked against
 
-	mu       sync.Mutex
-	files    map[string]string
-	manifest *OutboxManifest
+	mu        sync.Mutex
+	files     map[string]string
+	manifest  *OutboxManifest
+	commitErr error
 }
 
 func (f *fakeRuntime) ClaimRuntime(_ context.Context, token, localName string, _ time.Time) (*platform.RuntimeClaimResponse, error) {
@@ -52,6 +53,9 @@ func (f *fakeRuntime) Put(name string, r io.Reader, max int64) (OutboxFile, erro
 func (f *fakeRuntime) Commit(m OutboxManifest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.commitErr != nil {
+		return f.commitErr
+	}
 	f.manifest = &m
 	return nil
 }
@@ -172,5 +176,31 @@ func TestRuntimeSummaryRedactedSendsNone(t *testing.T) {
 	_ = json.Unmarshal([]byte(e.pf.find("result")[0].body), &sent)
 	if sent["text"] != nil || len(sent["denied"].([]any)) != 0 || sent["denied_count"] != 3.0 {
 		t.Errorf("result = %v", sent)
+	}
+}
+
+// An outbox whose manifest can't be written is a failure: no finish {"outbox":true} (it would claim
+// outputs that aren't there), exit 1, a fixed event.
+func TestRuntimeOutboxFailureSendsNoFinish(t *testing.T) {
+	e, rt := newRuntimeEnv(t)
+	rt.commitErr = errors.New("disk full")
+	if code := e.run(t); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if len(e.pf.find("finish-outbox")) != 0 {
+		t.Fatalf("finish sent after a failed outbox: %v", e.pf.ops())
+	}
+	if !strings.Contains(e.out.String(), `"step":"outbox","event":"failed","code":"outbox"`) {
+		t.Errorf("phase log: %s", e.out)
+	}
+	found := false
+	for _, ev := range e.pf.find("events") {
+		found = found || strings.Contains(ev.body, "outbox not written")
+	}
+	if !found {
+		t.Error("no event says the outbox wasn't written")
+	}
+	if e.d.Runtime.Repo.Token != "" {
+		t.Error("the read credential outlived the clone")
 	}
 }

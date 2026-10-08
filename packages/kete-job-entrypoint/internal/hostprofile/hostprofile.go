@@ -281,21 +281,31 @@ func BoundaryTargets(gateways []netip.Addr) []isolation.Probe {
 	return out
 }
 
-// KubeVM's extra host-boundary targets: the Kubernetes API (the KUBERNETES_SERVICE_HOST/PORT the
-// kubelet gives every pod, read for the probe only) and its node's addresses (the runner reads them
-// from the Node object), each on GatewayPorts (the kubelet, the API server, ssh, …).
-func KubeTargets(kubeAPI string, nodes []string) []isolation.Probe {
+// KubeVM's extra host-boundary targets: the Kubernetes API's address (from the
+// KUBERNETES_SERVICE_HOST/PORT the kubelet gives every pod, read for the probe only) on its own
+// port, and it and each of the node's addresses (the runner reads them from the Node object) on
+// GatewayPorts (the kubelet, the API server, ssh, …) and on every port an internal range opens
+// (egress configuration v2: the proxy user may reach those ports, so none may answer on the node or
+// the API).
+func KubeTargets(kubeAPI string, nodes []string, extraPorts []uint16) []isolation.Probe {
 	var out []isolation.Probe
-	if kubeAPI != "" {
+	ports := append(append([]uint16(nil), GatewayPorts...), extraPorts...)
+	add := func(a netip.Addr, r phaselog.Code) {
+		seen := map[uint16]bool{}
+		for _, port := range ports {
+			if !seen[port] {
+				seen[port] = true
+				out = append(out, isolation.Probe{Kind: isolation.KindTCP, Target: netip.AddrPortFrom(a, port).String(), Reason: r})
+			}
+		}
+	}
+	if ap, err := netip.ParseAddrPort(kubeAPI); err == nil {
 		out = append(out, isolation.Probe{Kind: isolation.KindTCP, Target: kubeAPI, Reason: phaselog.CodeKubeAPI})
+		add(ap.Addr(), phaselog.CodeKubeAPI)
 	}
 	for _, n := range nodes {
-		a, err := netip.ParseAddr(n)
-		if err != nil {
-			continue // validated with the configuration; never reached
-		}
-		for _, port := range GatewayPorts {
-			out = append(out, isolation.Probe{Kind: isolation.KindTCP, Target: netip.AddrPortFrom(a, port).String(), Reason: phaselog.CodeNode})
+		if a, err := netip.ParseAddr(n); err == nil {
+			add(a, phaselog.CodeNode)
 		}
 	}
 	return out

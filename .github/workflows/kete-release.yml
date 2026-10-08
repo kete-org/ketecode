@@ -540,6 +540,19 @@ jobs:
           echo "$init"
           grep -qx 'init exit 2' <<<"$init"
 
+      # The kubevm entrypoint's test-only shared-kernel mode exists only with -tags kete_testdriver
+      # (kind CI's image): a released binary must never carry it. Checked from the binaries' own
+      # build information, for both architectures, before anything is saved or pushed.
+      - name: No test-only build tags in the released binaries
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            out="$(docker run --rm -v "$PWD/packages/kete-job-image/.build/$arch/bin:/b:ro" golang:1.26-bookworm \
+              sh -c 'for f in /b/kete-job-entrypoint /b/kete-job-init /b/kete-root-helper /b/kete-egress; do go version -m "$f"; done')"
+            grep -q 'path' <<<"$out" || { echo "::error::no build information in the $arch binaries"; exit 1; }
+            if grep -q 'kete_testdriver' <<<"$out"; then echo "::error::the $arch job binaries were built with -tags kete_testdriver"; exit 1; fi
+          done
+
       # Tags only: hand image-publish exactly the images tested above (amd64: e2e; arm64: smoke),
       # with a checksum it verifies before loading.
       - name: Save the tested images (tags only)

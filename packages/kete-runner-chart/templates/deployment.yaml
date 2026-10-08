@@ -87,6 +87,11 @@ spec:
               mountPath: /etc/kete-runner/proxy
               readOnly: true
             {{- end }}
+            {{- if .Values.jobs.proxy.authSecret.name }}
+            - name: job-proxy-auth
+              mountPath: /etc/kete-runner/job-proxy
+              readOnly: true
+            {{- end }}
             # The Sigstore TUF cache for job image verification.
             - name: cache
               mountPath: /var/cache/kete-runner
@@ -104,6 +109,14 @@ spec:
             items:
               - key: {{ .Values.proxy.authSecret.key | quote }}
                 path: {{ .Values.proxy.authSecret.key | quote }}
+        {{- end }}
+        {{- if .Values.jobs.proxy.authSecret.name }}
+        - name: job-proxy-auth
+          secret:
+            secretName: {{ .Values.jobs.proxy.authSecret.name | quote }}
+            items:
+              - key: {{ .Values.jobs.proxy.authSecret.key | quote }}
+                path: {{ .Values.jobs.proxy.authSecret.key | quote }}
         {{- end }}
         {{- if .Values.caBundle.existingSecret }}
         - name: ca

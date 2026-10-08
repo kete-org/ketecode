@@ -414,9 +414,11 @@ the runner after scheduling) and `local`, which never comes from or goes to the 
    point, empty directory; else `config_secret`), then remount `/proc/sys` and `/sys/fs/cgroup`
    read-write (CRI mounts both read-only).
 3. The machine steps as for every profile; `host_boundary` also probes the Kubernetes API
-   (`KUBERNETES_SERVICE_HOST:PORT`, `kube_api`) and each node address on the gateway sample ports
-   (`node`), and **retries for up to 30 s** (every 2 s, a `note` per failed round) while a
-   NetworkPolicy may not be enforced yet; it passes only once every target is unreachable. It runs
+   (`KUBERNETES_SERVICE_HOST:PORT`, required: the boot stage refuses a kubevm pod without it;
+   `kube_api`) and each node address (`node`), both on the gateway sample ports and on every port
+   an internal range lists, and **retries for up to 30 s** (every 2 s, a `note` per failed round)
+   while a NetworkPolicy may not be enforced yet; it passes only after **two consecutive** rounds
+   in which every target was unreachable. It runs
    as root before the in-guest firewall, so what it can't reach no job user reaches afterwards.
 4. `setup_dirs` also prepares `/run/kete-upstream` (root, group `kete-proxy`, 0750: the proxy's
    credentials and CA bundle, 0440) and the **outbox** (`/var/lib/kete-outbox`, which must be a
@@ -441,7 +443,10 @@ the runner after scheduling) and `local`, which never comes from or goes to the 
    {result|audit|proxy_log|bundle: {name, size, sha256}}, notes, written_at}`. Files are root,
    group 65532, 0640, created exclusively, never through a symlink. The runner's publisher (P3)
    reads the volume after the pod has ended and treats it as hostile.
-10. **Finish** is `{"outbox":true}`; `uploads` is never called.
+10. **Finish** is `{"outbox":true}`; `uploads` is never called. If the manifest can't be written,
+   no finish is sent (it would claim outputs that aren't there): an event says `outbox not
+   written`, the entrypoint exits 1 and the platform's sweeper marks the job lost. The read
+   credential is dropped from memory after the clone.
 
 **Test-only shared-kernel mode.** kind CI has no Kata, so CI runs job pods under a runc-backed
 `kete-test` RuntimeClass with an entrypoint built with `-tags kete_testdriver`. With

@@ -72,13 +72,24 @@ jobs:
     cpu: "2"
     memory: 4Gi
     ephemeralStorage: 20Gi
-  # Each job's outbox (a ReadWriteOnce PVC the job writes its result, audit log, proxy log and
-  # bundle into, kept after the job for the publisher, P3), deleted holdHours after the job's
-  # deadline. storageClass "" = the cluster default.
+  # Each job's outbox (a PVC the job writes its result, audit log, proxy log and bundle into, kept
+  # after the job for the publisher, P3), deleted holdHours after the job's deadline.
+  # storageClass is required: a class that enforces capacity and whose mountOptions include
+  # nosuid, nodev and noexec (the controller checks both, and refuses node-directory provisioners
+  # such as local-path). The admission policy caps the claim at maxSize and pins the class.
   outbox:
-    size: 1Gi
     storageClass: ""
+    size: 1Gi
+    maxSize: 10Gi
+    accessMode: ReadWriteOncePod   # ReadWriteOnce only for volume plugins without ReadWriteOncePod
     holdHours: 24
+  # The jobs' own proxy credential (a Secret in the release namespace, key holding
+  # username:password), distinct from proxy.authSecret: every job VM holds it in memory while it
+  # runs. None by default (jobs then CONNECT without credentials).
+  proxy:
+    authSecret:
+      name: ""
+      key: auth
 
 # Runtime repository names this runner serves (e.g. gitlab:payments/api). A job naming another is
 # refused (repository_unknown) before anything starts.

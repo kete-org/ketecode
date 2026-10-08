@@ -124,6 +124,9 @@ jobs:
           refuse --set proxy.url=
           refuse --set jobs.resources.memory=lots
           refuse --set jobs.outbox.holdHours=0
+          refuse --set jobs.outbox.storageClass=
+          refuse --set jobs.outbox.accessMode=ReadWriteMany
+          refuse --set jobs.proxy.authSecret.name=corp-proxy-auth
 
       - name: The chart's configuration parses (the controller's own parser)
         run: |

@@ -22,6 +22,7 @@ jobs:
     ports: [443, 3128]
   resources: {cpu: "2", memory: 4Gi, ephemeralStorage: 20Gi}
   outbox: {size: 2Gi, storageClass: fast-ssd, holdHours: 12}
+  proxy: {authSecret: {name: kete-jobs-proxy-auth}}
 repositories: ["gitlab:payments/api"]
 repositorySources:
   - {name: "gitlab:payments/api", url: "https://gitlab.corp.example/payments/api.git", cloneSecret: gitlab-payments-read}

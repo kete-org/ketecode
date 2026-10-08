@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 
@@ -158,6 +159,26 @@ func KubeVMSecret(o KubeVMOptions) SecretFunc {
 		clear(cred["token"])
 		if username == "" || token == "" {
 			return nil, &driver.FailedError{Reason: contract.ReasonRepositoryUnavailable, Err: errors.New("the clone Secret needs keys username and token")}
+		}
+		// The internal ranges open the proxy user's way to their ports: none may contain the node
+		// or its pods (the controller already refused ranges holding the Kubernetes API).
+		var addrs []netip.Addr
+		for _, a := range node.Addresses {
+			if ad, err := netip.ParseAddr(a); err == nil {
+				addrs = append(addrs, ad)
+			}
+		}
+		var podNets []netip.Prefix
+		for _, c := range node.PodCIDRs {
+			if p, err := netip.ParsePrefix(c); err == nil {
+				podNets = append(podNets, p)
+			}
+		}
+		if r := config.InternalOverlaps(o.JobPod.Internal, addrs); r != "" {
+			return nil, fmt.Errorf("kubevm: internal range %s contains an address of the job's node", r)
+		}
+		if r := config.InternalOverlapsPrefix(o.JobPod.Internal, podNets); r != "" {
+			return nil, fmt.Errorf("kubevm: internal range %s overlaps the node's pod range", r)
 		}
 		c := jobConfig{
 			JobID: mc.JobID, PlatformURL: mc.PlatformURL, ClaimToken: mc.ClaimToken, StorageHost: mc.StorageHost,

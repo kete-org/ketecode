@@ -120,6 +120,13 @@ rules:
     resources: [validatingadmissionpolicies, validatingadmissionpolicybindings]
     resourceNames: [{{ $names.pods | quote }}, {{ $names.jobSecrets | quote }}, {{ $names.outboxes | quote }}, {{ $names.controllerSecrets | quote }}]
     verbs: [get]
+  {{- with .Values.jobs.outbox.storageClass }}
+  # The outbox StorageClass's provisioner and mount options (checked before any start).
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    resourceNames: [{{ . | quote }}]
+    verbs: [get]
+  {{- end }}
   - apiGroups: [node.k8s.io]
     resources: [runtimeclasses]
     resourceNames: [{{ range $i, $n := .Values.jobs.runtimeClassNames }}{{ if $i }}, {{ end }}{{ $n | quote }}{{ end }}]

@@ -87,7 +87,7 @@ state Secrets (Opaque) in the release namespace (RBAC can't limit `create` by na
 - A CNI that enforces NetworkPolicy, ideally before a pod starts (Calico, Cilium). The job retries
   its host-boundary probe for 30 s, so a policy enforced a few seconds late is tolerated; one never
   enforced refuses every job (`host_boundary`), never runs one unfenced.
-- A default StorageClass (or `jobs.outbox.storageClass`) for the outbox claims.
+- A StorageClass for the outbox claims (`jobs.outbox.storageClass`, required; below).
 - An enrollment token from the portal (P4).
 
 ## Job pods (podDriver: kubevm)
@@ -106,8 +106,9 @@ For each machine the controller (after the image allowlist and the job image's c
    `kete-job-<machine>` (owner: the pod): `config.json` = the platform's sealed machine
    configuration (job id, platform URL, claim token, profile `kubevm`) plus the node's boot ID and
    the runner's **local section** — the repository's name, clone URL, ref and read credential, the
-   data boundary, the proxy (URL and credentials), the CA bundle (with a proxy) and `jobs.egress`
-   as internal ranges, and the node's addresses. None of the local section ever comes from or goes
+   data boundary, the proxy (URL and the *jobs'* credential), the CA bundle (with a proxy) and
+   `jobs.egress` as internal ranges (refused if one contains the node's addresses, its pod range or
+   the Kubernetes API), and the node's addresses. None of the local section ever comes from or goes
    to the platform;
 4. deletes the Secret once the pod runs, reads the pod's log for phase lines (the entrypoint's
    stdout carries nothing else), and maps the pod to the machine: `ImagePullBackOff`/`ErrImagePull`
@@ -126,6 +127,26 @@ the repository the runner resolved, clones from the runner's source, runs `kete 
 result bounded by `boundary`, writes the full result, audit log, proxy log and bundle to the outbox,
 and finishes with `{"outbox": true}` — it never uploads.
 
+### Outbox storage
+
+The outbox is written by a job VM (under Kata a filesystem volume is typically shared into the
+guest through virtio-fs, served on the node by `virtiofsd`) and later read by the publisher, so its
+StorageClass must keep it a bounded, inert data volume:
+
+- **enforces capacity** (a block-backed CSI driver: EBS, Azure Disk, PD, Ceph RBD, …), so a job
+  can't fill a node disk; the admission policy caps each claim at `jobs.outbox.maxSize` and pins the
+  class;
+- **`mountOptions: [nosuid, nodev, noexec]`** — the controller blocks starts (`cluster_unhealthy`)
+  while the class lacks one of them;
+- **not a node-directory provisioner**: `rancher.io/local-path`, hostPath and no-provisioner
+  classes are refused by release builds (they create world-writable node directories and ignore
+  capacity; only kind CI uses local-path, with a test build);
+- `ReadWriteOncePod` access (`jobs.outbox.accessMode`, the default): one pod at a time — the job,
+  then the publisher. `ReadWriteOnce` only where the volume plugin lacks `ReadWriteOncePod`.
+
+The publisher (P3) must mount an outbox read-only with `nosuid,nodev,noexec` and treat every file
+as hostile.
+
 ### Kata
 
 The capability set, the remounts and the boot-ID check were measured on Kata 4.2 (QEMU, runtime-rs)
@@ -140,10 +161,26 @@ in spike S0. Per platform, before production:
 
 ## Proxy and CA
 
+**Credentials.** `proxy.authSecret` is the controller's. Jobs get their own,
+`jobs.proxy.authSecret` (none by default): every job VM holds it in memory while it runs, so give
+it a separate, narrowly scoped proxy account. The controller's credential never reaches a job.
+
+**Image verification behind an authenticating proxy** is not supported yet: the controller's
+Sigstore/registry fetches use `HTTPS_PROXY` without credentials. Allow the registry and Sigstore
+hosts without authentication for the controller, or reach them directly
+(`networkPolicy.platform`).
+
+**RuntimeClass handlers.** Besides existing, each configured RuntimeClass must not use a
+shared-kernel handler (`runc`, `crun`, `youki`, `runsc`/`gvisor`): release builds block starts
+(`cluster_unhealthy`) otherwise, whatever the class is called.
+
 Prefer an `https://` proxy when it takes credentials: over `http://` the `Proxy-Authorization`
 header crosses your network in clear (as with any HTTP proxy). Jobs send `CONNECT host:port` by
-name, so the proxy resolves the destination itself: kete-egress checks the addresses it resolves,
-and you trust the proxy's own resolution and policy for the rest.
+name, so the proxy resolves the destination itself: kete-egress checks the addresses it resolves
+(and refuses a name with none allowed), but **with a proxy, forbidden-range enforcement on the final
+destination depends on your proxy's resolution and policy** (egress configuration v2, "DNS with an
+upstream proxy"). A `407` pauses every job connection through the proxy for a minute instead of
+retrying the credential.
 
 `proxy.url` is used by the controller (platform connection, job image verification through
 `HTTPS_PROXY`) and by every job's kete-egress as its upstream (`CONNECT`). Credentials come from

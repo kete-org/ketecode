@@ -129,6 +129,8 @@ kubectl -n $SYS create secret generic e2e-ca --from-file=ca.crt="$STATE/fake-ca.
 token="kete_jhe_$(head -c 64 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 42)A"
 curl -sf -X POST $ADMIN/token -d "{\"token\":\"$token\"}" >/dev/null
 kubectl -n $SYS create secret generic kete-runner-enrollment --from-literal=token="$token" >/dev/null
+# The jobs' own proxy credential (the fake proxy accepts any; the e2e proves it is carried, not checked).
+kubectl -n $SYS create secret generic jobs-proxy-auth --from-literal=auth="kete-jobs:$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')" >/dev/null
 read_secret() { # read_secret <fake state>: the fake job's clone credential as the repository's read Secret
   local tok; tok=$(jq -r .clone_token "$STATE/$1/runtime-job.json")
   kubectl -n $SYS create secret generic fake-repo-read --from-literal=username=x-access-token --from-literal=token="$tok" \
@@ -152,7 +154,8 @@ jobs:
   startTimeoutSeconds: 300
   egress: {cidrs: ["$FAKE_IP/32", "$JH_IP/32"], ports: [443, 3128]}
   resources: {cpu: "1", memory: 2Gi, ephemeralStorage: 4Gi}
-  outbox: {size: 1Gi, holdHours: 1}
+  outbox: {size: 1Gi, maxSize: 2Gi, storageClass: standard, accessMode: ReadWriteOnce, holdHours: 1}  # kind's local-path: no ReadWriteOncePod
+  proxy: {authSecret: {name: jobs-proxy-auth}}
 repositories: ["$REPO"]
 repositorySources: [{name: "$REPO", url: "https://github.kete.test/org/repo.git", cloneSecret: fake-repo-read}]
 podDriver: kubevm
@@ -290,6 +293,14 @@ for m in $R1 $R2; do
 done
 log "ok: shared_kernel refused before any write (a wrong node boot ID; a shared kernel under the release rule)"
 
+# --- 4b. outbox claims: only the configured class and size, created by the controller
+pvc() { jq -n --arg ns $JOBS --arg sc "$1" --arg size "$2" '{apiVersion: "v1", kind: "PersistentVolumeClaim",
+  metadata: {name: "kete-outbox-7b3c4d5e-6f7a-4b8c-9d0e-0000000000b1", namespace: $ns, labels: {"kete.dev/machine-id": "7b3c4d5e-6f7a-4b8c-9d0e-0000000000b1"}},
+  spec: {accessModes: ["ReadWriteOnce"], storageClassName: $sc, resources: {requests: {storage: $size}}}}'; }
+denied "an outbox claim over jobs.outbox.maxSize" kubectl --as=$SA create -f <(pvc standard 100Gi)
+denied "an outbox claim of another StorageClass" kubectl --as=$SA create -f <(pvc other 1Gi)
+denied "an outbox claim by an admin" kubectl create -f <(pvc standard 1Gi)
+
 # --- 5. RuntimeClasses: a non-allowlisted one is refused by admission; a missing one blocks starts
 kubectl apply -f - >/dev/null <<EOF
 apiVersion: node.k8s.io/v1
@@ -308,7 +319,7 @@ wait_for 120 "starts unblocked" bash -c "curl -sf $ADMIN/hosts | jq -e '.[0].Las
 
 # --- nothing secret in the controller's logs
 logs=$(kubectl -n $SYS logs deploy/kete-runner --tail=-1)
-for s in "$token" "$(jq -r .clone_token "$STATE/lifecycle/runtime-job.json")" "$(jq -r .claim_token "$STATE/lifecycle/runtime-job.json")"; do
+for s in "$token" "$(kubectl -n $SYS get secret jobs-proxy-auth -o jsonpath='{.data.auth}' | base64 -d)" "$(jq -r .clone_token "$STATE/lifecycle/runtime-job.json")" "$(jq -r .claim_token "$STATE/lifecycle/runtime-job.json")"; do
   grep -qF "$s" <<<"$logs" && fail "a credential is in the controller's logs"
 done
 stop_fake

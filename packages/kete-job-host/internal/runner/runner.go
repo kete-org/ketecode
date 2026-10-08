@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -98,6 +99,17 @@ func Run(ctx context.Context, o Options) error {
 	}
 	if !kdriver.TestBuild && slices.Contains(k.RuntimeClasses, kdriver.SharedKernelTestClass) {
 		return fmt.Errorf("runner: RuntimeClass %q is kind CI's runc stand-in, accepted only by test builds; job pods need a VM-isolated RuntimeClass", kdriver.SharedKernelTestClass)
+	}
+	if k.PodDriver == config.PodDriverKubeVM {
+		if !kdriver.TestBuild && k.JobPod.OutboxStorageClass == "" {
+			return errors.New("runner: job_pod outbox_storage_class is required (a StorageClass that enforces capacity and mounts nosuid,nodev,noexec; never the cluster default by accident)")
+		}
+		// No internal range may open the Kubernetes API to jobs.
+		if a, err := netip.ParseAddr(os.Getenv("KUBERNETES_SERVICE_HOST")); err == nil {
+			if r := config.InternalOverlaps(k.JobPod.Internal, []netip.Addr{a}); r != "" {
+				return fmt.Errorf("runner: internal range %s contains the Kubernetes API's address", r)
+			}
+		}
 	}
 	pd, err := podDriver(o)
 	if err != nil {
@@ -240,8 +252,9 @@ func podDriver(o Options) (podDriverParts, error) {
 				return s.Data, err
 			},
 		}
-		if k.ProxyAuthFile != "" {
-			ko.ReadProxyAuth = func() (string, error) { return readProxyAuth(k.ProxyAuthFile) }
+		if k.JobProxyAuthFile != "" {
+			// The jobs' own credential, never the controller's: every job VM holds it.
+			ko.ReadProxyAuth = func() (string, error) { return readProxyAuth(k.JobProxyAuthFile) }
 		}
 		if k.CABundle != "" && k.Proxy != nil {
 			// The jobs' kete-egress takes extra roots with its upstream proxy only (egress
@@ -263,7 +276,7 @@ func podDriver(o Options) (podDriverParts, error) {
 		}
 		return podDriverParts{
 			pod: kdriver.KubeVMPod(ko), secret: kdriver.KubeVMSecret(ko), logs: true, verifier: v,
-			outbox: &kdriver.OutboxOptions{Size: k.JobPod.OutboxSize, StorageClass: k.JobPod.OutboxStorageClass, MountPath: kdriver.OutboxPath, Hold: k.JobPod.OutboxHold},
+			outbox: &kdriver.OutboxOptions{Size: k.JobPod.OutboxSize, StorageClass: k.JobPod.OutboxStorageClass, AccessMode: k.JobPod.OutboxAccessMode, MountPath: kdriver.OutboxPath, Hold: k.JobPod.OutboxHold},
 		}, nil
 	}
 	return podDriverParts{}, fmt.Errorf("runner: unknown pod driver %q", k.PodDriver)
@@ -523,7 +536,7 @@ func (g *policyGuard) check(ctx context.Context) {
 		if why != "" {
 			break
 		}
-		ok, err := g.o.Kube.RuntimeClassExists(ctx, name)
+		handler, ok, err := g.o.Kube.RuntimeClassHandler(ctx, name)
 		switch {
 		case err != nil:
 			why = contract.BlockedClusterUnhealthy
@@ -531,7 +544,15 @@ func (g *policyGuard) check(ctx context.Context) {
 		case !ok:
 			why = contract.BlockedRuntimeClassMissing
 			g.o.Log.Error("runtime_class_missing", "runtime_class", name, "action", "starts blocked until it exists")
+		case !kdriver.TestBuild && sharedKernelHandlers[strings.ToLower(handler)]:
+			// A RuntimeClass whose handler is a shared-kernel runtime is not VM-isolated whatever
+			// its name says (the entrypoint would refuse each job; the controller refuses first).
+			why = contract.BlockedClusterUnhealthy
+			g.o.Log.Error("runtime_class_not_vm_isolated", "runtime_class", name, "handler", handler, "action", "starts blocked")
 		}
+	}
+	if why == "" {
+		why = g.checkStorageClass(ctx)
 	}
 	g.mu.Lock()
 	if g.why != why && why == "" {
@@ -539,6 +560,51 @@ func (g *policyGuard) check(ctx context.Context) {
 	}
 	g.why = why
 	g.mu.Unlock()
+}
+
+// sharedKernelHandlers are container runtimes that share the node's kernel (or, for gVisor, lack
+// what the entrypoint needs): never a job pod's RuntimeClass handler outside test builds.
+var sharedKernelHandlers = map[string]bool{"runc": true, "crun": true, "runsc": true, "gvisor": true, "youki": true}
+
+// localProvisioners write volumes into node directories (0777, no capacity limit, no mount
+// options): never an outbox outside test builds.
+var localProvisioners = map[string]bool{
+	"rancher.io/local-path": true, "kubernetes.io/no-provisioner": true, "k8s.io/minikube-hostpath": true,
+	"microk8s.io/hostpath": true, "docker.io/hostpath": true, "hostpath.csi.k8s.io": true, "openebs.io/local": true,
+	"kubernetes.io/host-path": true,
+}
+
+// outboxMountOptions must all be on an outbox StorageClass outside test builds: the volume is
+// written by a job VM and read by the publisher, never executed.
+var outboxMountOptions = []string{"nosuid", "nodev", "noexec"}
+
+// checkStorageClass checks the outbox StorageClass (kubevm): it exists, isn't a node-directory
+// provisioner and mounts nosuid,nodev,noexec. Test builds (kind's local-path) skip the last two.
+func (g *policyGuard) checkStorageClass(ctx context.Context) string {
+	jp := g.o.Config.Kube.JobPod
+	if jp == nil || jp.OutboxStorageClass == "" {
+		return ""
+	}
+	sc, err := g.o.Kube.GetStorageClass(ctx, jp.OutboxStorageClass)
+	if err != nil {
+		g.o.Log.Error("outbox_storage_class_check_failed", "storage_class", jp.OutboxStorageClass, "error", err.Error(), "action", "starts blocked")
+		return contract.BlockedClusterUnhealthy
+	}
+	if kdriver.TestBuild {
+		return ""
+	}
+	if localProvisioners[sc.Provisioner] {
+		g.o.Log.Error("outbox_storage_class_refused", "storage_class", jp.OutboxStorageClass, "provisioner", sc.Provisioner,
+			"reason", "node-directory provisioner", "action", "starts blocked")
+		return contract.BlockedClusterUnhealthy
+	}
+	for _, o := range outboxMountOptions {
+		if !slices.Contains(sc.MountOptions, o) {
+			g.o.Log.Error("outbox_storage_class_refused", "storage_class", jp.OutboxStorageClass, "reason", "mountOptions lacks "+o, "action", "starts blocked")
+			return contract.BlockedClusterUnhealthy
+		}
+	}
+	return ""
 }
 
 func (g *policyGuard) start(ctx context.Context) {

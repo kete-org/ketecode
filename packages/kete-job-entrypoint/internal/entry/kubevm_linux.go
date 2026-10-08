@@ -149,3 +149,22 @@ func runtimeDeps(cfg layout.Config, boot bootenv.Values, pc *platform.Client, gi
 		Head:     git.Head,
 	}, nil
 }
+
+// internalPorts are the ports of the configured internal ranges (the egress firewall opens them
+// to the proxy user): the host-boundary probe tries them on the node and the Kubernetes API too.
+func internalPorts(boot bootenv.Values) []uint16 {
+	if boot.Local == nil || boot.Local.Egress == nil {
+		return nil
+	}
+	seen := map[uint16]bool{}
+	var out []uint16
+	for _, r := range boot.Local.Egress.Internal {
+		for _, p := range r.Ports {
+			if p > 0 && p <= 65535 && !seen[uint16(p)] {
+				seen[uint16(p)] = true
+				out = append(out, uint16(p))
+			}
+		}
+	}
+	return out
+}

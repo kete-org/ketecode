@@ -48,3 +48,21 @@ func TestKubeVMConfig(t *testing.T) {
 		t.Error("job_pod accepted for the placeholder")
 	}
 }
+
+func TestKubeVMConfigReviewRules(t *testing.T) {
+	mut := func(old, new string) string { return kubeConfig("16", strings.Replace(kubeVMSection, old, new, 1)) }
+	for name, raw := range map[string]string{
+		"dotdot clone url":     mut(`8443/payments/api.git`, `8443/payments/../api.git`),
+		"ipv6 proxy literal":   mut(`"proxy":"http://10.20.0.5:3128"`, `"proxy":"http://[fd00::5]:3128"`),
+		"bad access mode":      mut(`"outbox_size":"1Gi"`, `"outbox_size":"1Gi","outbox_access_mode":"ReadWriteMany"`),
+		"job credential = own": mut(`"proxy_auth_file":"/etc/kete-runner/proxy/auth"`, `"proxy_auth_file":"/etc/kete-runner/proxy/auth","job_proxy_auth_file":"/etc/kete-runner/proxy/auth"`),
+	} {
+		if _, err := Parse([]byte(raw)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	c, err := Parse([]byte(mut(`"proxy_auth_file":"/etc/kete-runner/proxy/auth"`, `"proxy_auth_file":"/etc/kete-runner/proxy/auth","job_proxy_auth_file":"/etc/kete-runner/job-proxy/auth"`)))
+	if err != nil || c.Kube.JobProxyAuthFile != "/etc/kete-runner/job-proxy/auth" || c.Kube.JobPod.OutboxAccessMode != "ReadWriteOncePod" {
+		t.Fatalf("%v %+v", err, c.Kube)
+	}
+}

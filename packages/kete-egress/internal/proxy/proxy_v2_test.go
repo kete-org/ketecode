@@ -229,4 +229,46 @@ func TestV2UpstreamProxyRefusalIsRefused(t *testing.T) {
 	if !h.hasReason(t, policy.ReasonUpstreamProxy) {
 		t.Errorf("no %s log line: %s", policy.ReasonUpstreamProxy, h.log.String())
 	}
+	// The 407 breaker: the next connections fail without asking the proxy again.
+	for range 3 {
+		if st, _ := v2Get(t, h, "https://gateway.test/"); st != http.StatusBadGateway {
+			t.Errorf("status %d", st)
+		}
+	}
+	cp.mu.Lock()
+	n := len(cp.seen)
+	cp.mu.Unlock()
+	if n != 1 {
+		t.Errorf("the proxy saw %d CONNECTs after a 407, want 1", n)
+	}
+}
+
+// A proxy answering with an endless head is cut off at the limit.
+func TestV2UpstreamProxyHugeAnswer(t *testing.T) {
+	h := newHarness(t, hopts{v2: withUpstream()})
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_, _ = http.ReadRequest(bufio.NewReader(c))
+		_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\n")
+		line := "X-Pad: " + strings.Repeat("a", 1000) + "\r\n"
+		for range 100 {
+			if _, err := io.WriteString(c, line); err != nil {
+				return
+			}
+		}
+	}()
+	h.p.upstreamProxyPort = ln.Addr().(*net.TCPAddr).Port
+	h.phase(t, phase.Agent)
+	if st, _ := v2Get(t, h, "https://gateway.test/"); st != http.StatusBadGateway {
+		t.Errorf("status %d, want 502", st)
+	}
 }

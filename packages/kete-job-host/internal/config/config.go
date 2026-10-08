@@ -77,6 +77,9 @@ type KubernetesFile struct {
 	// ProxyAuthFile is a mounted Secret's file holding `username:password` for Proxy (never
 	// inline): the controller's CONNECTs and the jobs' (kete-egress upstream) authenticate with it.
 	ProxyAuthFile string `json:"proxy_auth_file,omitempty"`
+	// JobProxyAuthFile is the jobs' own proxy credential (`username:password`), distinct from the
+	// controller's: every job VM holds it in memory. None by default.
+	JobProxyAuthFile string `json:"job_proxy_auth_file,omitempty"`
 	// RepositorySources are where the kubevm pod driver clones each repository from, with a
 	// static read credential (a deploy token) from a Secret in the controller's namespace. P3
 	// adds minted credentials and the publisher.
@@ -102,6 +105,9 @@ type JobPodFile struct {
 	// The outbox PVC (ReadWriteOnce): its size and storage class ("" = the cluster default).
 	OutboxSize         string `json:"outbox_size"`
 	OutboxStorageClass string `json:"outbox_storage_class,omitempty"`
+	// OutboxAccessMode is ReadWriteOncePod (default: one pod at a time, the job and later the
+	// publisher) or ReadWriteOnce (for volume plugins without ReadWriteOncePod, e.g. kind's).
+	OutboxAccessMode string `json:"outbox_access_mode,omitempty"`
 	// OutboxHoldHours: an outbox is deleted this long after its job pod ended (default 24; the
 	// publisher, P3, deletes it once published).
 	OutboxHoldHours int `json:"outbox_hold_hours,omitempty"`
@@ -148,14 +154,15 @@ type Kubernetes struct {
 	// Proxy is the enterprise HTTP proxy for the platform connection (nil: direct).
 	Proxy *url.URL
 	// CABundle is a PEM file of extra roots for the platform connection ("" = system roots only).
-	CABundle        string
-	Repositories    []string
-	AdvertiseRepos  bool
-	Boundary        contract.DataBoundary
-	PodDriver       string
-	PlaceholderExit map[string]int
-	StartTimeout    time.Duration
-	ProxyAuthFile   string
+	CABundle         string
+	Repositories     []string
+	AdvertiseRepos   bool
+	Boundary         contract.DataBoundary
+	PodDriver        string
+	PlaceholderExit  map[string]int
+	StartTimeout     time.Duration
+	ProxyAuthFile    string
+	JobProxyAuthFile string
 	// Sources maps a repository name to its clone source (kubevm).
 	Sources map[string]RepositorySourceFile
 	JobPod  *JobPod
@@ -165,6 +172,7 @@ type Kubernetes struct {
 type JobPod struct {
 	CPU, Memory, EphemeralStorage  string
 	OutboxSize, OutboxStorageClass string
+	OutboxAccessMode               string
 	OutboxHold                     time.Duration
 	Internal                       []InternalRangeFile
 }
@@ -698,6 +706,12 @@ func parseKubernetes(f KubernetesFile, images []string) (Kubernetes, error) {
 			return Kubernetes{}, errors.New("config: kubernetes proxy_auth_file needs a proxy and a clean absolute path")
 		}
 		k.ProxyAuthFile = f.ProxyAuthFile
+	}
+	if f.JobProxyAuthFile != "" {
+		if k.Proxy == nil || !absClean(f.JobProxyAuthFile) || f.JobProxyAuthFile == f.ProxyAuthFile {
+			return Kubernetes{}, errors.New("config: kubernetes job_proxy_auth_file needs a proxy, a clean absolute path, and a credential distinct from the controller's")
+		}
+		k.JobProxyAuthFile = f.JobProxyAuthFile
 	}
 	if err := parseKubeVM(f, &k); err != nil {
 		return Kubernetes{}, err

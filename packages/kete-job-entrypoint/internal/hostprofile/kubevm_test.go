@@ -72,8 +72,10 @@ func TestKubeVMSharedKernelTestMode(t *testing.T) {
 }
 
 func TestKubeTargets(t *testing.T) {
-	ps := KubeTargets("10.96.0.1:443", []string{"10.0.0.7"})
-	if len(ps) != 1+len(GatewayPorts) || ps[0].Target != "10.96.0.1:443" || ps[0].Reason != phaselog.CodeKubeAPI || ps[1].Reason != phaselog.CodeNode {
+	ps := KubeTargets("10.96.0.1:443", []string{"10.0.0.7"}, []uint16{3128, 443})
+	n := len(GatewayPorts) + 1 // 3128 is new, 443 is a gateway port already
+	if len(ps) != 1+2*n || ps[0].Target != "10.96.0.1:443" || ps[0].Reason != phaselog.CodeKubeAPI || ps[len(ps)-1].Reason != phaselog.CodeNode ||
+		ps[n].Target != "10.96.0.1:3128" || ps[len(ps)-1].Target != "10.0.0.7:3128" {
 		t.Errorf("targets %+v", ps)
 	}
 	// The probe's request accepts them (an unknown reason would fail the whole check as `probe`).
@@ -81,7 +83,7 @@ func TestKubeTargets(t *testing.T) {
 	if err := req.Validate(); err != nil {
 		t.Errorf("request with the kubevm targets: %v", err)
 	}
-	if len(KubeTargets("", nil)) != 0 {
+	if len(KubeTargets("", nil, nil)) != 0 {
 		t.Error("targets without inputs")
 	}
 }
