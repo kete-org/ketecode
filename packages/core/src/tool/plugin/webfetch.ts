@@ -152,6 +152,8 @@ export const Plugin = {
                       agent: context.agent,
                       source: { type: "tool", messageID: context.messageID, id: context.id },
                     }),
+                  // A redirect's body is never used: read at most 64 KiB of it so the connection is released.
+                  discard: (response) => collectBoundedResponseBody(response, 64 * 1024, () => new Error("redirect body too large")),
                 }).pipe(Effect.flatMap(HttpClientResponse.filterStatusOk))
               // kete_change end
               const { body, contentType } = yield* Effect.gen(function* () {

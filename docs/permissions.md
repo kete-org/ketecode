@@ -40,7 +40,9 @@ Babel/ESLint/Mocha/Prettier rc files, `jest.config.json`, `vitest.workspace.*`, 
 `.gitattributes`, CI files (`.gitlab-ci.yml`, `Jenkinsfile`), and the instruction files `AGENTS.md`
 and `CLAUDE.md` (they ask, but don't count as a build change). Package-manager writes such as
 `npm pkg set` or `npm config set` are high-risk and count as a build change too. Kete Code checks the
-real path of an edit, so a symlink in the repository (`cfg -> .git`) doesn't get around these rules.
+real path of an edit, so a symlink in the repository (`cfg -> .git`, or a dangling
+`notes.json -> .kete/kete.jsonc` whose target doesn't exist yet) doesn't get around these rules; a
+symlink chain it can't follow counts as protected.
 The "build changed" note is kept in the running runtime's memory per session family: restarting
 the runtime forgets it.
 
@@ -81,7 +83,9 @@ itself a permission rule. Shell commands that write there (`echo … > .kete/ket
   `bat --pager`, `fd --exec=…`
 - Leaving the workspace: `cd` alone, `cd -`, `cd ..`, `pushd +1` or `cd /elsewhere` (also inside
   subshells, loops, functions and conditions — the shell tool's own directory check now treats a
-  `cd` with no or an unknown target as going home or anywhere); `CDPATH=…`; writing outside the
+  `cd` with no target as going home, and one it can't know — `-`, `+N`, `~user`, a variable, a glob,
+brace expansion, or any target under `CDPATH=…` — as going anywhere; PowerShell's `Set-Location`
+with no path or `-` too); `CDPATH=…`; writing outside the
   workspace (`> /etc/…`, `>> ~/.bashrc`); build output into protected paths (`go build -o
   .git/hooks/…`, `tsc --outDir .kete`)
 - Anything the classifier can't check: command substitution (`$(…)`, backticks), subshells,

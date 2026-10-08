@@ -21,6 +21,8 @@ export const follow = <R extends Response, E1, E2, Q1, Q2>(input: {
   readonly fetch: (url: string) => Effect.Effect<R, E1, Q1>
   /** Asks permission for a URL on an origin not approved yet. */
   readonly approve: (url: string) => Effect.Effect<void, E2, Q2>
+  /** Releases a redirect response's body (bounded read or cancel); failures are ignored. */
+  readonly discard?: (response: R) => Effect.Effect<unknown, unknown, Q1>
 }): Effect.Effect<R, E1 | E2 | RedirectError, Q1 | Q2> =>
   Effect.gen(function* () {
     const approved = new Set([new URL(input.url).origin])
@@ -29,8 +31,12 @@ export const follow = <R extends Response, E1, E2, Q1, Q2>(input: {
       const response = yield* input.fetch(url)
       const location = response.headers.location
       if (response.status < 300 || response.status >= 400 || !location) return response
+      if (input.discard) yield* input.discard(response).pipe(Effect.ignore)
       if (hop >= MAX_REDIRECTS) return yield* Effect.fail(new RedirectError(`Too many redirects (more than ${MAX_REDIRECTS})`))
-      const next = new URL(location, url)
+      const next = yield* Effect.try({
+        try: () => new URL(location, url),
+        catch: () => new RedirectError(`Invalid redirect location: ${location.slice(0, 200)}`),
+      })
       if (next.protocol !== "http:" && next.protocol !== "https:")
         return yield* Effect.fail(new RedirectError(`Redirect to a non-HTTP URL: ${next.protocol}`))
       if (!approved.has(next.origin)) {
