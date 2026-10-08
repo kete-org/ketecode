@@ -7,6 +7,8 @@
 //	microvm    the host agent's firecracker driver; values from the config disk via kete-job-init
 //	dedicated  the host agent's dedicated driver; values on the agent's pipe
 //	cloudvm    a provider VM per job; values from the provider's user data via kete-job-init
+//	kubevm     a Kubernetes pod in a VM-isolated RuntimeClass (Kata; enterprise runtime); values
+//	           from the per-job Secret's file (--config-file), the pod's boot ID ≠ its node's
 //
 // Everything here fails closed: an unknown profile, a missing required signal or a present
 // forbidden one refuses the job before claim. The package is pure; the Linux file reads the
@@ -42,6 +44,10 @@ const (
 	MicroVM   Name = "microvm"
 	Dedicated Name = "dedicated"
 	CloudVM   Name = "cloudvm"
+	// KubeVM is a pod of the Kubernetes runner in a VM-isolated RuntimeClass (spec "S0
+	// findings" 2): the values come from the per-job Secret's file, and the pod's kernel must not
+	// be its node's (Check's boot-ID rule).
+	KubeVM Name = "kubevm"
 )
 
 // Source is where the four values came from.
@@ -49,13 +55,14 @@ type Source string
 
 const (
 	SourceEnv  Source = "env"  // the machine's environment (fly)
-	SourcePipe Source = "pipe" // --config-fd: kete-job-init's or the host agent's pipe (the others)
+	SourcePipe Source = "pipe" // --config-fd: kete-job-init's or the host agent's pipe (microvm, dedicated, cloudvm)
+	SourceFile Source = "file" // --config-file: the Kubernetes runner's per-job Secret (kubevm)
 )
 
 // Parse checks a profile name.
 func Parse(s string) (Name, error) {
 	switch n := Name(s); n {
-	case Fly, MicroVM, Dedicated, CloudVM:
+	case Fly, MicroVM, Dedicated, CloudVM, KubeVM:
 		return n, nil
 	}
 	return "", errors.New("unknown host profile")
@@ -79,8 +86,11 @@ func Resolve(explicit string, flySignals bool) (Name, error) {
 
 // SourceFor is where a profile's values must come from.
 func SourceFor(n Name) Source {
-	if n == Fly {
+	switch n {
+	case Fly:
 		return SourceEnv
+	case KubeVM:
+		return SourceFile
 	}
 	return SourcePipe
 }
@@ -114,6 +124,12 @@ func ProviderForDMI(read func(field string) (string, error)) string {
 	return found
 }
 
+var bootIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// ValidBootID checks a Linux boot ID (/proc/sys/kernel/random/boot_id; a Node's
+// status.nodeInfo.bootID): a lowercase UUID.
+func ValidBootID(id string) bool { return bootIDPattern.MatchString(id) }
+
 var generationPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // ValidGeneration checks a dedicated host's reset generation: 1-64 of letters, digits, '.', '_'
@@ -130,7 +146,13 @@ type Signals struct {
 	Provider   string // cloudvm: the configuration's provider
 	DMI        string // cloudvm: the provider whose DMI field matched (ProviderForDMI), or ""
 	Generation string // dedicated: the agent's reset generation
-	Kernel     Kernel // whose kernel this is (GatherKernel; read for every profile but fly)
+	Kernel     Kernel // whose kernel this is (GatherKernel; read for every profile but fly and kubevm)
+	BootID     string // kubevm: this kernel's boot ID
+	NodeBootID string // kubevm: the node's boot ID, as the runner read it from the Node object
+	// SharedKernelTest (kubevm): the configuration asks for the test-only shared-kernel mode
+	// (kind CI's runc-backed `kete-test` RuntimeClass). Only a build with the kete_testdriver tag
+	// (SharedKernelTestBuild) accepts it; a release build refuses it as a shared kernel.
+	SharedKernelTest bool
 }
 
 // Refusal is a profile check's failure: a fixed code, never a value.
@@ -158,8 +180,14 @@ func Check(n Name, s Signals) error {
 	if fly {
 		return &Refusal{Code: phaselog.CodeFlySignals}
 	}
-	if s.Source != SourcePipe {
+	if s.Source != SourceFor(n) {
 		return &Refusal{Code: phaselog.CodeSource}
+	}
+	if n == KubeVM {
+		if !KubeVMKernel(s) {
+			return &Refusal{Code: phaselog.CodeSharedKernel}
+		}
+		return nil
 	}
 	// The shared-kernel guard (kernel.go): nothing below Check may write kernel state unless the
 	// kernel is the VM's own, or the dedicated driver's single-tenant host's.
@@ -249,6 +277,26 @@ func BoundaryTargets(gateways []netip.Addr) []isolation.Probe {
 	}
 	for _, t := range IPv6Samples {
 		add(isolation.KindTCP, t, phaselog.CodeIPv6)
+	}
+	return out
+}
+
+// KubeVM's extra host-boundary targets: the Kubernetes API (the KUBERNETES_SERVICE_HOST/PORT the
+// kubelet gives every pod, read for the probe only) and its node's addresses (the runner reads them
+// from the Node object), each on GatewayPorts (the kubelet, the API server, ssh, …).
+func KubeTargets(kubeAPI string, nodes []string) []isolation.Probe {
+	var out []isolation.Probe
+	if kubeAPI != "" {
+		out = append(out, isolation.Probe{Kind: isolation.KindTCP, Target: kubeAPI, Reason: phaselog.CodeKubeAPI})
+	}
+	for _, n := range nodes {
+		a, err := netip.ParseAddr(n)
+		if err != nil {
+			continue // validated with the configuration; never reached
+		}
+		for _, port := range GatewayPorts {
+			out = append(out, isolation.Probe{Kind: isolation.KindTCP, Target: netip.AddrPortFrom(a, port).String(), Reason: phaselog.CodeNode})
+		}
 	}
 	return out
 }

@@ -45,8 +45,12 @@ type Deps struct {
 	// Fatal is called on an unrecoverable runtime failure (a listener dying); main exits 1.
 	Fatal func(error)
 	// UpstreamRoots verifies upstream servers. main passes the system roots, loaded before the
-	// job CA exists, so the job CA can never verify an upstream. Required.
+	// job CA exists, so the job CA can never verify an upstream, plus a v2 configuration's
+	// upstream.ca_bundle_file. Required.
 	UpstreamRoots *x509.CertPool
+	// ProxyAuth is `username:password` for the v2 upstream proxy (from upstream.proxy_auth_file;
+	// "" none). Never logged.
+	ProxyAuth string
 }
 
 // Proxy is one running proxy.
@@ -65,10 +69,14 @@ type Proxy struct {
 	peerUID       func(client, listener netip.AddrPort) (uint32, error)
 	resolve       func(ctx context.Context, host string) ([]netip.Addr, error)
 	isBlocked     func(netip.Addr) bool
+	isForbidden   func(netip.Addr) bool
 	upstreamRoots *x509.CertPool
 	upstreamPort  int
-	streamIdle    time.Duration
-	transports    map[config.Port]*http.Transport
+	// upstreamProxyPort replaces the v2 upstream proxy's port when dialling (in-package tests).
+	upstreamProxyPort int
+	proxyAuth         string
+	streamIdle        time.Duration
+	transports        map[config.Port]*http.Transport
 
 	mu      sync.Mutex
 	conns   map[*clientConn]struct{}
@@ -116,7 +124,9 @@ func newProxy(d Deps, opts ...option) (*Proxy, error) {
 		peerUID:       peeruid.Lookup,
 		resolve:       newResolver(d.Config.Resolvers),
 		isBlocked:     blocked.Contains,
+		isForbidden:   blocked.IsForbidden,
 		upstreamRoots: d.UpstreamRoots,
+		proxyAuth:     d.ProxyAuth,
 		upstreamPort:  443,
 		streamIdle:    StreamIdle,
 		conns:         map[*clientConn]struct{}{},

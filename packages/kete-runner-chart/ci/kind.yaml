@@ -1,4 +1,7 @@
-# kind cluster for the runner e2e, with the local registry as a mirror (images by digest), and
+# kind cluster for the runner e2e: a control plane and one worker labelled for job pods (the
+# kete-test RuntimeClass schedules there, so ci/e2e-kubevm.sh can fence the worker's own addresses
+# off from its pods the way a production node's CNI does), with the local registry as a mirror
+# (images by digest), and
 # the feature gates on that keep fields the admission policy refuses (with a gate off the API server
 # drops the field before admission, so the denial couldn't be exercised): dynamic resource
 # allocation (resourceClaims), ProcMountType and user namespaces (procMount Unmasked needs
@@ -15,3 +18,8 @@ containerdConfigPatches:
   - |-
     [plugins."io.containerd.grpc.v1.cri".registry]
       config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane
+  - role: worker
+    labels:
+      kete.dev/job-node: "true"

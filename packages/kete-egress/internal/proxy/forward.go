@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/kete-org/ketecode/packages/kete-egress/internal/config"
-	"github.com/kete-org/ketecode/packages/kete-egress/internal/hostname"
 	"github.com/kete-org/ketecode/packages/kete-egress/internal/policy"
 )
 
@@ -71,7 +70,7 @@ func (p *Proxy) handler(cc *clientConn) http.Handler {
 			return
 		}
 		// The domain-fronting check, on every request of the connection.
-		if h, err := hostname.HostHeader(r.Host); err != nil || h != host {
+		if h, err := p.hostHeader(r.Host); err != nil || h != host {
 			refuse(http.StatusMisdirectedRequest, policy.ReasonHostMismatch)
 			return
 		}

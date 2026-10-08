@@ -22,13 +22,20 @@ enrollment:
   tokenSecret: ""
 
 proxy:
-  # Upstream HTTP proxy for the platform connection (HTTP CONNECT; TLS to the platform stays end
-  # to end). http(s)://host:port, no credentials. The Kubernetes API is always reached directly.
+  # The enterprise HTTP proxy (HTTP CONNECT; TLS stays end to end): the controller's platform
+  # connection and image verification, and every job's egress (kete-egress chains to it).
+  # http(s)://host:port, no credentials. The Kubernetes API is always reached directly. Jobs reach
+  # the proxy only if jobs.egress names its address and port.
   url: ""
+  # Proxy credentials: a Secret in the release namespace whose key holds `username:password`.
+  authSecret:
+    name: ""
+    key: auth
 
 caBundle:
-  # Secret with extra trusted roots (PEM) for the platform connection, e.g. a TLS-inspecting
-  # proxy's CA. Added to the system roots; verification is never disabled.
+  # Secret with extra trusted roots (PEM), e.g. a TLS-inspecting proxy's CA: added to the system
+  # roots for the controller's platform connection and image verification, and (with proxy.url)
+  # for the jobs' upstream TLS (at most 32 KiB then). Verification is never disabled.
   existingSecret: ""
   key: ca.crt
 
@@ -50,15 +57,37 @@ jobs:
   allowedCapabilities:
     [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE, SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE, FOWNER, FSETID, NET_BIND_SERVICE]
   # Egress allowed to job pods besides DNS (enterprise proxy, GitLab, model endpoints, registry
-  # mirrors). Everything else is denied by NetworkPolicy; the in-pod firewall is the inner layer.
-  # Name them narrowly: prefixes shorter than /8 and the link-local metadata range are refused.
+  # mirrors): the jobs namespace's NetworkPolicy opens each CIDR on these ports, and each job's
+  # in-pod proxy gets the same CIDRs and ports as its internal ranges (egress configuration v2), so
+  # private addresses and ports other than 443 work. Name them narrowly and canonically
+  # (10.20.0.0/16, not 10.20.0.1/16): prefixes shorter than /8 and the link-local metadata range
+  # are refused.
   egress:
     cidrs: []
     ports: [443]
+  # Each job pod's container: requests = limits. A VM-isolated RuntimeClass adds its own overhead
+  # (spec S0: about 390 MB per Kata QEMU pod; set the RuntimeClass's overhead.podFixed to match),
+  # and the Kata guest's memory must be sized so the guest sees this limit (README "Kata").
+  resources:
+    cpu: "2"
+    memory: 4Gi
+    ephemeralStorage: 20Gi
+  # Each job's outbox (a ReadWriteOnce PVC the job writes its result, audit log, proxy log and
+  # bundle into, kept after the job for the publisher, P3), deleted holdHours after the job's
+  # deadline. storageClass "" = the cluster default.
+  outbox:
+    size: 1Gi
+    storageClass: ""
+    holdHours: 24
 
 # Runtime repository names this runner serves (e.g. gitlab:payments/api). A job naming another is
-# refused (repository_unknown) before anything starts. URLs and credentials arrive in P3.
+# refused (repository_unknown) before anything starts.
 repositories: []
+# Where each repository is cloned from (required for every repository with podDriver kubevm): an
+# https URL and a Secret in the release namespace with keys `username` and `token` (a read-only
+# deploy token; it reaches only the job's root entrypoint). Minted per-job tokens arrive in P3.
+#   - {name: "gitlab:payments/api", url: "https://gitlab.corp/payments/api.git", cloneSecret: gitlab-payments-read}
+repositorySources: []
 # Report the names above to the platform (names only).
 advertiseRepositories: false
 
@@ -68,9 +97,10 @@ boundary:
   denials: actions   # count | actions | full
   publishRefs: send  # omit | send
 
-# The pod driver. P1 has only `placeholder`, which exists in test builds of the runner image
-# (kind CI); a release image refuses it. The VM-isolated job pod driver is P2.
-podDriver: ""
+# The pod driver: `kubevm` runs each job in a VM-isolated pod (the released job image's entrypoint,
+# profile kubevm). `placeholder` exists only in test builds of the runner image (kind CI); a
+# release image refuses it.
+podDriver: kubevm
 placeholder:
   # [{image: <allowlisted digest ref>, seconds: N}]: placeholder machines of that image exit after N s.
   exitAfter: []

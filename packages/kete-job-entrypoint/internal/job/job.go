@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bootenv"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bundle"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/egress"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/gitops"
@@ -206,6 +207,9 @@ func (r *runner) run(ctx context.Context) int {
 	r.log.OK(pl.StepIsolation)
 
 	// --- claim ---
+	if r.d.Runtime != nil {
+		return r.runtimeClaim(ctx)
+	}
 	r.log.Start(pl.StepClaim)
 	token := r.d.Boot.ClaimToken
 	r.d.Boot.ClaimToken = ""
@@ -261,6 +265,98 @@ func (r *runner) run(ctx context.Context) int {
 		}
 	}()
 	return r.afterClaim(jctx)
+}
+
+// runtimeClaim is kubevm's claim (jobs-v1 "Fail closed (kubevm)"): a runtime claim for exactly the
+// repository the runner resolved, or nothing — a refused answer stops the job as a 404 would, with
+// no result, no finish and nothing cloned.
+func (r *runner) runtimeClaim(ctx context.Context) int {
+	rt := r.d.Runtime
+	r.log.Start(pl.StepClaim)
+	token := r.d.Boot.ClaimToken
+	r.d.Boot.ClaimToken = ""
+	rc, err := rt.Platform.ClaimRuntime(ctx, token, rt.Repo.Name, r.d.Now())
+	token = ""
+	_ = token
+	if err != nil {
+		switch {
+		case errors.Is(err, platform.ErrRuntimeRefused):
+			r.log.Fail(pl.StepClaim, pl.CodeRepository)
+		case errors.Is(err, platform.ErrGone):
+			r.log.FailErr(pl.StepClaim, pl.CodeGone, err)
+		case errors.Is(err, platform.ErrReplayed):
+			r.log.FailErr(pl.StepClaim, pl.CodeRefused, err)
+		case r.base.Err() != nil:
+			r.log.FailErr(pl.StepClaim, pl.CodeSignal, err)
+		default:
+			r.log.FailErr(pl.StepClaim, pl.CodeFailed, err)
+		}
+		r.stopAll()
+		return 1
+	}
+	claim, field := runtimeClaimFrom(rc, rt)
+	rc.CallbackToken, rc.GatewayKey = "", ""
+	if claim == nil {
+		// Shape-valid but unusable here (a spec field this entrypoint can't run): refused the
+		// same way, before anything is cloned.
+		_ = field
+		r.log.Fail(pl.StepClaim, pl.CodeInvalid)
+		r.stopAll()
+		return 1
+	}
+	r.claim = claim
+	r.d.Platform.SetCallbackToken(claim.CallbackToken)
+	claim.CallbackToken = ""
+	r.log.OK(pl.StepClaim)
+
+	dctx, cancel := context.WithDeadline(ctx, claim.Deadline)
+	defer cancel()
+	jctx, jcancel := context.WithCancel(dctx)
+	defer jcancel()
+	go func() {
+		select {
+		case <-r.gone:
+			jcancel()
+		case <-jctx.Done():
+		}
+	}()
+	return r.afterClaim(jctx)
+}
+
+// ProviderRuntime marks a claim whose repository is the runner's (kubevm).
+const ProviderRuntime = "runtime"
+
+// runtimeClaimFrom builds the claim the rest of the run uses from a runtime claim response and
+// the runner's local repository. It returns the first unusable field's name.
+func runtimeClaimFrom(rc *platform.RuntimeClaimResponse, rt *Runtime) (*platform.Claim, string) {
+	var spec map[string]any
+	if json.Unmarshal(rc.SpecRaw, &spec) != nil || spec == nil {
+		return nil, "spec"
+	}
+	if _, ok := spec["policy"].(map[string]any); !ok {
+		return nil, "spec.policy"
+	}
+	gu, err := bootenv.NormalizeHTTPSURL(rc.GatewayURL, true)
+	if err != nil {
+		return nil, "gateway_url"
+	}
+	gh := strings.TrimPrefix(gu, "https://")
+	if i := strings.IndexByte(gh, '/'); i >= 0 {
+		gh = gh[:i]
+	}
+	dl, err := time.Parse(time.RFC3339Nano, rc.Deadline)
+	if err != nil {
+		return nil, "deadline"
+	}
+	if !platform.ValidRefName(rc.Spec.Branch) || !platform.ValidRefName(rt.Repo.Ref) {
+		return nil, "spec.branch"
+	}
+	return &platform.Claim{
+		CallbackToken: rc.CallbackToken, Spec: spec, SpecRaw: rc.SpecRaw, Branch: rc.Spec.Branch,
+		PolicyTimeout: int(rc.Spec.Policy.Timeout), GatewayKey: rc.GatewayKey, GatewayURL: gu, GatewayHost: gh,
+		CloneURL: rt.CloneURL, CloneHost: rt.CloneEntry, CloneProvider: ProviderRuntime,
+		CloneUsername: rt.Repo.Username, CloneToken: rt.Repo.Token, Ref: rt.Repo.Ref, Deadline: dl,
+	}, ""
 }
 
 func (r *runner) markGone() { r.goneOnce.Do(func() { close(r.gone) }) }
@@ -506,6 +602,20 @@ func (r *runner) afterClaim(ctx context.Context) int {
 	r.log.OK(pl.StepClone)
 
 	r.log.Start(pl.StepVerify)
+	if r.d.Runtime != nil {
+		// kubevm: the base is the commit the runner's ref named when cloned (spec §4.5 "record
+		// base_sha"); Verify then checks the pristine copy as for every job.
+		head, err := r.d.Runtime.Head(ctx, r.d.Cfg.Pristine(), c.Ref)
+		if err != nil {
+			c.CloneToken = ""
+			if ctx.Err() != nil {
+				return r.interrupted()
+			}
+			r.log.FailErr(pl.StepVerify, pl.CodeFailed, err)
+			return r.failClone(ctx, final{result: Synth("error", 1, "clone verification failed")})
+		}
+		c.BaseSHA = head
+	}
 	if err := r.d.Git.Verify(ctx, r.d.Cfg.Pristine(), c.Ref, c.BaseSHA); err != nil {
 		c.CloneToken = ""
 		if ctx.Err() != nil {
@@ -520,8 +630,10 @@ func (r *runner) afterClaim(ctx context.Context) int {
 	}
 	r.log.OK(pl.StepVerify)
 
-	if r.harness() {
+	if r.harness() || r.d.Runtime != nil {
 		// Harness Code: no request to the git host's API; the platform deletes the token.
+		// kubevm: the runner's read credential is never revoked from inside the job; clone-done's
+		// phase line is what the runner acts on (a minted token is revoked there, P3).
 		c.CloneToken = ""
 		if err := r.cloneDone(ctx); err != nil && (r.isGone() || ctx.Err() != nil) {
 			return r.interrupted()
@@ -744,8 +856,14 @@ func (r *runner) finalize(ctx context.Context, f final) int {
 	default:
 		result = Synth("error", 1, "the job did not run")
 	}
+	sent := result
+	if r.d.Runtime != nil {
+		// kubevm: the platform gets the result bounded by the runner's data boundary; the full
+		// result stays in the outbox.
+		sent = r.boundResult(result)
+	}
 	r.log.Start(pl.StepResult)
-	if err := r.d.Platform.Result(ctx, result); err != nil {
+	if err := r.d.Platform.Result(ctx, sent); err != nil {
 		if errors.Is(err, platform.ErrGone) {
 			r.markGone()
 			return r.cancelled()
@@ -799,41 +917,50 @@ func (r *runner) finalize(ctx context.Context, f final) int {
 		return r.cancelled()
 	}
 
-	// 6d: uploads (none while a job process is alive: they'd need a proxy restart).
-	var ups *platform.UploadURLs
-	var err error
-	if alive {
-		r.log.Note(pl.StepUploads, pl.CodeProcessesAlive)
-		r.note(ctx, "no uploads: job processes are still alive")
+	// 6d (kubevm): the outbox, never uploads. Local files only, so also while a job process is
+	// alive (no proxy restart is needed); the bundle exists only when none was.
+	if r.d.Runtime != nil {
+		r.writeOutbox(result, b, pushError)
 		goto finish
 	}
-	r.log.Start(pl.StepUploads)
-	ups, err = r.d.Platform.Uploads(ctx, b != nil)
-	if errors.Is(err, platform.ErrGone) {
-		r.markGone()
-		return r.cancelled()
-	}
-	if ctx.Err() != nil {
-		return r.interrupted()
-	}
-	if err != nil {
-		r.log.FailErr(pl.StepUploads, pl.CodeFailed, err)
-	} else {
-		third := egress.Instance{Report: egress.Hosts{Root: uniq(r.platformHost(), ups.Host)}}
-		if err := r.startProxy(ctx, third, "report"); err != nil {
-			if ctx.Err() != nil {
-				return r.interrupted()
-			}
-			r.log.FailErr(pl.StepRestart, pl.CodeFailed, err)
-			r.stopAll()
-			r.stopHeartbeat()
-			return 1
+
+	// 6d: uploads (none while a job process is alive: they'd need a proxy restart).
+	{
+		var ups *platform.UploadURLs
+		var err error
+		if alive {
+			r.log.Note(pl.StepUploads, pl.CodeProcessesAlive)
+			r.note(ctx, "no uploads: job processes are still alive")
+			goto finish
 		}
-		r.upload(ctx, ups, result, b)
+		r.log.Start(pl.StepUploads)
+		ups, err = r.d.Platform.Uploads(ctx, b != nil)
+		if errors.Is(err, platform.ErrGone) {
+			r.markGone()
+			return r.cancelled()
+		}
 		if ctx.Err() != nil {
 			return r.interrupted()
 		}
-		r.log.OK(pl.StepUploads)
+		if err != nil {
+			r.log.FailErr(pl.StepUploads, pl.CodeFailed, err)
+		} else {
+			third := egress.Instance{Report: egress.Hosts{Root: uniq(r.platformHost(), ups.Host)}}
+			if err := r.startProxy(ctx, third, "report"); err != nil {
+				if ctx.Err() != nil {
+					return r.interrupted()
+				}
+				r.log.FailErr(pl.StepRestart, pl.CodeFailed, err)
+				r.stopAll()
+				r.stopHeartbeat()
+				return 1
+			}
+			r.upload(ctx, ups, result, b)
+			if ctx.Err() != nil {
+				return r.interrupted()
+			}
+			r.log.OK(pl.StepUploads)
+		}
 	}
 
 	// 6e: finish.
@@ -843,7 +970,11 @@ finish:
 		return r.cancelled()
 	}
 	r.log.Start(pl.StepFinish)
-	if err := r.d.Platform.Finish(ctx, pushError); err != nil {
+	finish := func() error { return r.d.Platform.Finish(ctx, pushError) }
+	if r.d.Runtime != nil {
+		finish = func() error { return r.d.Runtime.Platform.FinishOutbox(ctx) }
+	}
+	if err := finish(); err != nil {
 		if errors.Is(err, platform.ErrGone) {
 			r.markGone()
 			return r.cancelled()
@@ -909,4 +1040,86 @@ func (r *runner) upload(ctx context.Context, ups *platform.UploadURLs, result []
 		}
 		put(ups.ProxyLog.URL, "application/x-ndjson", rc, size, "proxy log")
 	}
+}
+
+// boundResult is what a kubevm job sends as its result (jobs-v1 JobRuntimeRunResult): the result
+// parsed with the runtime schema and bounded by the runner's boundary (BoundRunResult). Without a
+// vetted redactor in this module, `summary: redacted` sends what `none` does: stricter than the
+// boundary allows, never wider. A result that doesn't parse is replaced by a fixed error result.
+func (r *runner) boundResult(full []byte) []byte {
+	b := r.d.Runtime.Boundary
+	if b.Summary == "redacted" {
+		b.Summary = "none"
+	}
+	res, err := platform.ParseRuntimeRunResult(full)
+	if err != nil {
+		if res, err = platform.ParseRuntimeRunResult(Synth("error", 1, "")); err != nil {
+			return Synth("error", 1, "")
+		}
+	}
+	out, err := json.Marshal(platform.BoundRunResult(res, b, func(string) string { return "" }))
+	if err != nil {
+		return Synth("error", 1, "")
+	}
+	return out
+}
+
+// writeOutbox is step outbox (kubevm): the full result, the audit log, the proxy log and the
+// bundle (when one was built) into the runner's outbox, then the manifest naming them. A file
+// that can't be written is a note in the manifest; a manifest that can't be written fails the
+// step (the runner's publisher then finds no manifest and publishes nothing).
+func (r *runner) writeOutbox(result []byte, b *bundle.Result, pushError string) {
+	rt := r.d.Runtime
+	r.log.Start(pl.StepOutbox)
+	m := OutboxManifest{
+		Version: 1, JobID: r.d.Boot.JobID, Repository: rt.Repo.Name, Ref: rt.Repo.Ref, BaseSHA: r.claim.BaseSHA,
+		Branch: r.claim.Branch, PushError: pushError, Files: map[string]OutboxFile{}, Notes: []string{},
+	}
+	var head struct {
+		Outcome  string `json:"outcome"`
+		ExitCode int    `json:"exit_code"`
+	}
+	_ = json.Unmarshal(result, &head)
+	m.Outcome, m.ExitCode = head.Outcome, head.ExitCode
+	put := func(key, name string, rc io.ReadCloser, max int64) {
+		defer rc.Close()
+		f, err := rt.Outbox.Put(name, rc, max)
+		if err != nil {
+			m.Notes = append(m.Notes, key+" not written")
+			return
+		}
+		m.Files[key] = f
+	}
+	put("result", "result.json", io.NopCloser(strings.NewReader(string(result))), layout.MaxKeteStdout)
+	switch rc, size, err := r.d.Machine.OpenAudit(); {
+	case errors.Is(err, ErrAuditTooLarge):
+		m.Notes = append(m.Notes, "audit log not written: too large")
+	case errors.Is(err, ErrAuditReaderStuck):
+		m.Notes = append(m.Notes, "audit log not written: reader stuck")
+	case err != nil:
+		m.Notes = append(m.Notes, "audit log not written: missing or refused")
+	case size == 0:
+		rc.Close()
+		m.Notes = append(m.Notes, "audit log not written: empty")
+	default:
+		put("audit", "audit.jsonl", rc, layout.MaxAuditUpload)
+	}
+	if rc, _, err := r.d.Machine.OpenProxyLog(); err != nil {
+		m.Notes = append(m.Notes, "proxy log not written")
+	} else {
+		put("proxy_log", "proxy.jsonl", rc, layout.MaxProxyLogUpload)
+	}
+	if b != nil {
+		if rc, err := os.Open(b.Path); err != nil {
+			m.Notes = append(m.Notes, "bundle not written")
+		} else {
+			put("bundle", "bundle.tar.gz", rc, layout.BundleMaxGzip)
+		}
+	}
+	m.WrittenAt = r.d.Now().UTC().Format(time.RFC3339)
+	if err := rt.Outbox.Commit(m); err != nil {
+		r.log.FailErr(pl.StepOutbox, pl.CodeOutbox, err)
+		return
+	}
+	r.log.OK(pl.StepOutbox)
 }

@@ -10,16 +10,28 @@
 //  3. serves until the job's finish is accepted, the deadline passes or SIGTERM, then writes its
 //     records (internal/fakeplatform WriteState) and <state>/done.
 //
+// For the Kubernetes runner's kind e2e (packages/kete-runner-chart/ci/e2e.sh) it also takes
+// -runtime-repo (a runtime repository's job: no clone in the claim, the outbox finish; -claim-repo
+// makes the claim name another repository), -listen (HTTPS on another address than the DNS
+// answers) and -job-hosts/-job-hosts-ca (the job-host fake behind the same platform origin), and
+// writes <state>/runtime-job.json (the job id, the claim token, the clone token and the git URL the runner
+// configures as the repository's source).
+//
 // Test support only: it holds a test CA and test credentials, never real ones.
 package main
 
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,6 +50,13 @@ func main() {
 	backend := flag.String("git-http-backend", "/usr/lib/git-core/git-http-backend", "git http-backend")
 	deadline := flag.Duration("deadline", 25*time.Minute, "the job's deadline, from now")
 	timeout := flag.Int("policy-timeout", 15, "the spec's policy.timeout in minutes")
+	listen := flag.String("listen", "", "the IPv4 address HTTPS listens on (default: -addr)")
+	runtimeRepo := flag.String("runtime-repo", "", "serve a runtime repository's job with this name (kubevm)")
+	claimRepo := flag.String("claim-repo", "", "with -runtime-repo: the repository name the claim answers instead")
+	jobHosts := flag.String("job-hosts", "", "https://ip:port of the job-host fake that serves /api/v1/job-hosts/ on the platform host")
+	jobHostsCA := flag.String("job-hosts-ca", "", "the job-host fake's CA (PEM file)")
+	caDir := flag.String("ca-dir", "", "keep the fake's CA in this directory across runs")
+	linger := flag.Bool("linger", false, "keep serving after the finish until SIGTERM (the runner keeps polling through this origin)")
 	flag.Parse()
 
 	knobs := fakeplatform.Knobs{Prompt: "Run the end-to-end test's scripted task.", PolicyTimeout: *timeout, Deadline: *deadline}
@@ -52,6 +71,7 @@ func main() {
 	default:
 		fail("unknown scenario %q", *scenario)
 	}
+	knobs.RuntimeRepo, knobs.ClaimRepo = *runtimeRepo, *claimRepo
 	if err := os.MkdirAll(*state, 0o755); err != nil {
 		fail("state: %v", err)
 	}
@@ -59,9 +79,19 @@ func main() {
 	if err != nil {
 		fail("resolver: %v", err)
 	}
+	dnsListen := *addr
+	if *listen != "" {
+		dnsListen = *listen
+	}
+	var jh http.Handler
+	if *jobHosts != "" {
+		if jh, err = jobHostsProxy(*jobHosts, *jobHostsCA); err != nil {
+			fail("job-hosts: %v", err)
+		}
+	}
 	s, err := fakeplatform.Start(fakeplatform.Config{
-		Addr: *addr, DNSAddr: net.JoinHostPort(*addr, "53"), StateDir: filepath.Join(*state, "fake"),
-		GitHTTPBackend: *backend, Forward: forward,
+		Addr: *addr, DNSAddr: net.JoinHostPort(dnsListen, "53"), StateDir: filepath.Join(*state, "fake"),
+		GitHTTPBackend: *backend, Forward: forward, ListenAddr: *listen, JobHosts: jh, CADir: *caDir,
 	})
 	if err != nil {
 		fail("start: %v", err)
@@ -91,6 +121,17 @@ func main() {
 	if err := write(filepath.Join(*state, "job.env"), []byte(env), 0o644); err != nil {
 		fail("job.env: %v", err)
 	}
+	jobJSON, err := json.Marshal(map[string]string{
+		"job_id": j.ID, "claim_token": j.ClaimToken, "clone_token": j.CloneToken, "base_sha": j.BaseSHA,
+		"clone_url": "https://" + fakeplatform.GitHost + "/org/repo.git", "clone_username": "x-access-token",
+		"platform_url": "https://" + fakeplatform.PlatformHost,
+	})
+	if err != nil {
+		fail("runtime-job.json: %v", err)
+	}
+	if err := write(filepath.Join(*state, "runtime-job.json"), jobJSON, 0o644); err != nil {
+		fail("runtime-job.json: %v", err)
+	}
 	fmt.Printf("fake platform: job %s, scenario %s, ready\n", j.ID, *scenario)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -101,6 +142,12 @@ func main() {
 	case <-j.Done():
 		fmt.Println("fake platform: finish accepted")
 		time.Sleep(time.Second) // let the entrypoint's last proxy log lines settle; nothing else is expected
+		if *linger {
+			if err := write(filepath.Join(*state, "finished"), []byte("ok\n"), 0o644); err != nil {
+				fail("finished: %v", err)
+			}
+			<-ctx.Done()
+		}
 	case <-timer.C:
 		fmt.Println("fake platform: deadline passed without a finish")
 	case <-ctx.Done():
@@ -112,6 +159,32 @@ func main() {
 	if err := write(filepath.Join(*state, "done"), []byte("ok\n"), 0o644); err != nil {
 		fail("done: %v", err)
 	}
+}
+
+// jobHostsProxy forwards the runner's job-host-v2 requests to the job-host fake over TLS (its own
+// CA), keeping the Host the request named (the signature covers the authority).
+func jobHostsProxy(target, caFile string) (http.Handler, error) {
+	u, err := url.Parse(target)
+	if err != nil || u.Scheme != "https" {
+		return nil, fmt.Errorf("bad -job-hosts %q", target)
+	}
+	pemData, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemData) {
+		return nil, fmt.Errorf("%s holds no certificate", caFile)
+	}
+	rp := httputil.NewSingleHostReverseProxy(u)
+	rp.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: fakeplatform.PlatformHost, MinVersion: tls.VersionTLS12}}
+	inner := rp.Director
+	rp.Director = func(r *http.Request) {
+		host := r.Host
+		inner(r)
+		r.Host = host
+	}
+	return rp, nil
 }
 
 // resolver is the first nameserver of a resolv.conf, as ip:53.

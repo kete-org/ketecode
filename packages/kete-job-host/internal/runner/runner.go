@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -66,6 +67,8 @@ type Options struct {
 	DriverPoll     time.Duration
 	// PolicyEvery is how often the admission policies are checked (default 30 s).
 	PolicyEvery time.Duration
+	// PullGrace is the driver's ImagePullGrace (default 60 s).
+	PullGrace time.Duration
 }
 
 // ErrNotEnrolled means the runner has no keys and no enrollment token was found within ctx.
@@ -93,7 +96,10 @@ func Run(ctx context.Context, o Options) error {
 	if o.Identity == "" {
 		return errors.New("runner: no identity (KETE_RUNNER_POD_NAME)")
 	}
-	podFunc, verifier, err := podDriver(o)
+	if !kdriver.TestBuild && slices.Contains(k.RuntimeClasses, kdriver.SharedKernelTestClass) {
+		return fmt.Errorf("runner: RuntimeClass %q is kind CI's runc stand-in, accepted only by test builds; job pods need a VM-isolated RuntimeClass", kdriver.SharedKernelTestClass)
+	}
+	pd, err := podDriver(o)
 	if err != nil {
 		return err
 	}
@@ -175,14 +181,19 @@ func Run(ctx context.Context, o Options) error {
 	}
 	guard.start(rctx)
 	drv, err := kdriver.New(kdriver.Options{
-		Client: o.Kube, Namespace: k.JobsNamespace, Instance: k.Instance, StartTimeout: k.StartTimeout, Pod: podFunc,
+		Client: o.Kube, Namespace: k.JobsNamespace, Instance: k.Instance, StartTimeout: k.StartTimeout, Pod: pd.pod,
+		Secret: pd.secret, Outbox: pd.outbox, ReadLogs: pd.logs, ImagePullGrace: o.PullGrace,
 		Log: o.Log, Now: o.Now, PollEvery: o.DriverPoll, Blocked: guard.blocked,
 	})
 	if err != nil {
 		return finish(err)
 	}
+	if pd.outbox != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); collectOutboxes(rctx, o, drv) }()
+	}
 	a, err := agent.New(agent.Options{
-		Config: o.Config, Keys: ks, Driver: drv, Verifier: verifier,
+		Config: o.Config, Keys: ks, Driver: drv, Verifier: pd.verifier,
 		Client: client.New(o.Config.Origin, o.Config.Authority, o.Now, copts), Clock: o.Clock,
 		Versions: contract.Versions{Agent: o.AgentVersion, HostKernel: o.HostKernel}, Log: o.Log, Now: o.Now,
 		Interval: o.Interval, SuperviseEvery: o.SuperviseEvery, Store: store,
@@ -196,21 +207,96 @@ func Run(ctx context.Context, o Options) error {
 	return finish(a.Run(rctx))
 }
 
-// podDriver picks the pod builder and image verifier for the configured pod driver.
-func podDriver(o Options) (kdriver.PodFunc, image.Verifier, error) {
+// podDriverParts is what a pod driver contributes to the kubernetes driver.
+type podDriverParts struct {
+	pod      kdriver.PodFunc
+	secret   kdriver.SecretFunc
+	outbox   *kdriver.OutboxOptions
+	logs     bool
+	verifier image.Verifier
+}
+
+// podDriver picks the pod builder, Secret builder, outbox and image verifier for the configured
+// pod driver.
+func podDriver(o Options) (podDriverParts, error) {
 	k := o.Config.Kube
 	switch k.PodDriver {
 	case config.PodDriverPlaceholder:
 		if !kdriver.PlaceholderAvailable {
-			return nil, nil, errors.New("runner: pod_driver placeholder exists only in test builds (-tags kete_testdriver); this build has no pod driver for real jobs yet (enterprise runtime P2)")
+			return podDriverParts{}, errors.New("runner: pod_driver placeholder exists only in test builds (-tags kete_testdriver); use kubevm")
 		}
 		v := o.Verifier
 		if v == nil {
 			v = placeholderVerifier()
 		}
-		return kdriver.Placeholder(k.RuntimeClasses[0], k.PlaceholderExit, o.Now), v, nil
+		return podDriverParts{pod: kdriver.Placeholder(k.RuntimeClasses[0], k.PlaceholderExit, o.Now), verifier: v}, nil
+	case config.PodDriverKubeVM:
+		class := k.RuntimeClasses[0]
+		ko := kdriver.KubeVMOptions{
+			RuntimeClass: class, SharedKernelTest: kdriver.TestBuild && class == kdriver.SharedKernelTestClass,
+			JobPod: *k.JobPod, Boundary: k.Boundary, Sources: k.Sources, Proxy: k.Proxy,
+			ReadSecret: func(ctx context.Context, name string) (map[string][]byte, error) {
+				s, err := o.Kube.GetSecret(ctx, k.Namespace, name)
+				return s.Data, err
+			},
+		}
+		if k.ProxyAuthFile != "" {
+			ko.ReadProxyAuth = func() (string, error) { return readProxyAuth(k.ProxyAuthFile) }
+		}
+		if k.CABundle != "" && k.Proxy != nil {
+			// The jobs' kete-egress takes extra roots with its upstream proxy only (egress
+			// configuration v2); without a proxy the bundle serves the controller alone.
+			ko.ReadCABundle = func() (string, error) {
+				b, err := os.ReadFile(k.CABundle)
+				if err != nil {
+					return "", err
+				}
+				if len(b) > maxJobCABundle {
+					return "", fmt.Errorf("the CA bundle is over %d bytes, too large for a job's configuration", maxJobCABundle)
+				}
+				return string(b), nil
+			}
+		}
+		v := o.Verifier
+		if v == nil {
+			v = kubeVMVerifier()
+		}
+		return podDriverParts{
+			pod: kdriver.KubeVMPod(ko), secret: kdriver.KubeVMSecret(ko), logs: true, verifier: v,
+			outbox: &kdriver.OutboxOptions{Size: k.JobPod.OutboxSize, StorageClass: k.JobPod.OutboxStorageClass, MountPath: kdriver.OutboxPath, Hold: k.JobPod.OutboxHold},
+		}, nil
 	}
-	return nil, nil, fmt.Errorf("runner: unknown pod driver %q", k.PodDriver)
+	return podDriverParts{}, fmt.Errorf("runner: unknown pod driver %q", k.PodDriver)
+}
+
+// maxJobCABundle is the entrypoint's limit for a job's CA bundle (bootenv).
+const maxJobCABundle = 32 << 10
+
+// readProxyAuth reads `username:password` from a mounted Secret's file.
+func readProxyAuth(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	v := strings.TrimRight(string(b), "\r\n")
+	if i := strings.IndexByte(v, ':'); i < 1 || len(v) > 1024 || strings.ContainsAny(v, "\r\n") {
+		return "", errors.New("the proxy credentials file must hold username:password")
+	}
+	return v, nil
+}
+
+// collectOutboxes deletes expired outbox volumes at start and every 10 minutes.
+func collectOutboxes(ctx context.Context, o Options, d *kdriver.Driver) {
+	for {
+		if n, err := d.CollectOutboxes(ctx); err != nil {
+			o.Log.Warn("outbox_collect_failed", "error", err.Error())
+		} else if n > 0 {
+			o.Log.Info("outboxes_collected", "count", n)
+		}
+		if sleep(ctx, 10*time.Minute) != nil {
+			return
+		}
+	}
 }
 
 // clientOptions adds the enterprise proxy and CA bundle (system roots plus the bundle) and the v2
@@ -219,8 +305,17 @@ func clientOptions(o Options) (client.Options, error) {
 	co := o.ClientOptions
 	co.V2 = true
 	k := o.Config.Kube
-	if co.Proxy == nil {
-		co.Proxy = k.Proxy
+	if co.Proxy == nil && k.Proxy != nil {
+		u := *k.Proxy
+		if k.ProxyAuthFile != "" {
+			auth, err := readProxyAuth(k.ProxyAuthFile)
+			if err != nil {
+				return client.Options{}, fmt.Errorf("runner: proxy credentials: %w", err)
+			}
+			user, pass, _ := strings.Cut(auth, ":")
+			u.User = url.UserPassword(user, pass) // sent as Proxy-Authorization on CONNECT only
+		}
+		co.Proxy = &u
 	}
 	if k.CABundle != "" && co.RootCAs == nil {
 		pem, err := os.ReadFile(k.CABundle)
@@ -381,7 +476,8 @@ func sleep(ctx context.Context, d time.Duration) error {
 }
 
 // policyGuard blocks starts (cluster_unhealthy) unless every configured admission policy exists
-// with failurePolicy Fail and a binding of the same name that names it and denies. The jobs
+// with failurePolicy Fail and a binding of the same name that names it and denies, and
+// (runtime_class_missing) unless every configured RuntimeClass exists. The jobs
 // namespace is Pod Security privileged, so without the policies nothing would stop a pod there
 // from escaping its VM boundary: the controller fails closed. Checked once before the agent
 // starts and then every PolicyEvery; the result is cached for the agent's lock-held calls.
@@ -401,6 +497,9 @@ func (g *policyGuard) blocked() string {
 func (g *policyGuard) check(ctx context.Context) {
 	why := ""
 	for _, name := range g.o.Config.Kube.AdmissionPolicies {
+		if why != "" {
+			break
+		}
 		p, err := g.o.Kube.GetAdmissionPolicy(ctx, name)
 		if err == nil && p.Spec.FailurePolicy != "Fail" {
 			err = errors.New("failurePolicy is not Fail")
@@ -416,6 +515,22 @@ func (g *policyGuard) check(ctx context.Context) {
 			why = contract.BlockedClusterUnhealthy
 			g.o.Log.Error("admission_policy_missing", "policy", name, "error", err.Error(), "action", "starts blocked until it is restored")
 			break
+		}
+	}
+	// Every configured RuntimeClass must exist (job-host-v2 runtime_class_missing): a pod naming
+	// a missing one would never start, and the platform shouldn't place jobs here meanwhile.
+	for _, name := range g.o.Config.Kube.RuntimeClasses {
+		if why != "" {
+			break
+		}
+		ok, err := g.o.Kube.RuntimeClassExists(ctx, name)
+		switch {
+		case err != nil:
+			why = contract.BlockedClusterUnhealthy
+			g.o.Log.Error("runtime_class_check_failed", "runtime_class", name, "error", err.Error(), "action", "starts blocked")
+		case !ok:
+			why = contract.BlockedRuntimeClassMissing
+			g.o.Log.Error("runtime_class_missing", "runtime_class", name, "action", "starts blocked until it exists")
 		}
 	}
 	g.mu.Lock()
@@ -446,3 +561,7 @@ func (g *policyGuard) wait() {
 		<-g.done
 	}
 }
+
+// CacheDir is the controller's writable cache (the chart mounts an emptyDir): the Sigstore TUF
+// metadata for job image verification.
+const CacheDir = "/var/cache/kete-runner"

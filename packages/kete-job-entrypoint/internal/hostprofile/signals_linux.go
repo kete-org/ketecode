@@ -23,6 +23,8 @@ type Paths struct {
 	DMIDir      string
 	SysBlockDir string
 	DevDir      string
+	// BootIDFile is read when set (kubevm): this kernel's boot ID.
+	BootIDFile string
 }
 
 // virtioVsockID is the virtio device id of a vsock device (virtio spec: 19).
@@ -57,6 +59,13 @@ func Gather(p Paths, s Signals) (Signals, error) {
 		if strings.TrimSpace(string(id)) == virtioVsockID {
 			s.Vsock = true
 		}
+	}
+	if p.BootIDFile != "" {
+		b, err := readLimited(p.BootIDFile, 64)
+		if err != nil {
+			return Signals{}, err
+		}
+		s.BootID = strings.TrimSpace(string(b))
 	}
 	s.DMI = ProviderForDMI(func(field string) (string, error) {
 		b, err := os.ReadFile(filepath.Join(p.DMIDir, field))

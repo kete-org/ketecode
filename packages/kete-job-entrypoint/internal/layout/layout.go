@@ -48,6 +48,19 @@ type Config struct {
 	DevDir      string // device nodes, by the block device's name
 	VirtioDir   string // virtio devices (a vsock device has id 0x0013)
 	DMIDir      string // firmware DMI fields (sys_vendor, product_name, chassis_asset_tag)
+	BootIDFile  string // this kernel's boot ID (kubevm's shared-kernel check)
+
+	// kubevm (the Kubernetes runner's VM-isolated pods). ConfigDir is the per-job Secret's volume
+	// (`--config-file` must name ConfigFile, and the volume is unmounted before anything else is
+	// written); OutboxDir the per-job outbox volume the runner's publisher reads after the job;
+	// UpstreamDir holds the enterprise proxy's credentials and CA bundle for kete-egress (root,
+	// group kete-proxy, 0750). BoundaryRetry bounds the host-boundary probe's retries while a
+	// NetworkPolicy may not be enforced yet (spec "S0 findings" 5); BoundaryEvery spaces them.
+	ConfigDir     string
+	OutboxDir     string
+	UpstreamDir   string
+	BoundaryRetry time.Duration
+	BoundaryEvery time.Duration
 
 	// The shared-kernel guard's inputs (hostprofile.GatherKernel). Only in-process tests point
 	// these elsewhere, and only they set NSInode (nil: stat NSDir/<name>).
@@ -118,6 +131,13 @@ func Default() Config {
 		DevDir:      "/dev",
 		VirtioDir:   "/sys/bus/virtio/devices",
 		DMIDir:      "/sys/class/dmi/id",
+		BootIDFile:  "/proc/sys/kernel/random/boot_id",
+
+		ConfigDir:     ConfigDir,
+		OutboxDir:     "/var/lib/kete-outbox",
+		UpstreamDir:   "/run/kete-upstream",
+		BoundaryRetry: 30 * time.Second,
+		BoundaryEvery: 2 * time.Second,
 
 		NSDir:        "/proc/self/ns",
 		Proc1Cmdline: "/proc/1/cmdline",
@@ -150,6 +170,19 @@ func Default() Config {
 	}
 }
 
+// ConfigDir is where the Kubernetes runner mounts a job pod's per-job Secret, and ConfigFile the
+// machine configuration in it (packages/kete-job-host internal/driver/kubernetes ConfigMountPath
+// and SecretConfig; change them together).
+const (
+	ConfigDir  = "/run/kete-config"
+	ConfigFile = ConfigDir + "/config.json"
+)
+
+// OutboxGID is the group the outbox's files belong to (0640) and its directory (0750): the
+// runner image's non-root user's group (65532), so the publisher (P3) can read them while no job
+// user can.
+const OutboxGID = 65532
+
 // Derived paths.
 
 func (c Config) CAPath() string       { return filepath.Join(c.EgressCADir, "ca.pem") }
@@ -162,6 +195,11 @@ func (c Config) ProxyStderr() string  { return filepath.Join(c.LogDir, "proxy.st
 func (c Config) HelperStderr() string { return filepath.Join(c.LogDir, "helper.stderr") }
 func (c Config) KeteStdout() string   { return filepath.Join(c.LogDir, "kete.stdout") }
 func (c Config) KeteStderr() string   { return filepath.Join(c.LogDir, "kete.stderr") }
+
+// UpstreamCA and UpstreamAuth are kete-egress's configuration v2 upstream.ca_bundle_file and
+// upstream.proxy_auth_file (kubevm with an enterprise proxy).
+func (c Config) UpstreamCA() string   { return filepath.Join(c.UpstreamDir, "ca.pem") }
+func (c Config) UpstreamAuth() string { return filepath.Join(c.UpstreamDir, "proxy-auth") }
 
 // KeteAudit is the root-owned file the entrypoint copies `kete`'s audit pipe into (piece A3).
 func (c Config) KeteAudit() string      { return filepath.Join(c.LogDir, KeteAuditName) }

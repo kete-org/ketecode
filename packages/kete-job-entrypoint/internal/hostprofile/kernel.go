@@ -28,6 +28,13 @@ import (
 //	                  in the mount table, ContainerMarkerFiles, `container=` in PID 1's
 //	                  environment).
 //
+//	kubevm            a pod of the Kubernetes runner in a VM-isolated RuntimeClass: the container is
+//	                  never in the initial namespaces (Kata's agent starts it inside the guest), so
+//	                  the facts above can't tell a Kata guest from a runc container on a VM node
+//	                  (spike S0). Instead the pod's boot ID must differ from its node's
+//	                  (KubeVMKernel): the runner reads Node.status.nodeInfo.bootID after the pod is
+//	                  scheduled and writes it into the job's configuration.
+//
 // The guard defends against running the image where it doesn't belong (a Kubernetes or Docker
 // container with the dedicated or a VM profile, which in S0 changed a node's sysctls); it is not a
 // defence against a host administrator who deliberately imitates the driver, who owns the kernel
@@ -70,6 +77,21 @@ type Kernel struct {
 // OwnKernel is the VM profiles' rule: the initial user and PID namespaces, so PID 1 (which Check
 // requires to be kete-job-init) is the kernel's own init.
 func OwnKernel(k Kernel) bool { return k.UserNSInitial && k.PIDNSInitial }
+
+// KubeVMKernel is the kubevm profile's rule (spec "S0 findings" 2): both boot IDs well-formed and
+// different — the pod runs its own kernel, not its node's. The test-only shared-kernel mode
+// (Signals.SharedKernelTest, kind CI's runc-backed RuntimeClass) inverts it, and exists only in a
+// build with the kete_testdriver tag: there the boot IDs must be equal, so the check still proves
+// the runner read this pod's node. A release build refuses that mode outright.
+func KubeVMKernel(s Signals) bool {
+	if !ValidBootID(s.BootID) || !ValidBootID(s.NodeBootID) {
+		return false
+	}
+	if s.SharedKernelTest {
+		return SharedKernelTestBuild && s.BootID == s.NodeBootID
+	}
+	return s.BootID != s.NodeBootID
+}
 
 // DedicatedReaper is the dedicated profile's rule: set up by the dedicated driver's reaper, not by
 // a container runtime.

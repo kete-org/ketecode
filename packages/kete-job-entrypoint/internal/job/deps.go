@@ -104,6 +104,60 @@ type Machine interface {
 	BuildBundle(ctx context.Context, baseSHA string) (*bundle.Result, error)
 }
 
+// Runtime is the kubevm profile's runtime-repository path (jobs-v1 "Runtime repositories"; enterprise
+// runtime spec §4.5): the claim must name exactly the repository the runner resolved, the clone uses
+// the runner's local URL and read credential, the commit the clone got is recorded as the base,
+// the result is bounded by the runner's data boundary, the outputs go to the runner's outbox (never
+// uploads) and finish is `{"outbox":true}`. nil on every other profile.
+type Runtime struct {
+	Platform RuntimePlatform
+	Repo     bootenv.LocalRepository
+	// CloneURL is Repo.CloneURL normalized and CloneEntry its egress allowlist entry (the bare
+	// host for 443, `host:port` otherwise).
+	CloneURL, CloneEntry string
+	Boundary             platform.DataBoundary
+	Outbox               Outbox
+	// Head returns the commit refs/heads/<ref> names in the pristine copy.
+	Head func(ctx context.Context, gitDir, ref string) (string, error)
+}
+
+// RuntimePlatform is the platform client's kubevm calls.
+type RuntimePlatform interface {
+	ClaimRuntime(ctx context.Context, token, localName string, now time.Time) (*platform.RuntimeClaimResponse, error)
+	FinishOutbox(ctx context.Context) error
+}
+
+// Outbox is the runner's per-job outbox (internal/outbox): files, then the manifest that names
+// them, written last.
+type Outbox interface {
+	Put(name string, r io.Reader, max int64) (OutboxFile, error)
+	Commit(m OutboxManifest) error
+}
+
+// OutboxFile is one written file.
+type OutboxFile struct {
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
+}
+
+// OutboxManifest is manifest.json, the outbox's index (module README "Outbox"): what the job
+// produced, for the runner's publisher. Never sent to the platform.
+type OutboxManifest struct {
+	Version    int                   `json:"version"`
+	JobID      string                `json:"job_id"`
+	Repository string                `json:"repository"`
+	Ref        string                `json:"ref"`
+	BaseSHA    string                `json:"base_sha,omitempty"`
+	Branch     string                `json:"branch,omitempty"`
+	Outcome    string                `json:"outcome"`
+	ExitCode   int                   `json:"exit_code"`
+	PushError  string                `json:"push_error,omitempty"`
+	Files      map[string]OutboxFile `json:"files"`
+	Notes      []string              `json:"notes"`
+	WrittenAt  string                `json:"written_at"`
+}
+
 // Deps is everything Run needs.
 type Deps struct {
 	Cfg      layout.Config
@@ -114,4 +168,5 @@ type Deps struct {
 	Git      Git
 	Machine  Machine
 	Now      func() time.Time
+	Runtime  *Runtime // kubevm only
 }

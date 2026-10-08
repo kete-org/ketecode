@@ -12,7 +12,10 @@
 # --skip-web-ui), or passed with --kete (the release job passes the released binary).
 #
 # Usage: scripts/build.sh [--arch amd64|arm64] [--kete <path>] [--tag <image>] [--version <v>]
-#                         [--revision <sha>] [--no-image] [--load]
+#                         [--revision <sha>] [--no-image] [--load] [--go-tags <tags>]
+#   --go-tags builds the Go binaries with these build tags. Only CI uses it: `kete_testdriver` makes
+#   the Kubernetes runner's kind e2e image (the entrypoint's test-only shared-kernel mode). An image
+#   built with it is never published.
 #   --load is accepted for symmetry with buildx and is the default (the image goes to the local daemon).
 set -euo pipefail
 
@@ -26,6 +29,7 @@ tag="kete-job:local"
 version="dev"
 revision="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo unknown)"
 image=1
+gotags=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --arch) arch="$2"; shift 2 ;;
@@ -35,6 +39,7 @@ while [ $# -gt 0 ]; do
     --revision) revision="$2"; shift 2 ;;
     --no-image) image=0; shift ;;
     --load) shift ;;
+    --go-tags) gotags="$2"; shift 2 ;;
     *) echo "build.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -65,9 +70,9 @@ echo "== Go binaries (linux/$arch)"
 docker run --rm \
   -v "$PKGS:/src" -v "$out:/out" \
   -v kete-egress-gomod:/go/pkg/mod -v kete-egress-gocache:/root/.cache/go-build \
-  -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH="$arch" -e HOST_ID="$(id -u):$(id -g)" \
+  -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH="$arch" -e HOST_ID="$(id -u):$(id -g)" -e GOTAGS="$gotags" \
   golang:1.26-bookworm bash -euo pipefail -c '
-    flags=(-trimpath -ldflags=-s)
+    flags=(-trimpath -ldflags=-s -tags "$GOTAGS")
     (cd /src/kete-job-entrypoint && go build "${flags[@]}" -o /out/bin/kete-job-entrypoint ./cmd/kete-job-entrypoint \
       && go build "${flags[@]}" -o /out/bin/kete-job-init ./cmd/kete-job-init \
       && go build "${flags[@]}" -o /out/bin/kete-job-fake-platform ./cmd/kete-job-fake-platform \

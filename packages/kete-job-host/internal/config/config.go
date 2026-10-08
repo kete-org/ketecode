@@ -74,6 +74,46 @@ type KubernetesFile struct {
 	PodDriver           string                 `json:"pod_driver"`
 	Placeholder         *PlaceholderFile       `json:"placeholder,omitempty"`
 	StartTimeoutSeconds int                    `json:"start_timeout_seconds,omitempty"`
+	// ProxyAuthFile is a mounted Secret's file holding `username:password` for Proxy (never
+	// inline): the controller's CONNECTs and the jobs' (kete-egress upstream) authenticate with it.
+	ProxyAuthFile string `json:"proxy_auth_file,omitempty"`
+	// RepositorySources are where the kubevm pod driver clones each repository from, with a
+	// static read credential (a deploy token) from a Secret in the controller's namespace. P3
+	// adds minted credentials and the publisher.
+	RepositorySources []RepositorySourceFile `json:"repository_sources,omitempty"`
+	// JobPod configures the kubevm pod driver's job pods (required by it).
+	JobPod *JobPodFile `json:"job_pod,omitempty"`
+}
+
+// RepositorySourceFile is one repository's clone source.
+type RepositorySourceFile struct {
+	Name        string `json:"name"`
+	CloneURL    string `json:"clone_url"`
+	CloneSecret string `json:"clone_secret"`
+}
+
+// JobPodFile sizes and connects the kubevm job pods.
+type JobPodFile struct {
+	// Requests = limits for the job container (Kubernetes quantities; the RuntimeClass overhead
+	// is added by the cluster, not here).
+	CPU              string `json:"cpu"`
+	Memory           string `json:"memory"`
+	EphemeralStorage string `json:"ephemeral_storage"`
+	// The outbox PVC (ReadWriteOnce): its size and storage class ("" = the cluster default).
+	OutboxSize         string `json:"outbox_size"`
+	OutboxStorageClass string `json:"outbox_storage_class,omitempty"`
+	// OutboxHoldHours: an outbox is deleted this long after its job pod ended (default 24; the
+	// publisher, P3, deletes it once published).
+	OutboxHoldHours int `json:"outbox_hold_hours,omitempty"`
+	// Internal are the enterprise destinations job pods may reach (egress configuration v2
+	// `internal`): the same CIDRs and ports the jobs namespace's NetworkPolicy opens.
+	Internal []InternalRangeFile `json:"internal,omitempty"`
+}
+
+// InternalRangeFile is one internal destination range.
+type InternalRangeFile struct {
+	CIDR  string `json:"cidr"`
+	Ports []int  `json:"ports"`
 }
 
 // PlaceholderFile configures the test-only placeholder pod driver (built with the kete_testdriver
@@ -115,11 +155,26 @@ type Kubernetes struct {
 	PodDriver       string
 	PlaceholderExit map[string]int
 	StartTimeout    time.Duration
+	ProxyAuthFile   string
+	// Sources maps a repository name to its clone source (kubevm).
+	Sources map[string]RepositorySourceFile
+	JobPod  *JobPod
 }
 
-// PodDriverPlaceholder is the test-only placeholder pod driver; the VM-isolated pod driver is
-// piece P2 of the enterprise runtime.
-const PodDriverPlaceholder = "placeholder"
+// JobPod is the validated job_pod section.
+type JobPod struct {
+	CPU, Memory, EphemeralStorage  string
+	OutboxSize, OutboxStorageClass string
+	OutboxHold                     time.Duration
+	Internal                       []InternalRangeFile
+}
+
+// Pod drivers: kubevm runs the job image's entrypoint (profile kubevm) in a VM-isolated pod;
+// placeholder is the test-only stand-in (kete_testdriver builds).
+const (
+	PodDriverKubeVM      = "kubevm"
+	PodDriverPlaceholder = "placeholder"
+)
 
 // DedicatedFile is the dedicated driver's section.
 type DedicatedFile struct {
@@ -632,11 +687,20 @@ func parseKubernetes(f KubernetesFile, images []string) (Kubernetes, error) {
 		k.Boundary = *f.Boundary
 	}
 	switch k.PodDriver {
-	case PodDriverPlaceholder:
+	case PodDriverKubeVM, PodDriverPlaceholder:
 	case "":
-		return Kubernetes{}, errors.New("config: kubernetes pod_driver is required (the VM-isolated pod driver is not built yet; placeholder is for test builds)")
+		return Kubernetes{}, errors.New("config: kubernetes pod_driver is required (kubevm; placeholder is for test builds)")
 	default:
 		return Kubernetes{}, fmt.Errorf("config: unknown kubernetes pod_driver %q", k.PodDriver)
+	}
+	if f.ProxyAuthFile != "" {
+		if k.Proxy == nil || !absClean(f.ProxyAuthFile) {
+			return Kubernetes{}, errors.New("config: kubernetes proxy_auth_file needs a proxy and a clean absolute path")
+		}
+		k.ProxyAuthFile = f.ProxyAuthFile
+	}
+	if err := parseKubeVM(f, &k); err != nil {
+		return Kubernetes{}, err
 	}
 	if f.Placeholder != nil && k.PodDriver != PodDriverPlaceholder {
 		return Kubernetes{}, errors.New("config: the placeholder section is only for the placeholder pod driver")

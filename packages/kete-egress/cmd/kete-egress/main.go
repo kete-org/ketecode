@@ -68,14 +68,14 @@ func configFlag(name string, args []string) (string, error) {
 
 func loadConfig(path string) (*config.Config, error) {
 	if path == "-" {
-		return config.Parse(os.Stdin)
+		return config.Load(os.Stdin)
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return config.Parse(f)
+	return config.Load(f)
 }
 
 func nft(args []string) int {
@@ -128,6 +128,21 @@ func serve(args []string) int {
 	if err := proxy.CheckRoots(roots); err != nil {
 		return fail(exitRefused, "%v", err)
 	}
+	// Configuration v2: the enterprise CA bundle (upstream TLS only, in addition to the system
+	// roots, checked like them) and the upstream proxy's credentials, both read once, here.
+	proxyAuth := ""
+	if up := cfg.Upstream; up != nil {
+		if up.CABundleFile != "" {
+			if roots, err = proxy.AddCABundle(roots, up.CABundleFile); err != nil {
+				return fail(exitRefused, "%v", err)
+			}
+		}
+		if up.ProxyAuthFile != "" {
+			if proxyAuth, err = proxy.ReadProxyAuth(up.ProxyAuthFile); err != nil {
+				return fail(exitRefused, "%v", err)
+			}
+		}
+	}
 	authority, err := ca.New(cfg.AllHosts(), time.Now())
 	if err != nil {
 		return fail(exitRefused, "%v", err)
@@ -143,6 +158,7 @@ func serve(args []string) int {
 		CA:            authority,
 		Phase:         phase.NewState(),
 		UpstreamRoots: roots,
+		ProxyAuth:     proxyAuth,
 		Fatal: func(err error) {
 			fmt.Fprintf(os.Stderr, "kete-egress: %v\n", err)
 			os.Exit(exitRuntime)

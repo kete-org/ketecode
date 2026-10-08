@@ -1,14 +1,21 @@
 # Kete-owned. The enterprise Kubernetes runner (packages/kete-runner-chart + the `kubernetes` mode
-# of packages/kete-job-host; enterprise runtime piece P1). Path-filtered to protect the shared CI
-# minutes budget (see kete-build.yml). Two ubuntu-latest jobs:
-#   chart  helm lint, helm template + kubeconform (Kubernetes 1.30 and 1.32), values refusals, and
-#          the controller's Go tests built with the test-only placeholder pod driver
-#          (-tags kete_testdriver; the module's other tests run in kete-job-host.yml). ~2 min.
-#   e2e    a kind cluster with a local registry: the chart installed against the fake platform
-#          (job-host-v2 over TLS, its CA as the chart's CA bundle, reached through a CONNECT proxy),
-#          enrollment, poll, placeholder machines started and stopped, exit, repository_unknown,
-#          orphan kill across a controller restart, the deadline kill (deadline + 5 min grace), RBAC
-#          and the admission policy refusing shared-kernel pods (ci/e2e.sh). ~12 min.
+# of packages/kete-job-host + the entrypoint's kubevm profile; enterprise runtime pieces P1 and P2).
+# Path-filtered to protect the shared CI minutes budget (see kete-build.yml). Two ubuntu-latest jobs:
+#   chart  helm lint, helm template + kubeconform (Kubernetes 1.30 and 1.32), values refusals, the
+#          chart's rendered configuration parsed by the controller's own parser, and the
+#          controller's Go tests built with the test-only pod drivers (-tags kete_testdriver; the
+#          module's other tests run in kete-job-host.yml). ~2 min.
+#   e2e    a two-node kind cluster with a local registry.
+#          ci/e2e.sh (P1): the chart against the job-host fake (TLS, its CA as the chart's CA
+#          bundle, through a CONNECT proxy), enrollment, poll, placeholder machines started and
+#          stopped, exit, repository_unknown, orphan kill across a restart, the deadline kill, RBAC
+#          and the admission policy refusing shared-kernel pods.
+#          ci/e2e-kubevm.sh (P2): a second release with the kubevm pod driver running the job image
+#          (entrypoint built with -tags kete_testdriver, the CI-only `kete-test` RuntimeClass on
+#          runc) against the jobs-v1 fake: a real job (claim → the scripted model through `kete job
+#          run` → bundle, audit and proxy log in the outbox → finish {"outbox":true}), and the
+#          refusals (wrong repository, shared kernel, RuntimeClasses, image pull). ~30 min with the
+#          kete and image builds. Kata itself can't run on GitHub's runners (no nested KVM in kind).
 name: kete-runner
 
 on:
@@ -17,12 +24,18 @@ on:
     paths:
       - "packages/kete-runner-chart/**"
       - "packages/kete-job-host/**"
+      - "packages/kete-job-entrypoint/**"
+      - "packages/kete-egress/**"
+      - "packages/kete-job-image/**"
       - ".github/workflows/kete-runner.yml"
   push:
     branches: [main]
     paths:
       - "packages/kete-runner-chart/**"
       - "packages/kete-job-host/**"
+      - "packages/kete-job-entrypoint/**"
+      - "packages/kete-egress/**"
+      - "packages/kete-job-image/**"
       - ".github/workflows/kete-runner.yml"
   workflow_dispatch:
 
@@ -103,6 +116,22 @@ jobs:
           refuse --set "image.repository=a'b"
           refuse --set-json 'networkPolicy.platform.cidrs=["not-a-cidr"]'
           refuse --set caBundle.existingSecret=A_B
+          refuse --set-json 'repositorySources=[]'
+          refuse --set podDriver=other
+          refuse --set-json 'repositorySources=[{"name":"gitlab:payments/api","url":"http://gitlab.corp.example/x.git","cloneSecret":"s"}]'
+          refuse --set-json 'repositorySources=[{"name":"gitlab:payments/api","url":"https://u:p@gitlab.corp.example/x.git","cloneSecret":"s"}]'
+          refuse --set-json 'repositorySources=[{"name":"gitlab:payments/api","url":"https://gitlab.corp.example/x.git","cloneSecret":"s"},{"name":"gitlab:other/x","url":"https://gitlab.corp.example/y.git","cloneSecret":"s"}]'
+          refuse --set proxy.url=
+          refuse --set jobs.resources.memory=lots
+          refuse --set jobs.outbox.holdHours=0
+
+      - name: The chart's configuration parses (the controller's own parser)
+        run: |
+          helm template kete-runner packages/kete-runner-chart -n kete-system -f packages/kete-runner-chart/ci/lint-values.yaml \
+            --show-only templates/configmap.yaml | sed -n 's/^  config.json: //p' \
+            | python3 -c 'import json, sys; sys.stdout.write(json.loads(sys.stdin.read()))' > "$RUNNER_TEMP/rendered.json"
+          cd packages/kete-job-host
+          KETE_RUNNER_RENDERED_CONFIG="$RUNNER_TEMP/rendered.json" go test ./internal/config/... -run TestChartRenderedConfig -v
 
       - name: Controller tests (placeholder pod driver build)
         working-directory: packages/kete-job-host
@@ -112,12 +141,12 @@ jobs:
           # The release build refuses the placeholder driver.
           go test -race ./internal/runner/...
           # The config package's file tests need root (kete-job-host.yml runs them); these don't.
-          go test -race ./internal/config/... -run Kubernetes
+          go test -race ./internal/config/... -run 'Kubernetes|KubeVM|Chart' 
 
   e2e:
     needs: chart
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 50
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -129,6 +158,20 @@ jobs:
         with:
           go-version-file: packages/kete-job-host/go.mod
           cache-dependency-path: packages/kete-job-host/go.sum
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Build the Linux x64 kete
+        working-directory: packages/cli
+        run: bun run build --target=kete-linux-x64 --skip-web-ui
+
+      - name: Build the job image (entrypoint with -tags kete_testdriver; never published)
+        run: |
+          bash packages/kete-job-image/scripts/build.sh --arch amd64 --tag kete-job:kind --go-tags kete_testdriver
+          # The jobs-v1 fake runs from the same image (git http-backend, the fake binary).
+          printf 'FROM kete-job:kind\nCOPY bin/kete-job-fake-platform /usr/local/libexec/kete-e2e/\n' \
+            | docker build -q -t kete-job-fake:kind -f - packages/kete-job-image/.build/ctx-amd64
 
       - name: Build the test binaries
         working-directory: packages/kete-job-host
@@ -166,11 +209,37 @@ jobs:
             docker tag "${v#*=}" "localhost:5001/busybox-${v%%=*}:e2e"
             docker push -q "localhost:5001/busybox-${v%%=*}:e2e"
           done
+          docker tag kete-job:kind localhost:5001/kete-job:kind
+          docker push -q localhost:5001/kete-job:kind
           {
             echo "RUNNER_IMAGE=$(digest localhost:5001/kete-runner:e2e)"
             echo "IMAGE_A=$(digest localhost:5001/busybox-a:e2e)"
             echo "IMAGE_B=$(digest localhost:5001/busybox-b:e2e)"
+            echo "JOB_IMAGE=$(digest localhost:5001/kete-job:kind)"
+            echo "MISSING_IMAGE=localhost:5001/kete-job@sha256:$(head -c 32 /dev/urandom | sha256sum | cut -c1-64)"
+            echo "FAKE_IMAGE=kete-job-fake:kind"
           } | tee -a "$GITHUB_ENV"
+          # The job image is large: pull it onto the job worker once, before the e2e times its steps.
+          docker exec kind-worker crictl pull "$(digest localhost:5001/kete-job:kind)" >/dev/null
 
-      - name: e2e
+      - name: e2e (P1, placeholder pod driver)
         run: packages/kete-runner-chart/ci/e2e.sh
+
+      - name: e2e (P2, kubevm pod driver, a real job pod)
+        env:
+          E2E_STATE: ${{ runner.temp }}/kete-kubevm-state
+        run: packages/kete-runner-chart/ci/e2e-kubevm.sh
+
+      # The state holds the fakes' test credentials (tokens.json, runtime-job.json, ca): never uploaded.
+      - name: Remove the test credentials from the state
+        if: failure()
+        run: sudo find "$RUNNER_TEMP/kete-kubevm-state" \( -name tokens.json -o -name runtime-job.json -o -name 'ca*' -o -name 'jh-ca.pem' -o -name 'values*.yaml' \) -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Upload the e2e state
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-runner-kubevm-state
+          path: ${{ runner.temp }}/kete-kubevm-state/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -11,6 +11,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -81,4 +83,43 @@ func (c *CA) Leaf(name string) (*tls.Certificate, error) {
 
 func basic(user, pass string) string {
 	return base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
+}
+
+// LoadOrCreateCA reuses the CA saved in dir (ca.crt, ca.key) or creates one and saves it there, so
+// a fake restarted for the next job keeps the trust its clients were given (the Kubernetes
+// runner's kind e2e serves one job per fake process). Test credentials only.
+func LoadOrCreateCA(dir, cn string) (*CA, error) {
+	certPEM, err1 := os.ReadFile(filepath.Join(dir, "ca.crt"))
+	keyPEM, err2 := os.ReadFile(filepath.Join(dir, "ca.key"))
+	if err1 == nil && err2 == nil {
+		cb, _ := pem.Decode(certPEM)
+		kb, _ := pem.Decode(keyPEM)
+		if cb == nil || kb == nil {
+			return nil, errors.New("fake CA: bad PEM in " + dir)
+		}
+		cert, err := x509.ParseCertificate(cb.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		key, err := x509.ParseECPrivateKey(kb.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		return &CA{cert: cert, key: key, cache: map[string]*tls.Certificate{}}, nil
+	}
+	c, err := NewCA(cn)
+	if err != nil {
+		return nil, err
+	}
+	der, err := x509.MarshalECPrivateKey(c.key)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ca.key"), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+		return nil, err
+	}
+	return c, os.WriteFile(filepath.Join(dir, "ca.crt"), c.CertPEM(), 0o644)
 }

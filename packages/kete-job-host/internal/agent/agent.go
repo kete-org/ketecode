@@ -509,7 +509,12 @@ func (a *Agent) step(ctx context.Context, id string) {
 				}
 				m := a.find(id)
 				if m != nil && m.State == contract.StateStarting {
-					a.transition(m, contract.StateFailed, contract.ReasonDriverFailed)
+					reason := contract.ReasonDriverFailed
+					var fe *driver.FailedError
+					if errors.As(err, &fe) && a.o.V2 != nil && contract.FailedReasonV2(fe.Reason) {
+						reason = fe.Reason // job-host-v2: e.g. repository_unavailable
+					}
+					a.transition(m, contract.StateFailed, reason)
 					a.save()
 				}
 				a.mu.Unlock()
@@ -526,7 +531,17 @@ func (a *Agent) step(ctx context.Context, id string) {
 				a.mu.Unlock()
 				continue
 			}
+			var fe *driver.FailedError
 			switch {
+			case errors.As(err, &fe) && a.o.V2 != nil && contract.FailedReasonV2(fe.Reason) && m.State == contract.StateStarting:
+				// The driver says this start can't succeed (job-host-v2: pod_unschedulable,
+				// image_pull_failed): failed with its reason, and what it holds is removed.
+				a.o.Log.Warn("machine_start_failed", "machine_id", id, "reason", fe.Reason, "error", fe.Err.Error())
+				a.transition(m, contract.StateFailed, fe.Reason)
+				a.cleanup[id] = true
+				a.save()
+				a.mu.Unlock()
+				continue
 			case err != nil:
 				a.mu.Unlock()
 				return
@@ -754,6 +769,7 @@ func (a *Agent) prepare(ctx context.Context, id string) {
 	}
 	a.pending[id] = &driver.Spec{
 		MachineID: id, JobID: job.rm.JobID, Image: job.rm.Image, Deadline: job.deadline, Resources: job.rm.Resources, Config: cfg,
+		Repository: job.rm.Repository,
 	}
 }
 

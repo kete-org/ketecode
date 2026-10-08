@@ -10,7 +10,7 @@
 //	              POST /token     {token}              register an enrollment token
 //	              GET  /hosts                          hosts with status, facts, report count, machines
 //	              POST /approve   {host_id}            set a host active
-//	              POST /assign    {host_id, machine_id, job_id, image, deadline_seconds, repository}
+//	              POST /assign    {host_id, machine_id, job_id, image, deadline_seconds, repository[, base_ref, claim_token]}
 //	              POST /withdraw  {host_id, machine_id}
 //	              GET  /proxy                          CONNECTs seen by the proxy
 //	-proxy      an HTTP CONNECT proxy (default :3128; "" off) that counts tunnels, so the e2e can
@@ -99,6 +99,7 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 		type machine struct {
 			State, Reason string
 			Terminal      bool
+			PhaseLines    []contract.PhaseLine `json:",omitempty"`
 		}
 		type host struct {
 			ID, Status   string
@@ -116,7 +117,7 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 				o.LastReport = &h.ReportsV2[n-1]
 			}
 			for mid, m := range h.Machines {
-				o.Machines[mid] = machine{State: m.Observed, Reason: m.ObservedReason, Terminal: m.Terminal}
+				o.Machines[mid] = machine{State: m.Observed, Reason: m.ObservedReason, Terminal: m.Terminal, PhaseLines: m.PhaseLines}
 			}
 			for mid, m := range h.Unknown {
 				o.Unattributed[mid] = machine{State: m.State, Reason: m.Reason, Terminal: contract.Terminal(m.State)}
@@ -144,6 +145,10 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 			Image           string `json:"image"`
 			DeadlineSeconds int    `json:"deadline_seconds"`
 			Repository      string `json:"repository"`
+			BaseRef         string `json:"base_ref"`
+			// ClaimToken is the job's claim token on the jobs-v1 side (the entrypoint fake's
+			// job, kubevm e2e); random when absent.
+			ClaimToken string `json:"claim_token"`
 		}
 		if !body(r, &in) {
 			http.Error(w, "bad body", 400)
@@ -157,10 +162,18 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 			Resources: contract.Resources{VCPUs: 1, MemoryMiB: 1024, ScratchGiB: 1},
 		}
 		if in.Repository != "" {
-			run.Repository = &contract.RunRepository{Name: in.Repository, BaseRef: "main"}
+			ref := in.BaseRef
+			if ref == "" {
+				ref = "main"
+			}
+			run.Repository = &contract.RunRepository{Name: in.Repository, BaseRef: ref}
+		}
+		claim := hex.EncodeToString(tok[:])
+		if in.ClaimToken != "" {
+			claim = in.ClaimToken
 		}
 		cfg := seal.MachineConfig{
-			JobID: in.JobID, PlatformURL: "https://" + p.Authority, ClaimToken: hex.EncodeToString(tok[:]),
+			JobID: in.JobID, PlatformURL: "https://" + p.Authority, ClaimToken: claim,
 			StorageHost: "storage.invalid.example", HostProfile: seal.ProfileKubeVM,
 		}
 		reply(w, map[string]bool{"ok": true}, p.AssignV2(in.HostID, run, cfg))

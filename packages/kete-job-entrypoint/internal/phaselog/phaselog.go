@@ -26,6 +26,7 @@ const (
 	StepProc       Step = "setup_proc"
 	StepFly        Step = "setup_fly"
 	StepHost       Step = "setup_host"    // the host profile's signals (module README "Host profiles")
+	StepKubeVM     Step = "setup_kubevm"  // kubevm: the config Secret unmounted, /proc/sys and the cgroup mount made writable
 	StepBoundary   Step = "host_boundary" // the root host-boundary probe (every profile but fly)
 	StepDirs       Step = "setup_dirs"
 	StepCgroup     Step = "setup_cgroup"
@@ -46,6 +47,7 @@ const (
 	StepResult     Step = "result"
 	StepBundle     Step = "bundle"
 	StepUploads    Step = "uploads"
+	StepOutbox     Step = "outbox" // kubevm: result, bundle, audit and proxy log written to the runner's outbox
 	StepFinish     Step = "finish"
 	StepDeadline   Step = "deadline"
 	StepCancelled  Step = "cancelled"
@@ -112,6 +114,11 @@ const (
 	CodeConfigDisk   Code = "config_disk"   // a block device still holds the config disk header
 	CodeMetadataDrop Code = "metadata_drop" // cloudvm: kete-job-init's metadata drop table is missing
 	CodeGuardedPath  Code = "guarded_path"  // a path the profile guards opens for the tool user
+	CodeKubeAPI      Code = "kube_api"      // kubevm: the Kubernetes API (KUBERNETES_SERVICE_HOST:PORT)
+	CodeNode         Code = "node"          // kubevm: one of the node's addresses on a sample port
+	CodeConfigSecret Code = "config_secret" // kubevm: the config Secret's volume is still mounted or not empty
+	CodeOutbox       Code = "outbox"        // kubevm: the outbox volume is missing, not empty or not writable
+	CodeRepository   Code = "repository"    // kubevm: the claim names another repository, or carries a clone
 )
 
 // Logger writes phase lines; safe for concurrent use.

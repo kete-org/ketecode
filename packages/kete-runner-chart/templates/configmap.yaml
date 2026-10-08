@@ -18,6 +18,18 @@
 {{- if .Values.caBundle.existingSecret }}{{ $_ := set $k "ca_bundle" (printf "/etc/kete-runner/ca/%s" .Values.caBundle.key) }}{{ end -}}
 {{- with .Values.repositories }}{{ $_ := set $k "repositories" . }}{{ end -}}
 {{- if .Values.placeholder.exitAfter }}{{ $_ := set $k "placeholder" (dict "exit_after" .Values.placeholder.exitAfter) }}{{ end -}}
+{{- if .Values.proxy.authSecret.name }}{{ $_ := set $k "proxy_auth_file" (printf "/etc/kete-runner/proxy/%s" .Values.proxy.authSecret.key) }}{{ end -}}
+{{- if eq .Values.podDriver "kubevm" -}}
+{{- $sources := list -}}
+{{- range .Values.repositorySources }}{{ $sources = append $sources (dict "name" .name "clone_url" .url "clone_secret" .cloneSecret) }}{{ end -}}
+{{- with $sources }}{{ $_ := set $k "repository_sources" . }}{{ end -}}
+{{- $internal := list -}}
+{{- range .Values.jobs.egress.cidrs }}{{ $internal = append $internal (dict "cidr" . "ports" $.Values.jobs.egress.ports) }}{{ end -}}
+{{- $jp := dict "cpu" (toString .Values.jobs.resources.cpu) "memory" (toString .Values.jobs.resources.memory) "ephemeral_storage" (toString .Values.jobs.resources.ephemeralStorage) "outbox_size" (toString .Values.jobs.outbox.size) "outbox_hold_hours" (int .Values.jobs.outbox.holdHours) -}}
+{{- with .Values.jobs.outbox.storageClass }}{{ $_ := set $jp "outbox_storage_class" . }}{{ end -}}
+{{- with $internal }}{{ $_ := set $jp "internal" . }}{{ end -}}
+{{- $_ := set $k "job_pod" $jp -}}
+{{- end -}}
 {{- $cfg := dict
   "platform_url" (trimSuffix "/" .Values.platform.url)
   "driver" "kubernetes"

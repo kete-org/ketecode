@@ -1,4 +1,5 @@
-// Package egress drives kete-egress (its README is the contract): it builds configuration v1,
+// Package egress drives kete-egress (its README is the contract): it builds configuration v1 (v2
+// for kubevm: the enterprise proxy, CA bundle and internal ranges),
 // applies the nftables ruleset, binds ports A/B/R and opens the request log once, and starts,
 // instructs and restarts the proxy over control protocol v1 with the same listener and log fds
 // (decision D2: hosts that arrive after the proxy started need a new instance; the request log's
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"strconv"
 	"strings"
 
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bootenv"
@@ -34,6 +36,22 @@ type Base struct {
 	ProxyUID, KeteUID, ToolUID   uint32
 	PortKete, PortTool, PortRoot int
 	Resolvers                    []string
+	// V2, when set (kubevm), renders configuration v2: allowlist entries may be `host:port`.
+	V2 *V2
+}
+
+// V2 is configuration v2's enterprise network (docs/platform/egress-config-v2.md).
+type V2 struct {
+	Proxy         string // http(s)://host:port, "" none
+	ProxyAuthFile string // under /run/, "" none
+	CABundleFile  string // under /run/, "" none
+	Internal      []bootenv.InternalRange
+}
+
+type upstreamJSON struct {
+	Proxy         string `json:"proxy"`
+	ProxyAuthFile string `json:"proxy_auth_file,omitempty"`
+	CABundleFile  string `json:"ca_bundle_file,omitempty"`
 }
 
 type portSet struct {
@@ -60,14 +78,30 @@ type config struct {
 		Agent  *portSet `json:"agent,omitempty"`
 		Report *portSet `json:"report,omitempty"`
 	} `json:"phases"`
+	Upstream *upstreamJSON           `json:"upstream,omitempty"`
+	Internal []bootenv.InternalRange `json:"internal,omitempty"`
+}
+
+// validEntry is a plain DNS host, or (v2) `host:port` with a port other than 443.
+func validEntry(h string, v2 bool) bool {
+	if bootenv.ValidHost(h) {
+		return true
+	}
+	i := strings.LastIndexByte(h, ':')
+	if !v2 || i < 0 || !bootenv.ValidHost(h[:i]) {
+		return false
+	}
+	p := h[i+1:]
+	n, err := strconv.Atoi(p)
+	return err == nil && n >= 1 && n <= 65535 && n != 443 && p[0] != '0'
 }
 
 // dedupe checks every host and drops repeats (the proxy refuses a host listed twice in a list).
-func dedupe(hosts []string) ([]string, error) {
+func dedupe(hosts []string, v2 bool) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
 	for _, h := range hosts {
-		if !bootenv.ValidHost(h) {
+		if !validEntry(h, v2) {
 			return nil, fmt.Errorf("egress: %q is not a plain DNS host", h)
 		}
 		if !seen[h] {
@@ -78,16 +112,16 @@ func dedupe(hosts []string) ([]string, error) {
 	return out, nil
 }
 
-func set(h Hosts) (*portSet, int, error) {
+func set(h Hosts, v2 bool) (*portSet, int, error) {
 	var ps portSet
 	var err error
-	if ps.Kete, err = dedupe(h.Kete); err != nil {
+	if ps.Kete, err = dedupe(h.Kete, v2); err != nil {
 		return nil, 0, err
 	}
-	if ps.Tool, err = dedupe(h.Tool); err != nil {
+	if ps.Tool, err = dedupe(h.Tool, v2); err != nil {
 		return nil, 0, err
 	}
-	if ps.Root, err = dedupe(h.Root); err != nil {
+	if ps.Root, err = dedupe(h.Root, v2); err != nil {
 		return nil, 0, err
 	}
 	n := len(ps.Kete) + len(ps.Tool) + len(ps.Root)
@@ -97,28 +131,36 @@ func set(h Hosts) (*portSet, int, error) {
 	return &ps, n, nil
 }
 
-// BuildConfig renders configuration v1.
+// BuildConfig renders configuration v1, or v2 when b.V2 is set.
 func BuildConfig(b Base, inst Instance) ([]byte, error) {
 	if len(b.Resolvers) == 0 {
 		return nil, errors.New("egress: no resolver")
 	}
 	var c config
 	c.Version = 1
+	v2 := b.V2 != nil
+	if v2 {
+		c.Version = 2
+		c.Internal = b.V2.Internal
+		if b.V2.Proxy != "" {
+			c.Upstream = &upstreamJSON{Proxy: b.V2.Proxy, ProxyAuthFile: b.V2.ProxyAuthFile, CABundleFile: b.V2.CABundleFile}
+		}
+	}
 	c.UIDs.Proxy, c.UIDs.Kete, c.UIDs.Tool = b.ProxyUID, b.KeteUID, b.ToolUID
 	c.Ports.Kete, c.Ports.Tool, c.Ports.Root = b.PortKete, b.PortTool, b.PortRoot
 	c.Resolvers = b.Resolvers
 	total := 0
 	var err error
 	var n int
-	if c.Phases.Clone, n, err = set(inst.Clone); err != nil {
+	if c.Phases.Clone, n, err = set(inst.Clone, v2); err != nil {
 		return nil, err
 	}
 	total += n
-	if c.Phases.Agent, n, err = set(inst.Agent); err != nil {
+	if c.Phases.Agent, n, err = set(inst.Agent, v2); err != nil {
 		return nil, err
 	}
 	total += n
-	if c.Phases.Report, n, err = set(inst.Report); err != nil {
+	if c.Phases.Report, n, err = set(inst.Report, v2); err != nil {
 		return nil, err
 	}
 	total += n

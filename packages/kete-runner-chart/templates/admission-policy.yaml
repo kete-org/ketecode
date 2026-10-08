@@ -49,8 +49,8 @@ spec:
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "job pods get no service account token"
       reason: Forbidden
-    - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, has(v.secret) || has(v.emptyDir) || (has(v.projected) && (!has(v.projected.sources) || v.projected.sources.all(s, has(s.secret) || has(s.configMap) || has(s.downwardAPI)))))"
-      message: "only secret, emptyDir and projected (secret, configMap, downwardAPI) volumes are allowed"
+    - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, has(v.secret) || has(v.emptyDir) || (has(v.projected) && (!has(v.projected.sources) || v.projected.sources.all(s, has(s.secret) || has(s.configMap) || has(s.downwardAPI)))) || (has(v.persistentVolumeClaim) && has(object.metadata.labels) && 'kete.dev/machine-id' in object.metadata.labels && v.persistentVolumeClaim.claimName == 'kete-outbox-' + object.metadata.labels['kete.dev/machine-id']))"
+      message: "only secret, emptyDir, projected (secret, configMap, downwardAPI) volumes and the machine's own outbox claim are allowed"
       reason: Forbidden
     - expression: "has(object.spec.enableServiceLinks) && object.spec.enableServiceLinks == false"
       message: "job pods must set enableServiceLinks: false"
@@ -138,6 +138,44 @@ metadata:
     {{- include "kete-runner.labels" . | nindent 4 }}
 spec:
   policyName: {{ $names.jobSecrets | quote }}
+  validationActions: [Deny]
+---
+# Outbox volumes in the jobs namespace: only the controller creates or changes claims, only
+# `kete-outbox-<machine-id>` labelled with that machine, ReadWriteOnce, no data source (an outbox
+# starts empty: never a clone of another job's volume).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ $names.outboxes | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.jobs.namespace | quote }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [persistentvolumeclaims]
+  validations:
+    - expression: {{ printf "request.userInfo.username == %s" (squote $sa) | quote }}
+      message: "only the kete-runner controller writes claims in the jobs namespace"
+      reason: Forbidden
+    - expression: "has(object.metadata.labels) && 'kete.dev/machine-id' in object.metadata.labels && object.metadata.name == 'kete-outbox-' + object.metadata.labels['kete.dev/machine-id'] && object.spec.accessModes == ['ReadWriteOnce'] && !has(object.spec.dataSource) && !has(object.spec.dataSourceRef) && !has(object.spec.selector) && !has(object.spec.volumeName)"
+      message: "only kete-outbox-<machine-id> ReadWriteOnce claims without a data source are allowed in the jobs namespace"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ $names.outboxes | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  policyName: {{ $names.outboxes | quote }}
   validationActions: [Deny]
 ---
 # The controller's own Secrets in the release namespace: it may create or change only its keys and

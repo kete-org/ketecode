@@ -66,6 +66,15 @@ type Config struct {
 	GitHTTPBackend string // e.g. /usr/lib/git-core/git-http-backend
 	// Forward is a resolver (ip:port) for names outside *.kete.test; empty answers them NXDOMAIN.
 	Forward string
+	// ListenAddr is where HTTPS listens (ip, port 443); empty: Addr. The Kubernetes runner's kind
+	// e2e answers DNS with a Service's address and listens on the pod's own.
+	ListenAddr string
+	// CADir, when set, keeps the fake's CA there across restarts (LoadOrCreateCA).
+	CADir string
+	// JobHosts, when set, receives every request to PlatformHost under /api/v1/job-hosts/ (the
+	// job-host fake, kete-job-host's internal/fakeplatform): one platform origin serves both the
+	// runner's job-host-v2 routes and the job's callbacks, as the real platform does.
+	JobHosts http.Handler
 }
 
 // Knobs vary one job's behaviour.
@@ -88,6 +97,13 @@ type Knobs struct {
 	// Harness Code (jobs-v1 additive, 2026-10-05).
 	Provider          string // "" (GitHub: the claim names no provider) or ProviderHarnessCode
 	CloneDoneFailures int    // the first n clone-done calls answer 500
+
+	// Runtime repositories (jobs-v1 additive, 2026-10-07; the kubevm profile): RuntimeRepo is the
+	// repository's runtime name. The claim must announce runtime_repo and runtime_publish and gets
+	// no clone; uploads are a contract error; finish must be {"outbox":true}. ClaimRepo, when set,
+	// is the name the claim answers instead (a compromised platform naming another repository).
+	RuntimeRepo string
+	ClaimRepo   string
 }
 
 // Call is one recorded request.
@@ -169,6 +185,9 @@ func uuid() string {
 func Start(cfg Config) (*Server, error) {
 	s := &Server{cfg: cfg}
 	ca, err := NewCA("Kete e2e test CA")
+	if cfg.CADir != "" {
+		ca, err = LoadOrCreateCA(cfg.CADir, "Kete e2e test CA")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +199,11 @@ func Start(cfg Config) (*Server, error) {
 		Path: cfg.GitHTTPBackend,
 		Env:  []string{"GIT_PROJECT_ROOT=" + s.repoDir, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_NOSYSTEM=1", "HOME=" + cfg.StateDir},
 	}
-	ln, err := net.Listen("tcp", net.JoinHostPort(cfg.Addr, "443"))
+	listen := cfg.ListenAddr
+	if listen == "" {
+		listen = cfg.Addr
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(listen, "443"))
 	if err != nil {
 		return nil, err
 	}
@@ -309,6 +332,11 @@ func (s *Server) NewJob(k Knobs) *Job {
 		j.spec["branch"] = j.Branch
 	}
 	j.spec["model"] = "kete/" + Model
+	if k.RuntimeRepo != "" {
+		// JobRuntimeClaimResponse: the strict JobSpec (allow present) and a 64-hex callback token.
+		j.spec["policy"].(map[string]any)["allow"] = []any{}
+		j.CallbackToken = random(32)
+	}
 	switch {
 	case k.UnknownAgent:
 		j.spec["agent"] = "e2e-unknown"
@@ -393,6 +421,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch host(r) {
 	case PlatformHost:
+		if s.cfg.JobHosts != nil && strings.HasPrefix(r.URL.Path, "/api/v1/job-hosts/") {
+			s.cfg.JobHosts.ServeHTTP(w, r)
+			return
+		}
 		s.platform(w, r)
 	case GitHost:
 		s.git(w, r)
@@ -470,6 +502,10 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		j.Features = req.Features
+		if j.Knobs.RuntimeRepo != "" {
+			s.runtimeClaim(j, req.Features, reply)
+			return
+		}
 		hasRevoke := false
 		for _, f := range req.Features {
 			hasRevoke = hasRevoke || f == FeatureCloneRevokeCallback
@@ -605,6 +641,11 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 		j.state = "finalizing"
 		reply(204, nil)
 	case "uploads":
+		if j.Knobs.RuntimeRepo != "" {
+			s.violation("uploads: a runtime repository's job never uploads")
+			reply(404, nil)
+			return
+		}
 		if j.state != "finalizing" || j.uploadsSet {
 			s.violation("uploads: state %s or repeated", j.state)
 			reply(404, nil)
@@ -642,6 +683,18 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			reply(404, nil)
 			return
 		}
+		if j.Knobs.RuntimeRepo != "" {
+			if string(body) != `{"outbox":true}` {
+				s.violation("finish: a runtime finish is exactly {\"outbox\":true}")
+				reply(400, nil)
+				return
+			}
+			j.finished = true
+			j.state = "done"
+			close(j.done)
+			reply(202, nil)
+			return
+		}
 		var req struct {
 			PushError *string `json:"push_error"`
 		}
@@ -666,6 +719,38 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 	default:
 		reply(404, nil)
 	}
+}
+
+// runtimeClaim answers a runtime repository's claim (s.mu held, released by reply): both runtime
+// features required (else 404, as the platform refuses an outdated entrypoint), no clone, the
+// repository's runtime name (or Knobs.ClaimRepo).
+func (s *Server) runtimeClaim(j *Job, features []string, reply func(int, any)) {
+	has := map[string]bool{}
+	for _, f := range features {
+		has[f] = true
+	}
+	if !has["runtime_repo"] || !has["runtime_publish"] {
+		s.violation("claim: a runtime repository's claim without runtime_repo and runtime_publish")
+		reply(404, nil)
+		return
+	}
+	j.claims++
+	if j.claims > 1 {
+		s.violation("claim replayed")
+		reply(409, nil)
+		return
+	}
+	j.state = "running"
+	name := j.Knobs.RuntimeRepo
+	if j.Knobs.ClaimRepo != "" {
+		name = j.Knobs.ClaimRepo
+	}
+	reply(200, map[string]any{
+		"spec": j.spec, "gateway_key": j.GatewayKey, "callback_token": j.CallbackToken,
+		"repository":  map[string]string{"provider": "runtime", "name": name},
+		"gateway_url": "https://" + GatewayHost, "platform_url": "https://" + PlatformHost,
+		"deadline": j.Deadline.UTC().Format(time.RFC3339Nano),
+	})
 }
 
 func (s *Server) git(w http.ResponseWriter, r *http.Request) {

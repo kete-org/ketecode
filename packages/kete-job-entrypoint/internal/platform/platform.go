@@ -20,6 +20,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bootenv"
 )
 
 // ErrGone is a 404 from a callback: the job was cancelled, timed out or is terminal (or the token
@@ -374,4 +376,64 @@ func (c *Client) Revoke(ctx context.Context, cloneHost, token string) error {
 		}
 	}
 	return last
+}
+
+// ErrRuntimeRefused is a kubevm claim response the entrypoint refuses (jobs-v1 "Fail closed
+// (kubevm)"): not a runtime claim for exactly the repository the runner resolved (a `clone`,
+// another name or provider), or a platform_url or deadline that doesn't hold. The entrypoint stops
+// as on a 404: no result, no finish, nothing cloned.
+var ErrRuntimeRefused = errors.New("platform: runtime claim refused")
+
+// ClaimRuntime is the kubevm profile's claim: the request announces RuntimeClaimFeatures, and the
+// answer must be a JobRuntimeClaimResponse naming localName (ParseRuntimeClaimResponse), for this
+// machine's platform URL, with a deadline after now. Retries as Claim.
+func (c *Client) ClaimRuntime(ctx context.Context, token, localName string, now time.Time) (*RuntimeClaimResponse, error) {
+	body, err := json.Marshal(ClaimRequest{ClaimToken: token, Features: RuntimeClaimFeatures})
+	if err != nil {
+		return nil, err
+	}
+	stop := time.Now().Add(c.o.ClaimWindow)
+	backoff := c.o.Backoff
+	for try := 1; ; try++ {
+		status, data, wrote, err := c.do(ctx, http.MethodPost, c.jobURL("claim"), body, "")
+		if err == nil {
+			defer clear(data)
+			switch status {
+			case http.StatusOK:
+				rc, perr := ParseRuntimeClaimResponse(data, localName)
+				if perr != nil {
+					return nil, fmt.Errorf("%w: %v", ErrRuntimeRefused, perr)
+				}
+				pu, uerr := bootenv.NormalizeHTTPSURL(rc.PlatformURL, false)
+				dl, derr := time.Parse(time.RFC3339Nano, rc.Deadline)
+				if uerr != nil || pu != c.o.BaseURL || derr != nil || !dl.After(now) {
+					return nil, fmt.Errorf("%w: platform_url or deadline", ErrRuntimeRefused)
+				}
+				return rc, nil
+			case http.StatusNotFound:
+				return nil, ErrGone
+			case http.StatusConflict:
+				return nil, ErrReplayed
+			default:
+				return nil, &StatusError{Status: status}
+			}
+		}
+		if wrote || try >= c.o.ClaimTries || time.Now().Add(backoff).After(stop) || ctx.Err() != nil {
+			return nil, fmt.Errorf("platform: claim: %w", err)
+		}
+		if err := sleepCtx(ctx, backoff); err != nil {
+			return nil, err
+		}
+		backoff *= 2
+	}
+}
+
+// FinishOutbox posts the kubevm finish, `{"outbox":true}` (JobRuntimeFinishRequest): the bundle,
+// audit and proxy log are in the runner's outbox; there is never a push_error.
+func (c *Client) FinishOutbox(ctx context.Context) error {
+	body, err := json.Marshal(NewRuntimeFinishRequest())
+	if err != nil {
+		return err
+	}
+	return c.expect(ctx, "finish", body, http.StatusAccepted, 3)
 }

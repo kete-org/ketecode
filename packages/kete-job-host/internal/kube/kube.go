@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -321,6 +322,7 @@ type Container struct {
 	Image           string           `json:"image"`
 	ImagePullPolicy string           `json:"imagePullPolicy,omitempty"`
 	Command         []string         `json:"command,omitempty"`
+	Args            []string         `json:"args,omitempty"`
 	Resources       *Resources       `json:"resources,omitempty"`
 	SecurityContext *SecurityContext `json:"securityContext,omitempty"`
 	VolumeMounts    []VolumeMount    `json:"volumeMounts,omitempty"`
@@ -362,10 +364,16 @@ type VolumeMount struct {
 	ReadOnly  bool   `json:"readOnly,omitempty"`
 }
 
-// Volume is a pod volume; only Secret volumes are built.
+// Volume is a pod volume: a Secret (the machine configuration) or a PVC (the outbox).
 type Volume struct {
-	Name   string        `json:"name"`
-	Secret *SecretVolume `json:"secret,omitempty"`
+	Name                  string        `json:"name"`
+	Secret                *SecretVolume `json:"secret,omitempty"`
+	PersistentVolumeClaim *ClaimVolume  `json:"persistentVolumeClaim,omitempty"`
+}
+
+// ClaimVolume mounts a PersistentVolumeClaim.
+type ClaimVolume struct {
+	ClaimName string `json:"claimName"`
 }
 
 // SecretVolume projects a Secret.
@@ -379,7 +387,15 @@ type PodStatus struct {
 	Phase             string            `json:"phase,omitempty"`
 	Reason            string            `json:"reason,omitempty"`
 	StartTime         string            `json:"startTime,omitempty"`
+	Conditions        []PodCondition    `json:"conditions,omitempty"`
 	ContainerStatuses []ContainerStatus `json:"containerStatuses,omitempty"`
+}
+
+// PodCondition is one pod condition (PodScheduled False / Unschedulable: no node fits).
+type PodCondition struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // ContainerStatus is one container's state.
@@ -462,20 +478,144 @@ func (c *Client) DeletePod(ctx context.Context, ns, name string, grace *int64) e
 // NodeBootID returns Node.status.nodeInfo.bootID (the kubevm boot-ID handoff: a job pod in its
 // own VM sees a different boot ID than its node's).
 func (c *Client) NodeBootID(ctx context.Context, node string) (string, error) {
+	n, err := c.Node(ctx, node)
+	return n.BootID, err
+}
+
+// NodeInfo is what the kubevm handoff reads from a Node: its boot ID and its addresses (the job's
+// host-boundary probe checks none of them answers).
+type NodeInfo struct {
+	BootID    string
+	Addresses []string // InternalIP and ExternalIP addresses, as the API lists them
+}
+
+// Node reads a Node's boot ID and IP addresses.
+func (c *Client) Node(ctx context.Context, node string) (NodeInfo, error) {
 	var n struct {
 		Status struct {
 			NodeInfo struct {
 				BootID string `json:"bootID"`
 			} `json:"nodeInfo"`
+			Addresses []struct {
+				Type    string `json:"type"`
+				Address string `json:"address"`
+			} `json:"addresses"`
 		} `json:"status"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/api/v1/nodes/"+url.PathEscape(node), nil, nil, &n); err != nil {
-		return "", err
+		return NodeInfo{}, err
 	}
 	if n.Status.NodeInfo.BootID == "" {
-		return "", fmt.Errorf("kube: node %s reports no boot ID", node)
+		return NodeInfo{}, fmt.Errorf("kube: node %s reports no boot ID", node)
 	}
-	return n.Status.NodeInfo.BootID, nil
+	out := NodeInfo{BootID: n.Status.NodeInfo.BootID}
+	for _, a := range n.Status.Addresses {
+		if a.Type == "InternalIP" || a.Type == "ExternalIP" {
+			out.Addresses = append(out.Addresses, a.Address)
+		}
+	}
+	return out, nil
+}
+
+// PodLog returns a container's log, at most limitBytes (the job pod's stdout: phase lines only).
+func (c *Client) PodLog(ctx context.Context, ns, name, container string, limitBytes int) ([]byte, error) {
+	q := url.Values{"container": {container}, "limitBytes": {strconv.Itoa(limitBytes)}}
+	return c.raw(ctx, nsPath("", ns, "pods", name)+"/log", q, limitBytes)
+}
+
+// raw GETs a non-JSON body of at most max bytes.
+func (c *Client) raw(ctx context.Context, path string, query url.Values, max int) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, RequestTimeout)
+	defer cancel()
+	u := c.base + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := c.token()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("kube: GET %s: %w", path, unwrapURL(err))
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(max)))
+	if err != nil {
+		return nil, fmt.Errorf("kube: reading %s: %w", path, unwrapURL(err))
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		se := &StatusError{Code: resp.StatusCode}
+		var st struct {
+			Reason string `json:"reason"`
+		}
+		if json.Unmarshal(data, &st) == nil {
+			se.Reason = st.Reason
+		}
+		return nil, se
+	}
+	return data, nil
+}
+
+// RuntimeClassExists reports whether a RuntimeClass exists (a 404 is false, any other error an
+// error).
+func (c *Client) RuntimeClassExists(ctx context.Context, name string) (bool, error) {
+	err := c.do(ctx, http.MethodGet, "/apis/node.k8s.io/v1/runtimeclasses/"+url.PathEscape(name), nil, nil, nil)
+	if IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// PVC is the subset of a PersistentVolumeClaim the controller builds and reads.
+type PVC struct {
+	APIVersion string     `json:"apiVersion"`
+	Kind       string     `json:"kind"`
+	Metadata   ObjectMeta `json:"metadata"`
+	Spec       PVCSpec    `json:"spec"`
+}
+
+// PVCSpec is the claim's spec subset.
+type PVCSpec struct {
+	AccessModes      []string   `json:"accessModes"`
+	StorageClassName *string    `json:"storageClassName,omitempty"`
+	Resources        *Resources `json:"resources"`
+}
+
+// CreatePVC creates a PersistentVolumeClaim.
+func (c *Client) CreatePVC(ctx context.Context, p PVC) (PVC, error) {
+	var out PVC
+	return out, c.do(ctx, http.MethodPost, nsPath("", p.Metadata.Namespace, "persistentvolumeclaims", ""), nil, p, &out)
+}
+
+// GetPVC reads a PersistentVolumeClaim.
+func (c *Client) GetPVC(ctx context.Context, ns, name string) (PVC, error) {
+	var p PVC
+	return p, c.do(ctx, http.MethodGet, nsPath("", ns, "persistentvolumeclaims", name), nil, nil, &p)
+}
+
+// ListPVCs lists the claims matching a label selector (one page of up to 500: the outbox
+// collector runs again).
+func (c *Client) ListPVCs(ctx context.Context, ns, selector string) ([]PVC, error) {
+	var l struct {
+		Items []PVC `json:"items"`
+	}
+	q := url.Values{"labelSelector": {selector}, "limit": {"500"}}
+	return l.Items, c.do(ctx, http.MethodGet, nsPath("", ns, "persistentvolumeclaims", ""), q, nil, &l)
+}
+
+// DeletePVC deletes a PersistentVolumeClaim; a missing one is not an error.
+func (c *Client) DeletePVC(ctx context.Context, ns, name string) error {
+	err := c.do(ctx, http.MethodDelete, nsPath("", ns, "persistentvolumeclaims", name), nil, nil, nil)
+	if IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // ServerVersion returns the API server's gitVersion (versions.kubernetes).

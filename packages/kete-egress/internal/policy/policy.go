@@ -31,6 +31,7 @@ const (
 	ReasonIdle           = "idle_timeout"       // no bytes either way for the stream-idle limit
 	ReasonResolveFailure = "resolve_failed"     // the proxy's own DNS lookup failed
 	ReasonUnsupported    = "unsupported_method" // CONNECT tunnels only; plain-HTTP proxying refused
+	ReasonUpstreamProxy  = "upstream_proxy"     // v2: the enterprise proxy refused, failed or answered CONNECT with non-2xx
 )
 
 // Policy is the immutable allowlist.

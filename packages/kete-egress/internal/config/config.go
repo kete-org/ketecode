@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/netip"
 	"sort"
+	"strings"
 
 	"github.com/kete-org/ketecode/packages/kete-egress/internal/hostname"
 	"github.com/kete-org/ketecode/packages/kete-egress/internal/phase"
@@ -94,14 +95,26 @@ type Config struct {
 	// registry host that appears in an allowlist without an entry (all its kind's shapes).
 	Registries map[string]registry.Spec
 	Limits     Limits
+
+	// Version is the document's version (1 or 2). A version 2 document (ParseV2, then Runtime)
+	// keys Allow and Registries by the allowlist entry's one spelling (Target.String(): the bare
+	// host for 443, `host:port` otherwise) and may set Upstream and Internal; a version 1 document
+	// never does.
+	Version  int
+	Upstream *Upstream
+	Internal []InternalRange
 }
 
-// AllHosts is the sorted union of every allowlisted host (the CA's name constraints).
+// AllHosts is the sorted union of every allowlisted host name (the CA's name constraints): the
+// host part of every entry, ports dropped.
 func (c *Config) AllHosts() []string {
 	set := map[string]bool{}
 	for _, ports := range c.Allow {
 		for _, hosts := range ports {
 			for h := range hosts {
+				if i := strings.LastIndexByte(h, ':'); i >= 0 {
+					h = h[:i]
+				}
 				set[h] = true
 			}
 		}
@@ -159,7 +172,30 @@ type rawLimits struct {
 	LogMaxBytes      *int64 `json:"log_max_bytes"`
 }
 
-// Parse reads and validates a configuration from r.
+// Load reads a configuration of either version: a version 2 document is validated by ParseV2 and
+// returned as its Runtime form, anything else by Parse (version 1).
+func Load(r io.Reader) (*Config, error) {
+	data, err := io.ReadAll(io.LimitReader(r, MaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	if len(data) > MaxBytes {
+		return nil, fmt.Errorf("config is larger than %d bytes", MaxBytes)
+	}
+	var head struct {
+		Version json.RawMessage `json:"version"`
+	}
+	if json.Unmarshal(data, &head) == nil && string(head.Version) == "2" {
+		v2, err := ParseV2(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		return v2.Runtime(), nil
+	}
+	return Parse(bytes.NewReader(data))
+}
+
+// Parse reads and validates a configuration v1 from r.
 func Parse(r io.Reader) (*Config, error) {
 	data, err := io.ReadAll(io.LimitReader(r, MaxBytes+1))
 	if err != nil {
@@ -187,7 +223,7 @@ func validate(raw *rawConfig) (*Config, error) {
 	if *raw.Version != Version {
 		return nil, fmt.Errorf("config: version %d is not supported (this build reads version %d)", *raw.Version, Version)
 	}
-	cfg := &Config{}
+	cfg := &Config{Version: Version}
 
 	var err error
 	if cfg.UIDs, err = validateUIDs(raw.UIDs); err != nil {

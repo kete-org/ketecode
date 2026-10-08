@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 )
 
@@ -105,4 +106,63 @@ func HostHeader(value string) (string, error) {
 		value = value[:i]
 	}
 	return Normalize(value)
+}
+
+// Entry is the allowlist spelling of a host and port (configuration v2): the bare host for 443,
+// `host:port` otherwise.
+func Entry(host string, port uint16) string {
+	if port == 443 {
+		return host
+	}
+	return host + ":" + strconv.Itoa(int(port))
+}
+
+// parsePort accepts 1-65535 without a leading zero.
+func parsePort(s string) (uint16, error) {
+	if s == "" || len(s) > 5 || s[0] == '0' {
+		return 0, fmt.Errorf("port %q: %w", s, ErrPort)
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 || n > 65535 {
+		return 0, fmt.Errorf("port %q: %w", s, ErrPort)
+	}
+	return uint16(n), nil
+}
+
+// AuthorityEntry is Authority for configuration v2: a CONNECT authority `host:port` with any port
+// 1-65535, returned as its allowlist spelling (Entry) and its host.
+func AuthorityEntry(authority string) (entry, host string, err error) {
+	h, p, err := net.SplitHostPort(authority)
+	if err != nil {
+		return "", "", fmt.Errorf("authority %q: %w", authority, err)
+	}
+	if host, err = Normalize(h); err != nil {
+		return "", "", err
+	}
+	port, err := parsePort(p)
+	if err != nil {
+		return "", "", err
+	}
+	return Entry(host, port), host, nil
+}
+
+// HostHeaderEntry is HostHeader for configuration v2: `host` (443) or `host:port`, returned as
+// its allowlist spelling (`host:443` is the bare host).
+func HostHeaderEntry(value string) (string, error) {
+	if strings.ContainsAny(value, "[]") {
+		return "", fmt.Errorf("host %q is an IP literal", value)
+	}
+	port := uint16(443)
+	if i := strings.LastIndexByte(value, ':'); i >= 0 {
+		p, err := parsePort(value[i+1:])
+		if err != nil {
+			return "", err
+		}
+		port, value = p, value[:i]
+	}
+	h, err := Normalize(value)
+	if err != nil {
+		return "", err
+	}
+	return Entry(h, port), nil
 }

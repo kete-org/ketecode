@@ -1,10 +1,13 @@
-# The e2e's fake world: a RuntimeClass mapped to runc (the placeholder driver's stand-in for a
-# VM-isolated class; only kind CI defines it), and the fake platform (TLS job-host-v2 routes, admin
+# The e2e's fake world: a RuntimeClass mapped to runc (the stand-in for a VM-isolated class; only
+# kind CI defines it, only test builds of the runner and the entrypoint accept it), scheduled on
+# the job worker, and the fake platform (TLS job-host-v2 routes, admin
 # API, CONNECT proxy) in its own namespace. @IMAGE@ is the test image by digest.
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata: {name: kete-test}
 handler: runc
+scheduling:
+  nodeSelector: {kete.dev/job-node: "true"}
 ---
 apiVersion: v1
 kind: Namespace
