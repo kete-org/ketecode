@@ -97,6 +97,9 @@ type V2 struct {
 	Advertise bool
 	// Boundary is the host's effective data boundary.
 	Boundary contract.DataBoundary
+	// PublishHold is how long a machine waits in `publishing` for the platform's authorization
+	// before it reports failed/hold_expired (Helm publish holdHours; default 24 h).
+	PublishHold time.Duration
 }
 
 // ErrHalted means the agent stopped polling and holds no machine: the operator must act
@@ -127,6 +130,12 @@ type Agent struct {
 	cleanup map[string]bool               // failed starts the driver may still hold
 	active  int                           // running workers
 	slow    int                           // workers inside a signature check or image preparation
+
+	// job-host-v2 publishing: each run machine as the last accepted desired state named it (its
+	// `publish.authorized` is the platform's go-ahead), and the publishing machines whose job is
+	// known to be removed (EndJob done since this agent started).
+	runs     map[string]contract.RunMachineV2
+	jobEnded map[string]bool
 }
 
 // New loads the state file (the host must be enrolled) and builds an agent.
@@ -164,6 +173,9 @@ func New(o Options) (*Agent, error) {
 		if err := o.V2.Boundary.Validate(); err != nil {
 			return nil, fmt.Errorf("agent: %w", err)
 		}
+		if o.V2.PublishHold <= 0 {
+			o.V2.PublishHold = 24 * time.Hour
+		}
 	}
 	st, err := store.Load()
 	if err != nil {
@@ -179,6 +191,7 @@ func New(o Options) (*Agent, error) {
 		o: o, t: o.DriverTimeouts.withDefaults(), allow: allow, store: store, st: st, phase: map[string]*phase.Buffer{},
 		busy: map[string]bool{}, again: map[string]bool{}, pending: map[string]*driver.Spec{}, cleanup: map[string]bool{},
 		prep: map[string]*prepJob{}, cancels: map[string]context.CancelFunc{},
+		runs: map[string]contract.RunMachineV2{}, jobEnded: map[string]bool{},
 	}
 	a.idle = sync.NewCond(&a.mu)
 	for _, m := range st.Machines {
@@ -384,6 +397,7 @@ const (
 	actStart
 	actObserve
 	actPrepare
+	actPublish
 )
 
 // next decides a machine's next driver action (and runs the deadline killer's decision).
@@ -397,7 +411,10 @@ func (a *Agent) next(id string) (action, *driver.Spec) {
 		}
 		return actNone, nil
 	}
-	if m.State != contract.StateStopping {
+	// A publishing machine's job has ended: its wait is bounded by the hold time and its publisher
+	// by its own deadline, not by the job's (the platform authorizes publishing after the job's
+	// finish, possibly close to its deadline).
+	if m.State != contract.StateStopping && m.State != contract.StatePublishing {
 		now := a.o.Now()
 		switch {
 		case now.After(m.Deadline.Add(contract.DeadlineGrace)):
@@ -419,6 +436,9 @@ func (a *Agent) next(id string) (action, *driver.Spec) {
 			return actPrepare, nil
 		}
 		return actNone, nil // its prepare work is running in this worker already
+	}
+	if m.State == contract.StatePublishing {
+		return actPublish, nil
 	}
 	return actObserve, nil
 }
@@ -482,6 +502,9 @@ func (a *Agent) step(ctx context.Context, id string) {
 		case actStop:
 			lines := a.drvLogs(ctx, id)
 			err := a.drvStop(ctx, id)
+			if err == nil {
+				err = a.discardUnpublished(ctx, id)
+			}
 			a.mu.Lock()
 			a.addLines(id, lines)
 			if m := a.find(id); m != nil && m.State == contract.StateStopping {
@@ -493,6 +516,9 @@ func (a *Agent) step(ctx context.Context, id string) {
 				}
 			}
 			a.mu.Unlock()
+			return
+		case actPublish:
+			a.publish(ctx, id)
 			return
 		case actPrepare:
 			a.prepare(ctx, id)
@@ -545,6 +571,12 @@ func (a *Agent) step(ctx context.Context, id string) {
 			case err != nil:
 				a.mu.Unlock()
 				return
+			case status == driver.StatusExited && m.WantsPublish:
+				// job-host-v2: the job ended; its outputs wait for the platform's go-ahead.
+				a.transition(m, contract.StatePublishing, "")
+				a.save()
+				a.mu.Unlock()
+				continue
 			case status == driver.StatusExited:
 				a.requestStopNoKick(m, contract.ReasonExited)
 				a.mu.Unlock()
@@ -592,8 +624,8 @@ func (a *Agent) checkCheap(rm contract.RunMachineV2, deadline time.Time) string 
 // checkV2 applies job-host-v2's run machine rules after v1's (a.mu held; no I/O): the machine's
 // own shape (JobHostV2RunMachine; JobHostV2KubernetesRunMachine on a kubernetes host: a repository
 // is required) → config_invalid; a repository outside the host's registry → repository_unknown.
-// This build has no publisher (P3 of the enterprise runtime): a machine asking for a push is
-// refused config_invalid rather than run and silently never published.
+// A machine asking for a push is refused config_invalid unless the driver publishes and the
+// repository has a writer (rather than run and silently never published).
 func (a *Agent) checkV2(rm contract.RunMachineV2) string {
 	check := rm.Validate
 	if a.o.Config.Driver == contract.DriverKubernetes {
@@ -606,7 +638,9 @@ func (a *Agent) checkV2(rm contract.RunMachineV2) string {
 		return contract.ReasonRepositoryUnknown
 	}
 	if rm.Publish != nil {
-		return contract.ReasonConfigInvalid
+		if pub, ok := a.o.Driver.(driver.Publisher); !ok || !pub.CanPublish(rm.Repository.Name) {
+			return contract.ReasonConfigInvalid
+		}
 	}
 	return ""
 }
@@ -780,6 +814,10 @@ func (a *Agent) assign(ctx context.Context, rm contract.RunMachineV2) {
 		MachineID: rm.MachineID, JobID: rm.JobID, Image: rm.Image, Deadline: deadline.UTC(),
 		AcceptedAt: now, State: contract.StatePreparing, Since: now,
 	})
+	if a.o.V2 != nil && rm.Publish != nil && contract.ValidJobBranch(rm.Publish.Branch) {
+		m := &a.st.Machines[len(a.st.Machines)-1]
+		m.WantsPublish, m.PublishBranch = true, rm.Publish.Branch
+	}
 	a.phase[rm.MachineID] = &phase.Buffer{}
 	m := a.find(rm.MachineID)
 	a.o.Log.Info("machine", "machine_id", m.MachineID, "job_id", m.JobID, "state", m.State, "reason", "")
@@ -797,8 +835,10 @@ func (a *Agent) assign(ctx context.Context, rm contract.RunMachineV2) {
 // answered report carried in a terminal state (tombstones that may now be forgotten).
 func (a *Agent) apply(ctx context.Context, d desiredState, sentTerminal map[string]bool) {
 	run := map[string]bool{}
+	clear(a.runs)
 	for _, rm := range d.Run {
 		run[rm.MachineID] = true
+		a.runs[rm.MachineID] = rm
 	}
 	destroy := map[string]bool{}
 	for _, id := range d.Destroy {
@@ -885,6 +925,10 @@ func (a *Agent) buildReport() (contract.ReportV2, map[string]bool, map[string]bo
 			a.phase[m.MachineID] = b
 		}
 		om.PhaseLines, om.PhaseLinesDropped = b.Take()
+		if m.Publish != nil && m.State == contract.StateDestroyed && m.Reason == contract.ReasonExited {
+			p := *m.Publish
+			om.Publish = &p
+		}
 		r.Machines = append(r.Machines, om)
 		sent[m.MachineID] = true
 		if contract.Terminal(m.State) {
@@ -1161,6 +1205,9 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 		switch {
 		case a.busy[id]:
 			a.kick(ctx, id) // its worker goes round again
+		case m.State == contract.StatePublishing:
+			// Its job pod is gone by design; the publisher, if started, is picked up again.
+			a.kick(ctx, id)
 		case !inDriver[id] && m.State == contract.StateStopping:
 			a.transition(m, contract.StateDestroyed, m.StopReason)
 		case !inDriver[id]:
@@ -1335,4 +1382,142 @@ func (a *Agent) decodeResponse(body []byte) (pollResponse, error) {
 		InReplyTo: p.InReplyTo, HostID: p.HostID, Status: p.Status, NextPollAfter: p.NextPollAfter,
 		Desired: desiredState{Revision: *p.Desired.Revision, Run: run, Destroy: *p.Desired.Destroy},
 	}, nil
+}
+
+// ---------------------------------------------------------------- publishing (job-host-v2)
+
+// publish advances a machine in `publishing` (its worker; a.mu not held): the job's pod is removed
+// (its outputs kept); without the platform's go-ahead — `publish.authorized` in the last accepted
+// desired state, which still runs the machine — it waits up to the hold time; with it the driver's
+// publisher runs once; the outcome is recorded first, then the publisher and (except after
+// `failed`) the outputs are removed, and the machine ends destroyed/exited with the outcome on
+// its tombstone. Every step is retried by the next supervise round when it fails.
+func (a *Agent) publish(ctx context.Context, id string) {
+	pub, ok := a.o.Driver.(driver.Publisher)
+	a.mu.Lock()
+	m := a.find(id)
+	if !ok || a.o.V2 == nil || m == nil || m.State != contract.StatePublishing {
+		a.mu.Unlock()
+		return
+	}
+	ended, started, since, recorded := a.jobEnded[id], m.PublishStarted, m.Since, m.Publish != nil
+	rm, inRun := a.runs[id]
+	a.mu.Unlock()
+
+	if !ended {
+		c, cancel := a.withTimeout(ctx, a.t.Stop)
+		err := pub.EndJob(c, id)
+		cancel()
+		if err != nil {
+			a.o.Log.Warn("publish_end_job_failed", "machine_id", id, "error", err.Error())
+			return
+		}
+		a.mu.Lock()
+		a.jobEnded[id] = true
+		a.mu.Unlock()
+	}
+	var outcome contract.PublishOutcome
+	switch {
+	case recorded:
+	case !started:
+		authorized := inRun && rm.Publish != nil && rm.Publish.Authorized && rm.Repository != nil
+		if !authorized || a.o.Now().Sub(since) > a.o.V2.PublishHold {
+			if a.o.Now().Sub(since) <= a.o.V2.PublishHold {
+				return // waiting for the platform's go-ahead
+			}
+			outcome = contract.PublishOutcome{Status: contract.PublishFailed, Reason: "hold_expired"}
+			break
+		}
+		c, cancel := a.withTimeout(ctx, a.t.Start)
+		err := pub.StartPublish(c, driver.PublishSpec{MachineID: id, JobID: rm.JobID, Repository: *rm.Repository, Branch: rm.Publish.Branch, OpenMR: rm.Publish.OpenMR})
+		cancel()
+		if err != nil {
+			a.o.Log.Warn("publish_start_failed", "machine_id", id, "error", err.Error())
+			return
+		}
+		a.mu.Lock()
+		if m := a.find(id); m != nil && m.State == contract.StatePublishing {
+			m.PublishStarted = true
+			if contract.ValidJobBranch(rm.Publish.Branch) {
+				m.PublishBranch = rm.Publish.Branch
+			}
+			a.o.Log.Info("publish_started", "machine_id", id, "job_id", m.JobID)
+			a.save()
+		}
+		a.mu.Unlock()
+		return
+	default:
+		c, cancel := a.withTimeout(ctx, a.t.Status)
+		o, done, err := pub.PublishResult(c, id)
+		cancel()
+		if err != nil || !done {
+			return
+		}
+		outcome = o
+	}
+
+	a.mu.Lock()
+	m = a.find(id)
+	if m == nil || m.State != contract.StatePublishing {
+		a.mu.Unlock()
+		return
+	}
+	if !recorded {
+		o := a.boundOutcome(outcome, m.PublishBranch)
+		m.Publish = &o
+		a.o.Log.Info("publish_outcome", "machine_id", id, "job_id", m.JobID, "status", o.Status, "reason", o.Reason)
+		a.save()
+	}
+	keep := m.Publish.Status == contract.PublishFailed && m.Publish.Reason != "hold_expired"
+	a.mu.Unlock()
+	c, cancel := a.withTimeout(ctx, a.t.Stop)
+	err := pub.DiscardOutputs(c, id, keep)
+	cancel()
+	if err != nil {
+		a.o.Log.Warn("publish_cleanup_failed", "machine_id", id, "error", err.Error())
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if m := a.find(id); m != nil && m.State == contract.StatePublishing {
+		delete(a.jobEnded, id)
+		a.transition(m, contract.StateDestroyed, contract.ReasonExited)
+		a.save()
+	}
+}
+
+// boundOutcome applies the report's rules to a publisher's outcome: the branch is the platform's
+// (job metadata), the references are dropped when the boundary omits them, and an outcome that
+// still doesn't fit the contract (for instance `created` without its SHAs while references are
+// sent) becomes failed/publisher_failed.
+func (a *Agent) boundOutcome(o contract.PublishOutcome, branch string) contract.PublishOutcome {
+	o.Branch = branch
+	if a.o.V2.Boundary.PublishRefs == "omit" {
+		o.BaseSHA, o.CommitSHA, o.MR = "", "", nil
+	}
+	bad := o.Validate() != nil ||
+		(a.o.V2.Boundary.PublishRefs == "send" && o.Status == contract.PublishCreated && (o.BaseSHA == "" || o.CommitSHA == "" || branch == ""))
+	if bad {
+		return contract.PublishOutcome{Status: contract.PublishFailed, Reason: "publisher_failed", Branch: branch}
+	}
+	return o
+}
+
+// discardUnpublished removes the outputs of a machine that asked to publish and is being
+// destroyed because the platform dropped it (desired) or the host was disabled: it is never
+// published (job-host-v2 "Desired state"). Other ends (crash, deadline) leave the outputs to the
+// driver's own expiry.
+func (a *Agent) discardUnpublished(ctx context.Context, id string) error {
+	pub, ok := a.o.Driver.(driver.Publisher)
+	a.mu.Lock()
+	m := a.find(id)
+	discard := ok && m != nil && m.WantsPublish && m.State == contract.StateStopping &&
+		(m.StopReason == contract.ReasonDesired || m.StopReason == contract.ReasonHostDisabled)
+	a.mu.Unlock()
+	if !discard {
+		return nil
+	}
+	c, cancel := a.withTimeout(ctx, a.t.Stop)
+	defer cancel()
+	return pub.DiscardOutputs(c, id, false)
 }

@@ -1,0 +1,30 @@
+{{- /*
+The publisher's configuration (P3): a ConfigMap in the jobs namespace that publisher pods mount at
+/etc/kete-publish. Rendered by Helm; the controller has no access to ConfigMaps, so it can't point
+a publisher (and the writer credential it holds) at another host, proxy or CA.
+*/ -}}
+{{- if include "kete-runner.publishing" . }}
+{{- $repos := list -}}
+{{- range .Values.repositorySources }}
+{{- if .writerSecret }}
+{{- $r := dict "name" .name "clone_url" .url "writer_secret" .writerSecret -}}
+{{- with .apiURL }}{{ $_ := set $r "api_url" . }}{{ end -}}
+{{- with .writerUsername }}{{ $_ := set $r "username" . }}{{ end -}}
+{{- $repos = append $repos $r -}}
+{{- end }}
+{{- end }}
+{{- $cfg := dict "platform_url" (trimSuffix "/" .Values.platform.url) "repositories" $repos -}}
+{{- with .Values.proxy.url }}{{ $_ := set $cfg "proxy" . }}{{ end -}}
+{{- with .Values.proxy.noProxy }}{{ $_ := set $cfg "no_proxy" . }}{{ end -}}
+{{- with .Values.publisher.commitIdentity }}{{ $_ := set $cfg "commit_identity" . }}{{ end -}}
+{{- if .Values.publisher.ciOnJobBranches }}{{ $_ := set $cfg "ci_on_job_branches" true }}{{ end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kete-publisher
+  namespace: {{ .Values.jobs.namespace | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+data:
+  publish.json: {{ toJson $cfg | quote }}
+{{- end }}

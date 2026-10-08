@@ -22,7 +22,14 @@
 {{- if .Values.jobs.proxy.authSecret.name }}{{ $_ := set $k "job_proxy_auth_file" (printf "/etc/kete-runner/job-proxy/%s" .Values.jobs.proxy.authSecret.key) }}{{ end -}}
 {{- if eq .Values.podDriver "kubevm" -}}
 {{- $sources := list -}}
-{{- range .Values.repositorySources }}{{ $sources = append $sources (dict "name" .name "clone_url" .url "clone_secret" .cloneSecret) }}{{ end -}}
+{{- range .Values.repositorySources -}}
+{{- $src := dict "name" .name "clone_url" .url "clone_mode" (.cloneMode | default (ternary "static" "minted" (not (empty .cloneSecret)))) -}}
+{{- with .cloneSecret }}{{ $_ := set $src "clone_secret" . }}{{ end -}}
+{{- with .minterSecret }}{{ $_ := set $src "minter_secret" . }}{{ end -}}
+{{- with .writerSecret }}{{ $_ := set $src "writer_secret" . }}{{ end -}}
+{{- with .apiURL }}{{ $_ := set $src "api_url" . }}{{ end -}}
+{{- $sources = append $sources $src -}}
+{{- end -}}
 {{- with $sources }}{{ $_ := set $k "repository_sources" . }}{{ end -}}
 {{- $internal := list -}}
 {{- range .Values.jobs.egress.cidrs }}{{ $internal = append $internal (dict "cidr" . "ports" $.Values.jobs.egress.ports) }}{{ end -}}
@@ -30,6 +37,13 @@
 {{- with .Values.jobs.outbox.storageClass }}{{ $_ := set $jp "outbox_storage_class" . }}{{ end -}}
 {{- with $internal }}{{ $_ := set $jp "internal" . }}{{ end -}}
 {{- $_ := set $k "job_pod" $jp -}}
+{{- with .Values.proxy.noProxy }}{{ $_ := set $k "no_proxy" . }}{{ end -}}
+{{- if include "kete-runner.publishing" . -}}
+{{- $pub := dict "image" (include "kete-runner.image" .) "config_map" "kete-publisher" "cpu" (toString .Values.publisher.resources.cpu) "memory" (toString .Values.publisher.resources.memory) "timeout_seconds" (int .Values.publisher.timeoutSeconds) -}}
+{{- with .Values.publisher.caBundleSecret }}{{ $_ := set $pub "ca_secret" . }}{{ end -}}
+{{- with .Values.publisher.proxyAuthSecret }}{{ $_ := set $pub "proxy_auth_secret" . }}{{ end -}}
+{{- $_ := set $k "publisher" $pub -}}
+{{- end -}}
 {{- end -}}
 {{- $cfg := dict
   "platform_url" (trimSuffix "/" .Values.platform.url)

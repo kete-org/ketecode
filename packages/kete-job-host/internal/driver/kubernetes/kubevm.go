@@ -51,6 +51,9 @@ type KubeVMOptions struct {
 	Sources          map[string]config.RepositorySourceFile
 	// ReadSecret reads a Secret's data in the controller's namespace (the clone credential).
 	ReadSecret func(ctx context.Context, name string) (map[string][]byte, error)
+	// Credential, when set, obtains and checks the job's read credential (P3: static or minted,
+	// base_ref resolved); its *driver.FailedError reasons are kept. nil: the static Secret only.
+	Credential func(ctx context.Context, s driver.Spec, src config.RepositorySourceFile) (username, token string, err error)
 	// The enterprise proxy for the jobs' egress (nil: none), its credentials and the extra
 	// roots for upstream TLS; ReadProxyAuth and ReadCABundle are read for each job (rotation).
 	Proxy         *url.URL
@@ -151,14 +154,21 @@ func KubeVMSecret(o KubeVMOptions) SecretFunc {
 		if !ok {
 			return nil, &driver.FailedError{Reason: contract.ReasonRepositoryUnknown, Err: errors.New("no source for the repository")}
 		}
-		cred, err := o.ReadSecret(ctx, src.CloneSecret)
-		if err != nil {
-			return nil, &driver.FailedError{Reason: contract.ReasonRepositoryUnavailable, Err: fmt.Errorf("clone credential: %w", err)}
-		}
-		username, token := strings.TrimSpace(string(cred["username"])), strings.TrimSpace(string(cred["token"]))
-		clear(cred["token"])
-		if username == "" || token == "" {
-			return nil, &driver.FailedError{Reason: contract.ReasonRepositoryUnavailable, Err: errors.New("the clone Secret needs keys username and token")}
+		var username, token string
+		if o.Credential != nil {
+			if username, token, err = o.Credential(ctx, s, src); err != nil {
+				return nil, err
+			}
+		} else {
+			cred, err := o.ReadSecret(ctx, src.CloneSecret)
+			if err != nil {
+				return nil, &driver.FailedError{Reason: contract.ReasonRepositoryUnavailable, Err: fmt.Errorf("clone credential: %w", err)}
+			}
+			username, token = strings.TrimSpace(string(cred["username"])), strings.TrimSpace(string(cred["token"]))
+			clear(cred["token"])
+			if username == "" || token == "" {
+				return nil, &driver.FailedError{Reason: contract.ReasonRepositoryUnavailable, Err: errors.New("the clone Secret needs keys username and token")}
+			}
 		}
 		// The internal ranges open the proxy user's way to their ports: none may contain the node
 		// or its pods (the controller already refused ranges holding the Kubernetes API).

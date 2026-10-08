@@ -71,8 +71,8 @@ func ValidCloneURL(raw string) bool {
 
 func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
 	if k.PodDriver != PodDriverKubeVM {
-		if f.JobPod != nil || len(f.RepositorySources) > 0 {
-			return errors.New("config: job_pod and repository_sources are for the kubevm pod driver")
+		if f.JobPod != nil || len(f.RepositorySources) > 0 || f.Publisher != nil || len(f.NoProxy) > 0 {
+			return errors.New("config: job_pod, repository_sources, no_proxy and publisher are for the kubevm pod driver")
 		}
 		return nil
 	}
@@ -138,15 +138,34 @@ func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
 		OutboxStorageClass: jp.OutboxStorageClass, OutboxAccessMode: mode, OutboxHold: time.Duration(hold) * time.Hour, Internal: jp.Internal,
 	}
 	k.Sources = map[string]RepositorySourceFile{}
+	needPublisher := false
 	for _, src := range f.RepositorySources {
 		if !slices.Contains(k.Repositories, src.Name) || k.Sources[src.Name].Name != "" {
 			return fmt.Errorf("config: repository source %q names no served repository, or repeats one", src.Name)
 		}
-		if !ValidCloneURL(src.CloneURL) || !contract.ValidKubernetesName(src.CloneSecret) {
-			return fmt.Errorf("config: repository source %q: clone_url must be https://host[:port]/path and clone_secret a Secret name", src.Name)
+		if !ValidCloneURL(src.CloneURL) {
+			return fmt.Errorf("config: repository source %q: clone_url must be https://host[:port]/path", src.Name)
+		}
+		if err := checkSourceP3(&src); err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
+		if src.CloneMode == "" {
+			src.CloneMode = CloneStatic
+		}
+		if src.WriterSecret != "" {
+			needPublisher = true
 		}
 		k.Sources[src.Name] = src
 	}
+	if err := validNoProxy(f.NoProxy); err != nil {
+		return err
+	}
+	k.NoProxy = f.NoProxy
+	pub, err := parsePublisher(f.Publisher, needPublisher)
+	if err != nil {
+		return err
+	}
+	k.Publisher = pub
 	for _, r := range k.Repositories {
 		if _, ok := k.Sources[r]; !ok {
 			return fmt.Errorf("config: repository %q has no repository source (the kubevm pod driver clones only from a configured source)", r)

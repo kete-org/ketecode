@@ -10,7 +10,8 @@
 //	              POST /token     {token}              register an enrollment token
 //	              GET  /hosts                          hosts with status, facts, report count, machines
 //	              POST /approve   {host_id}            set a host active
-//	              POST /assign    {host_id, machine_id, job_id, image, deadline_seconds, repository[, base_ref, claim_token]}
+//	              POST /assign    {host_id, machine_id, job_id, image, deadline_seconds, repository[, base_ref, claim_token, publish {branch, open_mr}]}
+//	              POST /authorize {host_id, machine_id}            the platform's publish go-ahead
 //	              POST /withdraw  {host_id, machine_id}
 //	              GET  /proxy                          CONNECTs seen by the proxy
 //	-proxy      an HTTP CONNECT proxy (default :3128; "" off) that counts tunnels, so the e2e can
@@ -99,7 +100,8 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 		type machine struct {
 			State, Reason string
 			Terminal      bool
-			PhaseLines    []contract.PhaseLine `json:",omitempty"`
+			Publish       *contract.PublishOutcome `json:",omitempty"`
+			PhaseLines    []contract.PhaseLine     `json:",omitempty"`
 		}
 		type host struct {
 			ID, Status   string
@@ -117,7 +119,7 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 				o.LastReport = &h.ReportsV2[n-1]
 			}
 			for mid, m := range h.Machines {
-				o.Machines[mid] = machine{State: m.Observed, Reason: m.ObservedReason, Terminal: m.Terminal, PhaseLines: m.PhaseLines}
+				o.Machines[mid] = machine{State: m.Observed, Reason: m.ObservedReason, Terminal: m.Terminal, Publish: m.Publish, PhaseLines: m.PhaseLines}
 			}
 			for mid, m := range h.Unknown {
 				o.Unattributed[mid] = machine{State: m.State, Reason: m.Reason, Terminal: contract.Terminal(m.State)}
@@ -149,6 +151,11 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 			// ClaimToken is the job's claim token on the jobs-v1 side (the entrypoint fake's
 			// job, kubevm e2e); random when absent.
 			ClaimToken string `json:"claim_token"`
+			// Publish asks for a push (not yet authorized: POST /authorize).
+			Publish *struct {
+				Branch string `json:"branch"`
+				OpenMR bool   `json:"open_mr"`
+			} `json:"publish"`
 		}
 		if !body(r, &in) {
 			http.Error(w, "bad body", 400)
@@ -168,6 +175,9 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 			}
 			run.Repository = &contract.RunRepository{Name: in.Repository, BaseRef: ref}
 		}
+		if in.Publish != nil {
+			run.Publish = &contract.RunPublish{Branch: in.Publish.Branch, OpenMR: in.Publish.OpenMR}
+		}
 		claim := hex.EncodeToString(tok[:])
 		if in.ClaimToken != "" {
 			claim = in.ClaimToken
@@ -177,6 +187,17 @@ func adminAPI(p *fakeplatform.Platform, caPEM []byte, connects *atomic.Int64) ht
 			StorageHost: "storage.invalid.example", HostProfile: seal.ProfileKubeVM,
 		}
 		reply(w, map[string]bool{"ok": true}, p.AssignV2(in.HostID, run, cfg))
+	})
+	mux.HandleFunc("POST /authorize", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			HostID    string `json:"host_id"`
+			MachineID string `json:"machine_id"`
+		}
+		if !body(r, &in) {
+			http.Error(w, "bad body", 400)
+			return
+		}
+		reply(w, map[string]bool{"ok": true}, p.Authorize(in.HostID, in.MachineID))
 	})
 	mux.HandleFunc("POST /withdraw", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {

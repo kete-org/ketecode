@@ -256,7 +256,9 @@ assign $M2 "$(fake_job mismatch job_id)" "$JOB_IMAGE" ",\"claim_token\":\"$(fake
 wait_for 300 "M2 exited" is_state $M2 destroyed/exited
 jq -e 'any(.[]; .step == "claim" and .event == "failed" and .code == "repository")' <<<"$(phase_lines $M2)" >/dev/null || fail "M2 phase lines $(phase_lines $M2)"
 stop_fake
-jq -e '[.[].kind] == ["claim"]' "$STATE/mismatch/calls.json" >/dev/null || fail "after a refused claim: $(jq -c '[.[].kind]' "$STATE/mismatch/calls.json")"
+# The controller resolves the base ref on the git host before the pod starts (P3: git calls, not
+# the platform's); the job itself sent only the claim.
+jq -e '[.[].kind | select(. != "git")] == ["claim"]' "$STATE/mismatch/calls.json" >/dev/null || fail "after a refused claim: $(jq -c '[.[].kind]' "$STATE/mismatch/calls.json")"
 log "ok: the wrong repository was refused; nothing but the claim reached the platform"
 start_fake idle -linger # fronts the platform for the rest
 

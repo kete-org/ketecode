@@ -6,15 +6,19 @@ controller in `kubernetes` mode: it enrolls with the Kete platform under the job
 polls with signed requests (outbound HTTPS only, through your proxy if you set one), and runs each
 unattended job in its own VM-isolated pod in a dedicated jobs namespace.
 
-> **Status: pieces P1 and P2.** The controller, its state model, RBAC, admission policies,
-> NetworkPolicies and the **`kubevm` pod driver** (each job the released job image's entrypoint,
-> profile `kubevm`, in a VM-isolated pod with an outbox volume) are built. On kind CI a real job
-> pod runs end to end under a test-only runc RuntimeClass with test builds of the runner and the
-> entrypoint; **Kata itself has not yet run a full agent job** (spike S0 ran the pre-claim steps and
-> a no-agent job in Kata; the acceptance run on x86 KVM hardware is open, see
-> `docs/tasks/2026-10-08-k8s-runner-p2/handoff.md`). Still missing: the GitLab publisher (P3: an
-> outbox is kept, never published), the platform serving job-host-v2 (P4) and a released runner
-> image. A release runner image refuses `podDriver: placeholder` and the `kete-test` RuntimeClass.
+> **Status: pieces P1, P2 and P3.** The controller, its state model, RBAC, admission policies,
+> NetworkPolicies, the **`kubevm` pod driver** (each job the released job image's entrypoint,
+> profile `kubevm`, in a VM-isolated pod with an outbox volume) and the **GitLab self-managed
+> provider and publisher** (per-job clone tokens, publisher pods that validate the job's bundle and
+> push a new branch with a draft merge request) are built. On kind CI a real job pod runs and is
+> published end to end against a fake GitLab under a test-only runc RuntimeClass with test builds of
+> the runner and the entrypoint; **Kata itself has not yet run a full agent job or a publisher**
+> (spike S0 ran the pre-claim steps and a no-agent job in Kata; the acceptance run on x86 KVM
+> hardware is open, see `docs/tasks/2026-10-08-k8s-runner-p2/handoff.md`), and **no real GitLab
+> has been used yet** (`docs/tasks/2026-10-09-k8s-runner-p3/handoff.md`). Still missing: the
+> platform serving job-host-v2 (P4), audit-log shipping to an enterprise sink, and a released
+> runner image. A release runner image refuses `podDriver: placeholder` and the `kete-test`
+> RuntimeClass.
 
 ## What it installs
 
@@ -22,13 +26,14 @@ unattended job in its own VM-isolated pod in a dedicated jobs namespace.
 |---|---|---|
 | Deployment `kete-runner` (1 replica, `Recreate`) | release (e.g. `kete-system`) | the controller, non-root, read-only root, all capabilities dropped, Pod Security `restricted` compliant, no ports, no probes on a port |
 | ServiceAccount `kete-runner` | release | the controller's only identity |
-| Role + RoleBinding | release | `get`/`update` on the keys and state Secrets and the Lease **by name**; `create` Secrets and Leases (first start); `get`/`delete` on the enrollment token Secret by name; `get` on the repositories' clone Secrets by name |
-| Role + RoleBinding | jobs | pods `create, get, list, delete`; `pods/log` `get` (phase lines); secrets `create, get, delete`; persistentvolumeclaims `create, get, list, delete` (outboxes); events `create`. No `pods/exec`, `attach`, `portforward` |
+| Role + RoleBinding | release | `get`/`update` on the keys and state Secrets and the Lease **by name**; `create` Secrets and Leases (first start); `get`/`delete` on the enrollment token Secret by name; `get` on the repositories' static clone Secrets and minter Secrets by name |
+| Role + RoleBinding | jobs | pods `create, get, list, delete` (job and publisher pods); `pods/log` `get` (phase lines); secrets `create, delete` (**no `get`**: the writer Secrets there stay unreadable to the controller); persistentvolumeclaims `create, get, list, delete` (outboxes); events `create`. No `pods/exec`, `attach`, `portforward` |
 | ClusterRole + Binding | — | `get` on nodes (the node boot ID and addresses the job checks), on the configured RuntimeClasses by name (`runtime_class_missing`) and on this release's admission policies and bindings by name (the fail-closed guard) |
 | ConfigMap `kete-runner-config` | release | the controller's `config.json` (no secret in it) |
+| ConfigMap `kete-publisher` (when a repository publishes) | jobs | the publisher's `publish.json`: repositories, GitLab URLs, writer Secret names, proxy (no secret); the controller has no access to ConfigMaps |
 | Namespace `kete-jobs` (optional) | — | Pod Security `privileged` (job pods add capabilities inside their own VM), audit/warn `baseline` |
-| 4 ValidatingAdmissionPolicies + Bindings | cluster | job pods, Secrets and outbox claims in the jobs namespace, the controller's own Secrets (below) |
-| NetworkPolicies | release, jobs | controller: no ingress, egress to DNS, the API server and the platform/proxy only; jobs: default deny, DNS and the configured egress |
+| 5 ValidatingAdmissionPolicies + Bindings | cluster | job and publisher pods, Secrets (and the publisher Secrets' exception) and outbox claims in the jobs namespace, the controller's own Secrets (below) |
+| NetworkPolicies | release, jobs | controller: no ingress, egress to DNS, the API server, the platform/proxy and (optionally) GitLab only; job pods: default deny, DNS and the configured egress; publisher pods: DNS and `publisher.egress` (GitLab or the proxy) only |
 
 The Lease (`coordination.k8s.io`), the keys Secret `kete-runner-keys` and the state Secret
 `kete-runner-state` are created by the controller at first start; `helm uninstall` leaves them, so a
@@ -64,9 +69,21 @@ unless:
    `container_kvm_t`, `container_engine_t`) and no SELinux user/role, no `procMount: Unmasked`, no
    pod sysctls, no Windows host process.
 
+Publisher pods (label `kete.dev/role: publish`) are held to more: exactly one container, the runner
+image (`image.repository@image.digest`), command `/usr/local/bin/kete-job-host` with `publish` as
+the first argument, no environment, `runAsNonRoot`, read-only root file system, no added
+capabilities, every mount read-only, and only these volumes: the machine's own outbox claim with
+`readOnly: true`, the `kete-publisher` ConfigMap and the publisher Secrets. **No other pod — no job
+pod — may mount a publisher Secret** (directly or through a projected volume).
+
 `kete-runner-<jobs ns>-secrets` — only the controller writes Secrets in the jobs namespace, and only
 Opaque `kete-job-*` ones (the per-machine boot-ID/config Secrets), so nothing can squat a machine's
-Secret name. P3's GitLab writer Secret will get its own, named exception.
+Secret name. The one named exception: the **publisher Secrets** (every `writerSecret`,
+`publisher.caBundleSecret`, `publisher.proxyAuthSecret`), which you (or External Secrets) create.
+
+`kete-runner-<jobs ns>-publisher-secrets` — the controller may not create, change or delete a
+publisher Secret (and its Role has no `get` on Secrets in the jobs namespace), so it can neither read
+the GitLab writer credential nor swap it for one it knows.
 
 `kete-runner-<jobs ns>-outboxes` — only the controller writes PersistentVolumeClaims in the jobs
 namespace, only `kete-outbox-<machine-id>` labelled with that machine, `ReadWriteOnce`, without a
@@ -233,6 +250,98 @@ image's cosign signature is verified by the controller before a pod is created (
 TUF cache in an `emptyDir`; the registry and Sigstore are reached through the proxy, or the
 controller's `networkPolicy.platform` must allow them).
 
+## GitLab (self-managed) and publishing
+
+Each job of a runtime repository (`gitlab:group/project`) clones from your GitLab with a **read**
+credential the controller hands only to that job's root entrypoint, and — when the job asked for a
+push — is published by a **publisher pod** that holds the only **write** credential. Kete's
+platform stores the repository's name only; GitLab URLs, tokens, the source and the diff never
+reach it (spec §3, §5).
+
+### Bot user and tokens
+
+Create a bot user (e.g. `kete-bot`) and, per repository:
+
+| Credential | Where | Scopes / role | Used by |
+|---|---|---|---|
+| **Writer** (`writerSecret`, key `token`) | Secret in the **jobs** namespace | the bot's personal access token: `api`, `write_repository`; the bot is **Developer** on the project | publisher pods only: project and branch reads, the create-only push, the draft merge request |
+| **Minter** (`minterSecret`, key `token`; `cloneMode: minted`, recommended) | Secret in the **release** namespace | a token with `api` of a user who is **Maintainer** on the project (GitLab requires Maintainer to create project access tokens) | the controller: per job it creates a project access token `kete-job-<machine>` (scope `read_repository`, role Reporter, expiring the next day), checks it by resolving the job's base branch, puts it in the job's Secret, and revokes it when the job reports `clone_done`, again when the job pod ends, and in a sweep every 5 minutes (tokens left by a restart) |
+| **Deploy token** (`cloneSecret`, keys `username`, `token`; `cloneMode: static`) | Secret in the **release** namespace | a project deploy token with `read_repository` | the controller copies it into each job's Secret (no revocation: rotate it yourself) |
+
+Use separate tokens for the minter and the writer even if one bot owns both: the writer must be
+the identity that **can't** push to your base branches (below), and a Maintainer usually can.
+
+```sh
+kubectl -n kete-jobs   create secret generic gitlab-kete-writer --from-literal=token=glpat-…   # jobs namespace
+kubectl -n kete-system create secret generic gitlab-kete-minter --from-literal=token=glpat-…   # release namespace
+```
+
+```yaml
+repositories: ["gitlab:payments/api"]
+repositorySources:
+  - name: "gitlab:payments/api"
+    url: "https://gitlab.corp/payments/api.git"
+    cloneMode: minted
+    minterSecret: gitlab-kete-minter
+    writerSecret: gitlab-kete-writer
+    writerUsername: kete-bot
+    # apiURL: https://corp.example/gitlab        # only for a relative URL root
+publisher:
+  caBundleSecret: corp-ca-publisher              # jobs namespace, key ca.crt (GitLab's / the proxy's CA)
+  proxyAuthSecret: corp-proxy-publisher          # jobs namespace, key auth (username:password), with proxy.url
+  egress: {cidrs: ["10.20.0.10/32"], ports: [3128]}   # the proxy, or GitLab's addresses on 443
+proxy:
+  noProxy: []                                    # e.g. [gitlab.corp] to reach GitLab directly
+networkPolicy:
+  repositories: {cidrs: [], ports: [443]}        # GitLab, when the controller reaches it directly
+```
+
+The controller and the publisher reach GitLab through `proxy.url` (the **controller's** proxy and
+credential, never the jobs') unless the host is in `proxy.noProxy`; TLS is always verified (system
+roots plus `caBundle` for the controller, plus `publisher.caBundleSecret` for publishers). URLs must
+be `https`, without credentials; the project path comes from the clone URL.
+
+### Protected branches
+
+The publisher refuses to push (`base_unprotected`) unless **both the job's base branch and the
+project's default branch are protected and the writer can't push to them** — GitLab's `can_push`
+for the bot must be false. With a Developer bot the default protection ("Allowed to push:
+Maintainers") is enough; if the bot is a Maintainer, set "Allowed to push and merge" to "No one" or
+a group without it. A branch whose protection can't be read fails `protection_unknown`.
+
+### What a publish does
+
+When the job pod has exited and the platform's poll answer carries `publish.authorized: true` (the
+platform accepted the job's `finish`; a job cancelled meanwhile is dropped and its outbox deleted,
+never published), the controller deletes the job pod and starts `kete-publish-<machine>`. The
+publisher, with nothing but its read-only mounts:
+
+1. reads `manifest.json` (strict, this job, this repository and ref) and `bundle.tar.gz` (size and
+   SHA-256 as the manifest says) from the outbox — all of it as hostile input;
+2. validates the bundle with the Go port of the platform's validator (`internal/bundle`, held to
+   the platform's own results on 226 bundles: `packages/kete-job-host/testdata/bundle-v1`):
+   limits, tar entry types (no symlinks), protected and CI paths, case collisions, secret shapes;
+3. checks that the job's recorded base commit is the base branch's head or an ancestor of it, both
+   branches' protection, and that the job branch `kete/job/<suffix>` doesn't exist;
+4. fetches the base commit's trees (git smart HTTP, protocol v2, `filter blob:none`, `deepen 1`) and
+   refuses changes that collide with them (symlinks, submodules, case collisions, paths under files);
+5. builds one commit whose only parent is the base (`[skip ci]` unless `publisher.ciOnJobBranches`,
+   author `publisher.commitIdentity`) and pushes it with a single create-only command (old id zero:
+   GitLab refuses it if the branch exists; never a force push);
+6. opens a **draft** merge request (`Draft: Kete job <id>`, fixed text with a link to the job page)
+   when the job asked for one and completed;
+7. writes its outcome — fixed codes only — as its termination message.
+
+The controller reports the outcome on the machine (job-host-v2 `publish`: `created`, `no_changes`,
+`refused` with `symlink`/`unreadable`/`bundle_invalid`/`base_unprotected`/`branch_exists`/
+`push_rejected`, `failed` with `processes_alive`/`proxy_failed`/`provider_unavailable`/
+`provider_error`/`protection_unknown`/`hold_expired`/`publisher_failed`), with the base and commit
+SHAs and the merge request only when `boundary.publishRefs: send`, then deletes the publisher and
+the outbox (a `failed` publish keeps the outbox until `jobs.outbox.holdHours` for inspection). A
+machine whose authorization doesn't come within `jobs.outbox.holdHours` reports
+`failed`/`hold_expired` and its outbox is deleted. Job pods never see the writer; publisher pods
+never run repository code.
+
 ## How the controller keeps state
 
 - **Keys** (Ed25519 signing, X25519 sealing) in `kete-runner-keys`, annotated with the fingerprint
@@ -257,7 +366,7 @@ controller's `networkPolicy.platform` must allow them).
 
 ## Tests
 
-`.github/workflows/kete-runner.yml` runs both on a two-node kind cluster with a local registry:
+`.github/workflows/kete-runner.yml` runs all three on a two-node kind cluster with a local registry:
 
 - `ci/e2e.sh` (P1) installs the chart (placeholder pod driver) against the job-host fake and checks
   enrollment through the proxy with the custom CA, RBAC, the admission policy, machines starting
@@ -271,6 +380,14 @@ controller's `networkPolicy.platform` must allow them).
   refusals: a claim naming another repository, a wrong node boot ID and a shared kernel under the
   release rule (`shared_kernel` before any write), a non-allowlisted RuntimeClass, a missing one
   (`runtime_class_missing`), an image that can't be pulled (`image_pull_failed`).
+- `ci/e2e-publish.sh` (P3) installs a third release against a fake GitLab (REST API v4 and git smart
+  HTTP through the real `git http-backend`, outside the cluster): a minted clone token checked,
+  used and revoked at `clone_done`; a real job that exits into `publishing`, nothing pushed before
+  the platform's go-ahead, then the publisher pod (its spec checked), a new branch on the base
+  commit, a draft merge request and the outcome on the platform; refusals with outboxes rewritten
+  as a compromised job could (two of the platform's bundle vectors, an unprotected base, an
+  existing branch, a missing manifest) and a machine dropped while waiting; RBAC and admission
+  around the writer Secret; no token in the controller's logs.
 
 The `kete-test` RuntimeClass (runc) exists only in CI; only test builds of the runner and the
 entrypoint accept it. GitHub's runners can't run Kata in kind, so CI proves the controller, the

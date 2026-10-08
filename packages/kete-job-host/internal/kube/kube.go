@@ -327,6 +327,9 @@ type Container struct {
 	SecurityContext *SecurityContext `json:"securityContext,omitempty"`
 	VolumeMounts    []VolumeMount    `json:"volumeMounts,omitempty"`
 	Env             []EnvVar         `json:"env,omitempty"`
+	// TerminationMessagePolicy File (the default) makes /dev/termination-log the container's
+	// termination message: the publisher's outcome (P3).
+	TerminationMessagePolicy string `json:"terminationMessagePolicy,omitempty"`
 }
 
 // EnvVar is a literal environment variable.
@@ -364,16 +367,25 @@ type VolumeMount struct {
 	ReadOnly  bool   `json:"readOnly,omitempty"`
 }
 
-// Volume is a pod volume: a Secret (the machine configuration) or a PVC (the outbox).
+// Volume is a pod volume: a Secret (the machine configuration, the publisher's credentials), a
+// PVC (the outbox) or a ConfigMap (the publisher's configuration).
 type Volume struct {
-	Name                  string        `json:"name"`
-	Secret                *SecretVolume `json:"secret,omitempty"`
-	PersistentVolumeClaim *ClaimVolume  `json:"persistentVolumeClaim,omitempty"`
+	Name                  string           `json:"name"`
+	Secret                *SecretVolume    `json:"secret,omitempty"`
+	PersistentVolumeClaim *ClaimVolume     `json:"persistentVolumeClaim,omitempty"`
+	ConfigMap             *ConfigMapVolume `json:"configMap,omitempty"`
 }
 
-// ClaimVolume mounts a PersistentVolumeClaim.
+// ClaimVolume mounts a PersistentVolumeClaim (ReadOnly: the publisher's view of an outbox).
 type ClaimVolume struct {
 	ClaimName string `json:"claimName"`
+	ReadOnly  bool   `json:"readOnly,omitempty"`
+}
+
+// ConfigMapVolume projects a ConfigMap.
+type ConfigMapVolume struct {
+	Name        string `json:"name"`
+	DefaultMode *int32 `json:"defaultMode,omitempty"`
 }
 
 // SecretVolume projects a Secret.
@@ -413,6 +425,7 @@ type ContainerState struct {
 	Terminated *struct {
 		ExitCode int    `json:"exitCode"`
 		Reason   string `json:"reason"`
+		Message  string `json:"message,omitempty"`
 	} `json:"terminated,omitempty"`
 }
 

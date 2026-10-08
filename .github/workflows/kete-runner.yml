@@ -14,8 +14,14 @@
 #          (entrypoint built with -tags kete_testdriver, the CI-only `kete-test` RuntimeClass on
 #          runc) against the jobs-v1 fake: a real job (claim → the scripted model through `kete job
 #          run` → bundle, audit and proxy log in the outbox → finish {"outbox":true}), and the
-#          refusals (wrong repository, shared kernel, RuntimeClasses, image pull). ~30 min with the
-#          kete and image builds. Kata itself can't run on GitHub's runners (no nested KVM in kind).
+#          refusals (wrong repository, shared kernel, RuntimeClasses, image pull).
+#          ci/e2e-publish.sh (P3): a third release against a fake GitLab (REST API + git smart HTTP via
+#          git http-backend): a minted clone token revoked at clone_done, a real job published only
+#          after the platform's go-ahead (new branch on the base, draft merge request, outcome
+#          reported), refusals (two of the platform's bundle vectors, unprotected base, existing
+#          branch, missing manifest, dropped while waiting), the writer Secret's admission and RBAC.
+#          ~35 min with the kete and image builds. Kata itself can't run on GitHub's runners (no
+#          nested KVM in kind).
 name: kete-runner
 
 on:
@@ -59,7 +65,7 @@ env:
 jobs:
   chart:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -127,14 +133,26 @@ jobs:
           refuse --set jobs.outbox.storageClass=
           refuse --set jobs.outbox.accessMode=ReadWriteMany
           refuse --set jobs.proxy.authSecret.name=corp-proxy-auth
+          # P3: the registry's clone credentials and the publisher.
+          refuse --set-json 'repositorySources=[{"name":"gitlab:payments/api","url":"https://gitlab.corp.example/a/b.git"},{"name":"gitlab:payments/web","url":"https://gitlab.corp.example/a/c.git","cloneSecret":"s"}]'
+          refuse --set-json 'repositorySources=[{"name":"gitlab:payments/api","url":"https://gitlab.corp.example/a/b.git","cloneSecret":"s","cloneMode":"minted","minterSecret":"m"},{"name":"gitlab:payments/web","url":"https://gitlab.corp.example/a/c.git","cloneSecret":"s"}]'
+          refuse --set-json 'repositorySources=[{"name":"gitlab:payments/api","url":"https://gitlab.corp.example/a/b.git","cloneSecret":"s","writerSecret":"kete-job-x"},{"name":"gitlab:payments/web","url":"https://gitlab.corp.example/a/c.git","cloneSecret":"s"}]'
+          refuse --set-json 'repositorySources=[{"name":"gitlab:payments/api","url":"https://gitlab.corp.example/a/b.git","cloneSecret":"s","apiURL":"http://gitlab.corp.example"},{"name":"gitlab:payments/web","url":"https://gitlab.corp.example/a/c.git","cloneSecret":"s"}]'
+          refuse --set publisher.commitIdentity=evil
+          refuse --set-json 'proxy.noProxy=["Gitlab.Corp"]'
+          refuse --set publisher.timeoutSeconds=10
 
       - name: The chart's configuration parses (the controller's own parser)
         run: |
           helm template kete-runner packages/kete-runner-chart -n kete-system -f packages/kete-runner-chart/ci/lint-values.yaml \
             --show-only templates/configmap.yaml | sed -n 's/^  config.json: //p' \
             | python3 -c 'import json, sys; sys.stdout.write(json.loads(sys.stdin.read()))' > "$RUNNER_TEMP/rendered.json"
+          helm template kete-runner packages/kete-runner-chart -n kete-system -f packages/kete-runner-chart/ci/lint-values.yaml \
+            --show-only templates/publisher-config.yaml | sed -n 's/^  publish.json: //p' \
+            | python3 -c 'import json, sys; sys.stdout.write(json.loads(sys.stdin.read()))' > "$RUNNER_TEMP/publish.json"
           cd packages/kete-job-host
           KETE_RUNNER_RENDERED_CONFIG="$RUNNER_TEMP/rendered.json" go test ./internal/config/... -run TestChartRenderedConfig -v
+          KETE_RUNNER_RENDERED_PUBLISH_CONFIG="$RUNNER_TEMP/publish.json" go test ./internal/publish/... -run TestChartRenderedPublishConfig -v
 
       - name: Controller tests (placeholder pod driver build)
         working-directory: packages/kete-job-host
@@ -144,12 +162,15 @@ jobs:
           # The release build refuses the placeholder driver.
           go test -race ./internal/runner/...
           # The config package's file tests need root (kete-job-host.yml runs them); these don't.
-          go test -race ./internal/config/... -run 'Kubernetes|KubeVM|Chart' 
+          go test -race ./internal/config/... -run 'Kubernetes|KubeVM|Chart|GitLab'
+          # P3: the bundle validator against the platform's vectors, git smart HTTP and packs, the
+          # GitLab client, the publisher against the fake GitLab (git http-backend).
+          go test -race ./internal/bundle/... ./internal/gitproto/... ./internal/repo/... ./internal/publish/... ./internal/fakegitlab/...
 
   e2e:
     needs: chart
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 65
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -181,6 +202,10 @@ jobs:
         run: |
           CGO_ENABLED=0 go build -trimpath -tags kete_testdriver -o ../kete-runner-chart/ci/kete-job-host ./cmd/kete-job-host
           CGO_ENABLED=0 go build -trimpath -o ../kete-runner-chart/ci/kete-fake-platform ./internal/fakeplatform/cmd/kete-fake-platform
+          # The fake GitLab runs from the job image (git, git http-backend).
+          CGO_ENABLED=0 go build -trimpath -o ../kete-job-image/.build/ctx-amd64/bin/kete-fake-gitlab ./internal/fakegitlab/cmd/kete-fake-gitlab
+          printf 'FROM kete-job:kind\nCOPY bin/kete-fake-gitlab /usr/local/libexec/kete-e2e/\n' \
+            | docker build -q -t kete-gitlab-fake:kind -f - ../kete-job-image/.build/ctx-amd64
 
       - name: Setup Helm
         uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
@@ -221,6 +246,7 @@ jobs:
             echo "JOB_IMAGE=$(digest localhost:5001/kete-job:kind)"
             echo "MISSING_IMAGE=localhost:5001/kete-job@sha256:$(head -c 32 /dev/urandom | sha256sum | cut -c1-64)"
             echo "FAKE_IMAGE=kete-job-fake:kind"
+            echo "GITLAB_FAKE_IMAGE=kete-gitlab-fake:kind"
           } | tee -a "$GITHUB_ENV"
           # The job image is large: pull it onto the job worker once, before the e2e times its steps.
           docker exec kind-worker crictl pull "$(digest localhost:5001/kete-job:kind)" >/dev/null
@@ -233,16 +259,23 @@ jobs:
           E2E_STATE: ${{ runner.temp }}/kete-kubevm-state
         run: packages/kete-runner-chart/ci/e2e-kubevm.sh
 
+      - name: e2e (P3, GitLab provider and publisher)
+        env:
+          E2E_STATE: ${{ runner.temp }}/kete-publish-state
+        run: packages/kete-runner-chart/ci/e2e-publish.sh
+
       # The state holds the fakes' test credentials (tokens.json, runtime-job.json, ca): never uploaded.
       - name: Remove the test credentials from the state
         if: failure()
-        run: sudo find "$RUNNER_TEMP/kete-kubevm-state" \( -name tokens.json -o -name runtime-job.json -o -name 'ca*' -o -name 'jh-ca.pem' -o -name 'values*.yaml' \) -exec rm -rf {} + 2>/dev/null || true
+        run: sudo find "$RUNNER_TEMP/kete-kubevm-state" "$RUNNER_TEMP/kete-publish-state" \( -name tokens.json -o -name runtime-job.json -o -name 'ca*' -o -name '*ca.pem' -o -name 'values*.yaml' -o -name git \) -exec rm -rf {} + 2>/dev/null || true
 
       - name: Upload the e2e state
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kete-runner-kubevm-state
-          path: ${{ runner.temp }}/kete-kubevm-state/
+          path: |
+            ${{ runner.temp }}/kete-kubevm-state/
+            ${{ runner.temp }}/kete-publish-state/
           retention-days: 7
           if-no-files-found: ignore

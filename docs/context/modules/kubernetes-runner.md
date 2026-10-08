@@ -13,7 +13,9 @@ verified-at: 99f9825fb1
   RBAC, admission policy, NetworkPolicies, kind e2e. Piece **P2** (task
   `docs/tasks/2026-10-08-k8s-runner-p2`) added the **kubevm pod driver** (real job pods), the
   outbox, pods/log phase lines, pod failure reasons, the RuntimeClass guard, proxy credentials and
-  repository sources. The GitLab publisher is P3; the platform serves v2 from P4.
+  repository sources. Piece **P3** (task `docs/tasks/2026-10-09-k8s-runner-p3`) added the
+  `publishing` state, publisher pods and minted clone tokens — the GitLab side is card
+  `gitlab-provider`. The platform serves v2 from P4.
 - What does the kubevm pod driver do? `KubeVMPod`/`KubeVMSecret` (`internal/driver/kubernetes/kubevm.go`):
   the job image's entrypoint with `--config-file /run/kete-config/config.json`, profile `kubevm`,
   the first RuntimeClass, requests = limits = `job_pod`, drop ALL + `JobCapabilities` (11, S0),
@@ -52,9 +54,35 @@ verified-at: 99f9825fb1
   (`kube.SecretStore`) and `Options.V2` (`agent.V2`: kubernetes version, RuntimeClasses,
   repositories, advertise, boundary). The agent builds every report in v2's shape and writes v1's
   for v1 hosts (`encodeReport`, `internal/agent/agent.go:1263`; `decodeResponse` `:1290`); v2
-  assignment rules in `checkV2` (`:578`): `ValidateKubernetes` (repository required) →
-  `config_invalid`, unknown repository → `repository_unknown`, `publish` → `config_invalid` (no
-  publisher until P3). `contract_mismatch` halts durably (`state.HaltContractMismatch`).
+  assignment rules in `checkV2`: `ValidateKubernetes` (repository required) → `config_invalid`,
+  unknown repository → `repository_unknown`, `publish` for a repository without a writer (or a
+  driver that isn't a `driver.Publisher`) → `config_invalid`. `contract_mismatch` halts durably
+  (`state.HaltContractMismatch`).
+- How does publishing work in the agent? `publish` and `boundOutcome` (end of
+  `internal/agent/agent.go`): a run with `publish` marks the machine `WantsPublish`
+  (`state.Machine`); when its job exits it goes to `publishing` (not `stopping`), exempt from the
+  deadline killer; the worker's `actPublish` calls `driver.Publisher.EndJob` (job pod gone, outbox
+  kept), waits for `publish.authorized` in the last accepted desired state (`a.runs`) or reports
+  `failed/hold_expired` after `PublishHold` (= `outbox_hold_hours`), then `StartPublish` once
+  (`PublishStarted`, persisted) and `PublishResult` until done; the outcome is recorded on the
+  machine first (branch = the platform's, refs dropped when `publish_refs: omit`, an outcome that
+  breaks the contract → `failed/publisher_failed`), then `DiscardOutputs` (outbox kept only after
+  `failed`), then `destroyed/exited` with `publish` on the tombstone. Dropped from `run` (or host
+  disabled) while publishing → `destroyed/desired`, outbox deleted (`discardUnpublished`).
+- Publisher pods? `PublishPod`/`StartPublish`/`PublishResult`/`DiscardOutputs`
+  (`internal/driver/kubernetes/publish.go`): `kete-publish-<id>`, role `publish`, runner image,
+  `kete-job-host publish --machine … --job … --repository … --base-ref … --branch … --open-mr=…`,
+  first RuntimeClass, uid/gid 65532, read-only root, drop ALL, mounts all read-only (outbox claim
+  `readOnly`, ConfigMap `kete-publisher`, the writer Secret at `/etc/kete-publish-writers/<name>`,
+  optional CA and proxy Secrets); outcome = the container's termination message
+  (`ParseOutcome`, strict); gone/deleted/no outcome/past timeout + 2 min → `publisher_failed`.
+  `List` includes publisher pods; `Stop` deletes them; `CollectOutboxes` skips machines with one.
+- Clone credentials? `cloneCreds` (`internal/runner/clone.go`): `credential` (the kubevm Secret's
+  `Credential` hook) mints (`minted`) or reads (`static`) and resolves `refs/heads/<base_ref>` with
+  `gitproto.LsRefs` → else `repository_unavailable`; `revoke` (driver hooks `CloneDone` on the
+  `clone_done` phase line in `Driver.Logs`, `JobEnded` in `stopJob`); `sweep` every 5 min. Its
+  HTTP client: the controller's proxy (+ credential) unless `no_proxy`, roots = system + CA bundle
+  (`Options.RepoHTTP` in tests).
 - How is state kept? `kube.SecretStore` (`internal/kube/store.go:99` Save, `:117` Run): the
   state.json document in Secret `kete-runner-state`, written behind the agent's lock by a
   goroutine, conditional on resourceVersion; Save returns the last write error (→ the agent's
@@ -112,7 +140,7 @@ each job in a VM-isolated pod, reusing the job host agent instead of a second jo
 - `packages/kete-job-host/internal/fakeplatform/` — `V2` mode, `AssignV2`; `cmd/kete-fake-platform`
   (TLS + admin API + CONNECT proxy) for the kind e2e.
 - `packages/kete-runner-chart/templates/` — `rbac.yaml`, `admission-policy.yaml`,
-  `networkpolicy.yaml`, `deployment.yaml`, `configmap.yaml`, `namespace-jobs.yaml`.
+  `networkpolicy.yaml`, `deployment.yaml`, `configmap.yaml`, `publisher-config.yaml`, `namespace-jobs.yaml`.
 - `packages/kete-runner-chart/ci/` — `e2e.sh` (P1), `e2e-kubevm.sh` (P2: real job pods against the
   entrypoint's fake + the job-host fake outside the cluster), `e2e-fixtures.yaml`, `kind.yaml` (two
   nodes), `Dockerfile`, `lint-values.yaml` (kubevm).
@@ -146,17 +174,24 @@ boot-ID Secrets in the jobs namespace → status → reports.
 - The per-job Secret's local section never comes from the platform; nothing in it is logged.
 - The placeholder driver, the accept-all verifier and the `kete-test` RuntimeClass exist only under
   `-tags kete_testdriver`; a release build refuses them before touching the cluster.
-- Kubernetes run machines without `repository`, or with `publish` (until P3), never start.
+- Kubernetes run machines without `repository`, or with `publish` for a repository without a
+  writer, never start. Nothing is published without `publish.authorized` in a fresh desired state.
+- The controller never reads the writer Secret (no `get` on Secrets in the jobs namespace; the
+  `publisher-secrets` admission policy stops it creating, changing or deleting one); only
+  publisher pods mount it, and the admission policy pins what a publisher pod runs and mounts.
 
 ## Testing
 - `go test -race -tags kete_testdriver ./internal/kube/... ./internal/runner/... ./internal/driver/kubernetes/...`
   (no root needed; `kubetest` + fake platform v2 over TLS: lifecycle, refusals, deadline kill, orphan,
   restart, proxy, token handling). `go test ./internal/runner/...` without the tag: release refusal.
 - Chart: `helm lint . --strict -f ci/lint-values.yaml`; `helm template … | kubeconform -strict`.
-- kind e2e: `.github/workflows/kete-runner.yml` job `e2e` → `ci/e2e.sh` then `ci/e2e-kubevm.sh`
-  (builds `kete`, the job image with `--go-tags kete_testdriver` and a fake image first).
-- The chart's rendered `config.json` is parsed by `config.Parse` in CI
-  (`TestChartRenderedConfig`, `KETE_RUNNER_RENDERED_CONFIG`).
+- kind e2e: `.github/workflows/kete-runner.yml` job `e2e` → `ci/e2e.sh`, `ci/e2e-kubevm.sh`, then
+  `ci/e2e-publish.sh` (P3, fake GitLab; builds `kete`, the job image with `--go-tags
+  kete_testdriver`, the jobs-v1 fake image and the fake GitLab image first).
+- Publishing in the controller: `internal/runner/publish_test.go` (fake GitLab via `RepoHTTP`;
+  needs git).
+- The chart's rendered `config.json` and `publish.json` are parsed in CI (`TestChartRenderedConfig`,
+  `KETE_RUNNER_RENDERED_CONFIG`; `TestChartRenderedPublishConfig`, `KETE_RUNNER_RENDERED_PUBLISH_CONFIG`).
 
 ## Changes
 - Adding a pod driver: a `PodFunc` (+ `SecretFunc`, outbox) + a `pod_driver` value in
@@ -174,5 +209,7 @@ boot-ID Secrets in the jobs namespace → status → reports.
 - No liveness/readiness probes yet (distroless image, no port); the Lease covers split-brain. Job
   pods never get exec probes (exec fails once their cgroups are set up, S0).
 - The platform's run machine `resources` are ignored: `job_pod` sizes every pod (local ceiling).
+- With a static source the controller now also calls the git host (ls-refs) before each pod: the
+  P2 e2e's "only the claim" assertion ignores `git` calls.
 - CI's kind has no Kata: the kubevm e2e runs under runc with the test-only shared-kernel builds and
   fences the worker's own addresses off from its pods with iptables (kind's CNI doesn't).

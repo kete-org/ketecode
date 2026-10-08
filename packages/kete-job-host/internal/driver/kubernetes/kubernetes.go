@@ -29,6 +29,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/contract"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/driver"
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/kube"
+	"github.com/kete-org/ketecode/packages/kete-job-host/internal/phase"
 )
 
 // Labels every job pod carries (Appendix C).
@@ -103,6 +104,12 @@ type Options struct {
 	Now            func() time.Time
 	// PollEvery is how often Start and Stop re-read a pod (default 1 s).
 	PollEvery time.Duration
+	// Publish configures publisher pods (P3; nil: the driver doesn't publish).
+	Publish *PublishOptions
+	// CloneDone is called once per machine when its job's clone_done phase line is read, and
+	// JobEnded when its job pod is removed: a minted clone credential is revoked then (P3). Both
+	// must return at once (they hand the work off).
+	CloneDone, JobEnded func(machineID string)
 }
 
 // Driver implements driver.Driver on pods.
@@ -112,6 +119,7 @@ type Driver struct {
 	mu            sync.Mutex
 	secretRemoved map[string]bool
 	logSeen       map[string]int
+	cloneDone     map[string]bool
 }
 
 // New checks the options and returns a driver.
@@ -134,7 +142,7 @@ func New(o Options) (*Driver, error) {
 	if o.ImagePullGrace <= 0 {
 		o.ImagePullGrace = time.Minute
 	}
-	return &Driver{o: o, secretRemoved: map[string]bool{}, logSeen: map[string]int{}}, nil
+	return &Driver{o: o, secretRemoved: map[string]bool{}, logSeen: map[string]int{}, cloneDone: map[string]bool{}}, nil
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -297,6 +305,9 @@ func (d *Driver) CollectOutboxes(ctx context.Context) (int, error) {
 		if _, err := d.o.Client.GetPod(ctx, d.o.Namespace, PodName(id)); !kube.IsNotFound(err) {
 			continue // its pod still exists (or can't be read): not yet
 		}
+		if _, err := d.o.Client.GetPod(ctx, d.o.Namespace, PublishPodName(id)); !kube.IsNotFound(err) {
+			continue // its publisher still runs (or can't be read): not yet
+		}
 		if err := d.o.Client.DeletePVC(ctx, d.o.Namespace, p.Metadata.Name); err != nil {
 			return n, err
 		}
@@ -314,11 +325,23 @@ func (d *Driver) StartsBlocked() string {
 	return d.o.Blocked()
 }
 
-// Stop deletes the pod and its Secret and waits until the pod is gone.
+// Stop deletes the job pod, its Secret and the machine's publisher pod (if any) and waits until
+// the job pod is gone.
 func (d *Driver) Stop(ctx context.Context, id string) error {
+	if d.o.Publish != nil {
+		if err := d.o.Client.DeletePod(ctx, d.o.Namespace, PublishPodName(id), nil); err != nil {
+			return err
+		}
+	}
+	return d.stopJob(ctx, id)
+}
+
+// stopJob deletes the job pod and its Secret and waits until the pod is gone.
+func (d *Driver) stopJob(ctx context.Context, id string) error {
 	name := PodName(id)
 	p, err := d.o.Client.GetPod(ctx, d.o.Namespace, name)
 	if kube.IsNotFound(err) {
+		d.jobEnded(id)
 		d.forget(id)
 		return d.o.Client.DeleteSecret(ctx, d.o.Namespace, name)
 	}
@@ -337,6 +360,7 @@ func (d *Driver) Stop(ctx context.Context, id string) error {
 	for {
 		_, err := d.o.Client.GetPod(ctx, d.o.Namespace, name)
 		if kube.IsNotFound(err) {
+			d.jobEnded(id)
 			d.forget(id)
 			return nil
 		}
@@ -353,7 +377,14 @@ func (d *Driver) forget(id string) {
 	d.mu.Lock()
 	delete(d.secretRemoved, id)
 	delete(d.logSeen, id)
+	delete(d.cloneDone, id)
 	d.mu.Unlock()
+}
+
+func (d *Driver) jobEnded(id string) {
+	if d.o.JobEnded != nil {
+		d.o.JobEnded(id)
+	}
 }
 
 // Status maps the pod's phase: Pending → starting (crashed past StartTimeout), Running →
@@ -449,18 +480,36 @@ func (d *Driver) removeSecret(ctx context.Context, id string) {
 	d.mu.Unlock()
 }
 
-// List returns every machine whose pod carries the driver's labels. A labelled pod that isn't a
-// well-formed machine pod (wrong name or id) is deleted here: nothing legitimate creates one.
+// List returns every machine whose job or publisher pod carries the driver's labels. A labelled
+// pod that isn't a well-formed machine pod (wrong name or id) is deleted here: nothing legitimate
+// creates one.
 func (d *Driver) List(ctx context.Context) ([]string, error) {
 	pods, err := d.o.Client.ListPods(ctx, d.o.Namespace, Selector(d.o.Instance))
 	if err != nil {
 		return nil, err
 	}
+	name := PodName
+	if d.o.Publish != nil {
+		pub, err := d.o.Client.ListPods(ctx, d.o.Namespace, publishSelector(d.o.Instance))
+		if err != nil {
+			return nil, err
+		}
+		pods = append(pods, pub...)
+	}
 	var ids []string
+	seen := map[string]bool{}
 	for _, p := range pods {
 		id := p.Metadata.Labels[LabelMachineID]
-		if contract.ValidUUID(id) && p.Metadata.Name == PodName(id) {
-			ids = append(ids, id)
+		if p.Metadata.Labels[LabelRole] == RolePublish {
+			name = PublishPodName
+		} else {
+			name = PodName
+		}
+		if contract.ValidUUID(id) && p.Metadata.Name == name(id) {
+			if !seen[id] {
+				ids = append(ids, id)
+				seen[id] = true
+			}
 			continue
 		}
 		d.o.Log.Warn("malformed_job_pod_deleted", "pod", p.Metadata.Name)
@@ -500,7 +549,24 @@ func (d *Driver) Logs(ctx context.Context, id string) ([][]byte, error) {
 	}
 	d.logSeen[id] = len(lines)
 	d.mu.Unlock()
-	return lines[seen:], nil
+	fresh := lines[seen:]
+	if d.o.CloneDone != nil {
+		for _, l := range fresh {
+			// The entrypoint's clone_done line (any event): the clone and its verification are over,
+			// the job no longer needs its read credential (spec §4.5 step 3).
+			if pl, ok := phase.Parse(l); ok && pl.Step == "clone_done" {
+				d.mu.Lock()
+				first := !d.cloneDone[id]
+				d.cloneDone[id] = true
+				d.mu.Unlock()
+				if first {
+					d.o.CloneDone(id)
+				}
+				break
+			}
+		}
+	}
+	return fresh, nil
 }
 
 // isNotStarted is the API server's answer for a container that hasn't started (400 BadRequest
