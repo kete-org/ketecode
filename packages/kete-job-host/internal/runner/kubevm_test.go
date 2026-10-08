@@ -84,6 +84,7 @@ func TestRunnerKubeVMMachine(t *testing.T) {
 	e.eventually("the second pod", func() bool { return e.kube.Get("pods", jobsNS, name2) != nil })
 	e.kube.SetPodStatus(jobsNS, name2, map[string]any{"phase": "Pending", "containerStatuses": []any{
 		map[string]any{"name": "job", "state": map[string]any{"waiting": map[string]any{"reason": "ImagePullBackOff"}}}}})
+	e.clk.Advance(2 * time.Second) // the pod's age (creationTimestamp has second resolution) past PullGrace
 	e.eventually("failed image_pull_failed", func() bool {
 		m := e.machine(host, mid(2))
 		return m.Observed == contract.StateFailed && m.ObservedReason == contract.ReasonImagePullFailed

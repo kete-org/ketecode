@@ -140,9 +140,10 @@ spec:
   policyName: {{ $names.jobSecrets | quote }}
   validationActions: [Deny]
 ---
-# Outbox volumes in the jobs namespace: only the controller creates or changes claims, only
+# Outbox volumes in the jobs namespace: only the controller creates claims, only
 # `kete-outbox-<machine-id>` labelled with that machine, ReadWriteOnce, no data source (an outbox
-# starts empty: never a clone of another job's volume).
+# starts empty: never a clone of another job's volume). CREATE only: the scheduler and the volume
+# controller annotate and bind a claim afterwards, and its spec is immutable once created.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -158,7 +159,7 @@ spec:
     resourceRules:
       - apiGroups: [""]
         apiVersions: [v1]
-        operations: [CREATE, UPDATE]
+        operations: [CREATE]
         resources: [persistentvolumeclaims]
   validations:
     - expression: {{ printf "request.userInfo.username == %s" (squote $sa) | quote }}

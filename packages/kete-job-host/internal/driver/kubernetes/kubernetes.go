@@ -188,7 +188,7 @@ func (d *Driver) Start(ctx context.Context, s driver.Spec) error {
 	node := created.Spec.NodeName
 	for node == "" {
 		if err := sleep(ctx, d.o.PollEvery); err != nil {
-			return fmt.Errorf("kubernetes driver: pod not scheduled: %w", err)
+			return d.notScheduled(created.Metadata, err)
 		}
 		p, err := d.o.Client.GetPod(ctx, d.o.Namespace, name)
 		if err != nil {
@@ -230,6 +230,22 @@ func (d *Driver) Start(ctx context.Context, s driver.Spec) error {
 		return fmt.Errorf("kubernetes driver: creating the machine Secret: %w", err)
 	}
 	return nil
+}
+
+// notScheduled is Start's error when the pod got no node in time: pod_unschedulable when the
+// scheduler said so (a fresh context: Start's own has ended), else the wait's error.
+func (d *Driver) notScheduled(m kube.ObjectMeta, err error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), kube.RequestTimeout)
+	defer cancel()
+	if p, gerr := d.o.Client.GetPod(ctx, d.o.Namespace, m.Name); gerr == nil && p.Metadata.UID == m.UID {
+		for _, c := range p.Status.Conditions {
+			if c.Type == "PodScheduled" && c.Status == "False" {
+				d.event(m, "Warning", "KeteMachineFailed", "the job pod can't be scheduled: "+c.Reason)
+				return &driver.FailedError{Reason: contract.ReasonPodUnschedulable, Err: fmt.Errorf("%s: %w", c.Reason, err)}
+			}
+		}
+	}
+	return fmt.Errorf("kubernetes driver: pod not scheduled: %w", err)
 }
 
 // createOutbox creates the machine's outbox PVC. One that already exists is refused: an outbox
