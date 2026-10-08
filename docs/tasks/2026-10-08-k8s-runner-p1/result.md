@@ -43,3 +43,19 @@ PR: kete-org/ketecode#21 (branch `feature/k8s-runner-p1`).
 ## Metrics
 - Agents used: one implementer (this session); no scout/reviewer sub-agents.
 - Time: one session (interrupted once by an API rate limit).
+
+## Security review round (2026-10-08)
+Fixes on the same branch (see handoff.md for the list). Checks:
+
+| Check | Result |
+|---|---|
+| `go vet` darwin, linux, linux+`kete_testdriver`; `gofmt` | pass (local) |
+| `go test -race -tags kete_testdriver` kube, runner, kubernetes driver (new: bounded Hold, fatal conflict, staged-key reuse, policy guard blocks/unblocks, Secret squat, lease released last, other instance's pods untouched, list paging) | pass (local) |
+| `go test -race` runner (release), client; config `-run Kubernetes` | pass (local) |
+| helm lint, kubeconform 1.30/1.32, refusals (incl. new: policy switch, broad egress, unsafe names) | pass (local and CI `chart`) |
+| kind e2e | pass in CI (383 s script) after two e2e-only fixes: feature gates ProcMountType/UserNamespacesSupport so the API server keeps `procMount`, and a custom Secret type for the non-Opaque case. Every new denial passes, as do the guard (binding deleted → `cluster_unhealthy`, M5 refused, `helm upgrade` restores) and the earlier scenarios |
+| kete-job-host.yml `test` (root suite) | pass |
+
+Not exercised in e2e: `pods/resize` (no such subresource on the kind 1.32 node). The host-process
+case also sets `hostNetwork` and the volume-device case also needs a PVC volume (API validation
+requires both), so those two denials may come from the neighbouring rule.
