@@ -63,6 +63,9 @@ const GIT_INTERNALS = [
   "info/attributes$",
 ]
 
+// Directories under a git directory that lead to protected files (see the rename rule in `profile`).
+const GIT_DIRECTORIES = "(((modules|worktrees)/.+/)?info|(modules|worktrees)/.+)$"
+
 export interface Profile {
   readonly profile: string
   readonly parameters: ReadonlyArray<readonly [string, string]>
@@ -129,6 +132,17 @@ export function profile(policy: Policy): Profile {
         ...GIT_INTERNALS.map((internal) => regex(directory, `/${internal}`)),
       ]),
     ].join(" ")})`,
+    // Seatbelt checks a rename's source and destination paths only, so moving a directory that holds
+    // protected files away, editing them and moving it back would get around the rules above
+    // (`mv .git/modules/sub x; edit x/config; mv x .git/modules/sub`). Directories on the way to a
+    // protected file can't be removed or renamed: `info`, and every directory under `modules` and
+    // `worktrees` (a submodule's name may contain "/"). Files there (objects, refs, index) stay
+    // writable, and new directories can still be created.
+    // Filters listed in one rule are alternatives; `require-all` makes the directory test apply.
+    `(deny file-write-unlink (require-all (vnode-type DIRECTORY) (require-any ${[
+      regex(workspace, `(/.*)?/\\.git/${GIT_DIRECTORIES}`),
+      ...policy.gitDirectories.map((directory) => regex(directory, `/${GIT_DIRECTORIES}`)),
+    ].join(" ")})))`,
   ]
 
   if (policy.hidden.length > 0) {

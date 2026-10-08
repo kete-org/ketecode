@@ -12,6 +12,7 @@ import { SessionStore } from "./session/store.js"
 import { Wildcard } from "./util/wildcard.js"
 import { PermissionSaved } from "./permission/saved.js"
 import { PluginHooks } from "./plugin/hooks.js"
+import { KeteSandboxActions } from "./kete/sandbox/actions.js" // kete_change
 
 const PermissionEffect = Permission.Effect
 export { PermissionEffect as Effect }
@@ -299,6 +300,10 @@ const layer = Layer.effect(
               resources: existing.request.save,
             })
           }
+          // kete_change start: only this request, which a person saw and allowed, may use the network in the OS sandbox (kete/sandbox.ts); requests an "always" resolves below are not marked
+          if (existing.request.action === "shell")
+            KeteSandboxActions.markApproved(existing.request.metadata as Record<string, unknown> | undefined)
+          // kete_change end
           yield* Deferred.succeed(existing.deferred, undefined)
           pending.delete(input.requestID)
           if (input.reply !== "always" || !existing.request.save?.length) return

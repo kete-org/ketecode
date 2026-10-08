@@ -71,3 +71,23 @@ Review of PR #24 (two blockers, should-fixes, nits), all addressed:
 - Residual: a disk plugin's `evaluate` hook registered after the internal ones could still loosen
   a decision after the approval hook; plugins are runtime code the user installed (repository
   `.kete/plugins` is write-protected by the sandbox).
+
+## 2026-10-08 implementer (re-check fixes)
+
+- macOS rename bypass (`mv .git/modules/sub x; edit; mv back`, same with `.git/info`): Seatbelt checks
+  a rename's paths only. Added `(deny file-write-unlink (require-all (vnode-type DIRECTORY)
+  (require-any …)))` for `info`, `(modules|worktrees)/…/info` and every directory under `modules` and
+  `worktrees`. Found that filters listed in one rule are OR'd: without `require-all` the rule also
+  hit files (index.lock renames in linked worktrees failed) — that is what blocked the reviewer's
+  sibling rename. Tested: the move-out/edit/move-back sequences fail; status, add, commit, branch,
+  checkout, stash, submodule status and git inside the submodule work. (`git worktree add/remove`
+  already needed `sandbox: "off"`: they write protected files.)
+- Linux equivalent: submodule git directories are found by HEAD or config (names may contain "/"),
+  and every directory on the way (`info`, `modules`, `worktrees`, intermediate dirs, the git dirs)
+  is pinned. `rename` then fails with EXDEV and `mv` copies and deletes: the protected files stay;
+  the copy is ordinary files. The remaining Linux path is the documented nested-repository gap, now
+  spelled out for submodule `.git` files in docs/sandbox.md.
+- Nit (Permission.reply): the network mark now comes from the person's reply to that very shell
+  request (`core/src/permission.ts`, marked); requests an "always" resolves without showing them get
+  no mark; the approval hook only carries the unattended policy's allow. Test:
+  `core/test/kete/sandbox-reply.test.ts`.

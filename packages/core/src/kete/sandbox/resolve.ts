@@ -209,8 +209,17 @@ const GIT_FILES: ReadonlyArray<{ readonly name: string; readonly content: string
   { name: "info/attributes", content: "" },
 ]
 
-/** Linux: the protected files and directories of a git directory (and its submodules and worktrees),
- * created as placeholders where missing; `modules` and `worktrees` are pinned so they can't be renamed. */
+/**
+ * Linux: the protected files of a git directory and of the submodule and worktree git directories under
+ * it, created as placeholders where missing. Every directory on the way to a protected file (`info`,
+ * `modules`, `worktrees`, the directories under them down to each git directory, and those git
+ * directories) is pinned — bound onto itself — so it can't be renamed: moving one away, editing the
+ * files in it in a later command and moving it back would get around the read-only binds.
+ * A submodule's name may contain "/", so a directory under `modules` is a git directory when it has a
+ * HEAD or config file, and is searched further otherwise. A pinned directory can't be renamed, but
+ * `mv` then copies and deletes: the copy is an ordinary directory (the nested-repository gap of
+ * docs/sandbox.md), the protected files stay in place.
+ */
 async function gitInternals(directory: string, placeholders: Placeholders, releases: Array<() => Promise<void>>) {
   const readOnly: string[] = []
   const pinned: string[] = []
@@ -227,18 +236,27 @@ async function gitInternals(directory: string, placeholders: Placeholders, relea
       releases.push(await placeholders.acquire(candidate, { kind: "file", content: file.content, mode: 0o644 }))
       readOnly.push(candidate)
     }
+    pinned.push(path.join(dir, "info"))
     for (const group of ["modules", "worktrees"]) {
       const groupDir = path.join(dir, group)
-      const entries = await fs.readdir(groupDir, { withFileTypes: true }).catch(() => undefined)
-      if (!entries) continue
+      if (!(await exists(groupDir))) continue
       pinned.push(groupDir)
       if (depth >= 4) continue
-      for (const entry of entries) {
-        if (!entry.isDirectory() || budget-- <= 0) continue
-        await visit(path.join(groupDir, entry.name), depth + 1)
-      }
+      await search(groupDir, depth, 0)
     }
   }
+  const search = async (dir: string, depth: number, level: number): Promise<void> => {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (!entry.isDirectory() || budget-- <= 0) continue
+      const child = path.join(dir, entry.name)
+      pinned.push(child)
+      // `config` too: a command can delete HEAD, but not the protected config, so a git directory stays one.
+      if ((await exists(path.join(child, "HEAD"))) || (await exists(path.join(child, "config")))) await visit(child, depth + 1)
+      else if (level < 6) await search(child, depth, level + 1)
+    }
+  }
+  pinned.push(directory)
   await visit(directory, 0)
   return { readOnly, pinned }
 }
@@ -430,7 +448,6 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
         readOnly.push(...internals.readOnly)
         pinned.push(...internals.pinned)
       }
-      if (git.local) pinned.push(git.local)
       if (git.linked) readOnly.push(git.linked.file)
       if (git.hooksPath && !(await exists(git.hooksPath))) await fs.mkdir(git.hooksPath, { recursive: true }).catch(() => undefined)
     } else {

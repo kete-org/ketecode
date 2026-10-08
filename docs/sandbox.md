@@ -118,6 +118,11 @@ A policy denying `sandbox_network` stops commands from asking for network access
 
 - Only the agent's shell commands. Your own terminal and `!` commands, MCP servers, formatters,
   language servers and Kete Code's own git calls run as before.
+- On Linux, a nested repository or submodule checkout's own `.git` file or folder isn't protected:
+  a command could point it at a git directory it wrote, and your next `git status` (which looks
+  into submodules) would read that directory's config outside the sandbox. macOS refuses to create
+  or change any `.git` entry in the workspace. If that matters to you on Linux, use `ask` mode or
+  check `git submodule status` and nested `.git` entries after untrusted work.
 - On Linux, Kete configuration is protected where Kete Code looks for it (the folder you started in
   and its parents inside writable folders), not in every subfolder; git internals only in the
   workspace's own git folder, not in nested repositories. When a protected file doesn't exist yet,

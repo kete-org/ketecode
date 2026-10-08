@@ -243,8 +243,8 @@ const pipeline = (look: KetePermissionMode.Lookup, action: string, resources: st
   )
 
 describe("approval marks", () => {
-  test("a command that asks is marked; one the defaults allow is not", () => {
-    expect(pipeline(lookup(), "shell", ["npm install"])).toEqual({ effect: "ask", approved: true })
+  test("hooks never mark an ask (the person's reply does, sandbox-reply.test.ts) nor a defaults allow", () => {
+    expect(pipeline(lookup(), "shell", ["npm install"])).toEqual({ effect: "ask", approved: false })
     expect(pipeline(lookup(), "shell", ["npm test"])).toEqual({ effect: "allow", approved: false })
     expect(pipeline(lookup(), "shell", ["ls"])).toEqual({ effect: "allow", approved: false })
   })

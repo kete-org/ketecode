@@ -247,6 +247,49 @@ describe.skipIf(!probe.available)("sandbox policy, run for real", () => {
     }
   })
 
+  test("moving git directories away, editing and moving them back doesn't work; normal git does", async () => {
+    const env = await setup("rename")
+    const library = path.join(base, "rename-library")
+    await fs.mkdir(library, { recursive: true })
+    git(library, "init", "-q")
+    git(library, "commit", "-q", "--allow-empty", "-m", "lib")
+    git(env.workspace, "-c", "protocol.file.allow=always", "submodule", "add", "-q", library, "libs/sub")
+    git(env.workspace, "commit", "-q", "-m", "submodule")
+    await fs.mkdir(path.join(env.workspace, ".git", "info"), { recursive: true })
+    await fs.writeFile(path.join(env.workspace, ".git", "info", "attributes"), "")
+    const submoduleConfig = path.join(env.workspace, ".git", "modules", "libs", "sub", "config")
+    const configBefore = await fs.readFile(submoduleConfig, "utf8")
+
+    const normal = await sandboxed(
+      env,
+      [
+        "git status --porcelain",
+        "echo change > a.txt && git add -A && git -c user.email=t@example.com -c user.name=t commit -q -m change",
+        "git branch topic && git checkout -q topic && git checkout -q -",
+        "echo more > b.txt && git add b.txt && git -c user.email=t@example.com -c user.name=t stash -q && git stash pop -q",
+        "git submodule status",
+        "(cd libs/sub && git status --porcelain && git log --oneline | wc -l)",
+        "echo done",
+      ].join(" && "),
+    )
+    expect(normal.out, normal.out).toContain("done")
+
+    const attacks = [
+      "mv .git/modules/libs/sub moved-sub; echo '[core] fsmonitor = touch /tmp/pwned' >> moved-sub/config; mv moved-sub .git/modules/libs/sub",
+      "mv .git/modules/libs moved-libs; echo '[core] fsmonitor = x' >> moved-libs/sub/config; mv moved-libs .git/modules/libs",
+      "mv .git/info info-out; echo '* diff=x' > info-out/attributes; mv info-out .git/info",
+    ]
+    for (const command of attacks) await sandboxed(env, command)
+    expect(await fs.readFile(submoduleConfig, "utf8")).toBe(configBefore)
+    expect(await fs.readFile(path.join(env.workspace, ".git", "info", "attributes"), "utf8")).toBe("")
+    // macOS refuses the moves. Linux refuses the renames, and `mv` falls back to copying: the copy is
+    // ordinary files, the protected ones stay where git reads them.
+    if (probe.available && probe.mechanism === "seatbelt") {
+      expect(await exists(path.join(env.workspace, "moved-sub"))).toBe(false)
+      expect(await exists(path.join(env.workspace, "info-out"))).toBe(false)
+    }
+  })
+
   test("a workspace name can't inject rules into the profile", async () => {
     const name = `inj a") (allow file-write* (subpath "/")) ; [x]*+?{}|^$\\ 'q'`
     const env = await setup(name)
