@@ -422,14 +422,28 @@ func (c *Client) GetPod(ctx context.Context, ns, name string) (Pod, error) {
 
 // ListPods lists the pods matching a label selector.
 func (c *Client) ListPods(ctx context.Context, ns, selector string) ([]Pod, error) {
-	var l struct {
-		Items []Pod `json:"items"`
+	var out []Pod
+	cont := ""
+	for range 1000 {
+		var l struct {
+			Items    []Pod `json:"items"`
+			Metadata struct {
+				Continue string `json:"continue"`
+			} `json:"metadata"`
+		}
+		q := url.Values{"labelSelector": {selector}, "limit": {"500"}}
+		if cont != "" {
+			q.Set("continue", cont)
+		}
+		if err := c.do(ctx, http.MethodGet, nsPath("", ns, "pods", ""), q, nil, &l); err != nil {
+			return nil, err
+		}
+		out = append(out, l.Items...)
+		if cont = l.Metadata.Continue; cont == "" {
+			return out, nil
+		}
 	}
-	q := url.Values{"labelSelector": {selector}, "limit": {"500"}}
-	if err := c.do(ctx, http.MethodGet, nsPath("", ns, "pods", ""), q, nil, &l); err != nil {
-		return nil, err
-	}
-	return l.Items, nil
+	return nil, errors.New("kube: pod list did not end")
 }
 
 // DeletePod deletes a pod with a grace period (nil: the pod's own); a missing pod is not an error.
@@ -513,4 +527,35 @@ func (c *Client) RecordPodEvent(ctx context.Context, p ObjectMeta, typ, reason, 
 	}
 	e.Source.Component = "kete-runner"
 	return c.do(ctx, http.MethodPost, nsPath("", p.Namespace, "events", ""), nil, e, nil)
+}
+
+// AdmissionPolicy is the part of a ValidatingAdmissionPolicy the controller checks.
+type AdmissionPolicy struct {
+	Metadata ObjectMeta `json:"metadata"`
+	Spec     struct {
+		FailurePolicy string `json:"failurePolicy"`
+	} `json:"spec"`
+}
+
+// AdmissionPolicyBinding is the part of a ValidatingAdmissionPolicyBinding the controller checks.
+type AdmissionPolicyBinding struct {
+	Metadata ObjectMeta `json:"metadata"`
+	Spec     struct {
+		PolicyName        string   `json:"policyName"`
+		ValidationActions []string `json:"validationActions"`
+	} `json:"spec"`
+}
+
+const admissionGroup = "/apis/admissionregistration.k8s.io/v1/"
+
+// GetAdmissionPolicy reads a ValidatingAdmissionPolicy.
+func (c *Client) GetAdmissionPolicy(ctx context.Context, name string) (AdmissionPolicy, error) {
+	var p AdmissionPolicy
+	return p, c.do(ctx, http.MethodGet, admissionGroup+"validatingadmissionpolicies/"+url.PathEscape(name), nil, nil, &p)
+}
+
+// GetAdmissionPolicyBinding reads a ValidatingAdmissionPolicyBinding.
+func (c *Client) GetAdmissionPolicyBinding(ctx context.Context, name string) (AdmissionPolicyBinding, error) {
+	var b AdmissionPolicyBinding
+	return b, c.do(ctx, http.MethodGet, admissionGroup+"validatingadmissionpolicybindings/"+url.PathEscape(name), nil, nil, &b)
 }

@@ -2,6 +2,8 @@
 {{- $k := dict
   "namespace" .Release.Namespace
   "jobs_namespace" .Values.jobs.namespace
+  "instance" .Release.Name
+  "admission_policies" (values (include "kete-runner.policyNames" . | fromJson) | sortAlpha)
   "keys_secret" .Values.controller.keysSecret
   "state_secret" .Values.controller.stateSecret
   "lease" .Values.controller.leaseName

@@ -31,15 +31,23 @@ verified-at: 2605a2afd7
   Secret (`enrollment_secret`, key `token`), stages keys, `EnrollRequestV2` with kubernetes facts
   (`generation` `k8s-<date>-<hex>`), deletes the token Secret on a definitive answer, commits keys,
   saves and flushes the state. Missing token Secret → waits (logs `enroll_waiting`).
-- Leader election? `kube.Elector` (`internal/kube/lease.go:96` Acquire, `:120` Hold): client-go's
+- Leader election? `kube.Elector` (`internal/kube/lease.go`, Acquire/Hold/Release): client-go's
   algorithm (expiry judged on the local clock from the last observed resourceVersion), 15 s lease,
-  2 s retry, lost after 10 s without renewal → `ErrLost` → the runner stops and exits; released on
-  shutdown.
+  2 s retry; every renewal is bounded by last-success + 10 s and Hold returns `ErrLost` the moment
+  that passes → the runner stops and exits. Hold never releases; `runner.Run`'s `finish` releases
+  only after the agent returned and the final state flush (never after `ErrLost`).
+- State conflict? A 409 on the state Secret is fatal (`SecretStore.OnFatal`): the runner stops and
+  Kubernetes restarts it to reload; it never retries a stale write forever.
+- Admission policy guard? `policyGuard` (`internal/runner/runner.go`): at start and every
+  `PolicyEvery` (30 s) it gets each `admission_policies` policy (failurePolicy Fail) and its
+  same-named binding (names it, Deny); otherwise the driver's `StartsBlocked` is `cluster_unhealthy`
+  and `Start` refuses. The chart has no switch to drop the policies.
 - What is a machine? A pod `kete-job-<machine-id>` in the jobs namespace (`internal/driver/kubernetes`):
   `Start` (`kubernetes.go:100`) creates it with labels (`kete.dev/machine-id`, `job-id`, `deadline`,
   `role=job`, managed-by), no SA token, no service links, `activeDeadlineSeconds` = deadline + 6 min,
   waits for `spec.nodeName`, reads `Node.status.nodeInfo.bootID`, creates the owner-referenced
-  Secret `kete-job-<id>` with `node_boot_id`; `Status` (`:205`) maps phases (Running deletes the
+  Secret `kete-job-<id>` with `node_boot_id` (a 409 there — a squatted name — deletes the pod at
+  once); pods and List carry/select `app.kubernetes.io/instance`; `Status` (`:205`) maps phases (Running deletes the
   Secret); `List` (`:261`) is the reconcile source (malformed labelled pods deleted).
 - Why doesn't it run the host guard? `internal/hostguard` refuses containers because the
   firecracker/dedicated drivers isolate with the host kernel; the controller is a pod by design and
@@ -84,9 +92,12 @@ boot-ID Secrets in the jobs namespace → status → reports.
 ## Rules that must not break
 - Never two pollers on one key: the agent runs only while the Lease is held; losing it stops the process.
 - No secret in values, ConfigMap or logs; the token Secret is deleted once spent.
-- The admission policy is the jobs namespace's only guard (PSA `privileged` there): creator = the
-  controller SA, allowed RuntimeClass, no host namespaces/hostPath/SA token/service links, no init or
-  ephemeral containers, allowlisted digests, drop ALL + allowed caps, no privileged, no host ports.
+- The admission policies are the jobs namespace's only guard (PSA `privileged` there) and always
+  installed: only the controller SA creates or changes job pods; Pod Security baseline and more
+  (volume allowlist, seccomp/AppArmor/SELinux/procMount/sysctls/hostProcess, no resource claims or
+  volume devices, allowlisted digests, drop ALL + allowed caps); only the controller writes Opaque
+  `kete-job-*` Secrets in the jobs namespace and its own two Secrets at home. The controller blocks
+  starts while any policy or binding is missing.
 - RBAC stays least privilege: no `pods/exec`, no cluster-wide Secrets, cluster scope = `get nodes`.
 - The placeholder driver and accept-all verifier exist only under `-tags kete_testdriver`; a release
   build refuses `pod_driver: placeholder` before touching the cluster.

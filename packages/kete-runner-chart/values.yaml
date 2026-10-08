@@ -51,6 +51,7 @@ jobs:
     [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE, SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE, FOWNER, FSETID, NET_BIND_SERVICE]
   # Egress allowed to job pods besides DNS (enterprise proxy, GitLab, model endpoints, registry
   # mirrors). Everything else is denied by NetworkPolicy; the in-pod firewall is the inner layer.
+  # Name them narrowly: prefixes shorter than /8 and the link-local metadata range are refused.
   egress:
     cidrs: []
     ports: [443]
@@ -102,6 +103,3 @@ networkPolicy:
   dns:
     namespace: kube-system
     podLabels: {k8s-app: kube-dns}
-
-admissionPolicy:
-  enabled: true

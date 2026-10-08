@@ -24,7 +24,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ .Values.controller.serviceAccountName }}
+      serviceAccountName: {{ .Values.controller.serviceAccountName | quote }}
       automountServiceAccountToken: true
       enableServiceLinks: false
       {{- with .Values.imagePullSecrets }}
@@ -40,8 +40,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: controller
-          image: {{ include "kete-runner.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ include "kete-runner.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
           args: [kubernetes, --config, /etc/kete-runner/config.json]
           env:
             - name: KETE_RUNNER_POD_NAME
@@ -73,10 +73,10 @@ spec:
         {{- if .Values.caBundle.existingSecret }}
         - name: ca
           secret:
-            secretName: {{ .Values.caBundle.existingSecret }}
+            secretName: {{ .Values.caBundle.existingSecret | quote }}
             items:
-              - key: {{ .Values.caBundle.key }}
-                path: {{ .Values.caBundle.key }}
+              - key: {{ .Values.caBundle.key | quote }}
+                path: {{ .Values.caBundle.key | quote }}
         {{- end }}
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:

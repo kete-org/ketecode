@@ -1,6 +1,12 @@
-# kind cluster for the runner e2e, with the local registry as a mirror (images by digest).
+# kind cluster for the runner e2e, with the local registry as a mirror (images by digest), and
+# dynamic resource allocation on so the admission policy's resourceClaims rule can be exercised
+# (with the gate off the API server drops the field before admission).
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  DynamicResourceAllocation: true
+runtimeConfig:
+  "resource.k8s.io/v1beta1": "true"
 containerdConfigPatches:
   - |-
     [plugins."io.containerd.grpc.v1.cri".registry]

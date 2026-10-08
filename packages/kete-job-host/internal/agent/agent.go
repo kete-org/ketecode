@@ -272,7 +272,11 @@ func (a *Agent) startsBlocked() string {
 		return contract.BlockedGenerationSpent
 	}
 	if b, ok := a.o.Driver.(driver.Blocker); ok {
-		if r := b.StartsBlocked(); contract.ValidStartsBlocked(r) {
+		valid := contract.ValidStartsBlocked
+		if a.o.V2 != nil {
+			valid = contract.ValidStartsBlockedV2
+		}
+		if r := b.StartsBlocked(); valid(r) {
 			return r
 		}
 	}

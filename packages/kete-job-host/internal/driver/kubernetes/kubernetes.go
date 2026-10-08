@@ -35,13 +35,18 @@ const (
 	LabelDeadline  = "kete.dev/deadline" // Unix seconds
 	LabelRole      = "kete.dev/role"
 	RoleJob        = "job"
-	// Selector selects every pod this driver owns.
-	Selector = kube.LabelManaged + "=" + kube.ManagedBy + "," + LabelRole + "=" + RoleJob
+	// LabelInstance is the Helm release the pod belongs to (Selector adds it).
+	LabelInstance = "app.kubernetes.io/instance"
 	// SecretBootID is the per-machine Secret's node boot ID key; ConfigMountPath where job pods
 	// see the Secret.
 	SecretBootID    = "node_boot_id"
 	ConfigMountPath = "/run/kete-config"
 )
+
+// Selector selects every pod a runner instance owns.
+func Selector(instance string) string {
+	return kube.LabelManaged + "=" + kube.ManagedBy + "," + LabelRole + "=" + RoleJob + "," + LabelInstance + "=" + instance
+}
 
 // PodName is a machine's pod (and Secret) name.
 func PodName(machineID string) string { return "kete-job-" + machineID }
@@ -55,6 +60,12 @@ type PodFunc func(spec driver.Spec) (kube.Pod, error)
 type Options struct {
 	Client    *kube.Client
 	Namespace string
+	// Instance is the runner's Helm release name: a label on every pod and part of the List
+	// selector, so runners never touch each other's pods.
+	Instance string
+	// Blocked, when set, returns why starts are blocked ("" = not): the runner's admission-policy
+	// guard. It must return at once (a cached result). Start refuses while it is non-empty.
+	Blocked func() string
 	// StartTimeout bounds a pod's time in Pending after Start; past it the machine counts as
 	// crashed and is destroyed.
 	StartTimeout time.Duration
@@ -75,8 +86,8 @@ type Driver struct {
 
 // New checks the options and returns a driver.
 func New(o Options) (*Driver, error) {
-	if o.Client == nil || o.Pod == nil || o.Namespace == "" {
-		return nil, errors.New("kubernetes driver: client, namespace and pod builder are required")
+	if o.Client == nil || o.Pod == nil || o.Namespace == "" || o.Instance == "" {
+		return nil, errors.New("kubernetes driver: client, namespace, instance and pod builder are required")
 	}
 	if o.StartTimeout <= 0 {
 		o.StartTimeout = 10 * time.Minute
@@ -101,6 +112,9 @@ func (d *Driver) Start(ctx context.Context, s driver.Spec) error {
 	if !contract.ValidUUID(s.MachineID) || !contract.ValidUUID(s.JobID) {
 		return errors.New("kubernetes driver: invalid machine or job id")
 	}
+	if b := d.StartsBlocked(); b != "" {
+		return fmt.Errorf("kubernetes driver: starts blocked (%s)", b)
+	}
 	pod, err := d.o.Pod(s)
 	if err != nil {
 		return err
@@ -110,7 +124,7 @@ func (d *Driver) Start(ctx context.Context, s driver.Spec) error {
 	pod.Metadata = kube.ObjectMeta{
 		Name: name, Namespace: d.o.Namespace,
 		Labels: map[string]string{
-			kube.LabelManaged: kube.ManagedBy, LabelRole: RoleJob,
+			kube.LabelManaged: kube.ManagedBy, LabelRole: RoleJob, LabelInstance: d.o.Instance,
 			LabelMachineID: s.MachineID, LabelJobID: s.JobID, LabelDeadline: strconv.FormatInt(s.Deadline.Unix(), 10),
 		},
 	}
@@ -150,12 +164,28 @@ func (d *Driver) Start(ctx context.Context, s driver.Spec) error {
 	}
 	sec := kube.NewSecret(d.o.Namespace, name, map[string][]byte{SecretBootID: []byte(bootID)})
 	sec.Immutable = ptr(true)
-	sec.Metadata.Labels = map[string]string{kube.LabelManaged: kube.ManagedBy, LabelRole: RoleJob, LabelMachineID: s.MachineID}
+	sec.Metadata.Labels = map[string]string{kube.LabelManaged: kube.ManagedBy, LabelRole: RoleJob, LabelInstance: d.o.Instance, LabelMachineID: s.MachineID}
 	sec.Metadata.OwnerReferences = []kube.OwnerReference{{APIVersion: "v1", Kind: "Pod", Name: name, UID: created.Metadata.UID}}
 	if _, err := d.o.Client.CreateSecret(ctx, sec); err != nil {
+		if kube.IsConflict(err) {
+			// Someone else's Secret under the machine's name (the admission policy should make
+			// this impossible): the pod must never mount it. Delete the pod at once.
+			if derr := d.o.Client.DeletePod(ctx, d.o.Namespace, name, ptr(int64(0))); derr != nil {
+				d.o.Log.Error("pod_delete_failed", "machine_id", s.MachineID, "error", derr.Error())
+			}
+			d.event(created.Metadata, "Warning", "SecretSquatted", "a Secret named like this machine's already existed; the pod was deleted")
+		}
 		return fmt.Errorf("kubernetes driver: creating the machine Secret: %w", err)
 	}
 	return nil
+}
+
+// StartsBlocked implements driver.Blocker.
+func (d *Driver) StartsBlocked() string {
+	if d.o.Blocked == nil {
+		return ""
+	}
+	return d.o.Blocked()
 }
 
 // Stop deletes the pod and its Secret and waits until the pod is gone.
@@ -259,7 +289,7 @@ func (d *Driver) removeSecret(ctx context.Context, id string) {
 // List returns every machine whose pod carries the driver's labels. A labelled pod that isn't a
 // well-formed machine pod (wrong name or id) is deleted here: nothing legitimate creates one.
 func (d *Driver) List(ctx context.Context) ([]string, error) {
-	pods, err := d.o.Client.ListPods(ctx, d.o.Namespace, Selector)
+	pods, err := d.o.Client.ListPods(ctx, d.o.Namespace, Selector(d.o.Instance))
 	if err != nil {
 		return nil, err
 	}

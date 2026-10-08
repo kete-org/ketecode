@@ -115,27 +115,42 @@ func (e *Elector) Acquire(ctx context.Context) error {
 	}
 }
 
-// Hold renews the lease until ctx ends (then releases it and returns nil) or leadership is lost
-// (ErrLost).
+// Hold renews the lease until ctx ends (nil) or leadership is lost (ErrLost). It does not release
+// the lease when ctx ends: the caller releases it (Release) only after it has stopped acting as the
+// host and written its last state. Every renewal attempt is bounded by the renew deadline (last
+// successful renewal + RenewDeadline), and Hold returns ErrLost as soon as that passes, so this
+// replica stops acting as leader before another one can take over (RenewDeadline < Duration,
+// client-go's rule).
 func (e *Elector) Hold(ctx context.Context) error {
 	e.defaults()
 	last := e.Now()
 	for {
-		if err := sleepCtx(ctx, e.Retry); err != nil {
-			e.release()
+		deadline := last.Add(e.RenewDeadline)
+		wait := min(e.Retry, deadline.Sub(e.Now()))
+		if err := sleepCtx(ctx, max(wait, 0)); err != nil {
 			return nil
 		}
-		ok, holder, err := e.try(ctx)
+		if !e.Now().Before(deadline) {
+			return fmt.Errorf("%w: not renewed for %s", ErrLost, e.RenewDeadline)
+		}
+		tctx, cancel := context.WithDeadline(ctx, time.Now().Add(deadline.Sub(e.Now())))
+		ok, holder, err := e.try(tctx)
+		cancel()
+		if ctx.Err() != nil {
+			return nil
+		}
 		switch {
-		case ok:
+		case ok && e.Now().Before(deadline):
 			last = e.Now()
+		case ok:
+			return fmt.Errorf("%w: renewed only after the renew deadline", ErrLost)
 		case holder != "" && holder != e.Identity:
 			return fmt.Errorf("%w: now held by %s", ErrLost, holder)
 		default:
 			if err != nil {
 				e.Log.Warn("lease_renew_failed", "lease", e.Name, "error", err.Error())
 			}
-			if e.Now().Sub(last) > e.RenewDeadline {
+			if !e.Now().Before(deadline) {
 				return fmt.Errorf("%w: not renewed for %s", ErrLost, e.RenewDeadline)
 			}
 		}
@@ -207,8 +222,10 @@ func (e *Elector) try(ctx context.Context) (bool, string, error) {
 	return true, e.Identity, nil
 }
 
-// release gives the lease up (best effort) so a replacement replica takes over at once.
-func (e *Elector) release() {
+// Release gives the lease up (best effort) so a replacement replica takes over at once. Call it
+// only after everything acting as the host has stopped and the state is written.
+func (e *Elector) Release() {
+	e.defaults()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	l, err := e.Client.GetLease(ctx, e.Namespace, e.Name)

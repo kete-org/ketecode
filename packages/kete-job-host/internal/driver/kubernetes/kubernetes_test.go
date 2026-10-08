@@ -2,6 +2,7 @@ package kubernetes_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -17,9 +18,11 @@ const (
 	jid = "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b"
 )
 
+var blocked string
+
 func newDriver(t *testing.T, srv *kubetest.Server, start time.Duration) *kd.Driver {
 	t.Helper()
-	d, err := kd.New(kd.Options{Client: srv.Client("runner"), Namespace: ns, StartTimeout: start, PollEvery: 5 * time.Millisecond,
+	d, err := kd.New(kd.Options{Client: srv.Client("runner"), Namespace: ns, Instance: "kete-runner", Blocked: func() string { return blocked }, StartTimeout: start, PollEvery: 5 * time.Millisecond,
 		Pod: func(driver.Spec) (kube.Pod, error) {
 			return kube.Pod{Spec: kube.PodSpec{Containers: []kube.Container{{Name: "job", Image: "x"}}}}, nil
 		}})
@@ -94,5 +97,50 @@ func TestStartFailsWhenNeverScheduled(t *testing.T) {
 	}
 	if srv.Get("secrets", ns, kd.PodName(mid)) != nil {
 		t.Fatal("the machine Secret was written before scheduling")
+	}
+}
+
+func TestBlockedStartCreatesNothing(t *testing.T) {
+	srv := kubetest.New()
+	defer srv.Close()
+	d := newDriver(t, srv, time.Hour)
+	blocked = "cluster_unhealthy"
+	defer func() { blocked = "" }()
+	if d.StartsBlocked() != "cluster_unhealthy" {
+		t.Fatal("StartsBlocked")
+	}
+	if err := d.Start(context.Background(), driver.Spec{MachineID: mid, JobID: jid, Deadline: time.Now().Add(time.Hour)}); err == nil {
+		t.Fatal("a blocked Start succeeded")
+	}
+	if len(srv.Writes) != 0 {
+		t.Fatalf("writes: %v", srv.Writes)
+	}
+}
+
+func TestListPagesAndInstance(t *testing.T) {
+	srv := kubetest.New()
+	defer srv.Close()
+	srv.Set(func(s *kubetest.Server) { s.PageSize = 2 })
+	d := newDriver(t, srv, time.Hour)
+	want := map[string]bool{}
+	for i := range 5 {
+		id := fmt.Sprintf("2b3c4d5e-6f7a-4b8c-9d0e-%012d", i)
+		inst := "kete-runner"
+		if i == 4 {
+			inst = "other"
+		} else {
+			want[id] = true
+		}
+		srv.Put("pods", ns, map[string]any{"metadata": map[string]any{"name": kd.PodName(id), "labels": map[string]any{
+			kube.LabelManaged: kube.ManagedBy, kd.LabelRole: kd.RoleJob, kd.LabelInstance: inst, kd.LabelMachineID: id}}})
+	}
+	ids, err := d.List(context.Background())
+	if err != nil || len(ids) != len(want) {
+		t.Fatalf("List = %v %v", ids, err)
+	}
+	for _, id := range ids {
+		if !want[id] {
+			t.Fatalf("listed %s", id)
+		}
 	}
 }

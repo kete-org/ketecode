@@ -1,5 +1,6 @@
 # Least privilege (spec §4.3, "S0 findings" 2). No pods/exec, no cluster-wide Secrets, no
-# workloads; the only cluster-scoped right is `get nodes` (the node boot ID for the kubevm check).
+# workloads. Cluster scope: `get nodes` (the node boot ID for the kubevm check) and `get` on this
+# release's admission policies and bindings by name (the controller's fail-closed guard).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -46,14 +47,14 @@ roleRef:
   name: kete-runner
 subjects:
   - kind: ServiceAccount
-    name: {{ .Values.controller.serviceAccountName }}
+    name: {{ .Values.controller.serviceAccountName | quote }}
     namespace: {{ .Release.Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: kete-runner
-  namespace: {{ .Values.jobs.namespace }}
+  namespace: {{ .Values.jobs.namespace | quote }}
   labels:
     {{- include "kete-runner.labels" . | nindent 4 }}
 rules:
@@ -73,7 +74,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kete-runner
-  namespace: {{ .Values.jobs.namespace }}
+  namespace: {{ .Values.jobs.namespace | quote }}
   labels:
     {{- include "kete-runner.labels" . | nindent 4 }}
 roleRef:
@@ -82,7 +83,7 @@ roleRef:
   name: kete-runner
 subjects:
   - kind: ServiceAccount
-    name: {{ .Values.controller.serviceAccountName }}
+    name: {{ .Values.controller.serviceAccountName | quote }}
     namespace: {{ .Release.Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -94,6 +95,12 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [nodes]
+    verbs: [get]
+  # The admission-policy guard: starts stay blocked unless the jobs namespace's policies exist.
+  {{- $names := include "kete-runner.policyNames" . | fromJson }}
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingadmissionpolicies, validatingadmissionpolicybindings]
+    resourceNames: [{{ $names.pods | quote }}, {{ $names.jobSecrets | quote }}, {{ $names.controllerSecrets | quote }}]
     verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -108,5 +115,5 @@ roleRef:
   name: {{ printf "kete-runner-%s-nodes" .Release.Namespace }}
 subjects:
   - kind: ServiceAccount
-    name: {{ .Values.controller.serviceAccountName }}
+    name: {{ .Values.controller.serviceAccountName | quote }}
     namespace: {{ .Release.Namespace }}

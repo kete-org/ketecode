@@ -35,13 +35,17 @@ const (
 // JSON as the file. Save never blocks on the API server — the agent calls it under its lock — it
 // queues the latest state for a background writer and returns the writer's last error, so a
 // failing API server blocks starts (the agent's saveFailed) until a write succeeds again. Writes
-// are conditional on the resourceVersion this store last saw: a conflict means another replica
-// wrote, which the Lease should make impossible, and is reported as an error.
+// are conditional on the resourceVersion this store last saw: a conflict means someone else wrote
+// the Secret (another replica despite the Lease, or an operator), which this store can't resolve,
+// so it is fatal — the store stops writing and calls OnFatal (the runner stops; Kubernetes
+// restarts the controller, which reloads the Secret).
 type SecretStore struct {
 	Client    *Client
 	Namespace string
 	Name      string
 	Log       *slog.Logger
+	// OnFatal is called once, on its own goroutine, when a write conflicts.
+	OnFatal func(error)
 
 	mu      sync.Mutex
 	rv      string // "" until the Secret exists
@@ -49,6 +53,7 @@ type SecretStore struct {
 	pending []byte
 	writing bool
 	lastErr error
+	fatal   error
 	wake    chan struct{}
 	idle    *sync.Cond
 	runOnce sync.Once
@@ -103,6 +108,11 @@ func (s *SecretStore) Save(st state.State) error {
 		return err
 	}
 	s.mu.Lock()
+	if s.fatal != nil {
+		err = s.fatal
+		s.mu.Unlock()
+		return err
+	}
 	s.pending = data
 	err = s.lastErr
 	s.mu.Unlock()
@@ -164,7 +174,9 @@ func (s *SecretStore) Flush(ctx context.Context) error {
 func (s *SecretStore) writeOnce(ctx context.Context) bool {
 	s.mu.Lock()
 	data := s.pending
-	if data == nil {
+	if data == nil || s.fatal != nil {
+		s.pending = nil
+		s.idle.Broadcast()
 		s.mu.Unlock()
 		return false
 	}
@@ -185,10 +197,17 @@ func (s *SecretStore) writeOnce(ctx context.Context) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.writing = false
-	if err != nil {
-		if IsConflict(err) {
-			err = fmt.Errorf("state Secret %s/%s changed under this controller (another replica?): %w", s.Namespace, s.Name, err)
+	if err != nil && IsConflict(err) {
+		err = fmt.Errorf("state Secret %s/%s changed under this controller (another replica or an operator): %w", s.Namespace, s.Name, err)
+		s.Log.Error("state_conflict", "secret", s.Name, "error", err.Error(), "action", "stopping; the restarted controller reloads the state")
+		s.fatal, s.lastErr, s.pending = err, err, nil
+		s.idle.Broadcast()
+		if s.OnFatal != nil {
+			go s.OnFatal(err)
 		}
+		return false
+	}
+	if err != nil {
 		if s.lastErr == nil {
 			s.Log.Error("state_save_failed", "secret", s.Name, "error", err.Error())
 		}
@@ -250,6 +269,23 @@ func decodeKeys(sec Secret) (keys.Keys, error) {
 		return keys.Keys{}, errors.New("kube: the keys Secret's fingerprint annotation doesn't match its keys")
 	}
 	return k, nil
+}
+
+// LoadStaged returns the keys of an unfinished enrollment (annotation staged), or ErrNoKeys. An
+// enrollment retry reuses them, so a platform that did record the first attempt answers key_in_use
+// instead of holding a second, orphaned identity.
+func (k KeySecret) LoadStaged(ctx context.Context) (keys.Keys, error) {
+	sec, err := k.Client.GetSecret(ctx, k.Namespace, k.Name)
+	if IsNotFound(err) {
+		return keys.Keys{}, ErrNoKeys
+	}
+	if err != nil {
+		return keys.Keys{}, err
+	}
+	if sec.Metadata.Annotations[AnnKeys] != KeysStaged {
+		return keys.Keys{}, ErrNoKeys
+	}
+	return decodeKeys(sec)
 }
 
 // Stage writes new keys marked staged (creating or replacing the Secret).

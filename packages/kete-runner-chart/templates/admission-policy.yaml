@@ -1,13 +1,19 @@
-{{- if .Values.admissionPolicy.enabled }}
-{{- $classes := required "jobs.runtimeClassNames is required" .Values.jobs.runtimeClassNames -}}
+{{- /*
+The jobs namespace runs at Pod Security `privileged` (job pods add capabilities inside their own
+VM), so these policies are its only guard and are always installed (there is no switch): the
+controller also refuses to start machines unless they exist with failurePolicy Fail and a Deny
+binding (config admission_policies). Kubernetes >= 1.30.
+*/ -}}
+{{- $sa := include "kete-runner.username" . -}}
+{{- $names := include "kete-runner.policyNames" . | fromJson -}}
+{{- $classes := .Values.jobs.runtimeClassNames -}}
 {{- $images := .Values.jobs.images -}}
 {{- $caps := .Values.jobs.allowedCapabilities -}}
-# Every pod in the jobs namespace (Pod Security `privileged` there) must pass these rules, whoever
-# creates it (spec §4.2, "S0 findings" 1). Kubernetes >= 1.30 (ValidatingAdmissionPolicy GA).
+# Job pods: Pod Security baseline and more (spec §4.2, "S0 findings" 1).
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: {{ printf "kete-runner-jobs-%s" .Values.jobs.namespace }}
+  name: {{ $names.pods | quote }}
   labels:
     {{- include "kete-runner.labels" . | nindent 4 }}
 spec:
@@ -15,12 +21,12 @@ spec:
   matchConstraints:
     namespaceSelector:
       matchLabels:
-        kubernetes.io/metadata.name: {{ .Values.jobs.namespace }}
+        kubernetes.io/metadata.name: {{ .Values.jobs.namespace | quote }}
     resourceRules:
       - apiGroups: [""]
         apiVersions: [v1]
         operations: [CREATE, UPDATE]
-        resources: [pods, pods/ephemeralcontainers]
+        resources: [pods, pods/ephemeralcontainers, pods/resize]
   variables:
     - name: runtimeClasses
       expression: {{ toJson $classes | quote }}
@@ -28,9 +34,11 @@ spec:
       expression: {{ toJson $images | quote }}
     - name: caps
       expression: {{ toJson $caps | quote }}
+    - name: seLinuxTypes
+      expression: "['', 'container_t', 'container_init_t', 'container_kvm_t', 'container_engine_t']"
   validations:
-    - expression: "request.operation != 'CREATE' || request.userInfo.username == {{ include "kete-runner.username" . | squote }}"
-      message: "only the kete-runner controller creates pods in this namespace"
+    - expression: {{ printf "request.userInfo.username == %s" (squote $sa) | quote }}
+      message: "only the kete-runner controller creates or changes pods in this namespace"
       reason: Forbidden
     - expression: "has(object.spec.runtimeClassName) && object.spec.runtimeClassName in variables.runtimeClasses"
       message: "job pods must use an allowed VM-isolated RuntimeClass (shared-kernel pods are not supported)"
@@ -38,17 +46,20 @@ spec:
     - expression: "!(has(object.spec.hostNetwork) && object.spec.hostNetwork) && !(has(object.spec.hostPID) && object.spec.hostPID) && !(has(object.spec.hostIPC) && object.spec.hostIPC)"
       message: "host namespaces are not allowed"
       reason: Forbidden
-    - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false && (!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.projected) || !has(v.projected.sources) || v.projected.sources.all(s, !has(s.serviceAccountToken))))"
+    - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "job pods get no service account token"
       reason: Forbidden
-    - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath))"
-      message: "hostPath volumes are not allowed"
+    - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, has(v.secret) || has(v.emptyDir) || (has(v.projected) && (!has(v.projected.sources) || v.projected.sources.all(s, has(s.secret) || has(s.configMap) || has(s.downwardAPI)))))"
+      message: "only secret, emptyDir and projected (secret, configMap, downwardAPI) volumes are allowed"
       reason: Forbidden
     - expression: "has(object.spec.enableServiceLinks) && object.spec.enableServiceLinks == false"
       message: "job pods must set enableServiceLinks: false"
       reason: Forbidden
     - expression: "(!has(object.spec.initContainers) || size(object.spec.initContainers) == 0) && (!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0)"
       message: "init and ephemeral containers are not allowed"
+      reason: Forbidden
+    - expression: "!has(object.spec.resourceClaims) || size(object.spec.resourceClaims) == 0"
+      message: "resource claims are not allowed"
       reason: Forbidden
     - expression: "object.spec.containers.all(c, c.image in variables.images)"
       message: "job pods run only the allowlisted job images, by digest"
@@ -59,17 +70,112 @@ spec:
     - expression: "object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.capabilities) && has(c.securityContext.capabilities.drop) && 'ALL' in c.securityContext.capabilities.drop && (!has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.all(a, a in variables.caps)))"
       message: "containers drop ALL capabilities and add only the allowed set"
       reason: Forbidden
-    - expression: "object.spec.containers.all(c, !has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0))"
-      message: "host ports are not allowed"
+    - expression: "object.spec.containers.all(c, (!has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0)) && (!has(c.volumeDevices) || size(c.volumeDevices) == 0))"
+      message: "host ports and volume devices are not allowed"
+      reason: Forbidden
+    - expression: "(!has(object.spec.securityContext) || !has(object.spec.securityContext.seccompProfile) || object.spec.securityContext.seccompProfile.type != 'Unconfined') && object.spec.containers.all(c, !has(c.securityContext) || !has(c.securityContext.seccompProfile) || c.securityContext.seccompProfile.type != 'Unconfined')"
+      message: "seccomp Unconfined is not allowed"
+      reason: Forbidden
+    - expression: "(!has(object.spec.securityContext) || !has(object.spec.securityContext.appArmorProfile) || object.spec.securityContext.appArmorProfile.type != 'Unconfined') && object.spec.containers.all(c, !has(c.securityContext) || !has(c.securityContext.appArmorProfile) || c.securityContext.appArmorProfile.type != 'Unconfined') && (!has(object.metadata.annotations) || object.metadata.annotations.all(k, !k.startsWith('container.apparmor.security.beta.kubernetes.io/') || object.metadata.annotations[k] == 'runtime/default' || object.metadata.annotations[k].startsWith('localhost/')))"
+      message: "AppArmor Unconfined is not allowed"
+      reason: Forbidden
+    - expression: "(!has(object.spec.securityContext) || !has(object.spec.securityContext.seLinuxOptions) || ((!has(object.spec.securityContext.seLinuxOptions.type) || object.spec.securityContext.seLinuxOptions.type in variables.seLinuxTypes) && (!has(object.spec.securityContext.seLinuxOptions.user) || object.spec.securityContext.seLinuxOptions.user == '') && (!has(object.spec.securityContext.seLinuxOptions.role) || object.spec.securityContext.seLinuxOptions.role == ''))) && object.spec.containers.all(c, !has(c.securityContext) || !has(c.securityContext.seLinuxOptions) || ((!has(c.securityContext.seLinuxOptions.type) || c.securityContext.seLinuxOptions.type in variables.seLinuxTypes) && (!has(c.securityContext.seLinuxOptions.user) || c.securityContext.seLinuxOptions.user == '') && (!has(c.securityContext.seLinuxOptions.role) || c.securityContext.seLinuxOptions.role == '')))"
+      message: "SELinux type, user and role overrides are not allowed"
+      reason: Forbidden
+    - expression: "object.spec.containers.all(c, !has(c.securityContext) || !has(c.securityContext.procMount) || c.securityContext.procMount == 'Default')"
+      message: "procMount Unmasked is not allowed"
+      reason: Forbidden
+    - expression: "!has(object.spec.securityContext) || !has(object.spec.securityContext.sysctls) || size(object.spec.securityContext.sysctls) == 0"
+      message: "pod sysctls are not allowed (the job sets its own inside its VM)"
+      reason: Forbidden
+    - expression: "(!has(object.spec.securityContext) || !has(object.spec.securityContext.windowsOptions) || !has(object.spec.securityContext.windowsOptions.hostProcess) || !object.spec.securityContext.windowsOptions.hostProcess) && object.spec.containers.all(c, !has(c.securityContext) || !has(c.securityContext.windowsOptions) || !has(c.securityContext.windowsOptions.hostProcess) || !c.securityContext.windowsOptions.hostProcess)"
+      message: "Windows host process containers are not allowed"
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: {{ printf "kete-runner-jobs-%s" .Values.jobs.namespace }}
+  name: {{ $names.pods | quote }}
   labels:
     {{- include "kete-runner.labels" . | nindent 4 }}
 spec:
-  policyName: {{ printf "kete-runner-jobs-%s" .Values.jobs.namespace }}
+  policyName: {{ $names.pods | quote }}
   validationActions: [Deny]
-{{- end }}
+---
+# Secrets in the jobs namespace: only the controller writes them, only the per-machine Opaque
+# Secrets `kete-job-<machine-id>` (no Secret squatting a machine's name). P3's GitLab writer
+# Secret will need its own, named exception here (it is the enterprise's, not the controller's).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ $names.jobSecrets | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.jobs.namespace | quote }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [secrets]
+  validations:
+    - expression: {{ printf "request.userInfo.username == %s" (squote $sa) | quote }}
+      message: "only the kete-runner controller writes Secrets in the jobs namespace"
+      reason: Forbidden
+    - expression: "object.metadata.name.startsWith('kete-job-') && has(object.type) && object.type == 'Opaque'"
+      message: "only Opaque kete-job-<machine-id> Secrets are allowed in the jobs namespace"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ $names.jobSecrets | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  policyName: {{ $names.jobSecrets | quote }}
+  validationActions: [Deny]
+---
+# The controller's own Secrets in the release namespace: it may create or change only its keys and
+# state Secrets, type Opaque (RBAC can't limit `create` by name).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ $names.controllerSecrets | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [secrets]
+  matchConditions:
+    - name: controller
+      expression: {{ printf "request.userInfo.username == %s" (squote $sa) | quote }}
+  variables:
+    - name: names
+      expression: {{ toJson (list .Values.controller.keysSecret .Values.controller.stateSecret) | quote }}
+  validations:
+    - expression: "object.metadata.name in variables.names && has(object.type) && object.type == 'Opaque'"
+      message: "the controller writes only its Opaque keys and state Secrets here"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ $names.controllerSecrets | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  policyName: {{ $names.controllerSecrets | quote }}
+  validationActions: [Deny]

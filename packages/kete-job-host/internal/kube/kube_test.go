@@ -40,10 +40,11 @@ func TestLeaseSingleHolderAndHandover(t *testing.T) {
 		t.Fatal("b acquired a lease a keeps renewing")
 	}
 	bcancel()
-	stopA() // a releases on shutdown
+	stopA()
 	if err := <-aDone; err != nil {
 		t.Fatalf("hold: %v", err)
 	}
+	a.Release() // after its final work, a gives the lease up
 	start := time.Now()
 	if err := b.Acquire(ctx); err != nil {
 		t.Fatal(err)
@@ -215,5 +216,79 @@ func TestNodeBootIDAndVersion(t *testing.T) {
 	v, err := c.ServerVersion(context.Background())
 	if err != nil || v != "v1.31.2" {
 		t.Fatalf("version %q %v", v, err)
+	}
+}
+
+// A hung API server: Hold gives leadership up at the renew deadline, not after a request timeout.
+func TestLeaseHoldBoundedByRenewDeadline(t *testing.T) {
+	srv := kubetest.New()
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	a := fastElector(srv.Client("a"), "pod-a")
+	if err := a.Acquire(ctx); err != nil {
+		t.Fatal(err)
+	}
+	srv.Set(func(s *kubetest.Server) { s.Delay = 10 * time.Second })
+	start := time.Now()
+	if err := a.Hold(ctx); !errors.Is(err, kube.ErrLost) {
+		t.Fatalf("Hold = %v", err)
+	}
+	if d := time.Since(start); d > a.RenewDeadline+300*time.Millisecond {
+		t.Fatalf("leadership kept %s past a %s renew deadline", d, a.RenewDeadline)
+	}
+	srv.Set(func(s *kubetest.Server) { s.Delay = 0 })
+}
+
+func TestSecretStoreConflictIsFatal(t *testing.T) {
+	srv := kubetest.New()
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	fatal := make(chan error, 1)
+	st := &kube.SecretStore{Client: srv.Client("runner"), Namespace: ns, Name: "kete-runner-state", OnFatal: func(err error) { fatal <- err }}
+	if _, err := st.LoadContext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rctx, stop := context.WithCancel(ctx)
+	defer stop()
+	go st.Run(rctx)
+	s := state.State{Version: state.Version, Machines: []state.Machine{}}
+	_ = st.Save(s)
+	if err := st.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	srv.Put("secrets", ns, srv.Get("secrets", ns, "kete-runner-state"))
+	_ = st.Save(s)
+	select {
+	case <-fatal:
+	case <-ctx.Done():
+		t.Fatal("OnFatal not called")
+	}
+	if err := st.Flush(ctx); err == nil {
+		t.Fatal("Flush hid the conflict")
+	}
+	if err := st.Save(s); err == nil {
+		t.Fatal("Save accepted after a fatal conflict")
+	}
+}
+
+func TestKeySecretLoadStaged(t *testing.T) {
+	srv := kubetest.New()
+	defer srv.Close()
+	ctx := context.Background()
+	ks := kube.KeySecret{Client: srv.Client("runner"), Namespace: ns, Name: "kete-runner-keys"}
+	if _, err := ks.LoadStaged(ctx); !errors.Is(err, kube.ErrNoKeys) {
+		t.Fatal(err)
+	}
+	k, _ := keys.Generate(rand.Reader)
+	_ = ks.Stage(ctx, k)
+	got, err := ks.LoadStaged(ctx)
+	if err != nil || got.Fingerprint() != k.Fingerprint() {
+		t.Fatalf("staged: %v", err)
+	}
+	_ = ks.Commit(ctx, k)
+	if _, err := ks.LoadStaged(ctx); !errors.Is(err, kube.ErrNoKeys) {
+		t.Fatal("enrolled keys returned as staged")
 	}
 }

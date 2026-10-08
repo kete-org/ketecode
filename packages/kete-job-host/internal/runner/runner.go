@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,8 @@ type Options struct {
 	EnrollRetry    time.Duration
 	Lease          kube.Elector
 	DriverPoll     time.Duration
+	// PolicyEvery is how often the admission policies are checked (default 30 s).
+	PolicyEvery time.Duration
 }
 
 // ErrNotEnrolled means the runner has no keys and no enrollment token was found within ctx.
@@ -106,21 +109,36 @@ func Run(ctx context.Context, o Options) error {
 	}
 	rctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// stopErr is the first reason the runner must stop acting as the host: the lease lost, or the
+	// state Secret changed under it.
+	var stopMu sync.Mutex
+	var stopErr error
+	stop := func(err error, msg string) {
+		stopMu.Lock()
+		if stopErr == nil {
+			stopErr = err
+			o.Log.Error(msg, "error", err.Error(), "action", "stopping; Kubernetes restarts the controller")
+		}
+		stopMu.Unlock()
+		cancel()
+	}
 	var wg sync.WaitGroup
-	var lost error
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		if err := el.Hold(rctx); err != nil {
-			lost = err
-			o.Log.Error("lease_lost", "error", err.Error(), "action", "stopping; Kubernetes restarts the controller")
-			cancel()
+			stop(err, "lease_lost")
 		}
 	}()
-	store := &kube.SecretStore{Client: o.Kube, Namespace: k.Namespace, Name: k.StateSecret, Log: o.Log}
+	store := &kube.SecretStore{Client: o.Kube, Namespace: k.Namespace, Name: k.StateSecret, Log: o.Log,
+		OnFatal: func(err error) { stop(err, "state_conflict") }}
 	storeCtx, stopStore := context.WithCancel(context.Background())
 	storeDone := make(chan struct{})
 	go func() { defer close(storeDone); store.Run(storeCtx) }()
+	guard := &policyGuard{o: o}
+	// finish runs once nothing acts as the host any more (the agent has returned): write the last
+	// state, stop the writer and the lease holder, and only then give the lease up — never before
+	// the final state is written, and never after losing it.
 	finish := func(err error) error {
 		cancel()
 		fctx, fcancel := context.WithTimeout(context.Background(), kube.RequestTimeout)
@@ -131,9 +149,16 @@ func Run(ctx context.Context, o Options) error {
 		stopStore()
 		<-storeDone
 		wg.Wait()
-		if lost != nil {
-			return lost
+		guard.wait()
+		stopMu.Lock()
+		defer stopMu.Unlock()
+		if stopErr != nil {
+			if !errors.Is(stopErr, kube.ErrLost) {
+				el.Release()
+			}
+			return stopErr
 		}
+		el.Release()
 		return err
 	}
 
@@ -148,8 +173,10 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return finish(err)
 	}
+	guard.start(rctx)
 	drv, err := kdriver.New(kdriver.Options{
-		Client: o.Kube, Namespace: k.JobsNamespace, StartTimeout: k.StartTimeout, Pod: podFunc, Log: o.Log, Now: o.Now, PollEvery: o.DriverPoll,
+		Client: o.Kube, Namespace: k.JobsNamespace, Instance: k.Instance, StartTimeout: k.StartTimeout, Pod: podFunc,
+		Log: o.Log, Now: o.Now, PollEvery: o.DriverPoll, Blocked: guard.blocked,
 	})
 	if err != nil {
 		return finish(err)
@@ -263,12 +290,20 @@ func enrollOnce(ctx context.Context, o Options, store *kube.SecretStore, ksec ku
 		return keys.Keys{}, true, fmt.Errorf("runner: enrollment Secret %s key \"token\": %w", k.EnrollmentSecret, err)
 	}
 	defer clear(token)
-	ks, err := keys.Generate(o.Rand)
-	if err != nil {
-		return keys.Keys{}, true, err
-	}
-	if err := ksec.Stage(ctx, ks); err != nil {
-		return keys.Keys{}, false, fmt.Errorf("staging keys: %w", err)
+	// A retry reuses the keys staged by an earlier attempt (the platform may have recorded it).
+	ks, err := ksec.LoadStaged(ctx)
+	switch {
+	case errors.Is(err, kube.ErrNoKeys):
+		if ks, err = keys.Generate(o.Rand); err != nil {
+			return keys.Keys{}, true, err
+		}
+		if err := ksec.Stage(ctx, ks); err != nil {
+			return keys.Keys{}, false, fmt.Errorf("staging keys: %w", err)
+		}
+	case err != nil:
+		return keys.Keys{}, false, fmt.Errorf("reading staged keys: %w", err)
+	default:
+		o.Log.Info("enroll_reusing_staged_keys")
 	}
 	var b [4]byte
 	if _, err := io.ReadFull(o.Rand, b[:]); err != nil {
@@ -342,5 +377,72 @@ func sleep(ctx context.Context, d time.Duration) error {
 		return ctx.Err()
 	case <-t.C:
 		return nil
+	}
+}
+
+// policyGuard blocks starts (cluster_unhealthy) unless every configured admission policy exists
+// with failurePolicy Fail and a binding of the same name that names it and denies. The jobs
+// namespace is Pod Security privileged, so without the policies nothing would stop a pod there
+// from escaping its VM boundary: the controller fails closed. Checked once before the agent
+// starts and then every PolicyEvery; the result is cached for the agent's lock-held calls.
+type policyGuard struct {
+	o    Options
+	mu   sync.Mutex
+	why  string
+	done chan struct{}
+}
+
+func (g *policyGuard) blocked() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.why
+}
+
+func (g *policyGuard) check(ctx context.Context) {
+	why := ""
+	for _, name := range g.o.Config.Kube.AdmissionPolicies {
+		p, err := g.o.Kube.GetAdmissionPolicy(ctx, name)
+		if err == nil && p.Spec.FailurePolicy != "Fail" {
+			err = errors.New("failurePolicy is not Fail")
+		}
+		var b kube.AdmissionPolicyBinding
+		if err == nil {
+			b, err = g.o.Kube.GetAdmissionPolicyBinding(ctx, name)
+		}
+		if err == nil && (b.Spec.PolicyName != name || !slices.Contains(b.Spec.ValidationActions, "Deny")) {
+			err = errors.New("the binding does not deny with this policy")
+		}
+		if err != nil {
+			why = contract.BlockedClusterUnhealthy
+			g.o.Log.Error("admission_policy_missing", "policy", name, "error", err.Error(), "action", "starts blocked until it is restored")
+			break
+		}
+	}
+	g.mu.Lock()
+	if g.why != why && why == "" {
+		g.o.Log.Info("admission_policies_ok")
+	}
+	g.why = why
+	g.mu.Unlock()
+}
+
+func (g *policyGuard) start(ctx context.Context) {
+	every := g.o.PolicyEvery
+	if every <= 0 {
+		every = 30 * time.Second
+	}
+	g.check(ctx)
+	g.done = make(chan struct{})
+	go func() {
+		defer close(g.done)
+		for sleep(ctx, every) == nil {
+			g.check(ctx)
+		}
+	}()
+}
+
+func (g *policyGuard) wait() {
+	if g.done != nil {
+		<-g.done
 	}
 }

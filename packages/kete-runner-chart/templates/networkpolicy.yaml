@@ -20,7 +20,7 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace }}
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace | quote }}
           podSelector:
             matchLabels:
               {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
@@ -29,17 +29,17 @@ spec:
         - {protocol: TCP, port: 53}
     - to:
         {{- range .Values.networkPolicy.apiServer.cidrs }}
-        - ipBlock: {cidr: {{ . }}}
+        - ipBlock: {cidr: {{ . | quote }}}
         {{- end }}
       ports:
-        - {protocol: TCP, port: {{ .Values.networkPolicy.apiServer.port }}}
+        - {protocol: TCP, port: {{ int .Values.networkPolicy.apiServer.port }}}
     - to:
         {{- range .Values.networkPolicy.platform.cidrs }}
-        - ipBlock: {cidr: {{ . }}}
+        - ipBlock: {cidr: {{ . | quote }}}
         {{- end }}
       ports:
         {{- range .Values.networkPolicy.platform.ports }}
-        - {protocol: TCP, port: {{ . }}}
+        - {protocol: TCP, port: {{ int . }}}
         {{- end }}
 ---
 # Jobs namespace: default deny both ways; job pods may reach DNS and the configured egress
@@ -48,7 +48,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: kete-jobs-default
-  namespace: {{ .Values.jobs.namespace }}
+  namespace: {{ .Values.jobs.namespace | quote }}
   labels:
     {{- include "kete-runner.labels" . | nindent 4 }}
 spec:
@@ -59,7 +59,7 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace }}
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace | quote }}
           podSelector:
             matchLabels:
               {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
@@ -69,11 +69,11 @@ spec:
     {{- if .Values.jobs.egress.cidrs }}
     - to:
         {{- range .Values.jobs.egress.cidrs }}
-        - ipBlock: {cidr: {{ . }}}
+        - ipBlock: {cidr: {{ . | quote }}}
         {{- end }}
       ports:
         {{- range .Values.jobs.egress.ports }}
-        - {protocol: TCP, port: {{ . }}}
+        - {protocol: TCP, port: {{ int . }}}
         {{- end }}
     {{- end }}
 {{- end }}

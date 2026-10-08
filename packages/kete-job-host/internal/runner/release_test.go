@@ -17,7 +17,7 @@ import (
 func TestReleaseBuildRefusesPlaceholder(t *testing.T) {
 	c, err := config.Parse([]byte(`{"platform_url":"https://portal.kete.example","driver":"kubernetes","slots":1,"reset":"none",
 	  "image_allowlist":["docker.io/library/busybox@sha256:1111111111111111111111111111111111111111111111111111111111111111"],
-	  "kubernetes":{"namespace":"kete-system","jobs_namespace":"kete-jobs","runtime_class_names":["kata"],"pod_driver":"placeholder"}}`))
+	  "kubernetes":{"namespace":"kete-system","jobs_namespace":"kete-jobs","instance":"kete-runner","admission_policies":["p"],"runtime_class_names":["kata"],"pod_driver":"placeholder"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}

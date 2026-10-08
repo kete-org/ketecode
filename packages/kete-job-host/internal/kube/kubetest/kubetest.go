@@ -40,6 +40,10 @@ type Server struct {
 	Unschedulable bool
 	// Fail makes every request answer 503 while set.
 	Fail bool
+	// Delay holds every request this long (a hung API server), outside the lock.
+	Delay time.Duration
+	// PageSize > 0 makes lists return pages of that size with a continue token.
+	PageSize int
 	// Writes records "<user> <method> <resource>/<name>" for every write.
 	Writes []string
 }
@@ -69,6 +73,16 @@ func meta(o map[string]any) map[string]any {
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
+	delay := s.Delay
+	s.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+	}
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.Fail {
 		status(w, 503, "ServiceUnavailable")
@@ -86,6 +100,16 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]any{"name": Node}, "status": map[string]any{"nodeInfo": map[string]any{"bootID": BootID}}})
+		return
+	}
+	if rest, ok := strings.CutPrefix(p, "/apis/admissionregistration.k8s.io/v1/"); ok && r.Method == http.MethodGet {
+		res, name, _ := strings.Cut(rest, "/")
+		o, found := s.objs[key{res, "", name}]
+		if !found {
+			status(w, 404, "NotFound")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(o)
 		return
 	}
 	p = strings.TrimPrefix(strings.TrimPrefix(p, "/api/v1"), "/apis/coordination.k8s.io/v1")
@@ -110,7 +134,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if name == "" {
-			s.list(w, res, ns, r.URL.Query().Get("labelSelector"))
+			s.list(w, res, ns, r.URL.Query().Get("labelSelector"), r.URL.Query().Get("continue"))
 			return
 		}
 		o, ok := s.objs[k]
@@ -192,7 +216,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) list(w http.ResponseWriter, res, ns, selector string) {
+func (s *Server) list(w http.ResponseWriter, res, ns, selector, cont string) {
 	want := map[string]string{}
 	for _, kv := range strings.Split(selector, ",") {
 		if a, b, ok := strings.Cut(kv, "="); ok {
@@ -220,7 +244,17 @@ func (s *Server) list(w http.ResponseWriter, res, ns, selector string) {
 			items = append(items, o)
 		}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+	next := ""
+	if s.PageSize > 0 {
+		from, _ := strconv.Atoi(cont)
+		from = min(from, len(items))
+		to := min(from+s.PageSize, len(items))
+		if to < len(items) {
+			next = strconv.Itoa(to)
+		}
+		items = items[from:to]
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": items, "metadata": map[string]any{"continue": next}})
 }
 
 func status(w http.ResponseWriter, code int, reason string) {
@@ -306,4 +340,18 @@ func (s *Server) WritesBy(user string) []string {
 		}
 	}
 	return out
+}
+
+// AddAdmissionPolicy stores a ValidatingAdmissionPolicy and its binding (same name) as the chart
+// installs them.
+func (s *Server) AddAdmissionPolicy(name string) {
+	s.Put("validatingadmissionpolicies", "", map[string]any{"metadata": map[string]any{"name": name}, "spec": map[string]any{"failurePolicy": "Fail"}})
+	s.Put("validatingadmissionpolicybindings", "", map[string]any{"metadata": map[string]any{"name": name}, "spec": map[string]any{"policyName": name, "validationActions": []any{"Deny"}}})
+}
+
+// Delete removes an object.
+func (s *Server) Delete(res, ns, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objs, key{res, ns, name})
 }

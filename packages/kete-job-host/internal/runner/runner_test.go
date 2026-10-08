@@ -60,7 +60,7 @@ func cfg(t *testing.T) config.Config {
 	t.Helper()
 	raw := fmt.Sprintf(`{"platform_url":"https://%s","driver":"kubernetes","slots":8,"reset":"none",
 	  "image_allowlist":[%q,%q],
-	  "kubernetes":{"namespace":%q,"jobs_namespace":%q,"enrollment_secret":"kete-runner-enrollment",
+	  "kubernetes":{"namespace":%q,"jobs_namespace":%q,"instance":"kete-runner","admission_policies":["kete-runner-jobs"],"enrollment_secret":"kete-runner-enrollment",
 	    "runtime_class_names":["kete-test"],"repositories":["gitlab:payments/api"],"advertise_repositories":true,
 	    "boundary":{"summary":"none","denials":"count","publish_refs":"omit"},
 	    "pod_driver":"placeholder","placeholder":{"exit_after":[{"image":%q,"seconds":5}]}}}`,
@@ -93,6 +93,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(srv.Close)
 	ks := kubetest.New()
 	t.Cleanup(ks.Close)
+	ks.AddAdmissionPolicy("kete-runner-jobs")
 	log := &syncBuffer{}
 	e := &env{t: t, kube: ks, p: p, clk: clk, log: log, addr: srv.Listener.Addr().String()}
 	e.o = runner.Options{
@@ -100,7 +101,7 @@ func newEnv(t *testing.T) *env {
 		Arch: "arm64", Clock: clock.Fixed(true), Log: slog.New(slog.NewJSONHandler(log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		ClientOptions: copts, Now: clk.Now,
 		Interval:       func(s int) time.Duration { return time.Duration(s) * 5 * time.Millisecond },
-		SuperviseEvery: 20 * time.Millisecond, EnrollRetry: 20 * time.Millisecond, DriverPoll: 5 * time.Millisecond,
+		SuperviseEvery: 20 * time.Millisecond, EnrollRetry: 20 * time.Millisecond, DriverPoll: 5 * time.Millisecond, PolicyEvery: 20 * time.Millisecond,
 		Lease: kube.Elector{Duration: 2 * time.Second, RenewDeadline: 1500 * time.Millisecond, Retry: 50 * time.Millisecond},
 	}
 	return e
@@ -248,18 +249,26 @@ func TestRunnerLifecycle(t *testing.T) {
 	if h := e.kube.Get("leases", sysNS, "kete-runner")["spec"].(map[string]any)["holderIdentity"]; h != "" {
 		t.Fatalf("lease not released: %v", h)
 	}
+	if w := e.kube.WritesBy(user); w[len(w)-1] != user+" PUT leases/kete-runner" {
+		t.Fatalf("the lease was not released last: %v", w[len(w)-3:])
+	}
 
 	// Restart with an orphan job pod (labelled, unknown to the state): reconcile deletes it and
 	// reports it unattributed; the state Secret carries the enrollment over.
 	orphan := mid(9)
 	e.kube.Put("pods", jobsNS, map[string]any{
 		"metadata": map[string]any{"name": kdriver.PodName(orphan), "labels": map[string]any{
-			kube.LabelManaged: kube.ManagedBy, kdriver.LabelRole: kdriver.RoleJob, kdriver.LabelMachineID: orphan}},
+			kube.LabelManaged: kube.ManagedBy, kdriver.LabelRole: kdriver.RoleJob, kdriver.LabelInstance: "kete-runner", kdriver.LabelMachineID: orphan}},
 		"spec": map[string]any{"containers": []any{}}, "status": map[string]any{"phase": "Running"},
 	})
 	e.kube.Put("pods", jobsNS, map[string]any{
-		"metadata": map[string]any{"name": "not-a-machine", "labels": map[string]any{kube.LabelManaged: kube.ManagedBy, kdriver.LabelRole: kdriver.RoleJob}},
+		"metadata": map[string]any{"name": "not-a-machine", "labels": map[string]any{kube.LabelManaged: kube.ManagedBy, kdriver.LabelRole: kdriver.RoleJob, kdriver.LabelInstance: "kete-runner"}},
 		"spec":     map[string]any{"containers": []any{}},
+	})
+	e.kube.Put("pods", jobsNS, map[string]any{
+		"metadata": map[string]any{"name": kdriver.PodName(mid(10)), "labels": map[string]any{
+			kube.LabelManaged: kube.ManagedBy, kdriver.LabelRole: kdriver.RoleJob, kdriver.LabelInstance: "other-runner", kdriver.LabelMachineID: mid(10)}},
+		"spec": map[string]any{"containers": []any{}},
 	})
 	e.o.Identity = "kete-runner-def"
 	stop = e.start()
@@ -269,6 +278,9 @@ func TestRunnerLifecycle(t *testing.T) {
 	})
 	if len(e.p.Hosts()) != 1 {
 		t.Fatal("the restarted runner enrolled again")
+	}
+	if e.kube.Get("pods", jobsNS, kdriver.PodName(mid(10))) == nil {
+		t.Fatal("another runner instance's pod was deleted")
 	}
 	if err := stop(); err != nil {
 		t.Fatal(err)
@@ -342,4 +354,70 @@ func mustB64(t *testing.T, v any) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func enrolledEnv(t *testing.T) (*env, string, func() error) {
+	e := newEnv(t)
+	e.p.AddToken(token)
+	e.kube.Put("secrets", sysNS, map[string]any{"metadata": map[string]any{"name": "kete-runner-enrollment"}, "data": map[string]any{"token": []byte(token)}})
+	stop := e.start()
+	e.eventually("enrolled", func() bool { return len(e.p.Hosts()) == 1 })
+	host := e.p.Hosts()[0]
+	e.p.SetStatus(host, "active")
+	e.eventually("a report", func() bool { return len(e.p.HostSnapshot(host).ReportsV2) > 0 })
+	return e, host, stop
+}
+
+// Without the jobs namespace's admission policy (or with a binding that only warns) nothing starts
+// (cluster_unhealthy); once restored, machines start again.
+func TestRunnerBlocksStartsWithoutAdmissionPolicy(t *testing.T) {
+	e, host, stop := enrolledEnv(t)
+	defer func() { _ = stop() }()
+	e.kube.Put("validatingadmissionpolicybindings", "", map[string]any{"metadata": map[string]any{"name": "kete-runner-jobs"},
+		"spec": map[string]any{"policyName": "kete-runner-jobs", "validationActions": []any{"Warn"}}})
+	e.eventually("starts blocked", func() bool {
+		r := e.p.HostSnapshot(host).ReportsV2
+		sb := r[len(r)-1].StartsBlocked
+		return sb != nil && *sb == contract.BlockedClusterUnhealthy
+	})
+	e.assign(host, mid(1), jid(1), imageA, repo, nil, time.Hour)
+	e.eventually("refused", func() bool {
+		m := e.machine(host, mid(1))
+		return m.Observed == contract.StateFailed && m.ObservedReason == contract.ReasonStartsBlocked
+	})
+	if e.kube.Get("pods", jobsNS, kdriver.PodName(mid(1))) != nil {
+		t.Fatal("a pod was created without the admission policy")
+	}
+	e.kube.Delete("validatingadmissionpolicies", "", "kete-runner-jobs")
+	e.kube.AddAdmissionPolicy("kete-runner-jobs")
+	e.assign(host, mid(2), jid(2), imageA, repo, nil, time.Hour)
+	e.eventually("started again", func() bool { return e.kube.Get("pods", jobsNS, kdriver.PodName(mid(2))) != nil })
+}
+
+// Someone else writing the state Secret is fatal: the runner stops (Kubernetes restarts it).
+func TestRunnerStopsOnStateConflict(t *testing.T) {
+	e, host, stop := enrolledEnv(t)
+	sec := e.kube.Get("secrets", sysNS, "kete-runner-state")
+	e.kube.Put("secrets", sysNS, sec)                            // a foreign write: new resourceVersion
+	e.assign(host, mid(1), jid(1), imageA, repo, nil, time.Hour) // forces a state write
+	e.eventually("conflict logged", func() bool { return strings.Contains(e.log.String(), "state_conflict") })
+	err := stop()
+	if err == nil || !strings.Contains(err.Error(), "changed under this controller") {
+		t.Fatalf("Run = %v", err)
+	}
+}
+
+// A squatted machine Secret: the pod is deleted at once and the machine fails.
+func TestRunnerSecretSquat(t *testing.T) {
+	e, host, stop := enrolledEnv(t)
+	defer func() { _ = stop() }()
+	e.kube.Put("secrets", jobsNS, map[string]any{"metadata": map[string]any{"name": kdriver.PodName(mid(1))}, "data": map[string]any{"node_boot_id": []byte("x")}})
+	e.assign(host, mid(1), jid(1), imageA, repo, nil, time.Hour)
+	e.eventually("failed driver_failed", func() bool {
+		m := e.machine(host, mid(1))
+		return m.Observed == contract.StateFailed && m.ObservedReason == contract.ReasonDriverFailed
+	})
+	if e.kube.Get("pods", jobsNS, kdriver.PodName(mid(1))) != nil {
+		t.Fatal("the pod survived a squatted Secret")
+	}
 }

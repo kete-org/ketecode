@@ -20,32 +20,50 @@ unattended job in its own VM-isolated pod in a dedicated jobs namespace.
 | ServiceAccount `kete-runner` | release | the controller's only identity |
 | Role + RoleBinding | release | `get`/`update` on the keys and state Secrets and the Lease **by name**; `create` Secrets and Leases (first start); `get`/`delete` on the enrollment token Secret by name |
 | Role + RoleBinding | jobs | pods `create, get, list, delete`; secrets `create, get, delete`; events `create`. No `pods/exec`, `attach`, `portforward` |
-| ClusterRole + Binding | — | `get` on nodes only (the node boot ID the job compares with its own) |
+| ClusterRole + Binding | — | `get` on nodes (the node boot ID the job compares with its own) and `get` on this release's admission policies and bindings by name (the fail-closed guard) |
 | ConfigMap `kete-runner-config` | release | the controller's `config.json` (no secret in it) |
 | Namespace `kete-jobs` (optional) | — | Pod Security `privileged` (job pods add capabilities inside their own VM), audit/warn `baseline` |
-| ValidatingAdmissionPolicy + Binding | cluster | every pod in the jobs namespace must pass the rules below |
+| 3 ValidatingAdmissionPolicies + Bindings | cluster | job pods, Secrets in the jobs namespace, the controller's own Secrets (below) |
 | NetworkPolicies | release, jobs | controller: no ingress, egress to DNS, the API server and the platform/proxy only; jobs: default deny, DNS and the configured egress |
 
 The Lease (`coordination.k8s.io`), the keys Secret `kete-runner-keys` and the state Secret
 `kete-runner-state` are created by the controller at first start; `helm uninstall` leaves them, so a
 reinstall keeps the runner's identity. Delete them (and create a new enrollment token) to re-enroll.
 
-### Admission policy (jobs namespace)
+### Admission policies (always installed)
 
-Kubernetes ≥ 1.30 (`ValidatingAdmissionPolicy` GA). A pod is refused unless:
+The jobs namespace is Pod Security `privileged`, so these ValidatingAdmissionPolicies (Kubernetes
+≥ 1.30) are its only guard. There is no switch to turn them off, and the controller **fails closed**:
+it checks at start and every 30 s that each policy exists with `failurePolicy: Fail` and a binding
+of the same name that names it and denies; otherwise new starts are blocked (`cluster_unhealthy`).
 
-1. it is created by the controller's ServiceAccount (`system:serviceaccount:<release ns>:kete-runner`);
-2. its `runtimeClassName` is one of `jobs.runtimeClassNames` (VM-isolated classes; `runc` and gVisor
-   are refused by the values schema too);
-3. it uses no host network, PID or IPC namespace and no `hostPath` volume;
-4. it gets no service account token (`automountServiceAccountToken: false`, no projected token);
-5. `enableServiceLinks: false`;
-6. it has no init or ephemeral containers;
-7. every container runs an image from `jobs.images` (by digest);
-8. no container is privileged; every container drops `ALL` and adds only `jobs.allowedCapabilities`
-   (the S0-measured set: `NET_ADMIN, SYS_ADMIN, SYS_RESOURCE, SETUID, SETGID, KILL, CHOWN,
-   DAC_OVERRIDE, FOWNER, FSETID, NET_BIND_SERVICE`);
-9. no container uses a host port.
+`kete-runner-<jobs ns>-pods` — pods (create, update, ephemeral containers, resize) are refused
+unless:
+
+1. the request comes from the controller's ServiceAccount (`system:serviceaccount:<release ns>:
+   <serviceAccountName>`) — nobody else creates **or changes** (labels, annotations, ephemeral
+   containers, resize) a job pod;
+2. `runtimeClassName` is one of `jobs.runtimeClassNames` (VM-isolated; `runc`/gVisor refused by the
+   schema too);
+3. no host network, PID or IPC namespace; no service account token; `enableServiceLinks: false`;
+4. volumes are only `secret`, `emptyDir` or `projected` from secrets, configMaps and the downward
+   API (no hostPath, PVC, CSI, ephemeral, NFS, iSCSI, RBD, FC, …, no SA token projection);
+5. no init or ephemeral containers, no `resourceClaims`, no `volumeDevices`, no host ports;
+6. every image is from `jobs.images` (by digest);
+7. no privileged container; every container drops `ALL` and adds only `jobs.allowedCapabilities`
+   (the S0 set: `NET_ADMIN, SYS_ADMIN, SYS_RESOURCE, SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE,
+   FOWNER, FSETID, NET_BIND_SERVICE`);
+8. no seccomp or AppArmor `Unconfined` (pod or container field, or the AppArmor annotation), no
+   SELinux type override outside the baseline set (`container_t`, `container_init_t`,
+   `container_kvm_t`, `container_engine_t`) and no SELinux user/role, no `procMount: Unmasked`, no
+   pod sysctls, no Windows host process.
+
+`kete-runner-<jobs ns>-secrets` — only the controller writes Secrets in the jobs namespace, and only
+Opaque `kete-job-*` ones (the per-machine boot-ID/config Secrets), so nothing can squat a machine's
+Secret name. P3's GitLab writer Secret will get its own, named exception.
+
+`kete-runner-<release ns>-controller` — the controller may create or change only its own keys and
+state Secrets (Opaque) in the release namespace (RBAC can't limit `create` by name).
 
 ## Prerequisites
 
@@ -104,8 +122,13 @@ pod is created (P2, existing `image.Sigstore`).
   deleted (orphan kill) and reported; a held one is re-adopted. Each pod has
   `activeDeadlineSeconds` = deadline + 6 min, a second killer behind the controller's own
   (deadline + 5 min), which works while the platform is unreachable.
-- **One active replica**: a Lease (15 s, renewed every 2 s, lost after 10 s without renewal). A
-  replica that loses it exits and is restarted; the old one releases it on shutdown.
+- **One active replica**: a Lease (15 s, renewed every 2 s). Each renewal is bounded by the renew
+  deadline (10 s after the last success); past it the replica stops acting as the host and exits
+  (Kubernetes restarts it). On a clean shutdown it releases the Lease only after its final state
+  write. A state write that conflicts (someone else wrote the Secret) is fatal too: the controller
+  exits and reloads.
+- Job pods carry `app.kubernetes.io/instance: <release>`; a runner only ever lists or deletes its
+  own release's pods.
 
 ## Tests
 

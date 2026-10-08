@@ -59,6 +59,8 @@ type File struct {
 type KubernetesFile struct {
 	Namespace           string                 `json:"namespace"`
 	JobsNamespace       string                 `json:"jobs_namespace"`
+	Instance            string                 `json:"instance"`
+	AdmissionPolicies   []string               `json:"admission_policies"`
 	KeysSecret          string                 `json:"keys_secret,omitempty"`
 	StateSecret         string                 `json:"state_secret,omitempty"`
 	EnrollmentSecret    string                 `json:"enrollment_secret,omitempty"`
@@ -90,13 +92,19 @@ type PlaceholderExit struct {
 
 // Kubernetes is the validated kubernetes section.
 type Kubernetes struct {
-	Namespace        string
-	JobsNamespace    string
-	KeysSecret       string
-	StateSecret      string
-	EnrollmentSecret string // "" = none configured
-	Lease            string
-	RuntimeClasses   []string
+	Namespace     string
+	JobsNamespace string
+	// Instance is the Helm release name (job pod label and selector).
+	Instance string
+	// AdmissionPolicies are the ValidatingAdmissionPolicies (each with a binding of the same name)
+	// that must exist and deny for starts to be allowed: the jobs namespace is Pod Security
+	// privileged, so they are its only guard.
+	AdmissionPolicies []string
+	KeysSecret        string
+	StateSecret       string
+	EnrollmentSecret  string // "" = none configured
+	Lease             string
+	RuntimeClasses    []string
 	// Proxy is the enterprise HTTP proxy for the platform connection (nil: direct).
 	Proxy *url.URL
 	// CABundle is a PEM file of extra roots for the platform connection ("" = system roots only).
@@ -544,7 +552,7 @@ func parseKubernetes(f KubernetesFile, images []string) (Kubernetes, error) {
 		return v
 	}
 	k := Kubernetes{
-		Namespace: f.Namespace, JobsNamespace: f.JobsNamespace,
+		Namespace: f.Namespace, JobsNamespace: f.JobsNamespace, Instance: f.Instance,
 		KeysSecret: str(f.KeysSecret, "kete-runner-keys"), StateSecret: str(f.StateSecret, "kete-runner-state"),
 		EnrollmentSecret: f.EnrollmentSecret, Lease: str(f.Lease, "kete-runner"),
 		CABundle: f.CABundle, AdvertiseRepos: f.AdvertiseRepos, Boundary: contract.DefaultDataBoundary,
@@ -554,6 +562,18 @@ func parseKubernetes(f KubernetesFile, images []string) (Kubernetes, error) {
 		if !dns1123Label(n) {
 			return Kubernetes{}, fmt.Errorf("config: kubernetes namespace %q is not a DNS-1123 label", n)
 		}
+	}
+	if !dns1123Label(k.Instance) {
+		return Kubernetes{}, errors.New("config: kubernetes instance (the release name) must be a DNS-1123 label")
+	}
+	if n := len(f.AdmissionPolicies); n < 1 || n > 8 {
+		return Kubernetes{}, errors.New("config: kubernetes admission_policies must name 1-8 policies (the jobs namespace's guard)")
+	}
+	for _, p := range f.AdmissionPolicies {
+		if !contract.ValidKubernetesName(p) || slices.Contains(k.AdmissionPolicies, p) {
+			return Kubernetes{}, fmt.Errorf("config: admission policy %q is invalid or repeated", p)
+		}
+		k.AdmissionPolicies = append(k.AdmissionPolicies, p)
 	}
 	if k.Namespace == k.JobsNamespace {
 		return Kubernetes{}, errors.New("config: the controller and jobs namespaces must differ")

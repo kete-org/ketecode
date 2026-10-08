@@ -27,7 +27,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "system:serviceaccount:%s:%s" .Release.Namespace .Values.controller.serviceAccountName -}}
 {{- end -}}
 
+{{/* The admission policies' names (each binding has its policy's name); also config admission_policies. */}}
+{{- define "kete-runner.policyNames" -}}
+{{- $base := printf "kete-runner-%s" .Values.jobs.namespace -}}
+{{- dict "pods" (printf "%s-pods" $base) "jobSecrets" (printf "%s-secrets" $base) "controllerSecrets" (printf "kete-runner-%s-controller" .Release.Namespace) | toJson -}}
+{{- end -}}
+
 {{- define "kete-runner.checks" -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" .Values.controller.serviceAccountName) -}}{{- fail "controller.serviceAccountName must be a DNS-1123 label" -}}{{- end -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" .Release.Name) -}}{{- fail "the release name must be a DNS-1123 label" -}}{{- end -}}
+{{- range .Values.jobs.egress.cidrs -}}
+{{- $parts := splitList "/" . -}}
+{{- if or (ne (len $parts) 2) (lt (atoi (index $parts 1)) 8) (hasPrefix "169.254." .) (hasPrefix "169.0.0.0/" .) -}}{{- fail (printf "jobs.egress.cidrs entry %q: name the proxy and endpoints narrowly (prefix /8 or longer, never 0.0.0.0/0, ::/0 or the link-local metadata range)" .) -}}{{- end -}}
+{{- end -}}
 {{- if eq .Release.Namespace .Values.jobs.namespace -}}{{- fail "jobs.namespace must differ from the release namespace" -}}{{- end -}}
 {{- if not (regexMatch "^https://[a-z0-9.-]+(:443)?/?$" (required "platform.url is required" .Values.platform.url)) -}}{{- fail "platform.url must be https://host" -}}{{- end -}}
 {{- if or (lt (len .Values.jobs.images) 1) (gt (len .Values.jobs.images) 16) -}}{{- fail "jobs.images must list 1-16 job images by digest" -}}{{- end -}}

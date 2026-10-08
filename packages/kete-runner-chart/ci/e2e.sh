@@ -145,6 +145,51 @@ denied "an allowed pod created by an admin" kubectl create -f <(pod admin-pod ke
 denied "a privileged pod" kubectl --as=$SA create -f <(pod priv-pod kete-test "$IMAGE_A" privileged)
 denied "a non-allowlisted image" kubectl --as=$SA create -f <(pod tag-pod kete-test "busybox:latest")
 
+# Pod Security baseline and more, one rule at a time: a pod the policy accepts, as the controller
+# would create it, with one change each.
+vpod() { # vpod <name> <jq patch>
+  jq -n --arg n "$1" --arg ns $JOBS --arg img "$IMAGE_A" '{apiVersion: "v1", kind: "Pod",
+    metadata: {name: $n, namespace: $ns},
+    spec: {runtimeClassName: "kete-test", automountServiceAccountToken: false, enableServiceLinks: false,
+      containers: [{name: "job", image: $img, command: ["sleep", "30"], securityContext: {capabilities: {drop: ["ALL"]}}}]}}' | jq "$2"
+}
+kubectl --as=$SA create -f <(vpod base-pod '.') >/dev/null || fail "the policy refuses a valid pod"
+kubectl -n $JOBS delete pod base-pod --wait=false >/dev/null
+log "ok: a valid pod passes the policy"
+while IFS='%' read -r what patch; do
+  [ -z "$what" ] && continue
+  denied "$what" kubectl --as=$SA create -f <(vpod "deny-$RANDOM" "$patch")
+done <<'CASES'
+a hostPath volume%.spec.volumes=[{name:"v",hostPath:{path:"/"}}]
+a PVC volume%.spec.volumes=[{name:"v",persistentVolumeClaim:{claimName:"x"}}]
+an NFS volume%.spec.volumes=[{name:"v",nfs:{server:"10.0.0.1",path:"/"}}]
+an inline CSI volume%.spec.volumes=[{name:"v",csi:{driver:"csi.example.com"}}]
+a generic ephemeral volume%.spec.volumes=[{name:"v",ephemeral:{volumeClaimTemplate:{spec:{accessModes:["ReadWriteOnce"],resources:{requests:{storage:"1Gi"}}}}}}]
+a projected service account token%.spec.volumes=[{name:"v",projected:{sources:[{serviceAccountToken:{path:"t"}}]}}]
+a volume device%.spec.volumes=[{name:"v",persistentVolumeClaim:{claimName:"x"}}] | .spec.containers[0].volumeDevices=[{name:"v",devicePath:"/dev/x"}]
+pod seccomp Unconfined%.spec.securityContext.seccompProfile={type:"Unconfined"}
+container seccomp Unconfined%.spec.containers[0].securityContext.seccompProfile={type:"Unconfined"}
+pod AppArmor Unconfined%.spec.securityContext.appArmorProfile={type:"Unconfined"}
+container AppArmor Unconfined%.spec.containers[0].securityContext.appArmorProfile={type:"Unconfined"}
+the AppArmor unconfined annotation%.metadata.annotations={"container.apparmor.security.beta.kubernetes.io/job":"unconfined"}
+an SELinux type override (spc_t)%.spec.containers[0].securityContext.seLinuxOptions={type:"spc_t"}
+a pod SELinux user override%.spec.securityContext.seLinuxOptions={user:"system_u"}
+procMount Unmasked%.spec.hostUsers=false | .spec.containers[0].securityContext.procMount="Unmasked"
+an unsafe sysctl%.spec.securityContext.sysctls=[{name:"kernel.msgmax",value:"65536"}]
+a resource claim%.spec.resourceClaims=[{name:"c",resourceClaimName:"x"}]
+a Windows host process%.spec.hostNetwork=true | .spec.securityContext.windowsOptions={hostProcess:true}
+an init container%.spec.initContainers=[.spec.containers[0] | .name="init"]
+a host port%.spec.containers[0].ports=[{containerPort:80,hostPort:80}]
+an added capability outside the set%.spec.containers[0].securityContext.capabilities.add=["SYS_PTRACE"]
+CASES
+
+# Secrets: only the controller, only Opaque kete-job-* in the jobs namespace, only its own two at home.
+secret() { jq -n --arg n "$1" --arg ns "$2" --arg t "${3:-Opaque}" '{apiVersion: "v1", kind: "Secret", metadata: {name: $n, namespace: $ns}, type: $t, data: {k: "eA=="}}'; }
+denied "a machine-named Secret created by an admin" kubectl create -f <(secret kete-job-squat $JOBS)
+denied "another Secret by the controller in the jobs namespace" kubectl --as=$SA create -f <(secret other $JOBS)
+denied "a non-Opaque machine Secret" kubectl --as=$SA create -f <(secret kete-job-tls $JOBS kubernetes.io/basic-auth)
+denied "another Secret by the controller in its own namespace" kubectl --as=$SA create -f <(secret other $SYS)
+
 # --- machines
 M1=2b3c4d5e-6f7a-4b8c-9d0e-000000000001 M2=2b3c4d5e-6f7a-4b8c-9d0e-000000000002
 M3=2b3c4d5e-6f7a-4b8c-9d0e-000000000003 M4=2b3c4d5e-6f7a-4b8c-9d0e-000000000004
@@ -159,6 +204,9 @@ wait_for 120 "M1 running" is_state $M1 running/
 [ "$(pod_phase $M1)" = Running ] || fail "M1 pod not running"
 kubectl -n $JOBS get pod kete-job-$M1 -o json | jq -e --arg m $M1 '.metadata.labels["kete.dev/machine-id"] == $m and .spec.runtimeClassName == "kete-test" and .spec.automountServiceAccountToken == false' >/dev/null || fail "M1 pod spec"
 wait_for 30 "M1 boot-ID Secret removed once running" bash -c "! kubectl -n $JOBS get secret kete-job-$M1"
+denied "relabelling a job pod (admin)" kubectl -n $JOBS label pod kete-job-$M1 foo=bar
+denied "an ephemeral debug container (admin)" kubectl -n $JOBS debug kete-job-$M1 --image="$IMAGE_A" -- true
+denied "annotating a job pod (admin)" kubectl -n $JOBS annotate pod kete-job-$M1 foo=bar
 kubectl -n $JOBS get events --field-selector involvedObject.name=kete-job-$M1 -o json | jq -e '[.items[] | select(.source.component == "kete-runner")] | length > 0' >/dev/null || fail "no controller event on the job pod"
 wait_for 60 "M4 failed repository_unknown" is_state $M4 failed/repository_unknown
 no_pod $M4 || fail "M4 got a pod"
@@ -168,6 +216,16 @@ wait_for 90 "M1 destroyed desired" is_state $M1 destroyed/desired
 wait_for 60 "M1 pod deleted" no_pod $M1
 wait_for 120 "M2 exited by itself" is_state $M2 destroyed/exited
 wait_for 60 "M2 pod deleted" no_pod $M2
+
+# --- fail closed without the admission policy: delete a binding, starts block; restore with helm
+kubectl delete validatingadmissionpolicybinding kete-runner-kete-jobs-pods
+wait_for 90 "starts blocked (cluster_unhealthy)" bash -c "curl -sf $ADMIN/hosts | jq -e '.[0].LastReport.starts_blocked == \"cluster_unhealthy\"'"
+M5=2b3c4d5e-6f7a-4b8c-9d0e-000000000005
+assign $M5 ${J}5 "$IMAGE_A" 3600 "gitlab:payments/api"
+wait_for 60 "M5 refused starts_blocked" is_state $M5 failed/starts_blocked
+no_pod $M5 || fail "M5 got a pod without the admission policy"
+helm upgrade kete-runner "$chart" -n $SYS -f /tmp/values.yaml --wait --timeout 180s >/dev/null
+wait_for 90 "starts unblocked" bash -c "curl -sf $ADMIN/hosts | jq -e '.[0].LastReport.starts_blocked == null'"
 
 # --- orphan kill and re-adoption across a restart
 kubectl -n $SYS scale deploy/kete-runner --replicas=0
@@ -179,7 +237,7 @@ kind: Pod
 metadata:
   name: kete-job-$O
   namespace: $JOBS
-  labels: {app.kubernetes.io/managed-by: kete-runner, kete.dev/role: job, kete.dev/machine-id: "$O"}
+  labels: {app.kubernetes.io/managed-by: kete-runner, app.kubernetes.io/instance: kete-runner, kete.dev/role: job, kete.dev/machine-id: "$O"}
 spec:
   runtimeClassName: kete-test
   automountServiceAccountToken: false
