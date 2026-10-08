@@ -165,6 +165,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/vcs") return json({ branch: "main" })
     if (url.pathname === "/api/experimental/migration/v1") return json({ status: "completed" })
     if (url.pathname === "/api/rpc/kete.local-models/status") return json({ output: { offline: false, providers: [] } }) // kete_change: the model dialog's local server status
+    if (url.pathname === "/api/rpc/kete.sandbox/status") return json({ output: { state: "on", platform: "linux", mechanism: "bubblewrap", mode: "auto", network: "approved", ignored: [] } }) // kete_change: the footer's sandbox status
     throw new Error(`unexpected request: ${url.pathname}`)
   }
   fetch.preconnect = () => {}
