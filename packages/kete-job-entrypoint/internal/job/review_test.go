@@ -186,6 +186,15 @@ func TestReviewFetchFails(t *testing.T) {
 	}
 }
 
+func TestReviewStorageRefused(t *testing.T) {
+	e, _ := reviewEnv(t)
+	e.git.review.storageErr = gitops.ErrMismatch // SHA-256 objects or alternates
+	e.run(t)
+	if r := resultOf(t, e.pf); r["outcome"] != "error" || r["message"] != "clone verification failed" || e.m.keteStarted {
+		t.Errorf("result %v", r)
+	}
+}
+
 func TestReviewDiffFails(t *testing.T) {
 	e, _ := reviewEnv(t)
 	e.git.review.diffErr = errors.New("boom")

@@ -34,6 +34,7 @@ const (
 	StepNft        Step = "egress_nft"
 	StepProxy      Step = "egress_proxy"
 	StepHelper     Step = "helper"
+	StepGitVersion Step = "git_version" // root's git is at least gitops.MinVersion (fail closed)
 	StepIsolation  Step = "isolation"
 	StepClaim      Step = "claim"
 	StepRestart    Step = "egress_restart"

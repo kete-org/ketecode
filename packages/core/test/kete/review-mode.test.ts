@@ -91,6 +91,19 @@ describe("review tool", () => {
     expect(missing.recorded).toEqual([])
   })
 
+  test("summary, titles and bodies are redacted before they are recorded", async () => {
+    const d = deps()
+    const secret = "ghp_" + "a".repeat(36)
+    const exit = await run(d.value, {
+      summary: `token ${secret}`,
+      findings: [{ path: "src/cart.ts", line: 1, severity: "critical", title: `leak ${secret}`, body: `Hard-coded ${secret} here.` }],
+    })
+    expect(Exit.isSuccess(exit)).toBe(true)
+    const text = JSON.stringify(d.recorded)
+    expect(text).not.toContain(secret)
+    expect(d.recorded[0]?.findings[0]?.path).toBe("src/cart.ts")
+  })
+
   test("a failed record fails the call", async () => {
     const d = deps({ record: async () => Promise.reject(new Error("disk full")) })
     expect(failureMessage(await run(d.value, vector.result.review))).toContain("could not be recorded")

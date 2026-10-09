@@ -67,6 +67,15 @@ func (r *runner) reviewClone(ctx context.Context) (int, bool) {
 	if code, ok := r.reviewHead(ctx); !ok {
 		return code, false
 	}
+	// Verify's storage checks (SHA-1 objects, no alternates), as for every clone.
+	if err := r.d.Git.VerifyStorage(ctx, pristine); err != nil {
+		if ctx.Err() != nil {
+			c.CloneToken = ""
+			return r.interrupted(), false
+		}
+		r.log.FailErr(pl.StepVerify, pl.CodeFailed, err)
+		return r.failClone(ctx, final{result: Synth("error", 1, "clone verification failed")}), false
+	}
 	_, err := r.d.Git.MergeBase(ctx, pristine, "refs/heads/"+c.Ref, c.BaseSHA)
 	if errors.Is(err, gitops.ErrNoMergeBase) {
 		// The base branch moved on further than the depth since the pull request branched off.

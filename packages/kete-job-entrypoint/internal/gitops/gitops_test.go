@@ -1,8 +1,10 @@
 package gitops
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"os"
 	"os/exec"
@@ -304,6 +306,93 @@ func TestReviewFetchArgv(t *testing.T) {
 	}
 	if strings.Count(string(data), "Authorization: Basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))) != 2 {
 		t.Error("the fetches don't carry the clone's header")
+	}
+	if strings.Count(string(data), "=fetch.fsckObjects") != 2 || strings.Count(string(data), "=transfer.fsckObjects") != 2 {
+		t.Error("the review fetches don't check the objects they receive (fsckObjects)")
+	}
+}
+
+// TestReviewFsckRefusesMalformed: with the real git, the review fetches' object checks
+// (fsckConfig) refuse a commit whose tree has a ".." entry, which the same fetch without them takes.
+func TestReviewFsckRefusesMalformed(t *testing.T) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	r := Runner{Git: gitBin, Home: dir, Timeout: 20 * time.Second, CloneTimeout: 20 * time.Second, MaxStdout: 1 << 20, MaxStderr: 1 << 16}
+	sh := func(stdin []byte, args ...string) string {
+		t.Helper()
+		cmd := exec.Command(gitBin, args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if stdin != nil {
+			cmd.Stdin = bytes.NewReader(stdin)
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	work := filepath.Join(dir, "work")
+	sh(nil, "init", "-q", "--bare", work)
+	blob := sh([]byte("x\n"), "--git-dir="+work, "hash-object", "-w", "--stdin")
+	raw, _ := hex.DecodeString(blob)
+	tree := sh(append([]byte("100644 ..\x00"), raw...), "--git-dir="+work, "hash-object", "-t", "tree", "--literally", "-w", "--stdin")
+	commit := sh(nil, "--git-dir="+work, "commit-tree", tree, "-m", "malformed")
+	sh(nil, "--git-dir="+work, "update-ref", "refs/heads/bad", commit)
+	fetch := func(dest string, cfg [][2]string) error {
+		sh(nil, "init", "-q", "--bare", dest)
+		return func() error {
+			_, err := r.Run(context.Background(), Call{
+				Args:   []string{"--git-dir=" + dest, "fetch", "--no-tags", "--", "file://" + work, "+refs/heads/bad:refs/heads/bad"},
+				Config: append([][2]string{{"protocol.file.allow", "always"}}, cfg...),
+			})
+			return err
+		}()
+	}
+	if err := fetch(filepath.Join(dir, "plain.git"), nil); err != nil {
+		t.Fatalf("control: the fetch without fsck failed: %v", err)
+	}
+	err = fetch(filepath.Join(dir, "checked.git"), fsckConfig)
+	var ge *Error
+	if !errors.As(err, &ge) || !strings.Contains(string(ge.Stderr), "hasDotdot") {
+		t.Fatalf("the fsck'd fetch took a malformed tree: %v %s", err, func() []byte {
+			if ge != nil {
+				return ge.Stderr
+			}
+			return nil
+		}())
+	}
+}
+
+func TestParseVersion(t *testing.T) {
+	cases := map[string]bool{
+		"git version 2.47.3":                 true,
+		"git version 2.39.1":                 true,
+		"git version 2.39.0":                 false,
+		"git version 2.38.5.windows.1":       false,
+		"git version 2.50.1 (Apple Git-155)": true,
+		"git version 3.0.0-rc1":              true,
+		"hub version 2.47.0":                 false,
+		"git version x":                      false,
+	}
+	for out, want := range cases {
+		v, ok := ParseVersion(out)
+		if got := ok && VersionAtLeast(v, MinVersion); got != want {
+			t.Errorf("%q: %v (%v), want %v", out, got, v, want)
+		}
+	}
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	r := Runner{Git: gitBin, Home: t.TempDir(), Timeout: 10 * time.Second, MaxStdout: 1 << 16, MaxStderr: 1 << 16}
+	if err := r.CheckVersion(context.Background(), MinVersion); err != nil {
+		t.Errorf("this machine's git: %v", err)
+	}
+	if err := r.CheckVersion(context.Background(), [3]int{99, 0, 0}); !errors.Is(err, ErrOldGit) {
+		t.Errorf("a floor above this git: %v", err)
 	}
 }
 

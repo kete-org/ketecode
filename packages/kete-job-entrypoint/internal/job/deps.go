@@ -88,6 +88,7 @@ type Git interface {
 	ReviewClone(ctx context.Context, url, username, token, headRef, branch, baseBranch string, depth int, dest string) error
 	ReviewDeepen(ctx context.Context, gitDir, url, username, token, headRef, branch, baseBranch string, deepen int) error
 	MergeBase(ctx context.Context, gitDir, a, b string) (string, error)
+	VerifyStorage(ctx context.Context, gitDir string) error
 	Diff(ctx context.Context, gitDir, base, head string, maxFiles, maxDiff int64) (gitops.ReviewDiff, error)
 }
 

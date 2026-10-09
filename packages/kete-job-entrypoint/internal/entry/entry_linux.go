@@ -184,6 +184,10 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 		Git: cfg.GitBin, Home: cfg.RootHome(), ProxyURL: proxyURL, CAPath: cfg.CAPath(),
 		Timeout: cfg.GitTimeout, CloneTimeout: cfg.CloneTimeout, MaxStdout: layout.GitMaxStdout, MaxStderr: layout.GitMaxStderr,
 	}
+	// Root's git parses fork-authored objects on a review job: refuse a git older than the floor.
+	if !step(pl.StepGitVersion, func() error { return git.CheckVersion(ctx, gitops.MinVersion) }) {
+		return exit(log, 1)
+	}
 	m := &machine{cfg: cfg, ids: ids, cg: cg, git: git, resolvers: base.Resolvers, profile: profile, kubeAPI: boot.KubeAPI}
 	if boot.Local != nil {
 		m.nodes, m.internalPorts = boot.Local.NodeAddresses, internalPorts(boot)

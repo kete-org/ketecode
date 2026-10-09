@@ -302,6 +302,7 @@ type reviewGit struct {
 	mergeBases []string
 	mbCalls    int
 	diff       gitops.ReviewDiff
+	storageErr error
 	diffErr    error
 }
 
@@ -342,6 +343,7 @@ func (g *fakeGit) MergeBase(context.Context, string, string, string) (string, er
 	}
 	return g.review.mergeBases[i], nil
 }
+func (g *fakeGit) VerifyStorage(context.Context, string) error { return g.review.storageErr }
 func (g *fakeGit) Diff(context.Context, string, string, string, int64, int64) (gitops.ReviewDiff, error) {
 	return g.review.diff, g.review.diffErr
 }

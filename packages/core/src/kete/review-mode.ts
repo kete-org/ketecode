@@ -27,6 +27,7 @@ import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
 import { Tool } from "@opencode/schema/tool"
 import { Global } from "@opencode/util/global"
 import { KeteJobSecrets } from "@opencode/util/kete/job-secrets"
+import { KeteRedact } from "@opencode/util/kete/redact"
 import { KeteReview } from "@opencode/util/kete/review"
 import { Effect, Option, Schema } from "effect"
 import { Environment } from "../environment/index.js"
@@ -86,18 +87,20 @@ export interface Deps {
 
 const fail = (message: string) => new ToolFailure({ message })
 
-/** Builds the review from the tool's input (side RIGHT made explicit, an empty title dropped). */
+/** Builds the review from the tool's input: side RIGHT made explicit, an empty title dropped, and
+ * the free text (summary, titles, bodies) passed through the shared redactor, since it is posted on
+ * the pull request (a secret the agent read in the checkout must not be quoted there). */
 export function build(input: Input): KeteReview.Output {
   return {
     version: 1,
-    summary: input.summary,
+    summary: KeteRedact.text(input.summary),
     findings: input.findings.map((f) => ({
       path: f.path,
       line: f.line,
       side: f.side ?? "RIGHT",
       severity: f.severity,
-      ...(f.title !== undefined && f.title.trim() !== "" ? { title: f.title } : {}),
-      body: f.body,
+      ...(f.title !== undefined && f.title.trim() !== "" ? { title: KeteRedact.text(f.title) } : {}),
+      body: KeteRedact.text(f.body),
     })),
   }
 }

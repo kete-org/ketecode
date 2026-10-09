@@ -44,12 +44,14 @@ COPY bin/kete-job-entrypoint bin/kete-job-init bin/kete-root-helper bin/kete-egr
 COPY kete /usr/local/bin/kete
 
 # Build-time checks: no setuid/setgid file is left, the binaries are root-owned and not writable
-# by anyone else, and rg and git are on the tool user's PATH (/usr/local/bin:/usr/bin:/bin).
+# by anyone else, and rg and git are on the tool user's PATH (/usr/local/bin:/usr/bin:/bin); git is at
+# least the entrypoint's floor (gitops.MinVersion, checked again at every boot: step git_version).
 RUN test -z "$(find / -xdev -perm /6000 -type f)" \
  && for f in /usr/local/bin/kete /usr/local/libexec/kete/kete-job-entrypoint /usr/local/libexec/kete/kete-job-init /usr/local/libexec/kete/kete-root-helper /usr/local/libexec/kete/kete-egress; do \
       [ "$(stat -c '%u:%g:%a' "$f")" = "0:0:755" ] || { echo "bad owner or mode: $f"; exit 1; }; \
     done \
  && command -v rg && command -v git && command -v nft \
+ && dpkg --compare-versions "$(git --version | awk '{print $3}')" ge 2.39.1 \
  && [ "$(id -u kete)" != 0 ] && [ "$(id -u kete-tool)" != 0 ] && [ "$(id -u kete-proxy)" != 0 ]
 
 ENTRYPOINT ["/usr/local/libexec/kete/kete-job-entrypoint"]

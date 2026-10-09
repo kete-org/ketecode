@@ -39,3 +39,30 @@ Done: everything in spec.md; checks in result.md. Not merged.
 ### Open questions
 - Should a time-limited run still post the findings recorded so far (entrypoint reading the record)?
 - Is an in-process search for review mode wanted (quality vs. surface)?
+
+## 2026-10-09 builder (security review fixes, PR #28)
+
+Done on the same branch:
+1. **Object checks.** The review fetch and deepen set `fetch.fsckObjects=true` and
+   `transfer.fsckObjects=true` (`gitops/ops.go` `fsckConfig`), so root refuses malformed
+   fork-authored objects (bad tree entries, `.gitmodules`, `.gitattributes`) at index-pack. Real-git
+   test: a commit whose tree has a `..` entry is refused (`hasDotdot`) and is taken without the checks
+   (`TestReviewFsckRefusesMalformed`). Applies to review fetches only; ordinary job clones fetch the
+   organization's own branch and are unchanged.
+2. **Git floor.** New boot step `git_version` fails closed unless root's git is ≥ 2.39.1
+   (`gitops.MinVersion`, `CheckVersion`); the image build checks the same floor with `dpkg
+   --compare-versions`. A floor is not proof of a patched git (distros backport without bumping the
+   version); the image takes debian:trixie's security updates at build time (git 2.47.x there).
+3. **AGENTS.md end to end.** Server tests (j)/(k): a review session never sends the root or a
+   subdirectory AGENTS.md to the model (session start, and reading a file beside it), while the read
+   file's content does reach it; the control without review mode sends both markers.
+4. Nits: summary, titles and bodies pass through `KeteRedact.text` in the `review` tool before they
+   are recorded (the Go side has no vetted redactor, as for kubevm summaries); the review path runs
+   Verify's storage checks (`VerifyStorage`: SHA-1 objects, no alternates).
+
+**Size/time bounds of a review (DoS).** Fetches: depth 50 then at most one deepen of 450, each fetch
+bounded by the clone timeout (10 min) and the job's deadline; objects are fsck'd. Merge base and each
+diff call: the git call timeout (60 s) each; diff output capped (files 32 KiB, diff 160 KiB; git still
+computes the whole diff before the cap, bounded by the 60 s). The agent phase is bounded by the
+policy timeout and budget as every job. A pathological PR therefore ends `error`/`refused`, never
+hangs the job.
