@@ -97,6 +97,8 @@ kete login                        # or sign in to a Kete account to use the gate
   the default `build` agent carries it out. Starter role agents (Code Reviewer, QA, Docs Writer,
   Security, DevOps) cover common jobs, and subagents can work in parallel in their own git
   worktrees.
+- **Shows its plan.** For multi-step work the agent keeps a task list you can watch in the
+  terminal UI, the web UI and the editors ([Task list](../docs/todo.md)).
 - **Any model.** Your own provider keys, local models through Ollama, vLLM or any
   OpenAI-compatible server, or the Kete gateway with one sign-in and readable per-request usage.
   The gateway and portal are never required for local use.
