@@ -1,0 +1,61 @@
+{
+  "description": "A pull request review job (jobs-v1, additive 2026-10-08; ADR 0028). The claim request announces review_v1 (else the claim is refused before anything is minted); spec.review names the pull request; clone.ref is the pull request's base branch and clone.base_sha the pinned head commit, fetched from spec.review.head_ref. The result carries the findings in review (JobReviewOutput). Values are examples, not secrets.",
+  "request": {
+    "claim_token": "4f9c2a7e1b8d3f6a0c5e9b2d7f1a4c8e6b3d0f9a2c7e5b1d8f4a6c0e3b9d2f7a",
+    "features": ["clone_revoke_callback", "review_v1"]
+  },
+  "response": {
+    "spec": {
+      "version": 1,
+      "prompt": "Review pull request #42 of acme/shop. Report findings only; change nothing.",
+      "agent": "code-reviewer",
+      "model": "kete/claude-sonnet-4-5",
+      "policy": { "version": 1, "allow": [], "budget": 1, "timeout": 20 },
+      "branch": "kete/job/5b0e7c1d",
+      "review": {
+        "version": 1,
+        "pull_number": 42,
+        "head_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+        "base_ref": "main",
+        "head_ref": "refs/pull/42/head",
+        "untrusted": true,
+        "max_findings": 50
+      }
+    },
+    "gateway_key": "kete_live_example",
+    "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+    "clone": {
+      "url": "https://github.com/acme/shop.git",
+      "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+      "ref": "main",
+      "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+    },
+    "gateway_url": "https://gateway.kete.example",
+    "platform_url": "https://portal.kete.example",
+    "deadline": "2026-10-08T10:40:00Z"
+  },
+  "result": {
+    "version": 1,
+    "outcome": "completed",
+    "exit_code": 0,
+    "text": "Reviewed 3 files; 2 findings.",
+    "denied": [],
+    "review": {
+      "version": 1,
+      "summary": "The change looks sound; two issues worth fixing before merge.",
+      "findings": [
+        { "path": "src/cart.ts", "line": 18, "side": "RIGHT", "severity": "major", "title": "Off-by-one", "body": "The loop skips the last item: use `<=` or iterate the array directly." },
+        { "path": "src/legacy.ts", "line": 7, "side": "LEFT", "severity": "minor", "body": "This removed guard was the only null check for `user`." }
+      ]
+    }
+  },
+  "invalid_reviews": [
+    { "version": 2, "summary": "", "findings": [] },
+    { "version": 1, "summary": "x", "findings": [{ "path": "../etc/passwd", "line": 1, "severity": "info", "body": "x" }] },
+    { "version": 1, "summary": "x", "findings": [{ "path": "a.ts", "line": 0, "severity": "info", "body": "x" }] },
+    { "version": 1, "summary": "x", "findings": [{ "path": "a.ts", "line": 1, "severity": "blocker", "body": "x" }] },
+    { "version": 1, "summary": "x", "findings": [{ "path": "a.ts", "line": 1, "severity": "info", "body": "" }] },
+    { "version": 1, "summary": "x", "findings": [{ "path": "a.ts", "line": 1, "severity": "info", "body": "x", "suggestion": "y" }] },
+    { "version": 1, "summary": "x", "findings": [], "verdict": "approve" }
+  ]
+}

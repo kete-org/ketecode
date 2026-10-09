@@ -23,6 +23,7 @@ verified-at: c377dd3136
 - How do I build and test it? `commands.md` "Job image": `build.sh` then `e2e.sh <image> --scenario
   no-agent|lifecycle|ac5|all`. The Linux `kete` must be built first (`packages/cli`, `bun run build
   --target=kete-linux-<arm64|x64> --skip-web-ui`) or passed with `--kete`.
+- What does the `review` scenario cover? A review job (fake `Knobs.Review`, `refs/pull/7/head` in the fake repo) with the real kete: the scripted model's shell call must not run, `read` of the changed file works, `review` is recorded, the result's review passes `platform.ParseReviewOutput`, no bundle upload (`e2e_test.go` `TestReview`).
 - What do the scenarios cover? `no-agent`: `kete job run` refuses (exit 2) before any model call, the
   job still reports. `lifecycle`: AC1 with the real `kete` (sync with the gateway key, scripted model
   runs `id -un` = `kete-tool`, edits README.md, then (piece A3) the tool user plants two symlinks into kete's home (`e2e-read` to `spec.json`, `e2e-write`), `read` and `write` through them must be refused (the read result holds nothing of the spec) and the links are removed; bundle = that file, audit `run ended completed` plus an error `tool` line for the refused read).

@@ -7,7 +7,7 @@
 // job.stdout and job.exit (the job container's stdout and exit code) — and, for TestExportScan,
 // the job container's `docker export` stream on stdin.
 //
-// One test per scenario: TestLifecycle, TestAC5, TestNoAgent, TestOrchestrate; e2e.sh runs the one that matches.
+// One test per scenario: TestLifecycle, TestAC5, TestNoAgent, TestOrchestrate, TestReview; e2e.sh runs the one that matches.
 package e2e
 
 import (
@@ -28,6 +28,7 @@ import (
 
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/fakeplatform"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/orchestration"
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/platform"
 )
 
 var (
@@ -576,5 +577,45 @@ func TestOrchestrate(t *testing.T) {
 	_ = json.Unmarshal([]byte(put.Body), &body)
 	if body.PlanDigest != orchestration.SHA256Hex(files[orchestration.PlanPath]) {
 		t.Error("the published plan file isn't the proposal's")
+	}
+}
+
+// TestReview: a pull request review with the real kete (review_v1). The entrypoint fetches the pull
+// request's head ref and base, checks the pinned head and puts the diff in the prompt; kete runs in
+// review mode: the scripted model's shell call is refused (and never runs), its read of the changed
+// file works, and its `review` call is recorded; the result carries a review the platform accepts;
+// nothing is published (no bundle upload, no push error).
+func TestReview(t *testing.T) {
+	s := load(t, fakeplatform.ScenarioReview)
+	common(t, s, "put:audit", "put:proxy_log")
+	agentPhase(t, s)
+	if r := s.result(t); r.Outcome != "completed" {
+		t.Errorf("result %+v", r)
+	}
+	for _, check := range []string{"review_tools_only", "review_instructions", "review_diff_in_prompt", "review_shell_refused", "review_read_ok", "review_recorded"} {
+		if !s.checks[check] {
+			t.Errorf("check %s failed: checks %v", check, s.checks)
+		}
+	}
+	_, c := s.first("result")
+	var body struct {
+		Review json.RawMessage `json:"review"`
+	}
+	if err := json.Unmarshal([]byte(c.Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	out, err := platform.ParseReviewOutput(body.Review)
+	if err != nil {
+		t.Fatalf("result review: %v: %s", err, body.Review)
+	}
+	if out.Summary != fakeplatform.ReviewSummary || len(out.Findings) != 1 {
+		t.Fatalf("review %+v", out)
+	}
+	f := out.Findings[0]
+	if f.Path != fakeplatform.ReviewFile || int(f.Line) != fakeplatform.ReviewLine || f.Side == nil || *f.Side != "RIGHT" || f.Severity != "major" || f.Body != fakeplatform.ReviewBody {
+		t.Errorf("finding %+v", f)
+	}
+	if _, put := s.first("put:bundle"); put != nil {
+		t.Error("a review job uploaded a bundle")
 	}
 }

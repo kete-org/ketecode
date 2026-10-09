@@ -128,6 +128,24 @@ describe("KeteJobServe.prepare in job mode", () => {
     expect(seen).toHaveLength(1)
   })
 
+  test("a review job's section is handed to setReview; an invalid one refuses", async () => {
+    const review = { version: 1, pull_number: 42, head_sha: "9".repeat(40), base_ref: "main", head_ref: "refs/pull/42/head", untrusted: true, max_findings: 50 }
+    const seen: unknown[] = []
+    const ok = harness({ text: message({ review }), setReview: (value) => void seen.push(value) })
+    expect(Exit.isSuccess(await run(socketInput, ok.deps))).toBe(true)
+    expect(seen).toEqual([review])
+    const bad = harness({
+      text: message({ review: { ...review, max_findings: 0 } }),
+      setReview: () => {
+        throw new Error("the job's review is not valid (review.max_findings)")
+      },
+    })
+    expect(errorOf(await run(socketInput, bad.deps))).toContain("review.max_findings")
+    const absent = harness({ setReview: () => void seen.push("called") })
+    await run(socketInput, absent.deps)
+    expect(seen).toHaveLength(1)
+  })
+
   test("a failing prctl refuses before the descriptor is read (AC3)", async () => {
     const { calls, deps } = harness({
       dumpable: () => {

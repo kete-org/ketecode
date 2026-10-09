@@ -49,6 +49,7 @@ export type Deps = {
   readonly setGatewayKey: (key: string) => void
   readonly setOrganization: (id: string) => void
   readonly setOrchestration: (value: { readonly jobID: string; readonly spec: unknown }) => void
+  readonly setReview: (value: unknown) => void
   /** `undefined` when the audit descriptor is an open pipe or socket; else why not. */
   readonly validateAudit: (fd: number) => string | undefined
   readonly setCloexec: (fd: number) => void
@@ -67,6 +68,7 @@ const defaults = (): Deps => ({
   setGatewayKey: KeteJobSecrets.setGatewayKey,
   setOrganization: KeteJobSecrets.setOrganization,
   setOrchestration: KeteJobSecrets.setOrchestration,
+  setReview: KeteJobSecrets.setReview,
   validateAudit: (fd) => KeteJobAuditSink.validate(fd, "fifo-or-socket"),
   setCloexec: (fd) => KeteLinuxFfi.setCloexec(fd),
   setAuditSink: KeteJobAuditSink.set,
@@ -88,6 +90,8 @@ const Message = Schema.Struct({
   organization: Schema.String,
   /** An orchestrated job's `spec.orchestration` and job id (checked by setOrchestration). */
   orchestration: Schema.optional(Schema.Struct({ job_id: Schema.String, spec: Schema.Unknown })),
+  /** A pull request review job's `spec.review` (checked by setReview): the server's review mode. */
+  review: Schema.optional(Schema.Unknown),
 })
 const decodeMessage = Schema.decodeUnknownOption(Schema.fromJsonString(Message))
 
@@ -151,6 +155,13 @@ export const prepare = Effect.fnUntraced(function* (input: Input, overrides: Par
   if (orchestration !== undefined)
     yield* Effect.try({
       try: () => deps.setOrchestration({ jobID: orchestration.job_id, spec: orchestration.spec }),
+      catch: (error) =>
+        new Error(`Job mode: ${KeteJobSecrets.secretsFdPublicName}: ${error instanceof Error ? error.message : String(error)}.`),
+    })
+  const review = message.value.review
+  if (review !== undefined)
+    yield* Effect.try({
+      try: () => deps.setReview(review),
       catch: (error) =>
         new Error(`Job mode: ${KeteJobSecrets.secretsFdPublicName}: ${error instanceof Error ? error.message : String(error)}.`),
     })

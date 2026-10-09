@@ -205,3 +205,42 @@ describe("JobSpec.parse: orchestration (jobs-v1 JobSpecOrchestration)", () => {
     expect("orchestration" in parsed).toBe(false)
   })
 })
+
+describe("JobSpec.parse: review (jobs-v1 JobSpecReview)", () => {
+  const review = {
+    version: 1,
+    pull_number: 42,
+    head_sha: "9fceb02d0ae598e95dc970b74767f19372d61af8",
+    base_ref: "main",
+    head_ref: "refs/pull/42/head",
+    untrusted: true,
+    max_findings: 50,
+  }
+  const spec = (value: unknown, extra: object = {}) =>
+    JSON.stringify({ version: 1, prompt: "review it", policy: validPolicy, branch: "kete/job/5b0e7c1d", review: value, ...extra })
+
+  test("a valid section is kept", async () => {
+    const parsed = await JobSpec.parse(spec(review), { specDir, deps: deps() })
+    expect(parsed.review).toEqual(review as never)
+  })
+
+  test("an invalid section is refused, naming the field", async () => {
+    await expect(JobSpec.parse(spec({ ...review, head_ref: "refs/pull/1/head" }), { specDir, deps: deps() })).rejects.toThrow("review.head_ref")
+    await expect(JobSpec.parse(spec({ ...review, verdict: "approve" }), { specDir, deps: deps() })).rejects.toThrow("review.")
+    await expect(
+      JobSpec.parse(JSON.stringify({ version: 1, prompt: "review it", policy: validPolicy, review }), { specDir, deps: deps() }),
+    ).rejects.toThrow("branch: a review job always names its branch")
+  })
+
+  test("an orchestrated job is never a review", async () => {
+    const coordinator = { version: 1, id: "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d", role: "coordinator", turn: 1, final: false, plan: null, titles: "send" }
+    await expect(JobSpec.parse(spec(review, { orchestration: coordinator }), { specDir, deps: deps() })).rejects.toThrow(
+      "review: an orchestrated job is never a review",
+    )
+  })
+
+  test("a spec without the section is unchanged", async () => {
+    const parsed = await JobSpec.parse(JSON.stringify({ version: 1, prompt: "do it", policy: validPolicy }), { specDir, deps: deps() })
+    expect("review" in parsed).toBe(false)
+  })
+})

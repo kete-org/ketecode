@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -229,6 +230,8 @@ type fakeGit struct {
 	depth1    bool
 	keteRefs  bool
 	fetchUser string
+
+	review reviewGit
 }
 
 func (g *fakeGit) CheckBranch(context.Context, string) bool { return true }
@@ -285,6 +288,62 @@ func (g *fakeGit) CatBlob(_ context.Context, _, object string, max int64) ([]byt
 func (g *fakeGit) CopyKeteRefs(context.Context, string, string) error {
 	g.keteRefs = true
 	return nil
+}
+
+// Review jobs: ReviewClone records its arguments and sets refs/heads/<branch> to reviewHead (the
+// claim's base_sha when empty); ReviewDeepen moves it to deepenHead when set; MergeBase answers
+// mergeBases in turn (gitops.ErrNoMergeBase for ""); Diff answers diff.
+type reviewGit struct {
+	cloneArgs  []string
+	cloneErr   error
+	head       string
+	deepened   int
+	deepenHead string
+	mergeBases []string
+	mbCalls    int
+	diff       gitops.ReviewDiff
+	diffErr    error
+}
+
+func (g *fakeGit) ReviewClone(_ context.Context, url, username, token, headRef, branch, baseBranch string, depth int, dest string) error {
+	g.review.cloneArgs = []string{url, username, headRef, branch, baseBranch, strconv.Itoa(depth), dest}
+	g.username, g.token = username, token
+	if g.review.cloneErr != nil {
+		return g.review.cloneErr
+	}
+	if g.refs == nil {
+		g.refs = map[string]string{}
+	}
+	if g.review.head != "" {
+		g.refs["refs/heads/"+branch] = g.review.head
+	} else {
+		g.refs["refs/heads/"+branch] = sha
+	}
+	return nil
+}
+func (g *fakeGit) ReviewDeepen(_ context.Context, _, _, _, _, _, branch, _ string, deepen int) error {
+	g.review.deepened = deepen
+	if g.review.deepenHead != "" {
+		g.refs["refs/heads/"+branch] = g.review.deepenHead
+	}
+	return nil
+}
+func (g *fakeGit) MergeBase(context.Context, string, string, string) (string, error) {
+	i := g.review.mbCalls
+	g.review.mbCalls++
+	if len(g.review.mergeBases) == 0 {
+		return "1111111111111111111111111111111111111111", nil
+	}
+	if i >= len(g.review.mergeBases) {
+		i = len(g.review.mergeBases) - 1
+	}
+	if g.review.mergeBases[i] == "" {
+		return "", gitops.ErrNoMergeBase
+	}
+	return g.review.mergeBases[i], nil
+}
+func (g *fakeGit) Diff(context.Context, string, string, string, int64, int64) (gitops.ReviewDiff, error) {
+	return g.review.diff, g.review.diffErr
 }
 
 type fakeHelper struct {

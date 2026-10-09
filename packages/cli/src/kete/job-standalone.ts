@@ -116,19 +116,22 @@ export type CommandInput = {
   readonly organization: string
   /** An orchestrated job's spec section and job id (the `orchestrate` tool's); not a secret. */
   readonly orchestration?: { readonly jobID: string; readonly spec: unknown }
+  /** A pull request review job's spec section (the server's review mode); not a secret. */
+  readonly review?: unknown
   readonly socket: string
   readonly command?: ReadonlyArray<string>
   readonly cwd?: string
 }
 
 /** The secrets message the child reads from fd 3 (job-serve.ts). */
-export function secretsMessage(input: Pick<CommandInput, "password" | "gatewayKey" | "organization" | "orchestration">) {
+export function secretsMessage(input: Pick<CommandInput, "password" | "gatewayKey" | "organization" | "orchestration" | "review">) {
   return JSON.stringify({
     v: 1,
     password: input.password,
     gateway_key: input.gatewayKey,
     organization: input.organization,
     ...(input.orchestration ? { orchestration: { job_id: input.orchestration.jobID, spec: input.orchestration.spec } } : {}),
+    ...(input.review !== undefined ? { review: input.review } : {}),
   })
 }
 
@@ -191,6 +194,8 @@ export type StartOptions = {
   readonly organization: string
   /** An orchestrated job's spec section and job id, for the child's `orchestrate` tool. */
   readonly orchestration?: { readonly jobID: string; readonly spec: unknown }
+  /** A pull request review job's spec section, for the child's review mode. */
+  readonly review?: unknown
   /** The entrypoint's audit pipe (our own descriptor, KETE_JOB_AUDIT_FD). */
   readonly auditFd: number
   readonly command?: ReadonlyArray<string>
@@ -217,6 +222,7 @@ export const start = Effect.fn("cli.kete.job.standalone")(
         gatewayKey: options.gatewayKey,
         organization: options.organization,
         orchestration: options.orchestration,
+        review: options.review,
         socket,
         command: options.command,
       }),

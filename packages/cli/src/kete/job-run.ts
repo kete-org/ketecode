@@ -23,6 +23,7 @@ import type { JsonValue, OpenCodeClient } from "@opencode/client/promise"
 import { Model } from "@opencode/schema/model"
 import { SessionMessage } from "@opencode/schema/session-message"
 import { Brand } from "@opencode/util/kete/brand"
+import type { KeteReview } from "@opencode/util/kete/review"
 
 // --- Input: an already-parsed, already-validated job spec (job.ts calls `JobSpec.parse` first). ---
 
@@ -146,6 +147,10 @@ export interface Deps {
   /** The project config the runtime would load from `directory` up to `stop` (the repository or
    * worktree root) that a repository may not control unattended (B1, `job-project-config.ts`). */
   readonly inspectProjectConfig: (directory: string, stop: string) => Promise<ReadonlyArray<ProjectConfigFinding>>
+  /** A pull request review job (job mode, `spec.review`): reads what the `review` tool recorded,
+   * checked against the contract, once the run has ended. Its review goes into the result's
+   * `review`; none or an invalid one leaves `review` out (the platform then posts nothing). */
+  readonly readReview?: () => Promise<KeteReview.ReadRecord>
 }
 
 // --- Result (the `--json` contract, v1: additive-only from here on). ---
@@ -175,6 +180,8 @@ export interface Result {
   readonly audit_local?: boolean
   readonly denied: ReadonlyArray<Denial>
   readonly message?: string
+  /** A pull request review job's findings (jobs-v1 `JobReviewOutput`; additive). */
+  readonly review?: KeteReview.Output
 }
 
 const EXIT_FOR_REASON: Record<string, number> = {
@@ -849,8 +856,23 @@ async function rootSessionCost(client: OpenCodeClient, sessionID: string): Promi
  * stderr.
  */
 export async function run(input: Input, deps: Deps): Promise<{ readonly exitCode: number; readonly result: Result }> {
-  const outcome = await execute(input, deps)
+  const outcome = await withReview(deps, await execute(input, deps))
   emit(deps, input, outcome.result)
+  return outcome
+}
+
+/** A review job's result carries the recorded review, whatever the outcome (the platform decides
+ * what to post); a record that can't be used is said on stderr and left out, never fails the run. */
+async function withReview(
+  deps: Deps,
+  outcome: { readonly exitCode: number; readonly result: Result },
+): Promise<{ readonly exitCode: number; readonly result: Result }> {
+  if (deps.readReview === undefined) return outcome
+  const record = await deps.readReview().catch(
+    (error: unknown): KeteReview.ReadRecord => ({ kind: "invalid", reason: `the review record could not be read: ${errorMessage(error)}` }),
+  )
+  if (record.kind === "ok") return { ...outcome, result: { ...outcome.result, review: record.review } }
+  deps.stderr(record.kind === "none" ? "kete job run: the review job recorded no review\n" : `kete job run: ${record.reason}; no review is reported\n`)
   return outcome
 }
 

@@ -262,6 +262,24 @@ func (r *runner) run(ctx context.Context) int {
 		}
 		claim.Orchestrated = oc
 	}
+	if platform.HasReview(resp.Spec) {
+		// A pull request review (announced by review_v1): the strict spec and its relation to the
+		// clone (base branch, pinned head), or nothing is cloned. Never also orchestrated.
+		rv, err := platform.ParseReview(resp.Spec, platform.CloneRef{Ref: claim.Ref, BaseSHA: claim.BaseSHA})
+		if err == nil && claim.Orchestrated != nil {
+			err = errors.New("spec: an orchestrated job is never a review")
+		}
+		if err != nil {
+			resp.CallbackToken, resp.Clone.Token, resp.GatewayKey = "", "", ""
+			claim.CloneToken, claim.GatewayKey = "", ""
+			r.d.Platform.SetCallbackToken(claim.CallbackToken)
+			r.log.FailErr(pl.StepClaim, pl.CodeInvalid, err)
+			dctx, cancel := context.WithDeadline(ctx, claim.Deadline)
+			defer cancel()
+			return r.finalize(dctx, final{result: Synth("error", 1, "invalid claim response: review")})
+		}
+		claim.Review = rv
+	}
 	resp.CallbackToken, resp.Clone.Token, resp.GatewayKey = "", "", ""
 	r.claim = claim
 	r.d.Platform.SetCallbackToken(claim.CallbackToken)
@@ -596,6 +614,10 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		Agent:  egress.Hosts{Kete: uniq(c.GatewayHost, platformHost), Tool: layout.RegistryHosts, Root: []string{platformHost}},
 		Report: egress.Hosts{Root: []string{platformHost}},
 	}
+	if c.Review != nil {
+		// A review runs no tool process; its tool user reaches nothing (no registries).
+		second.Agent.Tool = nil
+	}
 	if err := r.startProxy(ctx, second, "clone"); err != nil {
 		if ctx.Err() != nil {
 			return r.interrupted()
@@ -615,6 +637,13 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		return r.cancelled()
 	}
 
+	if c.Review != nil {
+		// A review fetches the pull request's head and base and checks the pinned head itself.
+		if code, ok := r.reviewClone(ctx); !ok {
+			return code
+		}
+		goto cloned
+	}
 	r.log.Start(pl.StepClone)
 	if rt := r.d.Runtime; rt != nil && rt.Repo.BaseSHA != "" && rt.CloneAt != nil {
 		// kubevm with a pinned base: exactly the commit the runner resolved, or nothing.
@@ -684,6 +713,7 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		return r.failClone(ctx, final{result: Synth("error", 1, "clone verification failed")})
 	}
 	r.log.OK(pl.StepVerify)
+cloned:
 	if code, ok := r.fetchRefs(ctx); !ok {
 		return code
 	}
@@ -716,6 +746,9 @@ func (r *runner) afterClaim(ctx context.Context) int {
 	}
 
 	if code, ok := r.workerPrompt(ctx); !ok {
+		return code
+	}
+	if code, ok := r.reviewContext(ctx); !ok {
 		return code
 	}
 
@@ -759,7 +792,7 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		r.log.FailErr(pl.StepAgent, pl.CodeFailed, err)
 		return r.finalize(ctx, final{result: Synth("error", 1, "could not write the job spec")})
 	}
-	kete, err := r.d.Machine.StartKete(ctx, KeteEnv{GatewayURL: c.GatewayURL, PlatformURL: r.d.Boot.PlatformURL, GatewayKey: c.GatewayKey, JobID: r.d.Boot.JobID, Zone: r.zone()})
+	kete, err := r.d.Machine.StartKete(ctx, KeteEnv{GatewayURL: c.GatewayURL, PlatformURL: r.d.Boot.PlatformURL, GatewayKey: c.GatewayKey, JobID: r.d.Boot.JobID, Zone: r.zone(), Review: c.Review != nil})
 	c.GatewayKey = ""
 	if err != nil {
 		r.log.FailErr(pl.StepAgent, pl.CodeFailed, err)
@@ -812,7 +845,8 @@ loop:
 		}
 	}
 	r.log.OK(pl.StepAgent)
-	return r.finalize(ctx, final{keteRan: true, keteExit: kete.ExitCode(), timeLimit: timeLimit, bundle: true})
+	// A review publishes nothing: no bundle (uploads ask for none, finish has no push error).
+	return r.finalize(ctx, final{keteRan: true, keteExit: kete.ExitCode(), timeLimit: timeLimit, bundle: c.Review == nil})
 }
 
 type final struct {
@@ -909,7 +943,7 @@ func (r *runner) finalize(ctx context.Context, f final) int {
 	case f.keteRan:
 		out, err := r.d.Machine.ReadKeteStdout()
 		if res, ok := ParseKeteResult(out); err == nil && ok {
-			result = res
+			result = r.boundReviewResult(ctx, res)
 		} else if f.timeLimit {
 			result = Synth("time_limit", 3, "stopped by the entrypoint")
 		} else {

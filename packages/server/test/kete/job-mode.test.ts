@@ -35,13 +35,18 @@ import { initRepo } from "../../../core/test/fixture/git"
 import { tmpdirScoped } from "../../../core/test/fixture/tmpdir"
 import { it } from "../../../core/test/lib/effect"
 import { KeteJobServer } from "../../src/kete/job-server"
+import type { KeteReview } from "@opencode/util/kete/review"
 import { fakeConfine } from "./fake-confine"
 import type { ServerOptions } from "../../src/options"
 import { createEmbeddedRoutes } from "../../src/routes"
 
 const unattended = { version: 1 as const, budget: 100, timeout: 30 }
 
-const setup = Effect.fn(function* (input: { readonly jobMode: boolean; readonly toolSocket?: string }) {
+const setup = Effect.fn(function* (input: {
+  readonly jobMode: boolean
+  readonly toolSocket?: string
+  readonly review?: KeteReview.Spec
+}) {
   const tmp = yield* tmpdirScoped()
   const data = path.join(tmp.path, "data")
   const repoDir = path.join(tmp.path, "repo")
@@ -107,6 +112,7 @@ const setup = Effect.fn(function* (input: { readonly jobMode: boolean; readonly 
           { kind: "on" },
           input.toolSocket === undefined ? {} : { OPENCODE_JOB_TOOL_SOCKET: input.toolSocket },
           fakeConfine(repoDir),
+          input.review,
         )
       : []),
   ]
@@ -310,5 +316,34 @@ it.live("(h) job mode on with a relative KETE_JOB_TOOL_SOCKET: replacements thro
     expect(() =>
       KeteJobServer.replacements({}, { kind: "on" }, { OPENCODE_JOB_TOOL_SOCKET: "relative/tool.sock" }),
     ).toThrow(/KETE_JOB_TOOL_SOCKET must be an absolute path/)
+  }),
+)
+
+const review: KeteReview.Spec = {
+  version: 1,
+  pull_number: 42,
+  head_sha: "9fceb02d0ae598e95dc970b74767f19372d61af8",
+  base_ref: "main",
+  head_ref: "refs/pull/42/head",
+  untrusted: true,
+  max_findings: 50,
+}
+
+// (i) review mode's server half: with a tool socket set, a review job's server still spawns nothing
+// (the same session creation that reaches the helper in (g) sends it no request), and the
+// repository's AGENTS.md files are never instructions (the two review replacements come last).
+it.live("(i) review job with a tool socket: no runtime spawn reaches the helper", () =>
+  Effect.gen(function* () {
+    const fake = yield* startWiringFakeHelper()
+    const s = yield* setup({ jobMode: true, toolSocket: fake.socketPath, review })
+    fake.setGitToplevel(s.repoDir)
+    yield* Effect.promise(() =>
+      s.client.session.create({ location: { directory: s.repoDir }, metadata: { "kete.unattended": unattended } }),
+    )
+    expect(fake.requests).toEqual([])
+    yield* Effect.promise(() => fake.stop())
+    const list = KeteJobServer.replacements({}, { kind: "on" }, {}, fakeConfine(s.repoDir), review)
+    const plain = KeteJobServer.replacements({}, { kind: "on" }, {}, fakeConfine(s.repoDir), undefined)
+    expect(list.length).toBe(plain.length + KeteJobServer.reviewReplacements().length)
   }),
 )

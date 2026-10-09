@@ -307,3 +307,91 @@ func (r Runner) CopyKeteRefs(ctx context.Context, pristine, repo string) error {
 	})
 	return err
 }
+
+// --- pull request review jobs (jobs-v1 "Pull request review") ---
+
+// ErrNoMergeBase is a review whose head and base share no commit in the fetched history.
+var ErrNoMergeBase = errors.New("git: no merge base in the fetched history")
+
+func reviewRefspecs(headRef, branch, baseBranch string) []string {
+	return []string{"+" + headRef + ":refs/heads/" + branch, "+refs/heads/" + baseBranch + ":refs/heads/" + baseBranch}
+}
+
+// ReviewClone makes a review job's pristine copy: a fresh bare repository, then one fetch of the
+// pull request's head ref (refs/pull/<n>/head, which the base repository serves for a fork's pull
+// request too) into refs/heads/<branch> (the job's branch) and of the base branch (always as
+// refs/heads/<baseBranch>, never a bare name a tag could shadow) into refs/heads/<baseBranch>, depth
+// commits deep each, with the clone's credential header. HEAD names the base branch, as after any
+// job's clone, so the agent copy's `checkout -b <branch>` makes the job's branch itself.
+func (r Runner) ReviewClone(ctx context.Context, url, username, token, headRef, branch, baseBranch string, depth int, dest string) error {
+	if err := os.RemoveAll(dest); err != nil {
+		return err
+	}
+	if _, err := r.Run(ctx, Call{Args: []string{"init", "--bare", "-q", "--", dest}}); err != nil {
+		return err
+	}
+	args := append([]string{"--git-dir=" + dest, "fetch", "--depth=" + strconv.Itoa(depth), "--no-tags", "--no-write-fetch-head", "--", url}, reviewRefspecs(headRef, branch, baseBranch)...)
+	if _, err := r.Run(ctx, Call{Args: args, Config: [][2]string{{"http.extraHeader", BasicHeader(username, token)}}, Timeout: r.CloneTimeout}); err != nil {
+		return err
+	}
+	_, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + dest, "symbolic-ref", "HEAD", "refs/heads/" + baseBranch}})
+	return err
+}
+
+// ReviewDeepen fetches the same two refs again, deepen commits further back (when the first fetch
+// held no merge base). The caller checks the head again afterwards: the refs may have moved.
+func (r Runner) ReviewDeepen(ctx context.Context, gitDir, url, username, token, headRef, branch, baseBranch string, deepen int) error {
+	args := append([]string{"--git-dir=" + gitDir, "fetch", "--deepen=" + strconv.Itoa(deepen), "--no-tags", "--no-write-fetch-head", "--", url}, reviewRefspecs(headRef, branch, baseBranch)...)
+	_, err := r.Run(ctx, Call{Args: args, Config: [][2]string{{"http.extraHeader", BasicHeader(username, token)}}, Timeout: r.CloneTimeout})
+	return err
+}
+
+// MergeBase is `git merge-base a b` in a git-dir: the commit, or ErrNoMergeBase when the fetched
+// history holds none.
+func (r Runner) MergeBase(ctx context.Context, gitDir, a, b string) (string, error) {
+	out, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + gitDir, "merge-base", a, b}})
+	if err != nil {
+		var ge *Error
+		if errors.As(err, &ge) && ge.ExitCode == 1 {
+			return "", ErrNoMergeBase
+		}
+		return "", err
+	}
+	sha := strings.TrimSpace(string(out))
+	if len(sha) != 40 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return "", ErrMismatch
+	}
+	return sha, nil
+}
+
+// ReviewDiff is what the reviewing agent is shown: the changed files (`--name-status`, renames
+// found) and the unified diff from base to head, each cut at its cap (cut reports which were). No
+// external diff driver or textconv runs (the repository's attributes can name neither: no driver
+// is configured).
+type ReviewDiff struct {
+	Files, Diff       []byte
+	FilesCut, DiffCut bool
+}
+
+// Diff computes ReviewDiff from a git-dir, read-only.
+func (r Runner) Diff(ctx context.Context, gitDir, base, head string, maxFiles, maxDiff int64) (ReviewDiff, error) {
+	common := []string{"--git-dir=" + gitDir, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--find-renames"}
+	var d ReviewDiff
+	out, err := r.Run(ctx, Call{Args: append(append([]string{}, common...), "--name-status", base, head, "--"), MaxStdout: maxFiles})
+	switch {
+	case errors.Is(err, ErrOutputTooLarge):
+		d.FilesCut = true
+	case err != nil:
+		return ReviewDiff{}, err
+	}
+	d.Files = out
+	out, err = r.Run(ctx, Call{Args: append(append([]string{}, common...), "--unified=3", base, head, "--"), MaxStdout: maxDiff})
+	switch {
+	case errors.Is(err, ErrOutputTooLarge):
+		d.DiffCut = true
+	case err != nil:
+		return ReviewDiff{}, err
+	}
+	d.Diff = out
+	return d, nil
+}

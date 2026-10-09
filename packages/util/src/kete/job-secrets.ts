@@ -26,6 +26,7 @@ export * as KeteJobSecrets from "./job-secrets.js"
 import { closeSync, fstatSync } from "node:fs"
 import { KeteEnv } from "./env.js"
 import { KeteOrchestrationSpec } from "./orchestration-spec.js"
+import { KeteReview } from "./review.js"
 import { KeteSyncCache } from "./sync/cache.js"
 
 /** The internal name for KETE_JOB_GATEWAY_KEY_FD (entrypoint → `kete job run`; a contract). */
@@ -184,4 +185,21 @@ export function setOrchestration(value: { readonly jobID: string; readonly spec:
 /** The orchestration set by `setOrchestration`, or `undefined` (every job that isn't orchestrated). */
 export function orchestration(): Orchestration | undefined {
   return orchestrationOverlay
+}
+
+let reviewOverlay: KeteReview.Spec | undefined
+
+/** Sets this job's pull request review section (jobs-v1 `spec.review`, validated again here): the
+ * server then runs in review mode (read-only, no subprocess; core/src/kete/review-mode.ts). Not
+ * secret: it travels the same parent → child channel as the organization. Write-once. */
+export function setReview(value: unknown): void {
+  if (reviewOverlay !== undefined) throw new Error("the job's review is already set")
+  const parsed = KeteReview.parseSpec(value)
+  if (!parsed.ok) throw new Error(`the job's review is not valid (${parsed.field})`)
+  reviewOverlay = parsed.spec
+}
+
+/** The review set by `setReview`, or `undefined` (every job that isn't a pull request review). */
+export function review(): KeteReview.Spec | undefined {
+  return reviewOverlay
 }

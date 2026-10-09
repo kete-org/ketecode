@@ -17,6 +17,7 @@ import path from "node:path"
 import { SchemaParser } from "effect"
 import { KeteUnattendedSchema } from "@opencode/schema/kete/unattended"
 import { KeteOrchestrationSpec } from "@opencode/util/kete/orchestration-spec"
+import { KeteReview } from "@opencode/util/kete/review"
 import { Model } from "@opencode/schema/model"
 
 /** A job's `policy`: the shared schema's `Policy`, with `budget`/`timeout` required — a job always
@@ -36,6 +37,10 @@ export interface Spec {
   /** An orchestrated job's section (jobs-v1 `JobSpecOrchestration`): only the cloud job entrypoint
    * writes it, copied from a claim that carried it; `kete job run` accepts it only in job mode. */
   readonly orchestration?: KeteOrchestrationSpec.Spec
+  /** A pull request review job's section (jobs-v1 `JobSpecReview`): only the cloud job entrypoint
+   * writes it, copied from a claim that carried it; `kete job run` accepts it only in job mode, where
+   * it runs the review read-only and reports the findings in the result's `review`. */
+  readonly review?: KeteReview.Spec
 }
 
 export class SpecError extends Error {
@@ -58,7 +63,7 @@ const MAX_PROMPT_FILE_BYTES = 256 * 1024
  * rule the runtime would ignore. */
 const NEVER_ALLOWED: ReadonlySet<string> = new Set(["question", "budget"])
 
-const TOP_LEVEL_KEYS: ReadonlySet<string> = new Set(["version", "prompt", "prompt_file", "agent", "model", "policy", "branch", "orchestration"])
+const TOP_LEVEL_KEYS: ReadonlySet<string> = new Set(["version", "prompt", "prompt_file", "agent", "model", "policy", "branch", "orchestration", "review"])
 const POLICY_KEYS: ReadonlySet<string> = new Set(["version", "allow", "budget", "timeout"])
 const ALLOW_RULE_KEYS: ReadonlySet<string> = new Set(["action", "resource"])
 
@@ -227,5 +232,23 @@ export async function parse(text: string, options: { readonly specDir: string; r
     if (branch === undefined) fail("branch", "an orchestrated job always names its branch")
   }
 
-  return { version: 1, prompt, agent, model, policy, branch, ...(orchestration ? { orchestration } : {}) }
+  let review: KeteReview.Spec | undefined
+  if (raw["review"] !== undefined) {
+    const parsed = KeteReview.parseSpec(raw["review"])
+    if (!parsed.ok) fail(parsed.field, "is not a valid review section (jobs-v1 JobSpecReview)")
+    review = parsed.spec
+    if (orchestration !== undefined) fail("review", "an orchestrated job is never a review (jobs-v1 JobOrchestratedSpec has no review)")
+    if (branch === undefined) fail("branch", "a review job always names its branch")
+  }
+
+  return {
+    version: 1,
+    prompt,
+    agent,
+    model,
+    policy,
+    branch,
+    ...(orchestration ? { orchestration } : {}),
+    ...(review ? { review } : {}),
+  }
 }

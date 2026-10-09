@@ -100,6 +100,10 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   "packages/util/src/kete/confined-fs.ts": { category: "confinement", reason: "realpath of the root at startup; everything else is openat2" },
   "packages/util/src/kete/linux-ffi.ts": { category: "confinement", reason: "fstat/read/write/close on descriptors openat2 returned" },
   "packages/util/src/kete/job-audit-sink.ts": { category: "confinement", reason: "fstat/write on the inherited audit pipe" },
+  "packages/util/src/kete/review.ts": {
+    category: "data-dir",
+    reason: "a review job's record (review.json) under <state> (kete's home), never the working tree",
+  },
   "packages/util/src/kete/job-secrets.ts": { category: "confinement", reason: "reads the inherited secrets descriptor" },
 }
 

@@ -80,6 +80,15 @@ type Git interface {
 	FetchRefs(ctx context.Context, gitDir, url, username, token string, refs []gitops.RefSpec, depth1 bool) error
 	CatBlob(ctx context.Context, gitDir, object string, max int64) ([]byte, error)
 	CopyKeteRefs(ctx context.Context, pristine, repo string) error
+
+	// Pull request review jobs (jobs-v1 "Pull request review"; review.go): the pristine copy made
+	// from the pull request's head ref and its base branch (clone phase only, with the clone
+	// credential), fetched deeper once when they share no commit yet, their merge base
+	// (gitops.ErrNoMergeBase when none), and the diff the agent is shown (local, read-only).
+	ReviewClone(ctx context.Context, url, username, token, headRef, branch, baseBranch string, depth int, dest string) error
+	ReviewDeepen(ctx context.Context, gitDir, url, username, token, headRef, branch, baseBranch string, deepen int) error
+	MergeBase(ctx context.Context, gitDir, a, b string) (string, error)
+	Diff(ctx context.Context, gitDir, base, head string, maxFiles, maxDiff int64) (gitops.ReviewDiff, error)
 }
 
 // KeteEnv is what `kete`'s environment needs from the claim.
@@ -94,6 +103,10 @@ type KeteEnv struct {
 	// "enterprise_private" for kubevm. The `orchestrate` tool lets node titles and a decision's
 	// summary leave only from Kete cloud (the runner's boundary is wired in with O10).
 	Zone string
+	// Review is set for a pull request review job: kete gets no tool socket (KETE_JOB_TOOL_SOCKET),
+	// so its server can't start a process even through the helper (review mode refuses every spawn
+	// itself too).
+	Review bool
 }
 
 // Machine is the OS side of the run.
