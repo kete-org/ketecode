@@ -5,7 +5,7 @@ verified-at: 62cd364869
 ---
 
 ## Quick answers
-- What runs in the sandbox? Only the shell tool's commands (`core/src/tool/plugin/shell.ts`), outside job mode. The user's `!` commands, PTY, MCP servers, formatters, LSP and the runtime's own git are unchanged (no plan attached → `KeteSandboxPlans.wrap` returns the command as is).
+- What runs in the sandbox? Only the shell tool's commands (`core/src/tool/plugin/shell.ts`), outside job mode. The user's `!` commands, PTY, MCP servers, formatters and the runtime's own git are unchanged; language servers are wrapped by `kete/lsp.ts` with their own no-network policy (`lsp` card) (no plan attached → `KeteSandboxPlans.wrap` returns the command as is).
 - Which mechanism? macOS `/usr/bin/sandbox-exec` with a generated Seatbelt profile (`sandbox/seatbelt.ts`); Linux `bwrap` (`sandbox/bubblewrap.ts`); probed once per process (`sandbox/probe.ts`, `KeteSandbox.availability`). Windows: unavailable.
 - How is network decided? `kete.sandbox.network` "approved" (default): network iff the shell request's metadata carries `kete.sandbox.approved`, set by `Permission.reply` (`core/src/permission.ts`, marked) when a person answers that very shell request "once"/"always" (not requests an "always" resolves unseen), and by `KeteSandbox.ApprovalPlugin` — the last `evaluate` hook — when the final effect is "allow" with the unattended policy's mark (`KeteUnattended.applyPolicy` → `markPolicyAllowed`). Saved approvals don't grant network. `sandbox: "network"` asks `sandbox_network`.
 - How does an org require the sandbox? A policy denying `sandbox_off`: every unsandboxed command asserts it (reason `disabled`/`unavailable` doesn't ask; `requested` always asks).

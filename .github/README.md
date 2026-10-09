@@ -99,6 +99,8 @@ kete login                        # or sign in to a Kete account to use the gate
   worktrees.
 - **Shows its plan.** For multi-step work the agent keeps a task list you can watch in the
   terminal UI, the web UI and the editors ([Task list](../docs/todo.md)).
+- **Checks its edits.** After each edit, errors from your language servers (TypeScript, Python,
+  Go, Rust) go back to the agent, with the servers sandboxed and offline ([LSP](../docs/lsp.md)).
 - **Any model.** Your own provider keys, local models through Ollama, vLLM or any
   OpenAI-compatible server, or the Kete gateway with one sign-in and readable per-request usage.
   The gateway and portal are never required for local use.
