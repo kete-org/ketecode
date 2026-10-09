@@ -52,7 +52,7 @@ None blocking.
   edit deny is advisory.
 - N3: every clone-phase failure revokes the clone token (GitHub) or calls clone-done (Harness).
 - N4: both plan readers cap nesting at 8 levels (`not_json`). **For the platform:** please add the
-  same cap to `parsePlanJson` and the cases in `docs/test-vectors/orchestrations-v1-additions/
+  same cap to `parsePlanJson` and the cases in `docs/kete-test-vectors/orchestrations-v1-additions/
   plan-files.json` (deep nesting 9/8, `-0`, a lone surrogate in a member name, duplicates with `\u`
   escapes) to `plan-files.json`; kete-code then re-copies and drops its additions file. Until then
   the platform's reader answers `invalid` (not `not_json`) for the 9-level case; every other added

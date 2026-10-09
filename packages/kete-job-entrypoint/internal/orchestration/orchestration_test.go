@@ -304,9 +304,9 @@ func TestValidators(t *testing.T) {
 }
 
 // TestPlanFileAdditions: kete-code's additions to the plan-file vectors
-// (docs/test-vectors/orchestrations-v1-additions/plan-files.json, read by the TypeScript tests too).
+// (docs/kete-test-vectors/orchestrations-v1-additions/plan-files.json, read by the TypeScript tests too).
 func TestPlanFileAdditions(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "test-vectors", "orchestrations-v1-additions", "plan-files.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "kete-test-vectors", "orchestrations-v1-additions", "plan-files.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

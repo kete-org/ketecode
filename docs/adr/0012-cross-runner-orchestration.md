@@ -188,7 +188,7 @@ What kete-code built against the contract (task `docs/tasks/2026-10-10-orchestra
   the clone token before the result: GitHub's revoke endpoint, Harness Code's clone-done.
 - **Plan-file reader.** Both readers (Go and TypeScript) refuse nesting deeper than 8 levels
   (`not_json`), a Kete addition; its vectors, with minus zero, a lone surrogate in a member name and
-  duplicates spelled with `\u` escapes, are in `docs/test-vectors/orchestrations-v1-additions/`
+  duplicates spelled with `\u` escapes, are in `docs/kete-test-vectors/orchestrations-v1-additions/`
   until the platform's vectors carry them.
 - **Threat model: plan metadata leaves the zone.** Node keys, dependencies, agents, budgets,
   timeouts, attempt counts and the timing of plans and decisions are chosen by the model and sent to

@@ -17,7 +17,7 @@ on:
       - "packages/kete-egress/**"
       # The orchestrations-v1 vectors the Go tests read (one copy for Go and TypeScript).
       - "docs/platform/test-vectors/orchestrations-v1/**"
-      - "docs/test-vectors/**"
+      - "docs/kete-test-vectors/**"
       - ".github/workflows/kete-job-entrypoint.yml"
   push:
     branches: [main]
@@ -27,7 +27,7 @@ on:
       - "packages/kete-egress/**"
       # The orchestrations-v1 vectors the Go tests read (one copy for Go and TypeScript).
       - "docs/platform/test-vectors/orchestrations-v1/**"
-      - "docs/test-vectors/**"
+      - "docs/kete-test-vectors/**"
       - ".github/workflows/kete-job-entrypoint.yml"
   workflow_dispatch:
 

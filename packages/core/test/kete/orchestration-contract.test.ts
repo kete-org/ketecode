@@ -62,10 +62,10 @@ describe("orchestrations-v1 vectors", () => {
     })
   }
 
-  // kete-code's additions (docs/test-vectors/orchestrations-v1-additions/), checked by the Go reader too.
+  // kete-code's additions (docs/kete-test-vectors/orchestrations-v1-additions/), checked by the Go reader too.
   const additions = JSON.parse(
     readFileSync(
-      path.join(dir, "..", "..", "..", "test-vectors", "orchestrations-v1-additions", "plan-files.json"),
+      path.join(dir, "..", "..", "..", "kete-test-vectors", "orchestrations-v1-additions", "plan-files.json"),
       "utf8",
     ),
   )
