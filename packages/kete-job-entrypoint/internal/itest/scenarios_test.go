@@ -212,7 +212,7 @@ func TestHarnessCodeLifecycle(t *testing.T) {
 	if !r.job.CloneDeleted {
 		t.Error("clone-done did not delete the token")
 	}
-	if strings.Join(r.job.Features, ",") != "clone_revoke_callback,orchestration_v1" {
+	if strings.Join(r.job.Features, ",") != "clone_revoke_callback,orchestration_v1,review_v1" {
 		t.Errorf("claim features %v", r.job.Features)
 	}
 	// After clone-done, root reached the git host no more; the agent and report phases never did.
@@ -744,7 +744,7 @@ func TestOrchestrationWorker(t *testing.T) {
 	if res["outcome"] != "completed" {
 		t.Fatalf("result %v", res)
 	}
-	if strings.Join(r.job.Features, ",") != "clone_revoke_callback,orchestration_v1" {
+	if strings.Join(r.job.Features, ",") != "clone_revoke_callback,orchestration_v1,review_v1" {
 		t.Errorf("claim features %v", r.job.Features)
 	}
 	spec, err := os.ReadFile(testConfig().SpecPath())

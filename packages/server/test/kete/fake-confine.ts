@@ -7,9 +7,16 @@ import { KeteConfinedFs } from "@opencode/util/kete/confined-fs"
 import { makeFake } from "../../../util/test/kete/fixture/fake-syscalls"
 import type { KeteJobServer } from "../../src/kete/job-server"
 
-export function fakeConfine(directory: string): KeteJobServer.Confine {
+export function fakeConfine(directory: string, files: Readonly<Record<string, string>> = {}): KeteJobServer.Confine {
   return () => {
     const real = realpathSync(directory)
-    return KeteConfinedFs.open(real, makeFake({ rootPath: real }).sys, "linux")
+    const fake = makeFake({ rootPath: real })
+    // Optional root-relative files the in-process reads find (parent directories made as needed).
+    for (const [rel, content] of Object.entries(files)) {
+      const dir = rel.split("/").slice(0, -1).join("/")
+      if (dir) fake.tree.dir(dir)
+      fake.tree.file(rel, content)
+    }
+    return KeteConfinedFs.open(real, fake.sys, "linux")
   }
 }

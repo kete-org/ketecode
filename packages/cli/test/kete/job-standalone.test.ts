@@ -53,6 +53,14 @@ describe("KeteJobStandalone.command (AC1, AC2)", () => {
     expect(
       JSON.parse(KeteJobStandalone.secretsMessage({ password: "p", gatewayKey: "k", organization: org, orchestration: { jobID: "j", spec } })),
     ).toEqual({ v: 1, password: "p", gateway_key: "k", organization: org, orchestration: { job_id: "j", spec } })
+    const review = { version: 1, pull_number: 42 }
+    expect(JSON.parse(KeteJobStandalone.secretsMessage({ password: "p", gatewayKey: "k", organization: org, review }))).toEqual({
+      v: 1,
+      password: "p",
+      gateway_key: "k",
+      organization: org,
+      review,
+    })
   })
 })
 

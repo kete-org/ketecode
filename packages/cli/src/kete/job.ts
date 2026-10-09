@@ -30,6 +30,7 @@ import { JobSpec } from "./job-spec"
 import { KeteJobStandalone } from "./job-standalone"
 import { KeteJobSync } from "./job-sync"
 import { KeteJobOrchestration } from "./job-orchestration"
+import { KeteReview } from "@opencode/util/kete/review"
 
 const exists = (file: string) =>
   access(file)
@@ -126,6 +127,19 @@ export default Runtime.handler(
       ? KeteJobOrchestration.resolve({ jobMode, spec: spec.orchestration, environment: process.env })
       : undefined
     if (orchestration?.kind === "refused") return report(refusedResult(orchestration.message), input.json)
+    // A pull request review's section is the cloud entrypoint's too: review mode (read-only, no
+    // subprocess) is enforced by job mode's server, so it is never honoured outside job mode.
+    const review = spec.review
+    if (review !== undefined && !jobMode)
+      return report(refusedResult("review: a pull request review job runs only in job mode (a cloud job's runtime)"), input.json)
+    // A record left from before this run (none exists in a fresh job) must never be reported.
+    if (review !== undefined) {
+      const removed = yield* Effect.tryPromise(() => KeteReview.removeRecord(Global.Path.state)).pipe(
+        Effect.map(() => true),
+        Effect.catch(() => Effect.succeed(false)),
+      )
+      if (!removed) return report(errorResult("review: an earlier review record could not be removed"), input.json)
+    }
 
     const server = Option.getOrUndefined(input.server)
     const connection = JobConnection.resolve({ server, standalone: input.standalone })
@@ -158,6 +172,7 @@ export default Runtime.handler(
             gatewayKey: preflight.gatewayKey,
             organization: synced.organization,
             ...(orchestration?.kind === "ok" ? { orchestration: orchestration.value } : {}),
+            ...(review !== undefined ? { review } : {}),
             auditFd: preflight.auditFd,
           }).pipe(
             Effect.map((value) => ({ ok: true as const, value })),
@@ -205,6 +220,7 @@ export default Runtime.handler(
       randomId: () => crypto.randomUUID(),
       attached: resolved.service !== undefined,
       inspectProjectConfig: (directory, stop) => KeteJobProjectConfig.inspect(directory, stop),
+      ...(review !== undefined ? { readReview: () => KeteReview.readRecord(Global.Path.state, review.max_findings) } : {}),
     }
 
     const { exitCode } = yield* Effect.promise(() =>

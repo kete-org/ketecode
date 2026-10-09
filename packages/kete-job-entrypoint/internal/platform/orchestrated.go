@@ -22,8 +22,10 @@ import (
 // bundles (O6). The platform refuses an orchestrated job's claim without it.
 const FeatureOrchestration = "orchestration_v1"
 
-// ClaimFeatures is what the cloud entrypoint announces in its claim request.
-var ClaimFeatures = []string{FeatureCloneRevokeCallback, FeatureOrchestration}
+// ClaimFeatures is what the cloud entrypoint announces in its claim request: the clone-revoke
+// callback, orchestrated jobs and pull request review (FeatureReview, review.go). The kubevm
+// profile announces RuntimeClaimFeatures instead (no review: its strict JobSpec refuses `review`).
+var ClaimFeatures = []string{FeatureCloneRevokeCallback, FeatureOrchestration, FeatureReview}
 
 // MaxFetch is ORCHESTRATION_MAX_FETCH: every node branch plus the plan branch.
 const MaxFetch = orchestration.MaxNodes + 1

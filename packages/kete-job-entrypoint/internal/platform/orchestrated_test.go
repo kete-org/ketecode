@@ -68,8 +68,11 @@ func (e *fieldError) Error() string { return e.field }
 
 func TestOrchestratedClaimVectors(t *testing.T) {
 	v := loadOrchestrationVector(t)
-	if !slices.Equal(v.Request.Features, ClaimFeatures) {
-		t.Errorf("the vector's request announces %v, the entrypoint %v", v.Request.Features, ClaimFeatures)
+	// The vector predates review_v1: the entrypoint announces every feature it names (and more).
+	for _, f := range v.Request.Features {
+		if !slices.Contains(ClaimFeatures, f) {
+			t.Errorf("the vector's request announces %q, the entrypoint doesn't (%v)", f, ClaimFeatures)
+		}
 	}
 	if len(v.Responses) != 4 || len(v.Refusals) != 22 {
 		t.Fatalf("%d responses and %d refusals; the contract has 4 and 22", len(v.Responses), len(v.Refusals))

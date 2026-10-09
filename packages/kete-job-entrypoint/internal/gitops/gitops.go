@@ -38,6 +38,7 @@ type Call struct {
 	Config    [][2]string // extra GIT_CONFIG_* pairs
 	IndexFile string      // GIT_INDEX_FILE, only when set
 	Timeout   time.Duration
+	MaxStdout int64 // overrides the runner's cap when > 0
 }
 
 // BaseConfig is set on every call.
@@ -115,7 +116,8 @@ func (e *Error) ErrorClass() (string, int) { return "git", e.ExitCode }
 // ErrOutputTooLarge is a call whose stdout passed the cap.
 var ErrOutputTooLarge = errors.New("git: output too large")
 
-// Run runs one call and returns its stdout.
+// Run runs one call and returns its stdout. Past the cap it returns ErrOutputTooLarge together with
+// the first cap bytes (a caller that can use a cut output, the review diff, takes them).
 func (r Runner) Run(ctx context.Context, c Call) ([]byte, error) {
 	timeout := c.Timeout
 	if timeout <= 0 {
@@ -134,7 +136,11 @@ func (r Runner) Run(ctx context.Context, c Call) ([]byte, error) {
 		return nil
 	}
 	cmd.WaitDelay = 5 * time.Second
-	stdout := &capWriter{max: r.MaxStdout}
+	maxOut := r.MaxStdout
+	if c.MaxStdout > 0 {
+		maxOut = c.MaxStdout
+	}
+	stdout := &capWriter{max: maxOut}
 	stderr := &capWriter{max: r.MaxStderr}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
@@ -147,7 +153,7 @@ func (r Runner) Run(ctx context.Context, c Call) ([]byte, error) {
 		return nil, &Error{ExitCode: code, Stderr: stderr.buf.Bytes(), Cause: err}
 	}
 	if stdout.overflow {
-		return nil, ErrOutputTooLarge
+		return stdout.buf.Bytes(), ErrOutputTooLarge
 	}
 	return stdout.buf.Bytes(), nil
 }

@@ -118,6 +118,10 @@ type Knobs struct {
 	// taken to have made (the integration suite's fake kete can't call the routes): its digest is
 	// what finish checks the plan bundle against.
 	OrchestrationProposalText string
+
+	// Review makes a pull request review job (review.go): spec.review, the clone pinned at the pull
+	// request's head, served only to a claim announcing review_v1.
+	Review bool
 }
 
 // Call is one recorded request.
@@ -160,6 +164,9 @@ type Job struct {
 	orchProposal map[string]any
 	orchDecision string
 	PlanBundle   []byte
+
+	// Review is a review job's result's review, once it passed the platform's check.
+	Review json.RawMessage
 }
 
 type upload struct {
@@ -176,6 +183,8 @@ type Server struct {
 	BaseSHA string // the repository's real main
 	repoDir string
 	orch    orchestrationRepo // the orchestration branches (orchestration.go)
+	// reviewHead is the pull request's head commit (review.go).
+	reviewHead string
 
 	mu        sync.Mutex
 	job       *Job
@@ -322,10 +331,17 @@ func (s *Server) makeRepo() error {
 		return err
 	}
 	s.orch = orch
+	if s.reviewHead, err = makeReviewRef(work); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Join(s.repoDir, "org"), 0o755); err != nil {
 		return err
 	}
 	if err := gitCmd(s.cfg.StateDir, nil, "clone", "-q", "--bare", work, filepath.Join(s.repoDir, "org", "repo.git")); err != nil {
+		return err
+	}
+	// The pull request's head ref, as GitHub serves refs/pull/<n>/head (a bare clone copies branches only).
+	if err := gitCmd(s.cfg.StateDir, nil, "--git-dir="+filepath.Join(s.repoDir, "org", "repo.git"), "fetch", "-q", work, "+"+ReviewHeadRef+":"+ReviewHeadRef); err != nil {
 		return err
 	}
 	// As GitHub: a reachable commit may be fetched by its id (a pinned base the branch moved past).
@@ -390,6 +406,9 @@ func (s *Server) NewJob(k Knobs) *Job {
 	j.cloneRef = "main"
 	if k.Orchestration != "" {
 		s.orchestrationSpec(j)
+	}
+	if k.Review {
+		s.reviewSpec(j)
 	}
 	s.mu.Lock()
 	s.job, s.calls, s.contract, s.leaks, s.checks = j, nil, nil, nil, map[string]bool{}
@@ -571,10 +590,16 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			s.runtimeClaim(j, req.Features, reply)
 			return
 		}
-		hasRevoke, hasOrchestration := false, false
+		hasRevoke, hasOrchestration, hasReview := false, false, false
 		for _, f := range req.Features {
 			hasRevoke = hasRevoke || f == FeatureCloneRevokeCallback
 			hasOrchestration = hasOrchestration || f == FeatureOrchestration
+			hasReview = hasReview || f == FeatureReview
+		}
+		if j.Knobs.Review && !hasReview {
+			// A review job's claim without the feature: refused before anything is minted.
+			reply(404, nil)
+			return
 		}
 		if j.Knobs.Orchestration != "" && !hasOrchestration {
 			// An orchestrated job's claim without the feature: refused before anything is minted.
@@ -713,6 +738,9 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			<-r.Context().Done()
 			return
 		}
+		if j.Knobs.Review {
+			s.checkReviewResult(j, body)
+		}
 		j.state = "finalizing"
 		reply(204, nil)
 	case "uploads":
@@ -733,6 +761,9 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			s.violation("uploads: bad body")
 			reply(400, nil)
 			return
+		}
+		if j.Knobs.Review && *req.Bundle {
+			s.violation("uploads: a review job publishes no bundle")
 		}
 		if j.Knobs.HangUploads {
 			s.record("uploads-hang", body, 0)
@@ -777,6 +808,9 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			s.violation("finish: %v", err)
 			reply(400, nil)
 			return
+		}
+		if j.Knobs.Review && req.PushError != nil {
+			s.violation("finish: a review job pushes nothing (push_error %q)", *req.PushError)
 		}
 		if req.PushError != nil {
 			switch *req.PushError {

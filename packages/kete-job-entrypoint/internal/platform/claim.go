@@ -71,6 +71,10 @@ type Claim struct {
 	// Orchestrated is set for an orchestration's coordinator turn or node attempt (the spec
 	// carries `orchestration`; jobs-v1 "Orchestrated jobs"), checked by ParseOrchestrated.
 	Orchestrated *OrchestratedClaim
+
+	// Review is set for a pull request review job (the spec carries `review`; jobs-v1 "Pull request
+	// review"), checked by ParseReview: Ref is the pull request's base branch, BaseSHA its pinned head.
+	Review *SpecReview
 }
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)

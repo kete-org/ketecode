@@ -184,6 +184,10 @@ func Main(ctx context.Context, cfg layout.Config, boot bootenv.Values, stdout io
 		Git: cfg.GitBin, Home: cfg.RootHome(), ProxyURL: proxyURL, CAPath: cfg.CAPath(),
 		Timeout: cfg.GitTimeout, CloneTimeout: cfg.CloneTimeout, MaxStdout: layout.GitMaxStdout, MaxStderr: layout.GitMaxStderr,
 	}
+	// Root's git parses fork-authored objects on a review job: refuse a git older than the floor.
+	if !step(pl.StepGitVersion, func() error { return git.CheckVersion(ctx, gitops.MinVersion) }) {
+		return exit(log, 1)
+	}
 	m := &machine{cfg: cfg, ids: ids, cg: cg, git: git, resolvers: base.Resolvers, profile: profile, kubeAPI: boot.KubeAPI}
 	if boot.Local != nil {
 		m.nodes, m.internalPorts = boot.Local.NodeAddresses, internalPorts(boot)
@@ -463,9 +467,13 @@ func ToolEnv(cfg layout.Config) map[string]string {
 // KETE_DISABLE_MODELS_FETCH: `kete serve` would otherwise fetch the models.dev catalog periodically,
 // a host port A never allows (a refused request and an error per job); the binary's bundled
 // snapshot is a job's only model catalog either way.
+//
+// A review job's kete gets no KETE_JOB_TOOL_SOCKET: without it job mode's server refuses every spawn
+// (KeteToolRunner.unavailable), so not even the helper starts a process on the pull request's
+// checkout (review mode refuses spawns itself too).
 func KeteEnvList(cfg layout.Config, e job.KeteEnv) []string {
 	proxy := "http://127.0.0.1:" + strconv.Itoa(cfg.PortKete)
-	return []string{
+	env := []string{
 		"HOME=" + cfg.KeteHome(),
 		"XDG_CONFIG_HOME=" + cfg.KeteConfigHome(),
 		"XDG_DATA_HOME=" + cfg.KeteDataHome(),
@@ -479,7 +487,6 @@ func KeteEnvList(cfg layout.Config, e job.KeteEnv) []string {
 		"NODE_EXTRA_CA_CERTS=" + cfg.CAPath(),
 		"SSL_CERT_FILE=" + cfg.CAPath(),
 		"KETE_JOB_MODE=1",
-		"KETE_JOB_TOOL_SOCKET=" + cfg.HelperSocket(),
 		"KETE_JOB_MAX_OUTPUT_TOKENS=" + strconv.Itoa(cfg.MaxOutputTokens),
 		"KETE_RUNTIME_TYPE=kete_cloud",
 		"KETE_GATEWAY_URL=" + e.GatewayURL,
@@ -490,6 +497,10 @@ func KeteEnvList(cfg layout.Config, e job.KeteEnv) []string {
 		"KETE_JOB_AUDIT_FD=" + strconv.Itoa(layout.KeteAuditFD),
 		"KETE_DISABLE_MODELS_FETCH=1",
 	}
+	if !e.Review {
+		env = append(env, "KETE_JOB_TOOL_SOCKET="+cfg.HelperSocket())
+	}
+	return env
 }
 
 type egressImpl struct {

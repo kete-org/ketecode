@@ -495,6 +495,22 @@ the same PR.
   `KETE_JOB_ID` in `kete`'s environment; `kete job` spec v1 optional `orchestration` section (job mode only).
   job-host-v2 additions are mirrored but not advertised until O10. See the `job-entrypoint` and `job-mode` cards.
 
+### Pull request review (jobs-v1 additive, 2026-10-08; platform ADR 0028; task 2026-10-10-review-v1)
+
+- **Source of truth:** `docs/platform/jobs-v1.md` "Pull request review"; platform schemas `JobSpecReview`,
+  `JobReviewOutput`, `parseJobReviewOutput` (`packages/shared/src/api/v1/jobs.ts`).
+- **Mirrors:** Go `packages/kete-job-entrypoint/internal/platform/review.go` (`ParseReview`,
+  `ParseReviewOutput`, `BoundReview`); TypeScript `packages/util/src/kete/review.ts` (`parseSpec`,
+  `parseOutput`, the record file).
+- **Vector:** `kete-job-entrypoint/internal/fakeplatform/testdata/jobs-v1/review.json` (byte copy, in
+  `SHA256SUMS`, checked by `TestJobsVectorsChecksums`); used by Go (`platform/review_test.go`,
+  `job/review_test.go`) and TS (`util/test/kete/review.test.ts`, `core/test/kete/review-mode.test.ts`).
+- **What the runtime relies on:** claim feature `review_v1` (cloud entrypoint only; kubevm's strict
+  `JobSpec` refuses `review`); `clone.ref` = `review.base_ref`, `clone.base_sha` = `review.head_sha`,
+  `head_ref` = `refs/pull/<n>/head`; result `review` ≤ `max_findings` (≤ 50) findings, ≤ 64 KiB, strict;
+  an invalid/missing review never fails the result; uploads `bundle: false`, finish without `push_error`.
+  `kete job` spec v1 optional `review` section (job mode only). See the `job-entrypoint` and `job-mode` cards.
+
 ## 7. Local account state files (not wire contracts, but part of the shared surface)
 
 - `<config>/account.json` — `packages/util/src/kete/account.ts:18-28` (`Account`

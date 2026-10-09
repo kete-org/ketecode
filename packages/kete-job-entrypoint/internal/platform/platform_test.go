@@ -40,7 +40,7 @@ func TestClaimSuccessAndStatuses(t *testing.T) {
 		}
 		raw, _ := io.ReadAll(r.Body)
 		// jobs-v1 additive (2026-10-05): the claim announces clone_revoke_callback.
-		if string(raw) != `{"claim_token":"tok","features":["clone_revoke_callback","orchestration_v1"]}` || r.Header.Get("Authorization") != "" {
+		if string(raw) != `{"claim_token":"tok","features":["clone_revoke_callback","orchestration_v1","review_v1"]}` || r.Header.Get("Authorization") != "" {
 			t.Errorf("claim body %s", raw)
 		}
 		w.WriteHeader(int(status.Load()))

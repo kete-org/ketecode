@@ -23,6 +23,8 @@ on:
       - "packages/util/src/kete/sync/**"
       - "packages/core/src/kete/job-*"
       - "packages/core/src/kete/orchestrate.ts"
+      - "packages/core/src/kete/review-mode.ts"
+      - "packages/util/src/kete/review.ts"
       - "packages/core/src/kete/orchestration/**"
       - "packages/core/src/kete/dag.ts"
       - "packages/util/src/kete/orchestration-*.ts"
@@ -48,6 +50,8 @@ on:
       - "packages/util/src/kete/sync/**"
       - "packages/core/src/kete/job-*"
       - "packages/core/src/kete/orchestrate.ts"
+      - "packages/core/src/kete/review-mode.ts"
+      - "packages/util/src/kete/review.ts"
       - "packages/core/src/kete/orchestration/**"
       - "packages/core/src/kete/dag.ts"
       - "packages/util/src/kete/orchestration-*.ts"
@@ -85,7 +89,7 @@ jobs:
       - name: Build the image
         run: bash packages/kete-job-image/scripts/build.sh --arch amd64
 
-      - name: End-to-end test (no-agent, lifecycle, AC5)
+      - name: End-to-end test (no-agent, lifecycle, AC5, orchestrate, review)
         env:
           E2E_STATE: ${{ runner.temp }}/kete-e2e-state
           E2E_KEEP_LOGS: "1"

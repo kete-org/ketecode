@@ -700,3 +700,35 @@ describe("JobRun.run — project config trust (B1, task 2026-10-05-unattended-se
     expect(calls(client.client.session.create)).toEqual([])
   })
 })
+
+describe("JobRun.run — a review job's result carries the recorded review", () => {
+  const review = {
+    version: 1 as const,
+    summary: "Two issues.",
+    findings: [{ path: "src/cart.ts", line: 18, side: "RIGHT" as const, severity: "major" as const, body: "Off by one." }],
+  }
+
+  test("a valid record goes into result.review, in --json too", async () => {
+    const { stdoutLines, result } = await runWith({ json: true, extra: { readReview: async () => ({ kind: "ok", review }) } })
+    expect(result.review).toEqual(review)
+    expect(JSON.parse(stdoutLines[0]!).review).toEqual(review)
+  })
+
+  test("none, an invalid record or a read error leaves review out and says so on stderr", async () => {
+    const none = await runWith({ extra: { readReview: async () => ({ kind: "none" }) } })
+    expect(none.result.review).toBeUndefined()
+    expect(none.stderrLines.join("")).toContain("recorded no review")
+    const invalid = await runWith({ extra: { readReview: async () => ({ kind: "invalid", reason: "the review record is invalid" }) } })
+    expect(invalid.result.review).toBeUndefined()
+    expect(invalid.stderrLines.join("")).toContain("the review record is invalid; no review is reported")
+    const thrown = await runWith({ extra: { readReview: async () => Promise.reject(new Error("EIO")) } })
+    expect(thrown.result.review).toBeUndefined()
+    expect(thrown.result.outcome).toBe(none.result.outcome)
+    expect(thrown.stderrLines.join("")).toContain("could not be read: EIO")
+  })
+
+  test("without readReview (every other job) nothing is added", async () => {
+    const { result } = await runWith({})
+    expect("review" in result).toBe(false)
+  })
+})

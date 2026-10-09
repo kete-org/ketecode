@@ -34,6 +34,7 @@ const (
 	StepNft        Step = "egress_nft"
 	StepProxy      Step = "egress_proxy"
 	StepHelper     Step = "helper"
+	StepGitVersion Step = "git_version" // root's git is at least gitops.MinVersion (fail closed)
 	StepIsolation  Step = "isolation"
 	StepClaim      Step = "claim"
 	StepRestart    Step = "egress_restart"
@@ -43,6 +44,7 @@ const (
 	StepCloneDone  Step = "clone_done"  // POST …/clone-done: the platform deletes a Harness Code clone token
 	StepFetch      Step = "fetch"       // an orchestrated job's extra refs, checked at their pinned commits
 	StepPlanPrompt Step = "plan_prompt" // a node attempt's prompt, read from the plan file
+	StepReviewDiff Step = "review_diff" // a review job's changed files and diff, added to the prompt
 	StepAgentCopy  Step = "agent_copy"
 	StepAgent      Step = "agent"
 	StepStop       Step = "stop_agents"

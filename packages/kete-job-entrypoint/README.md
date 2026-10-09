@@ -102,6 +102,13 @@ Cgroups (R = the entrypoint's own cgroup at start): every process already in R m
 
 ## Steps
 
+A pull request review job (`spec.review`, claim feature `review_v1`) replaces clone and verify with
+the review fetch (head ref + base, depth 50, pinned head checked, merge base deepened once), adds step
+`review_diff` after the revoke, runs kete with no tool socket and no tool hosts, bounds the result's
+`review`, and publishes no bundle — `internal/job/review.go`.
+Review fetches check every object (`fetch.fsckObjects`), and every boot runs step `git_version`:
+root's git must be at least `gitops.MinVersion` (2.39.1), else the job stops before claim.
+
 Phase lines on stdout are JSON, `{"ts","step","event":"start|ok|failed|note|exit","code"?,"class"?,"errno"?,"exit_code"?}`,
 with fixed step names and codes only: never a message from git, `kete`, the platform, or a
 credential. A `failed` line with an error carries its fixed `class` and a number, never its text:

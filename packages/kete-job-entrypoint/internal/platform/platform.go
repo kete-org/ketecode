@@ -184,7 +184,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 // FeatureCloneRevokeCallback is a feature this entrypoint announces in the claim request (jobs-v1
 // additive, 2026-10-05): it calls clone-done after the clone and on clone or verify failure. The
 // platform refuses a Harness Code claim without it. The cloud claim also announces
-// FeatureOrchestration (ClaimFeatures, orchestrated.go).
+// FeatureOrchestration and FeatureReview (ClaimFeatures, orchestrated.go).
 const FeatureCloneRevokeCallback = "clone_revoke_callback"
 
 // ClaimRequest is claim's body.

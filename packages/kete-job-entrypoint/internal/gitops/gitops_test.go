@@ -1,8 +1,11 @@
 package gitops
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -264,5 +267,204 @@ func TestKeteRefsRealGit(t *testing.T) {
 	}
 	if _, err := r.ResolveCommit(context.Background(), pristine, "refs/kete/plan"); err == nil {
 		t.Error("a missing ref resolved")
+	}
+}
+
+func TestReviewFetchArgv(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	git, log := fakeGit(t, 0)
+	r := runner(git)
+	token := "SECRETTOKEN0123456789"
+	dest := filepath.Join(t.TempDir(), "pristine.git")
+	if err := r.ReviewClone(context.Background(), "https://github.com/org/repo.git", "x-access-token", token, "refs/pull/42/head", "kete/job/5b0e7c1d", "main", 50, dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.ReviewDeepen(context.Background(), dest, "https://github.com/org/repo.git", "x-access-token", token, "refs/pull/42/head", "kete/job/5b0e7c1d", "main", 450); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(log)
+	var argv []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "ARGS ") {
+			argv = append(argv, strings.TrimPrefix(line, "ARGS "))
+			if strings.Contains(line, token) {
+				t.Error("token in argv")
+			}
+		}
+	}
+	refs := "+refs/pull/42/head:refs/heads/kete/job/5b0e7c1d +refs/heads/main:refs/heads/main"
+	want := []string{
+		"init --bare -q -- " + dest,
+		"--git-dir=" + dest + " fetch --depth=50 --no-tags --no-write-fetch-head -- https://github.com/org/repo.git " + refs,
+		"--git-dir=" + dest + " symbolic-ref HEAD refs/heads/main",
+		"--git-dir=" + dest + " fetch --deepen=450 --no-tags --no-write-fetch-head -- https://github.com/org/repo.git " + refs,
+	}
+	if strings.Join(argv, "\n") != strings.Join(want, "\n") {
+		t.Errorf("argv:\n%s\nwant:\n%s", strings.Join(argv, "\n"), strings.Join(want, "\n"))
+	}
+	if strings.Count(string(data), "Authorization: Basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))) != 2 {
+		t.Error("the fetches don't carry the clone's header")
+	}
+	if strings.Count(string(data), "=fetch.fsckObjects") != 2 || strings.Count(string(data), "=transfer.fsckObjects") != 2 {
+		t.Error("the review fetches don't check the objects they receive (fsckObjects)")
+	}
+}
+
+// TestReviewFsckRefusesMalformed: with the real git, the review fetches' object checks
+// (fsckConfig) refuse a commit whose tree has a ".." entry, which the same fetch without them takes.
+func TestReviewFsckRefusesMalformed(t *testing.T) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	r := Runner{Git: gitBin, Home: dir, Timeout: 20 * time.Second, CloneTimeout: 20 * time.Second, MaxStdout: 1 << 20, MaxStderr: 1 << 16}
+	sh := func(stdin []byte, args ...string) string {
+		t.Helper()
+		cmd := exec.Command(gitBin, args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if stdin != nil {
+			cmd.Stdin = bytes.NewReader(stdin)
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	work := filepath.Join(dir, "work")
+	sh(nil, "init", "-q", "--bare", work)
+	blob := sh([]byte("x\n"), "--git-dir="+work, "hash-object", "-w", "--stdin")
+	raw, _ := hex.DecodeString(blob)
+	tree := sh(append([]byte("100644 ..\x00"), raw...), "--git-dir="+work, "hash-object", "-t", "tree", "--literally", "-w", "--stdin")
+	commit := sh(nil, "--git-dir="+work, "commit-tree", tree, "-m", "malformed")
+	sh(nil, "--git-dir="+work, "update-ref", "refs/heads/bad", commit)
+	fetch := func(dest string, cfg [][2]string) error {
+		sh(nil, "init", "-q", "--bare", dest)
+		return func() error {
+			_, err := r.Run(context.Background(), Call{
+				Args:   []string{"--git-dir=" + dest, "fetch", "--no-tags", "--", "file://" + work, "+refs/heads/bad:refs/heads/bad"},
+				Config: append([][2]string{{"protocol.file.allow", "always"}}, cfg...),
+			})
+			return err
+		}()
+	}
+	if err := fetch(filepath.Join(dir, "plain.git"), nil); err != nil {
+		t.Fatalf("control: the fetch without fsck failed: %v", err)
+	}
+	err = fetch(filepath.Join(dir, "checked.git"), fsckConfig)
+	var ge *Error
+	if !errors.As(err, &ge) || !strings.Contains(string(ge.Stderr), "hasDotdot") {
+		t.Fatalf("the fsck'd fetch took a malformed tree: %v %s", err, func() []byte {
+			if ge != nil {
+				return ge.Stderr
+			}
+			return nil
+		}())
+	}
+}
+
+func TestParseVersion(t *testing.T) {
+	cases := map[string]bool{
+		"git version 2.47.3":                 true,
+		"git version 2.39.1":                 true,
+		"git version 2.39.0":                 false,
+		"git version 2.38.5.windows.1":       false,
+		"git version 2.50.1 (Apple Git-155)": true,
+		"git version 3.0.0-rc1":              true,
+		"hub version 2.47.0":                 false,
+		"git version x":                      false,
+	}
+	for out, want := range cases {
+		v, ok := ParseVersion(out)
+		if got := ok && VersionAtLeast(v, MinVersion); got != want {
+			t.Errorf("%q: %v (%v), want %v", out, got, v, want)
+		}
+	}
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	r := Runner{Git: gitBin, Home: t.TempDir(), Timeout: 10 * time.Second, MaxStdout: 1 << 16, MaxStderr: 1 << 16}
+	if err := r.CheckVersion(context.Background(), MinVersion); err != nil {
+		t.Errorf("this machine's git: %v", err)
+	}
+	if err := r.CheckVersion(context.Background(), [3]int{99, 0, 0}); !errors.Is(err, ErrOldGit) {
+		t.Errorf("a floor above this git: %v", err)
+	}
+}
+
+// TestReviewRealGit: with the real git, a review pristine copy laid out as ReviewClone makes it (the
+// head on refs/heads/<branch>, the base on refs/heads/<base>, HEAD the base, shallow) gives the merge base, the diff
+// and an agent copy at the head; a base that moved past the depth has no merge base; and a diff
+// over its cap comes back cut. Local transport only.
+func TestReviewRealGit(t *testing.T) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	r := Runner{Git: gitBin, Home: dir, Timeout: 20 * time.Second, CloneTimeout: 20 * time.Second, MaxStdout: 1 << 20, MaxStderr: 1 << 16}
+	sh := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(gitBin, args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_ALLOW_PROTOCOL=file")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	commit := func(work, file, text, msg string) string {
+		if err := os.WriteFile(filepath.Join(work, file), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		sh("-C", work, "add", file)
+		sh("-C", work, "commit", "-q", "-m", msg)
+		return sh("-C", work, "rev-parse", "HEAD")
+	}
+	work := filepath.Join(dir, "work")
+	sh("init", "-q", "-b", "main", work)
+	fork := commit(work, "cart.ts", "a\nb\nc\n", "base")
+	sh("-C", work, "checkout", "-q", "-b", "pr")
+	head := commit(work, "cart.ts", "a\nB\nc\n", "change")
+	sh("-C", work, "checkout", "-q", "main")
+	for i := range 3 {
+		commit(work, "other.txt", strings.Repeat("x", i+1), "main moves")
+	}
+	pristine := filepath.Join(dir, "pristine.git")
+	sh("init", "-q", "--bare", pristine)
+	sh("--git-dir="+pristine, "fetch", "-q", "--depth=50", "file://"+work, "+refs/heads/pr:refs/heads/kete/job/x", "+refs/heads/main:refs/heads/main")
+	sh("--git-dir="+pristine, "symbolic-ref", "HEAD", "refs/heads/main")
+	ctx := context.Background()
+	got, err := r.MergeBase(ctx, pristine, "refs/heads/main", head)
+	if err != nil || got != fork {
+		t.Fatalf("merge base %q %v, want %s", got, err, fork)
+	}
+	d, err := r.Diff(ctx, pristine, got, head, 1<<10, 1<<16)
+	if err != nil || string(d.Files) != "M\tcart.ts\n" || !strings.Contains(string(d.Diff), "-b\n+B\n") || strings.Contains(string(d.Diff), "other.txt") || d.FilesCut || d.DiffCut {
+		t.Fatalf("diff %+v %v", d, err)
+	}
+	cut, err := r.Diff(ctx, pristine, got, head, 1<<10, 20)
+	if err != nil || !cut.DiffCut || len(cut.Diff) != 20 {
+		t.Fatalf("cut diff %+v %v", cut, err)
+	}
+	repo := filepath.Join(dir, "repo")
+	if err := r.AgentCopy(ctx, pristine, repo, "kete/job/x", head); err != nil {
+		var ge *Error
+		errors.As(err, &ge)
+		t.Fatalf("%v %s", err, ge.Stderr)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "cart.ts")); string(b) != "a\nB\nc\n" {
+		t.Errorf("agent copy cart.ts = %q", b)
+	}
+	// Depth 1 on both sides: the fork point isn't fetched, so there is no merge base.
+	shallow := filepath.Join(dir, "shallow.git")
+	sh("init", "-q", "--bare", shallow)
+	sh("--git-dir="+shallow, "fetch", "-q", "--depth=1", "file://"+work, "+refs/heads/pr:refs/heads/kete/job/x", "+refs/heads/main:refs/heads/main")
+	if _, err := r.MergeBase(ctx, shallow, "refs/heads/main", head); !errors.Is(err, ErrNoMergeBase) {
+		t.Errorf("shallow merge base: %v", err)
 	}
 }

@@ -12,6 +12,13 @@
 // (the workerd profile is the precedent, server/src/workerd.ts). An invalid KETE_JOB_MODE or
 // KETE_JOB_TOOL_SOCKET value, or a kernel without openat2 (or a non-Linux host), fails closed at
 // server start, not silently.
+//
+// A pull request review job (KeteJobSecrets.review(), from `kete job run`'s secrets message) adds
+// review mode's server half (jobs-v1 "Pull request review": no shell or other subprocess on the
+// checkout, whose content may be a fork's): every spawn is refused (the fail-closed stub, whatever
+// KETE_JOB_TOOL_SOCKET says), and the repository's AGENTS.md files are never loaded as instructions,
+// neither at session start nor beside a file the agent reads. The tool and permission half is
+// core/src/kete/review-mode.ts.
 
 export * as KeteJobServer from "./job-server.js"
 
@@ -28,6 +35,8 @@ import { Formatter } from "@opencode/core/formatter"
 import { KeteJobRequest } from "@opencode/core/kete/job-request"
 import { PersistentPty } from "@opencode/core/persistent-pty"
 import { Pty } from "@opencode/core/pty"
+import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
+import { SessionInstructions } from "@opencode/core/session/instructions"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { filesystem, httpClient } from "@opencode/util/effect/app-node-platform"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -36,6 +45,8 @@ import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
 import { KeteConfinedFs } from "@opencode/util/kete/confined-fs"
 import { KeteJobFsUtil } from "@opencode/util/kete/job-fs-util"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
+import { KeteJobSecrets } from "@opencode/util/kete/job-secrets"
+import type { KeteReview } from "@opencode/util/kete/review"
 import { KeteLinuxFfi } from "@opencode/util/kete/linux-ffi"
 import { KeteToolHelper } from "@opencode/util/kete/tool-helper"
 import { KeteToolRunner } from "@opencode/util/kete/tool-runner"
@@ -101,12 +112,14 @@ export const confineReal: Confine = (root) => KeteConfinedFs.open(root, KeteLinu
  * opened for confined access (no openat2, not Linux), so the server stops at boot rather than
  * silently running unrestricted, unisolated or unconfined. `env` is read for
  * `KETE_JOB_TOOL_SOCKET` only (via its bridged `OPENCODE_` name); `mode` still comes from the
- * caller, as before. */
+ * caller, as before. `review` (default: the job's, KeteJobSecrets.review()) adds review mode's
+ * replacements (reviewReplacements). */
 export function replacements(
   options: Pick<ServerOptions, "config">,
   mode: KeteJobMode.Flag = KeteJobMode.read(),
   env: KeteJobMode.Environment = process.env,
   confine: Confine = confineReal,
+  review: KeteReview.Spec | undefined = KeteJobSecrets.review(),
 ): LayerNode.Replacements {
   if (mode.kind === "off") return []
   if (mode.kind === "invalid") throw new Error(`${KeteJobMode.publicName} must be "1" or unset (got "${mode.value}")`)
@@ -114,8 +127,12 @@ export function replacements(
   const socket = KeteJobMode.toolSocket(env)
   if (socket.kind === "invalid")
     throw new Error(`${KeteJobMode.toolSocketPublicName} must be an absolute path (got "${socket.value}")`)
+  // Review mode: nothing spawns, not even through the helper (the entrypoint gives kete no socket
+  // for a review job either, internal/entry KeteEnvList).
   const toolRunner =
-    socket.kind === "path" ? KeteToolHelper.runner({ socket: socket.path }) : KeteToolRunner.unavailable
+    socket.kind === "path" && review === undefined
+      ? KeteToolHelper.runner({ socket: socket.path })
+      : KeteToolRunner.unavailable
 
   // The prepared worktree is the server's cwd (contracts.md §6d); never a fallback to plain open.
   const root = confine(process.cwd())
@@ -138,5 +155,19 @@ export function replacements(
     Environment.node.replace(KeteJobFiles.node(root)),
     FSUtil.node.replace(makeGlobalNode({ service: FSUtil.Service, layer: KeteJobFsUtil.layer(root), deps: [filesystem] })),
     FileSystemSearch.node.replace(FileSystemSearch.configured({ fff: false })),
+    ...(review === undefined ? [] : reviewReplacements()),
+  ]
+}
+
+/** Review mode's server half: the repository's AGENTS.md files are never instructions. Project
+ * instruction discovery is off (routes.ts's own replacement comes first; the later one wins), and
+ * the read tool's nearby-AGENTS.md injection (SessionInstructions.load) does nothing. The agent still
+ * reads such a file as data when it chooses to. */
+export function reviewReplacements(): LayerNode.Replacements {
+  return [
+    InstructionDiscovery.node.replace(InstructionDiscovery.configured({ project: false })),
+    SessionInstructions.node.replace(
+      Layer.succeed(SessionInstructions.Service, SessionInstructions.Service.of({ load: () => Effect.void })),
+    ),
   ]
 }

@@ -16,7 +16,14 @@ const (
 	// ScenarioOrchestrate is a coordinator turn (Knobs.Orchestration coordinator): one
 	// `orchestrate` plan call, then final text.
 	ScenarioOrchestrate = "orchestrate"
+	// ScenarioReview is a pull request review (Knobs.Review): a shell call (refused: review mode
+	// has no shell), a read of the changed file, one `review` call, then final text.
+	ScenarioReview = "review"
 )
+
+// ReviewShellCommand is the review scenario's shell attempt: its output, E2E_SHELL_RAN, appears
+// only if it ran (the command's text doesn't contain it).
+const ReviewShellCommand = "printf 'E2E_%s' SHELL_RAN"
 
 // OrchestrateNode is the node the orchestrate scenario plans (its prompt stays in-zone).
 const OrchestrateNodePrompt = "E2E node prompt: add a CHANGELOG entry and run the tests."
@@ -107,8 +114,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 type anthropicRequest struct {
-	Model  string `json:"model"`
-	Stream bool   `json:"stream"`
+	Model  string          `json:"model"`
+	Stream bool            `json:"stream"`
+	System json.RawMessage `json:"system"`
 	Tools  []struct {
 		Name string `json:"name"`
 	} `json:"tools"`
@@ -182,6 +190,30 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, j *Job, body [
 	var answer block
 	stop := "tool_use"
 	switch {
+	case j.Knobs.Scenario == ScenarioReview && req.hasTool("review"):
+		switch n {
+		case 0:
+			s.checks["review_tools_only"] = len(req.Tools) == 2 && req.hasTool("read")
+			s.checks["review_instructions"] = strings.Contains(string(req.System), "You are reviewing pull request #7")
+			first := ""
+			if len(req.Messages) > 0 {
+				first = string(req.Messages[0].Content)
+			}
+			s.checks["review_diff_in_prompt"] = strings.Contains(first, "<pr-diff-") && strings.Contains(first, "E2E_REVIEW_CHANGE") &&
+				strings.Contains(first, ReviewPrompt)
+			answer = block{tool: "shell", input: map[string]any{"command": ReviewShellCommand}}
+		case 1:
+			s.checks["review_shell_refused"] = !strings.Contains(last, "E2E_SHELL_RAN")
+			answer = block{tool: "read", input: map[string]any{"path": Worktree + "/" + ReviewFile}}
+		case 2:
+			s.checks["review_read_ok"] = strings.Contains(last, "E2E_REVIEW_CHANGE")
+			answer = block{tool: "review", input: map[string]any{"summary": ReviewSummary, "findings": []any{map[string]any{
+				"path": ReviewFile, "line": ReviewLine, "severity": "major", "title": "Endless loop", "body": ReviewBody,
+			}}}}
+		default:
+			s.checks["review_recorded"] = strings.Contains(last, "Recorded the review")
+			answer, stop = block{text: "Reviewed: one finding."}, "end_turn"
+		}
 	case !req.hasTool("shell") || !req.hasTool("edit"):
 		// Not the agent's turn (e.g. a title or summary request): plain text.
 		answer, stop = block{text: "E2E job"}, "end_turn"

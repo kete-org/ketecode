@@ -54,15 +54,8 @@ func (r Runner) Verify(ctx context.Context, gitDir, ref, baseSHA string) error {
 	if strings.TrimSpace(string(out)) != baseSHA {
 		return ErrMismatch
 	}
-	out, err = r.Run(ctx, Call{Args: []string{"--git-dir=" + gitDir, "rev-parse", "--show-object-format"}})
-	if err != nil {
+	if err := r.VerifyStorage(ctx, gitDir); err != nil {
 		return err
-	}
-	if strings.TrimSpace(string(out)) != "sha1" {
-		return ErrMismatch
-	}
-	if _, err := os.Lstat(filepath.Join(gitDir, "objects", "info", "alternates")); err == nil {
-		return ErrMismatch
 	}
 	shallow, err := os.ReadFile(filepath.Join(gitDir, "shallow"))
 	if err == nil {
@@ -73,6 +66,22 @@ func (r Runner) Verify(ctx context.Context, gitDir, ref, baseSHA string) error {
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
+	}
+	return nil
+}
+
+// VerifyStorage is Verify's storage checks, also run on a review's pristine copy: SHA-1 objects
+// and no alternates (ErrMismatch otherwise).
+func (r Runner) VerifyStorage(ctx context.Context, gitDir string) error {
+	out, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + gitDir, "rev-parse", "--show-object-format"}})
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(out)) != "sha1" {
+		return ErrMismatch
+	}
+	if _, err := os.Lstat(filepath.Join(gitDir, "objects", "info", "alternates")); err == nil {
+		return ErrMismatch
 	}
 	return nil
 }
@@ -306,4 +315,159 @@ func (r Runner) CopyKeteRefs(ctx context.Context, pristine, repo string) error {
 		Config: [][2]string{{"protocol.file.allow", "always"}},
 	})
 	return err
+}
+
+// --- pull request review jobs (jobs-v1 "Pull request review") ---
+
+// ErrNoMergeBase is a review whose head and base share no commit in the fetched history.
+var ErrNoMergeBase = errors.New("git: no merge base in the fetched history")
+
+// fsckConfig makes git check every object a fetch receives (fetch.fsckObjects, and
+// transfer.fsckObjects for any path that reads it): a review fetches a pull request's commits, which
+// a fork's author wrote, so root refuses malformed trees, .gitmodules and .gitattributes before any
+// command reads them.
+var fsckConfig = [][2]string{{"fetch.fsckObjects", "true"}, {"transfer.fsckObjects", "true"}}
+
+func reviewFetchConfig(username, token string) [][2]string {
+	return append([][2]string{{"http.extraHeader", BasicHeader(username, token)}}, fsckConfig...)
+}
+
+func reviewRefspecs(headRef, branch, baseBranch string) []string {
+	return []string{"+" + headRef + ":refs/heads/" + branch, "+refs/heads/" + baseBranch + ":refs/heads/" + baseBranch}
+}
+
+// ReviewClone makes a review job's pristine copy: a fresh bare repository, then one fetch of the
+// pull request's head ref (refs/pull/<n>/head, which the base repository serves for a fork's pull
+// request too) into refs/heads/<branch> (the job's branch) and of the base branch (always as
+// refs/heads/<baseBranch>, never a bare name a tag could shadow) into refs/heads/<baseBranch>, depth
+// commits deep each, with the clone's credential header. HEAD names the base branch, as after any
+// job's clone, so the agent copy's `checkout -b <branch>` makes the job's branch itself.
+func (r Runner) ReviewClone(ctx context.Context, url, username, token, headRef, branch, baseBranch string, depth int, dest string) error {
+	if err := os.RemoveAll(dest); err != nil {
+		return err
+	}
+	if _, err := r.Run(ctx, Call{Args: []string{"init", "--bare", "-q", "--", dest}}); err != nil {
+		return err
+	}
+	args := append([]string{"--git-dir=" + dest, "fetch", "--depth=" + strconv.Itoa(depth), "--no-tags", "--no-write-fetch-head", "--", url}, reviewRefspecs(headRef, branch, baseBranch)...)
+	if _, err := r.Run(ctx, Call{Args: args, Config: reviewFetchConfig(username, token), Timeout: r.CloneTimeout}); err != nil {
+		return err
+	}
+	_, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + dest, "symbolic-ref", "HEAD", "refs/heads/" + baseBranch}})
+	return err
+}
+
+// ReviewDeepen fetches the same two refs again, deepen commits further back (when the first fetch
+// held no merge base). The caller checks the head again afterwards: the refs may have moved.
+func (r Runner) ReviewDeepen(ctx context.Context, gitDir, url, username, token, headRef, branch, baseBranch string, deepen int) error {
+	args := append([]string{"--git-dir=" + gitDir, "fetch", "--deepen=" + strconv.Itoa(deepen), "--no-tags", "--no-write-fetch-head", "--", url}, reviewRefspecs(headRef, branch, baseBranch)...)
+	_, err := r.Run(ctx, Call{Args: args, Config: reviewFetchConfig(username, token), Timeout: r.CloneTimeout})
+	return err
+}
+
+// MergeBase is `git merge-base a b` in a git-dir: the commit, or ErrNoMergeBase when the fetched
+// history holds none.
+func (r Runner) MergeBase(ctx context.Context, gitDir, a, b string) (string, error) {
+	out, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + gitDir, "merge-base", a, b}})
+	if err != nil {
+		var ge *Error
+		if errors.As(err, &ge) && ge.ExitCode == 1 {
+			return "", ErrNoMergeBase
+		}
+		return "", err
+	}
+	sha := strings.TrimSpace(string(out))
+	if len(sha) != 40 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return "", ErrMismatch
+	}
+	return sha, nil
+}
+
+// ReviewDiff is what the reviewing agent is shown: the changed files (`--name-status`, renames
+// found) and the unified diff from base to head, each cut at its cap (cut reports which were). No
+// external diff driver or textconv runs (the repository's attributes can name neither: no driver
+// is configured).
+type ReviewDiff struct {
+	Files, Diff       []byte
+	FilesCut, DiffCut bool
+}
+
+// Diff computes ReviewDiff from a git-dir, read-only.
+func (r Runner) Diff(ctx context.Context, gitDir, base, head string, maxFiles, maxDiff int64) (ReviewDiff, error) {
+	common := []string{"--git-dir=" + gitDir, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--find-renames"}
+	var d ReviewDiff
+	out, err := r.Run(ctx, Call{Args: append(append([]string{}, common...), "--name-status", base, head, "--"), MaxStdout: maxFiles})
+	switch {
+	case errors.Is(err, ErrOutputTooLarge):
+		d.FilesCut = true
+	case err != nil:
+		return ReviewDiff{}, err
+	}
+	d.Files = out
+	out, err = r.Run(ctx, Call{Args: append(append([]string{}, common...), "--unified=3", base, head, "--"), MaxStdout: maxDiff})
+	switch {
+	case errors.Is(err, ErrOutputTooLarge):
+		d.DiffCut = true
+	case err != nil:
+		return ReviewDiff{}, err
+	}
+	d.Diff = out
+	return d, nil
+}
+
+// MinVersion is the oldest git the entrypoint runs (2.39.1: the fixes for CVE-2022-41903 and
+// CVE-2022-23521, .gitattributes parsing). A distribution may backport later fixes without a
+// version bump, so this is a floor, not proof of a patched git: the image takes its distro's
+// security updates at build time (packages/kete-job-image/Dockerfile).
+var MinVersion = [3]int{2, 39, 1}
+
+// ErrOldGit is a git older than MinVersion (or whose version can't be read).
+var ErrOldGit = errors.New("git: older than the minimum version, or unreadable")
+
+// ParseVersion reads `git version X.Y.Z[...]`.
+func ParseVersion(out string) ([3]int, bool) {
+	f := strings.Fields(strings.TrimSpace(out))
+	if len(f) < 3 || f[0] != "git" || f[1] != "version" {
+		return [3]int{}, false
+	}
+	parts := strings.SplitN(f[2], ".", 4)
+	if len(parts) < 3 {
+		return [3]int{}, false
+	}
+	var v [3]int
+	for i := range 3 {
+		digits := parts[i]
+		if j := strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }); j >= 0 {
+			digits = digits[:j]
+		}
+		n, err := strconv.Atoi(digits)
+		if err != nil {
+			return [3]int{}, false
+		}
+		v[i] = n
+	}
+	return v, true
+}
+
+// VersionAtLeast compares two versions.
+func VersionAtLeast(v, min [3]int) bool {
+	for i := range 3 {
+		if v[i] != min[i] {
+			return v[i] > min[i]
+		}
+	}
+	return true
+}
+
+// CheckVersion fails closed (ErrOldGit) unless root's git is at least min.
+func (r Runner) CheckVersion(ctx context.Context, min [3]int) error {
+	out, err := r.Run(ctx, Call{Args: []string{"version"}})
+	if err != nil {
+		return err
+	}
+	v, ok := ParseVersion(string(out))
+	if !ok || !VersionAtLeast(v, min) {
+		return ErrOldGit
+	}
+	return nil
 }
