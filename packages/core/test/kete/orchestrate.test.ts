@@ -8,6 +8,10 @@ import { KeteOrchestrate } from "@opencode/core/kete/orchestrate"
 import { KeteDag } from "@opencode/core/kete/dag"
 import * as C from "@opencode/core/kete/orchestration/contract"
 import { Environment } from "@opencode/core/environment/index"
+import { KeteOrchestrationTurnState } from "@opencode/core/kete/orchestration/turn-state"
+import { mkdtempSync, readFileSync, statSync } from "node:fs"
+import os from "node:os"
+import nodePath from "node:path"
 import { host } from "../plugin/host"
 
 const id = "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
@@ -94,6 +98,8 @@ function files() {
   return { written, ops, impl }
 }
 
+const records: any[] = []
+
 function deps(fields: Partial<KeteOrchestrate.Deps> & { fetch?: any } = {}) {
   const fs = files()
   const d: KeteOrchestrate.Deps = {
@@ -103,6 +109,8 @@ function deps(fields: Partial<KeteOrchestrate.Deps> & { fetch?: any } = {}) {
     directory: "/repo",
     boundary: { titles: true, summary: true },
     turn: {},
+    record: async (turn) =>
+      void records.push(JSON.parse(KeteOrchestrationTurnState.encode({ orchestrationID: id, turn: 1, ...turn }))),
     ...fields,
   }
   return { d, fs }
@@ -248,6 +256,45 @@ describe("orchestrate: plan", () => {
   test("without a target it fails closed", async () => {
     const { d } = deps({ target: () => "no job key" })
     expect(message(await run(d, { action: "status" }))).toContain("unavailable in this job: no job key")
+  })
+})
+
+describe("orchestrate: the turn's record", () => {
+  test("a plan, then a decision, are recorded for the entrypoint; a failed record fails the call", async () => {
+    records.length = 0
+    const p = platform()
+    const { d } = deps({ fetch: p.fetch })
+    await run(d, { action: "plan", nodes: [node("a")] })
+    expect(records.at(-1)).toMatchObject({
+      version: 1,
+      orchestration_id: id,
+      proposed: { rev: 1, plan_digest: p.requests[1]!.body.plan_digest },
+      decision: null,
+    })
+    await run(d, { action: "finish", decision: "integrated" })
+    expect(records.at(-1)).toMatchObject({ decision: "integrated" })
+    const q = platform()
+    const { d: failing, fs } = deps({ fetch: q.fetch, record: async () => Promise.reject(new Error("EROFS")) })
+    expect(message(await run(failing, { action: "plan", nodes: [node("a")] }))).toContain("record couldn't be written")
+    expect(fs.written.size).toBe(0)
+  })
+
+  test("the record file is private to kete's user and replaced atomically", async () => {
+    const dir = nodePath.join(mkdtempSync(nodePath.join(os.tmpdir(), "kete-turn-")), "kete")
+    await KeteOrchestrationTurnState.write(dir, {
+      orchestrationID: id,
+      turn: 2,
+      proposed: { rev: 3, digest: "d".repeat(64) },
+    })
+    const file = nodePath.join(dir, KeteOrchestrationTurnState.fileName)
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({
+      version: 1,
+      orchestration_id: id,
+      turn: 2,
+      proposed: { rev: 3, plan_digest: "d".repeat(64) },
+      decision: null,
+    })
+    expect(statSync(file).mode & 0o777).toBe(0o600)
   })
 })
 

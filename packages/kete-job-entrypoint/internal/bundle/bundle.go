@@ -264,42 +264,69 @@ const (
 	// KindOther is every bundle but a coordinator turn's: any path component that folds to
 	// `.kete-orchestration` is refused, deletions included.
 	KindOther Kind = iota
-	// KindCoordinator is an orchestration's coordinator turn: when the plan file is among the
-	// changes (the `orchestrate` tool wrote it after the platform accepted the proposal) the
-	// bundle is a plan bundle, exactly that file; otherwise KindOther's rule applies.
+	// KindPlan is a coordinator turn that has a standing proposal (the runtime recorded it in
+	// state the job's tools can't write, and no decision followed): the bundle is exactly the plan
+	// file, whose SHA-256 must be the proposal's plan_digest; anything else is left out.
+	KindPlan
+	// KindCoordinator is a coordinator turn without a standing proposal (it decided, or never
+	// planned): a `.kete-orchestration` path is left out (a plan file nobody proposed, written
+	// by hand) and the rest — the integration — is published under KindOther's rule.
 	KindCoordinator
 )
 
+// Rule is a build's orchestration rule: its Kind and, for KindPlan, the proposal's plan_digest.
+type Rule struct {
+	Kind       Kind
+	PlanDigest string
+}
+
+// isOrchestrationPath reports a path with a component that folds to `.kete-orchestration`.
+func isOrchestrationPath(e entry) bool {
+	return orchestration.CheckBundle([]orchestration.BundleEntry{{Path: e.Path, Deleted: e.Deleted, Mode: e.Mode}}, orchestration.BundleOther) != ""
+}
+
 // applyOrchestration applies the orchestration rule to the listed changes: it returns the entries
-// to bundle and fixed notes. A plan bundle keeps only the plan file (a plan turn publishes nothing
-// else; what else changed is left out, and a note says how much); a refusal is an unreadable
-// refusal with a fixed note.
-func applyOrchestration(entries []entry, kind Kind) ([]entry, []string, error) {
-	view := func(es []entry) []orchestration.BundleEntry {
-		out := make([]orchestration.BundleEntry, 0, len(es))
-		for _, e := range es {
-			out = append(out, orchestration.BundleEntry{Path: e.Path, Deleted: e.Deleted, Mode: e.Mode, Size: int64(len(e.data))})
-		}
-		return out
-	}
-	if kind == KindCoordinator {
+// to bundle and fixed notes; a refusal is an unreadable refusal with a fixed note. This rule, not
+// the runtime's edit-permission deny (which a shell command can bypass), is what keeps code off a
+// plan branch: a plan bundle is exactly the proposed plan file.
+func applyOrchestration(entries []entry, rule Rule) ([]entry, []string, error) {
+	switch rule.Kind {
+	case KindPlan:
 		for _, e := range entries {
 			if e.Path != orchestration.PlanPath || e.Deleted {
 				continue
 			}
-			plan := []entry{e}
-			if r := orchestration.CheckBundle(view(plan), orchestration.BundlePlan); r != "" {
+			view := []orchestration.BundleEntry{{Path: e.Path, Mode: e.Mode, Size: int64(len(e.data))}}
+			if r := orchestration.CheckBundle(view, orchestration.BundlePlan); r != "" {
 				return nil, nil, refuse(RefuseUnreadable, "the plan bundle was refused ("+string(r)+")")
+			}
+			if orchestration.SHA256Hex(e.data) != rule.PlanDigest {
+				return nil, nil, refuse(RefuseUnreadable, "the plan file is not the one the platform accepted")
 			}
 			var notes []string
 			if n := len(entries) - 1; n > 0 {
 				notes = append(notes, fmt.Sprintf("plan turn: only the plan file is published; %d other change(s) left out", n))
 			}
-			return plan, notes, nil
+			return []entry{e}, notes, nil
 		}
+		return nil, nil, refuse(RefuseUnreadable, "a plan turn without its plan file")
+	case KindCoordinator:
+		kept := make([]entry, 0, len(entries))
+		for _, e := range entries {
+			if !isOrchestrationPath(e) {
+				kept = append(kept, e)
+			}
+		}
+		var notes []string
+		if n := len(entries) - len(kept); n > 0 {
+			notes = append(notes, fmt.Sprintf("coordinator turn without a standing plan proposal: %d .kete-orchestration change(s) left out", n))
+		}
+		return kept, notes, nil
 	}
-	if r := orchestration.CheckBundle(view(entries), orchestration.BundleOther); r != "" {
-		return nil, nil, refuse(RefuseUnreadable, "a change touches .kete-orchestration ("+string(r)+")")
+	for _, e := range entries {
+		if isOrchestrationPath(e) {
+			return nil, nil, refuse(RefuseUnreadable, "a change touches .kete-orchestration (orchestration_path)")
+		}
 	}
 	return entries, nil, nil
 }

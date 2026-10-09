@@ -7,51 +7,49 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/orchestration"
 )
 
-func file(path string, size int) entry {
-	return entry{ManifestEntry: ManifestEntry{Path: path, Mode: "100644"}, data: make([]byte, size)}
+func file(path string, data string) entry {
+	return entry{ManifestEntry: ManifestEntry{Path: path, Mode: "100644"}, data: []byte(data)}
 }
 
 func TestOrchestrationRule(t *testing.T) {
-	plan := file(orchestration.PlanPath, 100)
-	code := file("src/a.ts", 10)
+	planText := `{"plan":1}`
+	plan := file(orchestration.PlanPath, planText)
+	code := file("src/a.ts", "x")
+	proposed := Rule{Kind: KindPlan, PlanDigest: orchestration.SHA256Hex([]byte(planText))}
 
-	// A coordinator turn with the plan file: exactly that file is published.
-	got, notes, err := applyOrchestration([]entry{code, plan}, KindCoordinator)
+	// A standing proposal: exactly the plan file, the other change left out with a note.
+	got, notes, err := applyOrchestration([]entry{code, plan}, proposed)
 	if err != nil || len(got) != 1 || got[0].Path != orchestration.PlanPath {
 		t.Fatalf("plan bundle %v, %v", got, err)
 	}
 	if len(notes) != 1 || !strings.Contains(notes[0], "1 other change") {
 		t.Errorf("notes %v", notes)
 	}
-	// Only the plan file: no note.
-	if _, notes, err := applyOrchestration([]entry{plan}, KindCoordinator); err != nil || len(notes) != 0 {
-		t.Errorf("notes %v, %v", notes, err)
+	// A plan file other than the proposal's, an executable or oversized one, or none: refused.
+	for name, es := range map[string][]entry{
+		"another plan": {file(orchestration.PlanPath, `{"plan":2}`)},
+		"executable":   {{ManifestEntry: ManifestEntry{Path: orchestration.PlanPath, Mode: "100755"}, data: []byte(planText)}},
+		"oversized":    {file(orchestration.PlanPath, strings.Repeat("a", orchestration.PlanFileMaxBytes+1))},
+		"missing":      {code},
+	} {
+		if _, _, err := applyOrchestration(es, proposed); err == nil {
+			t.Errorf("%s accepted", name)
+		}
 	}
-	// An executable or oversized plan file is refused.
-	exec := plan
-	exec.Mode = "100755"
-	if _, _, err := applyOrchestration([]entry{exec}, KindCoordinator); err == nil {
-		t.Error("an executable plan file accepted")
-	}
-	if _, _, err := applyOrchestration([]entry{file(orchestration.PlanPath, orchestration.PlanFileMaxBytes+1)}, KindCoordinator); err == nil {
-		t.Error("an oversized plan file accepted")
-	}
-	// A coordinator without the plan file (an integration): the ordinary rule.
-	if got, _, err := applyOrchestration([]entry{code}, KindCoordinator); err != nil || len(got) != 1 {
-		t.Errorf("integration bundle %v, %v", got, err)
-	}
-	other := file(".Kete-Orchestration/x", 1)
-	if _, _, err := applyOrchestration([]entry{code, other}, KindCoordinator); err == nil {
-		t.Error("a coordinator's other bundle touching .kete-orchestration accepted")
+	// No standing proposal (decided, or never planned): .kete-orchestration is left out, the
+	// integration kept — a plan file written by hand never turns it into a plan bundle.
+	got, notes, err = applyOrchestration([]entry{code, plan, file(".Kete-Orchestration./x", "y")}, Rule{Kind: KindCoordinator})
+	if err != nil || len(got) != 1 || got[0].Path != "src/a.ts" || len(notes) != 1 || !strings.Contains(notes[0], "2 .kete-orchestration") {
+		t.Errorf("integration bundle %v %v %v", got, notes, err)
 	}
 	// Every other bundle refuses .kete-orchestration, deletions included.
-	for _, e := range []entry{plan, {ManifestEntry: ManifestEntry{Path: orchestration.PlanPath, Deleted: true}}, file("pkg/.kete-orchestration. /x", 1)} {
-		_, _, err := applyOrchestration([]entry{code, e}, KindOther)
+	for _, e := range []entry{plan, {ManifestEntry: ManifestEntry{Path: orchestration.PlanPath, Deleted: true}}, file("pkg/.kete-orchestration. /x", "1")} {
+		_, _, err := applyOrchestration([]entry{code, e}, Rule{})
 		if kind, _, ok := AsRefusal(err); !ok || kind != RefuseUnreadable {
 			t.Errorf("%s: %v", e.Path, err)
 		}
 	}
-	if got, _, err := applyOrchestration([]entry{code}, KindOther); err != nil || len(got) != 1 {
+	if got, _, err := applyOrchestration([]entry{code}, Rule{}); err != nil || len(got) != 1 {
 		t.Errorf("plain bundle %v, %v", got, err)
 	}
 }

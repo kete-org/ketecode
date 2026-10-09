@@ -302,3 +302,39 @@ func TestValidators(t *testing.T) {
 		}
 	}
 }
+
+// TestPlanFileAdditions: kete-code's additions to the plan-file vectors
+// (docs/test-vectors/orchestrations-v1-additions/plan-files.json, read by the TypeScript tests too).
+func TestPlanFileAdditions(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "test-vectors", "orchestrations-v1-additions", "plan-files.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v planFiles
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Files) < 6 {
+		t.Fatalf("%d cases", len(v.Files))
+	}
+	for _, c := range v.Files {
+		t.Run(c.Name, func(t *testing.T) {
+			p, reason := ParsePlanFile(c.bytes(t))
+			if c.Valid != (p != nil) || !c.Valid && string(reason) != c.Reason {
+				t.Errorf("valid %v reason %q, want %v %q", p != nil, reason, c.Valid, c.Reason)
+			}
+		})
+	}
+}
+
+// TestPlanJSONDepth: a deeply nested document is refused without deep recursion.
+func TestPlanJSONDepth(t *testing.T) {
+	deep := strings.Repeat("[", 100000) + strings.Repeat("]", 100000)
+	if _, r := ParsePlanFile([]byte(deep)); r != RefuseNotJSON {
+		t.Errorf("200 KB of brackets: %s", r)
+	}
+	deep = strings.Repeat("[", 9) + strings.Repeat("]", 9)
+	if _, r := ParsePlanFile([]byte(deep)); r != RefuseNotJSON {
+		t.Errorf("nine levels: %s", r)
+	}
+}

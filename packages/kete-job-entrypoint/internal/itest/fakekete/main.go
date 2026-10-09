@@ -11,6 +11,8 @@ package main
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -314,11 +316,21 @@ func main() {
 		orch("git -c user.name=t -c user.email=t@kete.test merge -q --no-edit refs/kete/nodes/sdk-core && test -f sdk-core.txt", "orchestration-merge")
 	case scenario == "orchestration-base":
 		orch("test ! -f moved.txt && test -f README.md", "orchestration-base")
-	case scenario == "orchestration-plan":
+	case scenario == "orchestration-plan" || scenario == "orchestration-stray-plan":
 		if err := os.MkdirAll(filepath.Join(cwd, ".kete-orchestration"), 0o775); err != nil {
 			failed = append(failed, "plan-dir")
 		} else if err := os.WriteFile(filepath.Join(cwd, ".kete-orchestration", "plan.json"), []byte(PlanText), 0o644); err != nil {
 			failed = append(failed, "plan-file")
+		}
+		if scenario == "orchestration-plan" {
+			// What the orchestrate tool records after the platform accepted the proposal, in kete's
+			// own state directory (the tools can't write there). A stray plan file has no record.
+			sum := sha256.Sum256([]byte(PlanText))
+			dir := filepath.Join(os.Getenv("XDG_STATE_HOME"), "kete")
+			state := `{"version":1,"orchestration_id":"ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d","turn":1,"proposed":{"rev":1,"plan_digest":"` + hex.EncodeToString(sum[:]) + `"},"decision":null}`
+			if err := os.MkdirAll(dir, 0o700); err != nil || os.WriteFile(filepath.Join(dir, "orchestration-turn.json"), []byte(state), 0o600) != nil {
+				failed = append(failed, "turn-state")
+			}
 		}
 	}
 	switch scenario {

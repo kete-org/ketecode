@@ -63,9 +63,22 @@ var (
 	canonicalRe = regexp.MustCompile(`^(?:0|[1-9][0-9]*)$`)
 )
 
+// maxDepth is the deepest nesting a plan file may have (a Kete addition both readers apply: the
+// plan file needs 4 levels; deeper is not_json, so no reader recurses without bound).
+const maxDepth = 8
+
 type planParser struct {
-	text string
-	i    int
+	text  string
+	i     int
+	depth int
+}
+
+// enter counts one more open container; past maxDepth the document is not_json.
+func (p *planParser) enter() {
+	p.depth++
+	if p.depth > maxDepth {
+		p.fail()
+	}
 }
 
 func (p *planParser) fail() { panic(&planJSONError{reason: RefuseNotJSON}) }
@@ -201,6 +214,8 @@ func (p *planParser) value() jsonValue {
 	switch c := p.peek(); c {
 	case '{':
 		p.i++
+		p.enter()
+		defer func() { p.depth-- }()
 		out := jsonValue{kind: kindObject, members: []jsonMember{}}
 		seen := map[string]bool{}
 		p.ws()
@@ -238,6 +253,8 @@ func (p *planParser) value() jsonValue {
 		}
 	case '[':
 		p.i++
+		p.enter()
+		defer func() { p.depth-- }()
 		out := jsonValue{kind: kindArray, arr: []jsonValue{}}
 		p.ws()
 		if p.peek() == ']' {

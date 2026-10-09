@@ -120,9 +120,12 @@ type Machine interface {
 	// didn't finish in time.
 	OpenAudit() (io.ReadCloser, int64, error)
 	OpenProxyLog() (io.ReadCloser, int64, error)
-	// BuildBundle builds the change bundle; kind is its orchestrations-v1 rule (bundle.Kind*):
-	// a coordinator turn's bundle is a plan bundle exactly when it holds the plan file.
-	BuildBundle(ctx context.Context, baseSHA string, kind bundle.Kind) (*bundle.Result, error)
+	// BuildBundle builds the change bundle under its orchestrations-v1 rule (bundle.Rule).
+	BuildBundle(ctx context.Context, baseSHA string, rule bundle.Rule) (*bundle.Result, error)
+	// ReadOrchestrationTurn reads the orchestration turn state `kete` records in its own state
+	// directory (layout.OrchestrationTurnRel; the job's tools can't write there): os.ErrNotExist
+	// when there is none.
+	ReadOrchestrationTurn() ([]byte, error)
 }
 
 // Runtime is the kubevm profile's runtime-repository path (jobs-v1 "Runtime repositories"; enterprise

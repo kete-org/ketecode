@@ -101,8 +101,8 @@ func TestCoordinatorTurnOne(t *testing.T) {
 	if e.git.pinned != "" || e.git.fetched != nil || e.git.keteRefs {
 		t.Error("turn 1 pinned or fetched something")
 	}
-	if e.m.bundleKind != bundle.KindCoordinator || e.m.keteEnv.JobID != e.d.Boot.JobID || e.m.keteEnv.Zone != "kete_cloud" {
-		t.Errorf("bundle kind %v, job id %q", e.m.bundleKind, e.m.keteEnv.JobID)
+	if e.m.bundleRule.Kind != bundle.KindCoordinator || e.m.keteEnv.JobID != e.d.Boot.JobID || e.m.keteEnv.Zone != "kete_cloud" {
+		t.Errorf("bundle rule %v, job id %q", e.m.bundleRule, e.m.keteEnv.JobID)
 	}
 	if got := resultOf(t, e.pf)["outcome"]; got != "completed" {
 		t.Errorf("outcome %v", got)
@@ -195,8 +195,8 @@ func TestWorkerReadsItsPrompt(t *testing.T) {
 	if p, _ := spec["prompt"].(string); !strings.HasPrefix(p, "Update the web client to SDK v3.") {
 		t.Errorf("prompt %q", p)
 	}
-	if !e.git.depth1 || e.m.bundleKind != bundle.KindOther {
-		t.Errorf("depth1 %v, bundle kind %v", e.git.depth1, e.m.bundleKind)
+	if !e.git.depth1 || e.m.bundleRule.Kind != bundle.KindOther {
+		t.Errorf("depth1 %v, bundle rule %v", e.git.depth1, e.m.bundleRule)
 	}
 	if spec["orchestration"] == nil {
 		t.Error("the spec lost its orchestration section")
@@ -256,7 +256,7 @@ func TestPlainJobUnchanged(t *testing.T) {
 	if code := e.run(t); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if e.git.fetched != nil || e.git.keteRefs || e.git.pinned != "" || e.m.bundleKind != bundle.KindOther {
+	if e.git.fetched != nil || e.git.keteRefs || e.git.pinned != "" || e.m.bundleRule.Kind != bundle.KindOther {
 		t.Error("a plain job did orchestration work")
 	}
 }
@@ -270,5 +270,86 @@ func TestKubeVMZone(t *testing.T) {
 	}
 	if e.m.keteEnv.Zone != "enterprise_private" {
 		t.Errorf("zone %q", e.m.keteEnv.Zone)
+	}
+}
+
+// TestCloneFailuresRevoke: every clone-phase failure of a GitHub job revokes the clone token, once,
+// before the result: the clone itself, the pinned base, a fetched ref at the wrong commit.
+func TestCloneFailuresRevoke(t *testing.T) {
+	cases := map[string]func() *env{
+		"clone": func() *env {
+			e := newEnv(time.Hour)
+			e.git.cloneErr = errors.New("network")
+			return e
+		},
+		"pinned base": func() *env {
+			e := orchestratedEnv(t, "coordinator_turn_1")
+			e.git.refs["refs/heads/"+e.pf.claim.Clone.Ref] = strings.Repeat("f", 40)
+			e.git.pinErr = errors.New("not our ref")
+			return e
+		},
+		"fetch": func() *env {
+			e := orchestratedEnv(t, "coordinator_integration_turn")
+			e.git.fetchErr = errors.New("network")
+			return e
+		},
+		"ref_mismatch": func() *env {
+			e := orchestratedEnv(t, "coordinator_integration_turn")
+			for b := range e.git.fetchAt {
+				e.git.fetchAt[b] = strings.Repeat("e", 40)
+			}
+			return e
+		},
+	}
+	for name, mk := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := mk()
+			e.run(t)
+			ops := strings.Join(e.pf.ops(), ",")
+			if len(e.pf.find("revoke")) != 1 || strings.Index(ops, "revoke") > strings.Index(ops, "result") {
+				t.Errorf("ops %s", ops)
+			}
+		})
+	}
+}
+
+// TestCoordinatorBundleRuleFromTurnState: a coordinator turn is a plan bundle only with a standing
+// proposal kete recorded for this orchestration; decided, foreign, invalid or missing state keeps
+// the integration (and leaves .kete-orchestration out).
+func TestCoordinatorBundleRuleFromTurnState(t *testing.T) {
+	digest := strings.Repeat("d", 64)
+	id := "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+	cases := []struct {
+		name  string
+		state string
+		want  bundle.Rule
+	}{
+		{"proposed", `{"version":1,"orchestration_id":"` + id + `","proposed":{"rev":1,"plan_digest":"` + digest + `"},"decision":null}`, bundle.Rule{Kind: bundle.KindPlan, PlanDigest: digest}},
+		{"decided after a proposal", `{"version":1,"orchestration_id":"` + id + `","proposed":{"rev":1,"plan_digest":"` + digest + `"},"decision":"integrated"}`, bundle.Rule{Kind: bundle.KindCoordinator}},
+		{"another orchestration", `{"version":1,"orchestration_id":"ffffffff-5e6f-4a7b-8c9d-0e1f2a3b4c5d","proposed":{"rev":1,"plan_digest":"` + digest + `"},"decision":null}`, bundle.Rule{Kind: bundle.KindCoordinator}},
+		{"invalid", `not json`, bundle.Rule{Kind: bundle.KindCoordinator}},
+		{"none", "", bundle.Rule{Kind: bundle.KindCoordinator}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := orchestratedEnv(t, "coordinator_turn_1")
+			if c.state != "" {
+				e.m.turn = []byte(c.state)
+			}
+			if code := e.run(t); code != 0 {
+				t.Fatalf("exit %d", code)
+			}
+			if e.m.bundleRule != c.want {
+				t.Errorf("rule %+v, want %+v", e.m.bundleRule, c.want)
+			}
+		})
+	}
+	// A worker never reads it.
+	e := orchestratedEnv(t, "worker_on_node")
+	e.m.turn = []byte(cases[0].state)
+	e.git.blobs = map[string][]byte{planSHA + ":" + orchestration.PlanPath: workedExamplePlan(t)}
+	e.run(t)
+	if e.m.bundleRule.Kind != bundle.KindOther {
+		t.Errorf("worker rule %+v", e.m.bundleRule)
 	}
 }

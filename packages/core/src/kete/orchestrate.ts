@@ -41,6 +41,8 @@ import {
 } from "./orchestration/contract.js"
 import { KeteOrchestrationPlan } from "./orchestration/plan.js"
 import { KeteOrchestrationPrompt } from "./orchestration/prompt.js"
+import { KeteOrchestrationTurnState } from "./orchestration/turn-state.js"
+import { Global } from "@opencode/util/global"
 
 export const name = "orchestrate"
 
@@ -128,6 +130,9 @@ export interface Deps {
   readonly directory: string
   readonly boundary: { readonly titles: boolean; readonly summary: boolean }
   readonly turn: Turn
+  /** Records the turn's proposal and decision where the entrypoint reads them and the job's tools
+   * can't write (KeteOrchestrationTurnState). */
+  readonly record: (turn: Turn) => Promise<void>
 }
 
 const fail = (message: string) => new ToolFailure({ message })
@@ -191,6 +196,14 @@ export const execute = (deps: Deps, input: Input) =>
       const accepted = yield* promise(() => KeteOrchestrationClient.propose(target, checked.proposal))
       // The platform holds this turn's proposal from here on: the turn edits nothing more.
       deps.turn.proposed = { rev, digest: checked.proposal.plan_digest }
+      // The entrypoint publishes a plan bundle only with this record (and only the file with this digest).
+      yield* Effect.tryPromise({
+        try: () => deps.record(deps.turn),
+        catch: (error) =>
+          fail(
+            `The plan was accepted but its record couldn't be written (${error instanceof Error ? error.message : String(error)}). Call plan again.`,
+          ),
+      })
       // Only now, the plan file: the turn's bundle is exactly it (the entrypoint's plan bundle).
       // Re-sending the same proposal is a no-op on the platform, so "call plan again" is safe.
       yield* deps.files
@@ -231,6 +244,13 @@ export const execute = (deps: Deps, input: Input) =>
       )
     const decided = yield* promise(() => KeteOrchestrationClient.decide(target, request.data))
     deps.turn.decided = input.decision
+    yield* Effect.tryPromise({
+      try: () => deps.record(deps.turn),
+      catch: (error) =>
+        fail(
+          `The decision was recorded on the platform but not locally (${error instanceof Error ? error.message : String(error)}).`,
+        ),
+    })
     // The platform discarded any proposal of this turn; no plan file may reach the bundle (a
     // coordinator's bundle with one is published as a plan bundle), whoever wrote it.
     const present = yield* deps.files.stat(planDir).pipe(
@@ -309,6 +329,8 @@ export interface InstallOptions {
   readonly env?: Record<string, string | undefined>
   /** The routes' target (default: jobTarget). */
   readonly target?: () => KeteOrchestrationClient.Target | string
+  /** Where the turn's record goes (default: kete's state directory). */
+  readonly record?: (turn: Turn) => Promise<void>
 }
 
 export const install = Effect.fn("KeteOrchestrate.install")(function* (
@@ -340,6 +362,9 @@ export const install = Effect.fn("KeteOrchestrate.install")(function* (
     directory: ctx.location.directory,
     boundary: localBoundary(env),
     turn,
+    record:
+      options.record ??
+      ((t) => KeteOrchestrationTurnState.write(Global.Path.state, { orchestrationID: spec.id, turn: spec.turn, ...t })),
   }
   yield* ctx.permission.hook("evaluate", (event) => Effect.sync(() => applyPermission(turn, event)))
 

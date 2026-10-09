@@ -18,7 +18,9 @@ package job
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bundle"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/gitops"
@@ -49,12 +51,43 @@ func (r *runner) worker() *platform.WorkerSpec {
 	return nil
 }
 
-// bundleKind is the orchestrations-v1 bundle rule of this job.
-func (r *runner) bundleKind() bundle.Kind {
-	if o := r.orchestrated(); o != nil && o.Spec.Orchestration.Coordinator != nil {
-		return bundle.KindCoordinator
+// turnState is what `kete` records about a coordinator turn (orchestration-turn.json): the
+// proposal the platform accepted, and the decision. Written by kete in its own home, which the
+// job's tools can't write, so the bundle rule never trusts the working tree for it.
+type turnState struct {
+	Version         int    `json:"version"`
+	OrchestrationID string `json:"orchestration_id"`
+	Proposed        *struct {
+		Rev        int    `json:"rev"`
+		PlanDigest string `json:"plan_digest"`
+	} `json:"proposed"`
+	Decision *string `json:"decision"`
+}
+
+// bundleRule is the orchestrations-v1 bundle rule of this job: a coordinator turn is a plan bundle
+// only with a standing proposal recorded by kete (proposed, not decided), checked against its
+// digest; any other coordinator bundle leaves `.kete-orchestration` out and keeps the rest.
+func (r *runner) bundleRule(ctx context.Context) bundle.Rule {
+	o := r.orchestrated()
+	if o == nil || o.Spec.Orchestration.Coordinator == nil {
+		return bundle.Rule{Kind: bundle.KindOther}
 	}
-	return bundle.KindOther
+	data, err := r.d.Machine.ReadOrchestrationTurn()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			r.note(ctx, "orchestration turn state unreadable: no plan is published")
+		}
+		return bundle.Rule{Kind: bundle.KindCoordinator}
+	}
+	var st turnState
+	if json.Unmarshal(data, &st) != nil || st.Version != 1 || st.OrchestrationID != o.Spec.Orchestration.ID() {
+		r.note(ctx, "orchestration turn state invalid: no plan is published")
+		return bundle.Rule{Kind: bundle.KindCoordinator}
+	}
+	if st.Proposed != nil && st.Decision == nil && orchestration.ValidDigest(st.Proposed.PlanDigest) {
+		return bundle.Rule{Kind: bundle.KindPlan, PlanDigest: st.Proposed.PlanDigest}
+	}
+	return bundle.Rule{Kind: bundle.KindCoordinator}
 }
 
 // pinBase makes sure the pristine copy's ref is at the claim's base_sha (step clone, before

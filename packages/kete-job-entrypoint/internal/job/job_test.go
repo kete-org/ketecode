@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -337,8 +338,10 @@ type fakeMachine struct {
 	audit    *string
 	auditErr error
 	// bundleKind is the rule the last BuildBundle was asked for; keteEnv StartKete's environment.
-	bundleKind bundle.Kind
+	bundleRule bundle.Rule
 	keteEnv    KeteEnv
+	// turn is what ReadOrchestrationTurn returns (os.ErrNotExist when nil).
+	turn []byte
 }
 
 func (m *fakeMachine) record(s string) {
@@ -414,8 +417,14 @@ func (m *fakeMachine) OpenAudit() (io.ReadCloser, int64, error) {
 func (m *fakeMachine) OpenProxyLog() (io.ReadCloser, int64, error) {
 	return io.NopCloser(strings.NewReader("proxylog")), 8, nil
 }
-func (m *fakeMachine) BuildBundle(_ context.Context, _ string, kind bundle.Kind) (*bundle.Result, error) {
-	m.bundleKind = kind
+func (m *fakeMachine) ReadOrchestrationTurn() ([]byte, error) {
+	if m.turn == nil {
+		return nil, os.ErrNotExist
+	}
+	return m.turn, nil
+}
+func (m *fakeMachine) BuildBundle(_ context.Context, _ string, rule bundle.Rule) (*bundle.Result, error) {
+	m.bundleRule = rule
 	if m.bundleErr != nil {
 		return nil, m.bundleErr
 	}
@@ -748,8 +757,9 @@ func TestCloneWrongCommit(t *testing.T) {
 	if r["outcome"] != "refused" || r["exit_code"].(float64) != 2 {
 		t.Errorf("result = %v", r)
 	}
-	if e.m.keteStarted || len(e.pf.find("revoke")) != 0 {
-		t.Error("kete started or token revoked after a wrong commit")
+	// Every clone-phase failure releases the clone token (here GitHub's revoke), before the result.
+	if e.m.keteStarted || len(e.pf.find("revoke")) != 1 || !strings.HasPrefix(strings.Join(e.pf.ops(), ","), "claim,events,revoke,") {
+		t.Errorf("kete started, or the token wasn't revoked once before the result: %v", e.pf.ops())
 	}
 }
 

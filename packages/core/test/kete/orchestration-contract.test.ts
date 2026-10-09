@@ -62,6 +62,24 @@ describe("orchestrations-v1 vectors", () => {
     })
   }
 
+  // kete-code's additions (docs/test-vectors/orchestrations-v1-additions/), checked by the Go reader too.
+  const additions = JSON.parse(
+    readFileSync(
+      path.join(dir, "..", "..", "..", "test-vectors", "orchestrations-v1-additions", "plan-files.json"),
+      "utf8",
+    ),
+  )
+  for (const file of additions.files) {
+    test(`plan file (addition): ${file.name}`, () => {
+      const read = C.parseOrchestrationPlanFile(bytesOf(file))
+      expect(read.ok ? "valid" : read.reason).toBe(file.valid ? "valid" : file.reason)
+    })
+  }
+  test("a deeply nested document is refused without deep recursion", () => {
+    const deep = "[".repeat(9) + "]".repeat(9)
+    expect(C.parseOrchestrationPlanFile(new TextEncoder().encode(deep))).toEqual({ ok: false, reason: "not_json" })
+  })
+
   const dag = load("dag.json")
   for (const c of dag.cases) {
     test(`dag: ${c.name}`, () => {

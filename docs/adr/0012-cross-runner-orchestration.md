@@ -175,8 +175,23 @@ What kete-code built against the contract (task `docs/tasks/2026-10-10-orchestra
   redacts it and cuts it to 4 KB (the zone's `summary` is effectively `redacted`). The job's id
   reaches `kete` as `KETE_JOB_ID`; the orchestration section travels to `kete serve` on the existing
   descriptor channel.
-- **What enforces a planning turn.** After a proposal the runtime denies the `edit` tools, but a
-  shell command can still change the tree; the enforcement is the bundle: a coordinator's plan
-  bundle is exactly the plan file (nothing else is published), the platform commits it only when it
-  is the proposal's (`plan_digest`), and `finish` removes any `.kete-orchestration` it finds, so a
-  hand-made plan file can't turn an integration into a plan bundle unnoticed.
+- **What enforces a planning turn.** The entrypoint's bundle rule (Go, `internal/bundle`
+  `applyOrchestration`) is the control; the runtime's deny of the `edit` tools after a proposal is
+  advisory (a shell command can still change the tree). A coordinator's bundle is a plan bundle only
+  when `kete` recorded a standing proposal (proposed, no decision) in its own state directory
+  (`orchestration-turn.json` in kete's home, which the job's tools — another user — can't write);
+  then it is exactly the plan file and its SHA-256 must be the recorded `plan_digest`, and the
+  platform commits it only when it is the proposal's. Without a standing proposal (a decision was
+  made, or no plan) any `.kete-orchestration` path is left out and the rest — the integration — is
+  published, so a plan file written by hand can't turn an integration into a plan bundle.
+- **Clone token.** Every clone-phase failure (clone, pinned base, verify, extra fetches) releases
+  the clone token before the result: GitHub's revoke endpoint, Harness Code's clone-done.
+- **Plan-file reader.** Both readers (Go and TypeScript) refuse nesting deeper than 8 levels
+  (`not_json`), a Kete addition; its vectors, with minus zero, a lone surrogate in a member name and
+  duplicates spelled with `\u` escapes, are in `docs/test-vectors/orchestrations-v1-additions/`
+  until the platform's vectors carry them.
+- **Threat model: plan metadata leaves the zone.** Node keys, dependencies, agents, budgets,
+  timeouts, attempt counts and the timing of plans and decisions are chosen by the model and sent to
+  the platform (the O1 covert-channel residual risk above). On Kete cloud the code is already in
+  Kete's zone, so this adds nothing; for enterprise zones (O10) it must be reconsidered — e.g.
+  bounding or coarsening what the runner lets through — before orchestration is offered there.

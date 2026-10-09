@@ -348,6 +348,9 @@ const fail = (): never => {
   throw new PlanJsonError("not_json")
 }
 
+/** The deepest nesting a plan file may have (Kete addition, also in the Go reader). */
+export const PLAN_JSON_MAX_DEPTH = 8
+
 function parsePlanJson(text: string): unknown {
   let i = 0
   const ws = () => {
@@ -365,7 +368,7 @@ function parsePlanJson(text: string): unknown {
       return fail()
     }
   }
-  const value = (): unknown => {
+  const inner = (): unknown => {
     ws()
     const c = text[i]
     if (c === "{") {
@@ -438,6 +441,19 @@ function parsePlanJson(text: string): unknown {
     i += m[0].length
     if (!/^(?:0|[1-9][0-9]*)$/.test(m[0])) throw new PlanJsonError("not_canonical")
     return Number(m[0])
+  }
+  // Kete addition (both readers): nesting deeper than PLAN_JSON_MAX_DEPTH is not_json, so no reader
+  // recurses without bound. A plan file needs 4 levels.
+  let depth = 0
+  const value = (): unknown => {
+    ws()
+    if (text[i] !== "{" && text[i] !== "[") return inner()
+    if (++depth > PLAN_JSON_MAX_DEPTH) fail()
+    try {
+      return inner()
+    } finally {
+      depth--
+    }
   }
   const v = value()
   ws()

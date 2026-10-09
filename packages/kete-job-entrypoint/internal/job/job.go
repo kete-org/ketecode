@@ -553,10 +553,27 @@ func (r *runner) cloneDone(ctx context.Context) error {
 	return err
 }
 
-// failClone ends a Harness Code job whose clone or verification failed: clone-done first (the
-// platform deletes the token), then finalize. A GitHub job finalizes as before.
+// failClone ends a job whose clone phase failed (clone, pinned base, verify, extra fetches) with
+// the clone token released first: Harness Code through clone-done (the platform deletes the
+// token), GitHub through its revoke endpoint (best effort, as on success; a failure is said on the
+// job). A kubevm job's credential is the runner's, never revoked from inside the job. Then finalize.
 func (r *runner) failClone(ctx context.Context, f final) int {
+	token := r.claim.CloneToken
 	r.claim.CloneToken = ""
+	if !r.harness() && r.d.Runtime == nil && token != "" {
+		r.log.Start(pl.StepRevoke)
+		if err := r.d.Platform.Revoke(ctx, r.claim.CloneHost, token); err != nil {
+			if ctx.Err() != nil {
+				return r.interrupted()
+			}
+			r.log.FailErr(pl.StepRevoke, pl.CodeFailed, err)
+			_ = r.event(ctx, platform.Event{Phase: "clone", Message: "clone token revoke failed"})
+		} else {
+			r.log.OK(pl.StepRevoke)
+		}
+		token = ""
+	}
+	_ = token
 	if r.harness() {
 		_ = r.cloneDone(ctx)
 		if r.isGone() || ctx.Err() != nil {
@@ -655,8 +672,8 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		c.BaseSHA = head
 	}
 	if err := r.d.Git.Verify(ctx, r.d.Cfg.Pristine(), c.Ref, c.BaseSHA); err != nil {
-		c.CloneToken = ""
 		if ctx.Err() != nil {
+			c.CloneToken = ""
 			return r.interrupted()
 		}
 		if errors.Is(err, gitops.ErrMismatch) {
@@ -934,7 +951,7 @@ func (r *runner) finalize(ctx context.Context, f final) int {
 	var b *bundle.Result
 	if f.bundle && !alive && !r.proxyFailed {
 		r.log.Start(pl.StepBundle)
-		res, err := r.d.Machine.BuildBundle(ctx, r.claim.BaseSHA, r.bundleKind())
+		res, err := r.d.Machine.BuildBundle(ctx, r.claim.BaseSHA, r.bundleRule(ctx))
 		switch {
 		case err == nil:
 			b = res

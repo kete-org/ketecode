@@ -332,8 +332,9 @@ func TestCloneWrongCommit(t *testing.T) {
 	if res["outcome"] != "refused" || res["exit_code"] != 2.0 {
 		t.Errorf("result = %v", res)
 	}
-	if countCalls("revoke") != 0 {
-		t.Error("revoke after a wrong commit")
+	// Every clone-phase failure releases the clone token before the result (here GitHub's revoke).
+	if kinds := strings.Join(FP.Kinds(), " "); countCalls("revoke") != 1 || strings.Index(kinds, "revoke") > strings.Index(kinds, "result") {
+		t.Errorf("the clone token wasn't revoked once before the result: %s", kinds)
 	}
 	if _, err := os.Stat("/var/log/kete-job/kete.stdout"); err == nil {
 		t.Error("kete started")
@@ -804,6 +805,22 @@ func TestOrchestrationPlanBundle(t *testing.T) {
 	}
 	if !noted {
 		t.Error("no note about the left-out change")
+	}
+}
+
+// TestOrchestrationStrayPlanFile: a coordinator turn without a standing proposal (no state from
+// kete) that has a plan file in its tree publishes its integration; the plan file is left out.
+func TestOrchestrationStrayPlanFile(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Orchestration: fakeplatform.OrchestrationIntegration, Prompt: "orchestration-stray-plan"}, nil)
+	if r.code != 0 {
+		t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
+	}
+	files := bundleFiles(t)
+	if _, ok := files["files/.kete-orchestration/plan.json"]; ok || files["files/README.md"] == nil {
+		t.Errorf("bundle %v", keys(files))
+	}
+	if errs := FP.ContractErrors(); len(errs) != 0 {
+		t.Errorf("contract errors %v", errs)
 	}
 }
 

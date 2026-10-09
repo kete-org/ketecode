@@ -41,3 +41,21 @@ Done: spec.md scope; checks in result.md. Not merged.
 
 ### Open questions
 None blocking.
+
+## 2026-10-10 builder — hardening (N1–N5, on the same PR)
+
+- N1: a coordinator bundle is a plan bundle only with a standing proposal that kete recorded in
+  `orchestration-turn.json` (kete's 0700 home; the tools can't write it), checked against its
+  `plan_digest`; otherwise `.kete-orchestration` is left out and the integration kept (unit, bundle
+  and integration tests, incl. a hand-made plan file in an integration turn).
+- N2: documented (ADR 0012, cards, `applyOrchestration`): the Go bundle rule is the control; the
+  edit deny is advisory.
+- N3: every clone-phase failure revokes the clone token (GitHub) or calls clone-done (Harness).
+- N4: both plan readers cap nesting at 8 levels (`not_json`). **For the platform:** please add the
+  same cap to `parsePlanJson` and the cases in `docs/test-vectors/orchestrations-v1-additions/
+  plan-files.json` (deep nesting 9/8, `-0`, a lone surrogate in a member name, duplicates with `\u`
+  escapes) to `plan-files.json`; kete-code then re-copies and drops its additions file. Until then
+  the platform's reader answers `invalid` (not `not_json`) for the 9-level case; every other added
+  case already agrees.
+- N5: ADR 0012 threat model: plan metadata is model-chosen and leaves the zone; fine on Kete cloud,
+  to reconsider for O10.
