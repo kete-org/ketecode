@@ -129,8 +129,8 @@ func Run(ctx context.Context, o Options) error {
 			hc = repoHTTPClient(proxy, k.NoProxy, copts.RootCAs)
 		}
 		creds = &cloneCreds{
-			kube: o.Kube, namespace: k.Namespace, jobsNS: k.JobsNamespace, sources: k.Sources, now: o.Now, log: o.Log,
-			http: hc, minted: map[string]minted{}, done: map[string]bool{},
+			kube: o.Kube, namespace: k.Namespace, jobsNS: k.JobsNamespace, instance: k.Instance, sources: k.Sources, now: o.Now, log: o.Log,
+			http: hc, minted: map[string]minted{}, done: map[string]bool{}, bases: map[string]string{},
 		}
 	}
 	pd, err := podDriver(o, creds)
@@ -216,7 +216,10 @@ func Run(ctx context.Context, o Options) error {
 		Log: o.Log, Now: o.Now, PollEvery: o.DriverPoll, Blocked: guard.blocked, Publish: pd.publish,
 	}
 	if creds != nil {
-		dopts.CloneDone, dopts.JobEnded = creds.revoke, creds.revoke
+		dopts.CloneDone, dopts.JobEnded, dopts.Forget = creds.revoke, creds.revoke, creds.forget
+		if dopts.Publish != nil {
+			dopts.Publish.BaseSHA = creds.baseSHA
+		}
 	}
 	drv, err := kdriver.New(dopts)
 	if err != nil {

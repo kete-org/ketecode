@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -193,10 +194,16 @@ func TestPublishCreatesBranchAndDraftMR(t *testing.T) {
 	if mr.Source != branch || mr.Target != "main" || !strings.HasPrefix(mr.Title, "Draft: Kete job 5e6f7a8b") || !strings.Contains(mr.Description, "https://portal.kete.example/jobs/"+jobID) {
 		t.Errorf("merge request %+v", mr)
 	}
-	// The same job again: the branch exists now (create-only, never moved).
+	// The same publish again (an outcome lost): the branch already holds exactly this commit →
+	// created, the same merge request, nothing pushed or opened twice.
 	again := w.run(t, outbox(t, w.base, b, nil), true)
-	if again.Status != contract.PublishRefused || again.Reason != "branch_exists" || w.head(t, branch) != out.CommitSHA {
+	if again.Status != contract.PublishCreated || again.CommitSHA != out.CommitSHA || again.MR == nil || again.MR.IID != 1 || len(w.gl.State().MergeRequests) != 1 {
 		t.Fatalf("second run %+v", again)
+	}
+	// Another change for the same branch: it exists with another commit (create-only, never moved).
+	other := w.run(t, outbox(t, w.base, makeBundle(t, []file{{path: "README.md", mode: "100644", data: "other\n"}}), nil), true)
+	if other.Status != contract.PublishRefused || other.Reason != "branch_exists" || w.head(t, branch) != out.CommitSHA {
+		t.Fatalf("third run %+v", other)
 	}
 }
 
@@ -274,6 +281,36 @@ func TestPublishBaseSymlinkAndNoChanges(t *testing.T) {
 	}
 	if c, _ := w.gl.File(project, branch, "moved.txt"); c != "" {
 		t.Fatal("the commit wasn't built on the recorded base")
+	}
+}
+
+// The controller's resolved base binds the job's recorded one; a FIFO in the outbox is refused at
+// once instead of blocking the publisher.
+func TestPublishBaseSHAAndFIFO(t *testing.T) {
+	w := newWorld(t)
+	o := w.opts
+	o.OutboxDir = outbox(t, w.base, makeBundle(t, []file{{path: "a.txt", mode: "100644", data: "a\n"}}), nil)
+	req := Request{MachineID: "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e", JobID: jobID, Repository: repoName, BaseRef: "main", Branch: branch, BaseSHA: strings.Repeat("c", 40)}
+	if out := Run(context.Background(), o, req); out.Status != contract.PublishRefused || out.Reason != "bundle_invalid" {
+		t.Fatalf("another base: %+v", out)
+	}
+	req.BaseSHA = w.base
+	if out := Run(context.Background(), o, req); out.Status != contract.PublishCreated {
+		t.Fatalf("the resolved base: %+v", out)
+	}
+	dir := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(dir, "manifest.json"), 0o640); err != nil {
+		t.Skip(err)
+	}
+	done := make(chan contract.PublishOutcome, 1)
+	go func() { done <- w.run(t, dir, true) }()
+	select {
+	case out := <-done:
+		if out.Status != contract.PublishFailed || out.Reason != "publisher_failed" {
+			t.Fatalf("fifo: %+v", out)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a FIFO blocked the publisher")
 	}
 }
 

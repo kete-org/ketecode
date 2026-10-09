@@ -70,10 +70,13 @@ unless:
    pod sysctls, no Windows host process.
 
 Publisher pods (label `kete.dev/role: publish`) are held to more: exactly one container, the runner
-image (`image.repository@image.digest`), command `/usr/local/bin/kete-job-host` with `publish` as
-the first argument, no environment, `runAsNonRoot`, read-only root file system, no added
-capabilities, every mount read-only, and only these volumes: the machine's own outbox claim with
-`readOnly: true`, the `kete-publisher` ConfigMap and the publisher Secrets. **No other pod — no job
+image (`image.repository@image.digest`), command `/usr/local/bin/kete-job-host publish` with
+exactly its fixed flags, no environment, no lifecycle hooks or probes, no working directory or
+custom termination-message path, `runAsNonRoot`, read-only root file system, no added
+capabilities, every mount read-only at its fixed path, and only these volumes: the machine's own
+outbox claim with `readOnly: true`, the `kete-publisher` ConfigMap and the publisher Secrets.
+**No pod at all may read a Secret through `env.valueFrom` or `envFrom`** (job and publisher pods
+use literal values only). **No other pod — no job
 pod — may mount a publisher Secret** (directly or through a projected volume).
 
 `kete-runner-<jobs ns>-secrets` — only the controller writes Secrets in the jobs namespace, and only
@@ -265,7 +268,7 @@ Create a bot user (e.g. `kete-bot`) and, per repository:
 | Credential | Where | Scopes / role | Used by |
 |---|---|---|---|
 | **Writer** (`writerSecret`, key `token`) | Secret in the **jobs** namespace | the bot's personal access token: `api`, `write_repository`; the bot is **Developer** on the project | publisher pods only: project and branch reads, the create-only push, the draft merge request |
-| **Minter** (`minterSecret`, key `token`; `cloneMode: minted`, recommended) | Secret in the **release** namespace | a token with `api` of a user who is **Maintainer** on the project (GitLab requires Maintainer to create project access tokens) | the controller: per job it creates a project access token `kete-job-<machine>` (scope `read_repository`, role Reporter, expiring the next day), checks it by resolving the job's base branch, puts it in the job's Secret, and revokes it when the job reports `clone_done`, again when the job pod ends, and in a sweep every 5 minutes (tokens left by a restart) |
+| **Minter** (`minterSecret`, key `token`; `cloneMode: minted`, recommended) | Secret in the **release** namespace | a token with `api` of a user who is **Maintainer** on the project (GitLab requires Maintainer to create project access tokens) | the controller: per job it creates a project access token `kete-job-<release>-<machine>` (scope `read_repository`, role Reporter, expiring the next day), checks it by resolving the job's base branch, puts it in the job's Secret, and revokes it when the job reports `clone_done`, again when the job pod ends, and in a sweep every 5 minutes (tokens left by a restart) |
 | **Deploy token** (`cloneSecret`, keys `username`, `token`; `cloneMode: static`) | Secret in the **release** namespace | a project deploy token with `read_repository` | the controller copies it into each job's Secret (no revocation: rotate it yourself) |
 
 Use separate tokens for the minter and the writer even if one bot owns both: the writer must be

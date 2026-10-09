@@ -42,11 +42,15 @@ func cmdPublish(args []string, stderr io.Writer) int {
 	fs.StringVar(&req.Repository, "repository", "", "runtime repository name")
 	fs.StringVar(&req.BaseRef, "base-ref", "", "base branch")
 	fs.StringVar(&req.Branch, "branch", "", "job branch (kete/job/…)")
+	fs.StringVar(&req.BaseSHA, "base-sha", "", "the commit the controller resolved base_ref to (none: unknown)")
 	fs.BoolVar(&req.OpenMR, "open-mr", false, "open a draft merge request")
 	outFile := fs.String("outcome-file", "/dev/termination-log", "where the outcome JSON is written")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || !contract.ValidUUID(req.MachineID) {
-		fmt.Fprintln(stderr, "usage: kete-job-host publish --machine ID --job ID --repository NAME --base-ref REF --branch BRANCH [--open-mr]")
+		fmt.Fprintln(stderr, "usage: kete-job-host publish --machine ID --job ID --repository NAME --base-ref REF --branch BRANCH --base-sha SHA|none [--open-mr]")
 		return 2
+	}
+	if req.BaseSHA == "none" {
+		req.BaseSHA = ""
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()

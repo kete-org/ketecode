@@ -18,7 +18,10 @@ import (
 // platform's run machine; the repository's URL and writer come from the configuration only).
 type Request struct {
 	MachineID, JobID, Repository, BaseRef, Branch string
-	OpenMR                                        bool
+	// BaseSHA is the commit the controller resolved base_ref to when it started the job ("" when
+	// it doesn't know any more, e.g. after a restart): the job's recorded base must equal it.
+	BaseSHA string
+	OpenMR  bool
 }
 
 // Options are the publisher's dependencies (tests replace the paths and the HTTP transport).
@@ -95,7 +98,8 @@ func Run(ctx context.Context, o Options, req Request) contract.PublishOutcome {
 
 func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract.PublishOutcome {
 	repo, ok := o.Config.Repos[req.Repository]
-	if !ok || !contract.ValidUUID(req.JobID) || !contract.ValidGitRef(req.BaseRef) || !contract.ValidJobBranch(req.Branch) {
+	if !ok || !contract.ValidUUID(req.JobID) || !contract.ValidGitRef(req.BaseRef) || !contract.ValidJobBranch(req.Branch) ||
+		(req.BaseSHA != "" && !contract.ValidGitSHA(req.BaseSHA)) {
 		log.Error("publish_request_invalid")
 		return failed(rPublisher)
 	}
@@ -135,6 +139,11 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		log.Warn("bundle_refused", "code", refusal.Reason)
 		return refused(rBundleInvalid)
 	}
+	if req.BaseSHA != "" && m.BaseSHA != req.BaseSHA {
+		// The job claims a base other than the commit the controller resolved for it.
+		log.Warn("base_not_the_resolved_commit")
+		return refused(rBundleInvalid)
+	}
 	if len(entries) == 0 {
 		return withBase(contract.PublishOutcome{Status: contract.PublishNoChanges}, m.BaseSHA)
 	}
@@ -165,7 +174,10 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		return providerFailure(err)
 	}
 	if base.Commit.ID != m.BaseSHA {
-		mb, err := retry(ctx, o, func() (string, error) { return gl.MergeBase(ctx, req.BaseRef, m.BaseSHA) })
+		if req.BaseSHA == "" {
+			log.Warn("base_sha_unknown_to_the_controller", "rule", "ancestor of the base branch")
+		}
+		mb, err := retry(ctx, o, func() (string, error) { return gl.MergeBase(ctx, base.Commit.ID, m.BaseSHA) })
 		switch {
 		case gitlab.IsCode(err, gitlab.CodeNotFound), gitlab.IsCode(err, gitlab.CodeRefused):
 			log.Warn("base_not_in_repository")
@@ -203,9 +215,11 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		}
 	}
 
-	// 5. The job branch must not exist (create-only; the push re-checks atomically).
-	if _, err := gl.GetBranch(ctx, req.Branch); err == nil {
-		return withBase(refused(rBranchExists), m.BaseSHA)
+	// 5. The job branch must not exist (create-only; the push re-checks atomically) — unless it
+	// holds exactly the commit this run computes (a publisher re-run after a lost outcome).
+	existing := ""
+	if b, err := gl.GetBranch(ctx, req.Branch); err == nil {
+		existing = b.Commit.ID
 	} else if !gitlab.IsCode(err, gitlab.CodeNotFound) {
 		return providerFailure(err)
 	}
@@ -264,8 +278,20 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		}
 		objects = append(objects, gitproto.Object{Type: "tree", Data: body})
 	}
-	commit := gitproto.CommitObject(root, m.BaseSHA, o.Config.Identity, o.Now(), CommitMessage(req.JobID, o.Config.CIOnJobBranches))
+	// A deterministic time (the outbox's written_at), so a re-run builds the same commit.
+	when, err := time.Parse(time.RFC3339, m.WrittenAt)
+	if err != nil {
+		when = o.Now()
+	}
+	commit := gitproto.CommitObject(root, m.BaseSHA, o.Config.Identity, when.UTC(), CommitMessage(req.JobID, o.Config.CIOnJobBranches))
 	commitSHA := gitproto.ObjectID("commit", commit)
+	if existing != "" {
+		if existing != commitSHA {
+			return withBase(refused(rBranchExists), m.BaseSHA)
+		}
+		log.Info("branch_already_published")
+		return openMR(ctx, gl, o, req, m, contract.PublishOutcome{Status: contract.PublishCreated, BaseSHA: m.BaseSHA, CommitSHA: commitSHA}, log)
+	}
 	objects = append(objects, gitproto.Object{Type: "commit", Data: commit})
 	pack := gitproto.WritePack(objects)
 	if len(pack) > maxPack {
@@ -308,10 +334,17 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		}
 		return withBase(failed(rProviderError), m.BaseSHA)
 	}
-	created := contract.PublishOutcome{Status: contract.PublishCreated, BaseSHA: m.BaseSHA, CommitSHA: commitSHA}
+	return openMR(ctx, gl, o, req, m, contract.PublishOutcome{Status: contract.PublishCreated, BaseSHA: m.BaseSHA, CommitSHA: commitSHA}, log)
+}
 
-	// 9. The draft merge request, for a job that completed and asked for one.
+// openMR is step 9: the draft merge request, for a job that completed and asked for one (an open
+// one from the branch is reused).
+func openMR(ctx context.Context, gl *gitlab.Client, o Options, req Request, m Manifest, created contract.PublishOutcome, log *slog.Logger) contract.PublishOutcome {
 	if !req.OpenMR || m.Outcome != "completed" {
+		return created
+	}
+	if found, err := gl.FindOpenMergeRequest(ctx, req.Branch); err == nil && found != nil && contract.ValidChangeRequestURL(found.WebURL) {
+		created.MR = &contract.MergeRequest{IID: found.IID, URL: found.WebURL}
 		return created
 	}
 	mr, err := gl.CreateDraftMergeRequest(ctx, req.Branch, req.BaseRef, MRTitle(req.JobID), MRDescription(o.Config.PlatformURL, req.JobID))

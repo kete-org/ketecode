@@ -321,18 +321,25 @@ type AccessToken struct {
 	Token   string `json:"token,omitempty"`
 }
 
-// CreateCloneToken mints a project access token for one machine: scope read_repository, role
-// Reporter, expiring the day after now (GitLab's granularity; it is revoked long before).
-func (c *Client) CreateCloneToken(ctx context.Context, machineID string, now time.Time) (AccessToken, error) {
+// CloneTokenName is a machine's clone token name: kete-job-<runner instance>-<machine-id>, so
+// runners sharing a project only ever sweep their own.
+func CloneTokenName(instance, machineID string) string {
+	return TokenPrefix + instance + "-" + machineID
+}
+
+// CreateCloneToken mints a project access token named name for one machine: scope
+// read_repository, role Reporter, expiring the day after now (GitLab's granularity; it is revoked
+// long before).
+func (c *Client) CreateCloneToken(ctx context.Context, name string, now time.Time) (AccessToken, error) {
 	body := map[string]any{
-		"name": TokenPrefix + machineID, "scopes": []string{"read_repository"}, "access_level": 20,
+		"name": name, "scopes": []string{"read_repository"}, "access_level": 20,
 		"expires_at": now.UTC().AddDate(0, 0, 1).Format("2006-01-02"),
 	}
 	var t AccessToken
 	if _, err := c.do(ctx, "access_token_create", http.MethodPost, c.projectPath()+"/access_tokens", nil, body, &t, http.StatusCreated); err != nil {
 		return AccessToken{}, err
 	}
-	if t.ID < 1 || t.Token == "" || t.Name != TokenPrefix+machineID {
+	if t.ID < 1 || t.Token == "" || t.Name != name {
 		clear([]byte(t.Token))
 		return AccessToken{}, &Error{Code: CodeInvalidResponse, Op: "access_token_create"}
 	}

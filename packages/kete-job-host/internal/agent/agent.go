@@ -135,6 +135,7 @@ type Agent struct {
 	// `publish.authorized` is the platform's go-ahead), and the publishing machines whose job is
 	// known to be removed (EndJob done since this agent started).
 	runs     map[string]contract.RunMachineV2
+	runsAt   time.Time // when runs was last replaced by an accepted desired state
 	jobEnded map[string]bool
 }
 
@@ -836,6 +837,7 @@ func (a *Agent) assign(ctx context.Context, rm contract.RunMachineV2) {
 func (a *Agent) apply(ctx context.Context, d desiredState, sentTerminal map[string]bool) {
 	run := map[string]bool{}
 	clear(a.runs)
+	a.runsAt = a.o.Now()
 	for _, rm := range d.Run {
 		run[rm.MachineID] = true
 		a.runs[rm.MachineID] = rm
@@ -1402,6 +1404,9 @@ func (a *Agent) publish(ctx context.Context, id string) {
 	}
 	ended, started, since, recorded := a.jobEnded[id], m.PublishStarted, m.Since, m.Publish != nil
 	rm, inRun := a.runs[id]
+	// Only a fresh desired state authorizes (job-host-v2): not one from before the platform went
+	// quiet.
+	fresh := a.o.Now().Sub(a.runsAt) <= publishFreshness
 	a.mu.Unlock()
 
 	if !ended {
@@ -1420,7 +1425,7 @@ func (a *Agent) publish(ctx context.Context, id string) {
 	switch {
 	case recorded:
 	case !started:
-		authorized := inRun && rm.Publish != nil && rm.Publish.Authorized && rm.Repository != nil
+		authorized := fresh && inRun && rm.Publish != nil && rm.Publish.Authorized && rm.Repository != nil
 		if !authorized || a.o.Now().Sub(since) > a.o.V2.PublishHold {
 			if a.o.Now().Sub(since) <= a.o.V2.PublishHold {
 				return // waiting for the platform's go-ahead
@@ -1485,6 +1490,9 @@ func (a *Agent) publish(ctx context.Context, id string) {
 		a.save()
 	}
 }
+
+// publishFreshness bounds how old the desired state that authorizes a publish may be.
+const publishFreshness = 2 * time.Minute
 
 // boundOutcome applies the report's rules to a publisher's outcome: the branch is the platform's
 // (job metadata), the references are dropped when the boundary omits them, and an outcome that

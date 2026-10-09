@@ -46,6 +46,8 @@ type PublishOptions struct {
 	Timeout                        time.Duration
 	// Writers maps a repository name to its writer Secret in the jobs namespace.
 	Writers map[string]string
+	// BaseSHA returns the commit the controller resolved the machine's base_ref to ("" unknown).
+	BaseSHA func(machineID string) string
 }
 
 func publishSelector(instance string) string {
@@ -74,6 +76,12 @@ func (d *Driver) PublishPod(s driver.PublishSpec) (kube.Pod, error) {
 		!contract.ValidGitRef(s.Repository.BaseRef) || !contract.ValidJobBranch(s.Branch) {
 		return kube.Pod{}, errors.New("kubernetes driver: invalid publish request")
 	}
+	baseSHA := "none"
+	if po.BaseSHA != nil {
+		if v := po.BaseSHA(s.MachineID); contract.ValidGitSHA(v) {
+			baseSHA = v
+		}
+	}
 	ro, mode := int32(0o444), int32(0o444)
 	res := map[string]string{"cpu": po.CPU, "memory": po.Memory}
 	grace := int64(10)
@@ -98,7 +106,7 @@ func (d *Driver) PublishPod(s driver.PublishSpec) (kube.Pod, error) {
 				Name: PublishContainer, Image: po.Image, ImagePullPolicy: "IfNotPresent",
 				Command: []string{PublisherCommand},
 				Args: []string{"publish", "--machine", s.MachineID, "--job", s.JobID, "--repository", s.Repository.Name,
-					"--base-ref", s.Repository.BaseRef, "--branch", s.Branch, "--open-mr=" + strconv.FormatBool(s.OpenMR)},
+					"--base-ref", s.Repository.BaseRef, "--branch", s.Branch, "--base-sha", baseSHA, "--open-mr=" + strconv.FormatBool(s.OpenMR)},
 				Resources:                &kube.Resources{Requests: res, Limits: res},
 				TerminationMessagePolicy: "File",
 				SecurityContext: &kube.SecurityContext{
@@ -217,6 +225,9 @@ func ParseOutcome(b []byte) (contract.PublishOutcome, bool) {
 func (d *Driver) DiscardOutputs(ctx context.Context, id string, keepOutputs bool) error {
 	if err := d.o.Client.DeletePod(ctx, d.o.Namespace, PublishPodName(id), nil); err != nil {
 		return err
+	}
+	if d.o.Forget != nil {
+		d.o.Forget(id)
 	}
 	if keepOutputs || d.o.Outbox == nil {
 		return nil

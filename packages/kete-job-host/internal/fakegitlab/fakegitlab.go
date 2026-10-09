@@ -90,6 +90,9 @@ var gitPathRe = regexp.MustCompile(`^/(.+)\.git/(info/refs|git-upload-pack|git-r
 
 // New returns a fake whose repositories live under root. It needs git (git http-backend).
 func New(host, root string) (*Server, error) {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return nil, err
+	}
 	out, err := exec.Command("git", "--exec-path").Output()
 	if err != nil {
 		return nil, fmt.Errorf("fakegitlab: git --exec-path: %w", err)
@@ -105,7 +108,9 @@ func git(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_AUTHOR_NAME=fake", "GIT_AUTHOR_EMAIL=fake@gitlab.test", "GIT_COMMITTER_NAME=fake", "GIT_COMMITTER_EMAIL=fake@gitlab.test"}
+		"GIT_AUTHOR_NAME=fake", "GIT_AUTHOR_EMAIL=fake@gitlab.test", "GIT_COMMITTER_NAME=fake", "GIT_COMMITTER_EMAIL=fake@gitlab.test",
+		// A seed repository mounted from another container is owned by another user (tests only).
+		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=safe.directory", "GIT_CONFIG_VALUE_0=*"}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -534,6 +539,7 @@ func (s *Server) git(w http.ResponseWriter, r *http.Request) {
 	h := &cgi.Handler{
 		Path: s.backend,
 		Env: []string{"GIT_PROJECT_ROOT=" + s.root, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_NOSYSTEM=1", "HOME=" + s.root,
+			"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=safe.directory", "GIT_CONFIG_VALUE_0=*",
 			"REMOTE_USER=fake"},
 	}
 	h.ServeHTTP(w, r)

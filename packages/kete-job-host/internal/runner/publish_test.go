@@ -118,7 +118,7 @@ func TestRunnerPublishes(t *testing.T) {
 		t.Fatalf("clone credential %v", r)
 	}
 	toks := gl.State().Tokens
-	if len(toks) != 1 || toks[0].Name != "kete-job-"+mid(1) || toks[0].Revoked || toks[0].Scopes[0] != "read_repository" || toks[0].Level != 20 {
+	if len(toks) != 1 || toks[0].Name != "kete-job-kete-runner-"+mid(1) || toks[0].Revoked || toks[0].Scopes[0] != "read_repository" || toks[0].Level != 20 {
 		t.Fatalf("minted %+v", toks)
 	}
 	name := kdriver.PodName(mid(1))
@@ -145,7 +145,7 @@ func TestRunnerPublishes(t *testing.T) {
 	c := pod.Spec.Containers[0]
 	args := strings.Join(c.Args, " ")
 	if pod.Metadata.Labels[kdriver.LabelRole] != kdriver.RolePublish || c.Image != runnerImage || c.Command[0] != kdriver.PublisherCommand ||
-		!strings.Contains(args, "publish --machine "+mid(1)+" --job "+jid(1)+" --repository gitlab:payments/api --base-ref main --branch "+jobBranch+" --open-mr=true") ||
+		!strings.Contains(args, "publish --machine "+mid(1)+" --job "+jid(1)+" --repository gitlab:payments/api --base-ref main --branch "+jobBranch+" --base-sha ") || !strings.HasSuffix(args, " --open-mr=true") ||
 		pod.Spec.RuntimeClassName != "kete-test" || *pod.Spec.AutomountServiceAccountToken || *pod.Spec.SecurityContext.RunAsUser != 65532 ||
 		!*c.SecurityContext.ReadOnlyRootFilesystem || c.SecurityContext.Capabilities.Drop[0] != "ALL" || len(c.SecurityContext.Capabilities.Add) != 0 {
 		t.Fatalf("publisher pod %s", b)

@@ -148,7 +148,9 @@ func ParseConfig(data []byte) (Config, error) {
 
 // openNoFollow opens path read-only, refusing a symlink as its last component.
 func openNoFollow(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	// O_NONBLOCK: a FIFO planted by a hostile job opens at once (and is refused as not regular)
+	// instead of blocking the publisher until its deadline.
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 }
 
 // resolveUnder resolves dir/name (a mounted Secret or ConfigMap key is a symlink into a hidden

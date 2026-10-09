@@ -18,11 +18,11 @@ verified-at: eea2edce48
   `publisher` section (`PublisherFile`) is required when a writer is named; `no_proxy` for direct
   repository hosts. Chart values: `repositorySources[]`, `publisher`, `proxy.noProxy`.
 - How are clone tokens minted and revoked? `internal/runner/clone.go` with
-  `internal/repo/gitlab` (`CreateCloneToken`: `kete-job-<machine>`, `read_repository`, Reporter,
+  `internal/repo/gitlab` (`CreateCloneToken`: `CloneTokenName` = `kete-job-<runner instance>-<machine>`, `read_repository`, Reporter,
   next-day expiry; `RevokeToken`; `ListCloneTokens`). Revoked on the job's `clone_done` phase line,
-  when its pod ends, and by a 5-minute sweep of tokens whose job pod is gone.
+  when its pod ends, and by a 5-minute sweep of this instance's tokens whose job pod is gone (not those minted < 5 min ago). The resolved base_ref commit is kept (`cloneCreds.bases`) and passed to the publisher as `--base-sha`; the job's recorded base must equal it (after a controller restart it is unknown: `none`, and the ancestor rule applies alone).
 - What does the publisher do? `internal/publish/publish.go` `Run`: manifest (strict, this
-  job/repository/ref) → `push_error` mapping → bundle file (size + SHA-256) → `bundle.Validate` →
+  job/repository/ref) → `push_error` mapping → recorded base = `--base-sha` → bundle file (size + SHA-256) → `bundle.Validate` →
   empty = `no_changes` → GitLab project (writer) → base is base_ref's head or an ancestor
   (`MergeBase`) → protection of the default and base branches (`BranchProtection`: protected and
   `can_push` false) → job branch absent → `gitproto.FetchBase` (v2, blob:none, deepen 1) →
@@ -89,8 +89,10 @@ validate → GitLab (writer) → push + MR → termination message → controlle
 
 ## Rules that must not break
 - The writer credential exists only in publisher pods; the controller can't read it (RBAC) or
-  change it (admission); job pods can't mount it (admission).
-- Everything in the outbox is hostile: no symlink followed, sizes and digests checked, the
+  change it (admission); no pod may mount it except a publisher, and no pod may take any Secret
+  through `env.valueFrom`/`envFrom` (admission). Publisher pods are pinned: fixed arguments,
+  volumes by name at fixed mount paths, no hooks, probes, workingDir or custom termination path.
+- Everything in the outbox is hostile: no symlink followed, FIFOs opened non-blocking and refused, sizes and digests checked, the
   manifest strict and bound to the machine's job, repository and ref; nothing extracted or run.
 - The commit's only parent is the job's recorded base, which must be on the base branch; the push
   is create-only (zero old id), never forced; a refused publish creates no branch.

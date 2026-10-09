@@ -38,6 +38,7 @@ const MintedUsername = "kete-job"
 type minted struct {
 	repo string
 	id   int64
+	at   time.Time
 }
 
 // cloneCreds hands out and revokes the jobs' read credentials.
@@ -45,6 +46,7 @@ type cloneCreds struct {
 	kube      *kube.Client
 	namespace string // the controller's: static and minter Secrets live there
 	jobsNS    string
+	instance  string // the release name: in every token name
 	sources   map[string]config.RepositorySourceFile
 	http      *http.Client
 	now       func() time.Time
@@ -53,6 +55,7 @@ type cloneCreds struct {
 	mu     sync.Mutex
 	minted map[string]minted // machine → its token, until revoked
 	done   map[string]bool   // machines whose revocation is in flight
+	bases  map[string]string // machine → the commit its base_ref resolved to (for the publisher)
 	wg     sync.WaitGroup
 }
 
@@ -97,12 +100,12 @@ func (c *cloneCreds) credential(ctx context.Context, s driver.Spec, src config.R
 		if err != nil {
 			return "", "", unavailable("project", err)
 		}
-		t, err := gitlab.New(base, project, admin, c.http).CreateCloneToken(ctx, s.MachineID, c.now())
+		t, err := gitlab.New(base, project, admin, c.http).CreateCloneToken(ctx, gitlab.CloneTokenName(c.instance, s.MachineID), c.now())
 		if err != nil {
 			return "", "", unavailable("minting a clone token", err)
 		}
 		c.mu.Lock()
-		c.minted[s.MachineID] = minted{repo: src.Name, id: t.ID}
+		c.minted[s.MachineID] = minted{repo: src.Name, id: t.ID, at: c.now()}
 		c.mu.Unlock()
 		c.log.Info("clone_token_minted", "machine_id", s.MachineID, "job_id", s.JobID, "repository", src.Name, "token_id", t.ID)
 		user, token = MintedUsername, t.Token
@@ -126,11 +129,28 @@ func (c *cloneCreds) credential(ctx context.Context, s driver.Spec, src config.R
 		c.revoke(s.MachineID)
 		return "", "", unavailable("resolving the base ref", err)
 	}
+	c.mu.Lock()
+	c.bases[s.MachineID] = refs["refs/heads/"+s.Repository.BaseRef]
+	c.mu.Unlock()
 	return user, token, nil
 }
 
 func unavailable(what string, err error) error {
 	return &driver.FailedError{Reason: contract.ReasonRepositoryUnavailable, Err: fmt.Errorf("%s: %w", what, err)}
+}
+
+// baseSHA returns the commit a machine's base_ref resolved to ("" unknown).
+func (c *cloneCreds) baseSHA(machineID string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.bases[machineID]
+}
+
+// forget drops a machine's resolved base (its outputs are gone).
+func (c *cloneCreds) forget(machineID string) {
+	c.mu.Lock()
+	delete(c.bases, machineID)
+	c.mu.Unlock()
 }
 
 // revoke revokes a machine's minted token in the background (idempotent; a no-op for static
@@ -208,14 +228,18 @@ func (c *cloneCreds) sweep(ctx context.Context) {
 			c.log.Warn("clone_token_sweep_failed", "repository", name, "error", err.Error())
 			continue
 		}
+		prefix := gitlab.CloneTokenName(c.instance, "")
 		for _, t := range tokens {
-			id := strings.TrimPrefix(t.Name, gitlab.TokenPrefix)
-			if !contract.ValidUUID(id) {
-				continue // not one of ours as written
+			id, ours := strings.CutPrefix(t.Name, prefix)
+			if !ours || !contract.ValidUUID(id) {
+				continue // another runner's, or not one of ours as written
 			}
 			c.mu.Lock()
-			_, tracked := c.minted[id]
+			m, tracked := c.minted[id]
 			c.mu.Unlock()
+			if tracked && c.now().Sub(m.at) < 5*time.Minute {
+				continue // just minted: its pod may not exist yet
+			}
 			if _, err := c.kube.GetPod(ctx, c.jobsNS, kdriver.PodName(id)); !kube.IsNotFound(err) {
 				continue // its job still runs (or can't be read): its own hooks revoke it
 			}

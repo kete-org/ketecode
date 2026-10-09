@@ -110,6 +110,8 @@ type Options struct {
 	// JobEnded when its job pod is removed: a minted clone credential is revoked then (P3). Both
 	// must return at once (they hand the work off).
 	CloneDone, JobEnded func(machineID string)
+	// Forget is called once a machine's outputs and publisher are gone (Stop, DiscardOutputs).
+	Forget func(machineID string)
 }
 
 // Driver implements driver.Driver on pods.
@@ -333,7 +335,13 @@ func (d *Driver) Stop(ctx context.Context, id string) error {
 			return err
 		}
 	}
-	return d.stopJob(ctx, id)
+	if err := d.stopJob(ctx, id); err != nil {
+		return err
+	}
+	if d.o.Forget != nil {
+		d.o.Forget(id)
+	}
+	return nil
 }
 
 // stopJob deletes the job pod and its Secret and waits until the pod is gone.

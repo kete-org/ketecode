@@ -45,6 +45,12 @@ spec:
       expression: {{ toJson $runnerImage | quote }}
     - name: publisherSecrets
       expression: {{ toJson $pubSecrets | quote }}
+    - name: writerSecrets
+      expression: {{ include "kete-runner.writers" . | quote }}
+    - name: publisherCA
+      expression: {{ toJson .Values.publisher.caBundleSecret | quote }}
+    - name: publisherProxy
+      expression: {{ toJson .Values.publisher.proxyAuthSecret | quote }}
   validations:
     - expression: {{ printf "request.userInfo.username == %s" (squote $sa) | quote }}
       message: "only the kete-runner controller creates or changes pods in this namespace"
@@ -66,8 +72,13 @@ spec:
     - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, (!has(v.secret) || variables.isPublish || !(v.secret.secretName in variables.publisherSecrets)) && (!has(v.projected) || !has(v.projected.sources) || v.projected.sources.all(s, !has(s.secret) || !(s.secret.name in variables.publisherSecrets))))"
       message: "only publisher pods mount the GitLab writer and publisher Secrets"
       reason: Forbidden
-    - expression: "!variables.isPublish || (size(object.spec.containers) == 1 && object.spec.containers.all(c, c.image == variables.runnerImage && has(c.command) && c.command == ['/usr/local/bin/kete-job-host'] && has(c.args) && size(c.args) > 0 && c.args[0] == 'publish' && !has(c.env) && !has(c.envFrom) && has(c.securityContext) && has(c.securityContext.readOnlyRootFilesystem) && c.securityContext.readOnlyRootFilesystem && (!has(c.securityContext.capabilities) || !has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0) && (!has(c.volumeMounts) || c.volumeMounts.all(m, has(m.readOnly) && m.readOnly))) && has(object.spec.securityContext) && has(object.spec.securityContext.runAsNonRoot) && object.spec.securityContext.runAsNonRoot && has(object.spec.volumes) && object.spec.volumes.all(v, (has(v.persistentVolumeClaim) && has(v.persistentVolumeClaim.readOnly) && v.persistentVolumeClaim.readOnly) || (has(v.configMap) && v.configMap.name == 'kete-publisher') || (has(v.secret) && v.secret.secretName in variables.publisherSecrets)))"
-      message: "publisher pods run only `kete-job-host publish` from the runner image, non-root, no capabilities, read-only root file system, read-only mounts of their outbox, configuration and Secrets"
+    # No pod reads a Secret through its environment (the controller's pods use literal values
+    # only): a Secret reference there would reach a publisher Secret past the volume rules.
+    - expression: "object.spec.containers.all(c, (!has(c.env) || c.env.all(e, !has(e.valueFrom))) && !has(c.envFrom))"
+      message: "environment variables from Secrets, ConfigMaps or fields (valueFrom, envFrom) are not allowed"
+      reason: Forbidden
+    - expression: "!variables.isPublish || (size(object.spec.containers) == 1 && object.spec.containers.all(c, c.image == variables.runnerImage && has(c.command) && c.command == ['/usr/local/bin/kete-job-host'] && has(c.args) && size(c.args) == 14 && c.args[0] == 'publish' && c.args[1] == '--machine' && c.args[3] == '--job' && c.args[5] == '--repository' && c.args[7] == '--base-ref' && c.args[9] == '--branch' && c.args[11] == '--base-sha' && c.args[13].matches('^--open-mr=(true|false)$') && [2, 4, 6, 8, 10, 12].all(i, !c.args[i].startsWith('-')) && !has(c.env) && !has(c.envFrom) && !has(c.lifecycle) && !has(c.livenessProbe) && !has(c.readinessProbe) && !has(c.startupProbe) && !has(c.workingDir) && (!has(c.terminationMessagePath) || c.terminationMessagePath == '/dev/termination-log') && has(c.securityContext) && has(c.securityContext.readOnlyRootFilesystem) && c.securityContext.readOnlyRootFilesystem && (!has(c.securityContext.capabilities) || !has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0) && has(c.volumeMounts) && c.volumeMounts.all(m, has(m.readOnly) && m.readOnly && !has(m.subPath) && !has(m.subPathExpr) && ((m.name == 'kete-outbox' && m.mountPath == '/var/lib/kete-outbox') || (m.name == 'kete-publish-config' && m.mountPath == '/etc/kete-publish') || (m.name == 'kete-publish-ca' && m.mountPath == '/etc/kete-publish-ca') || (m.name == 'kete-publish-proxy' && m.mountPath == '/etc/kete-publish-proxy') || (m.name == 'kete-publish-writer' && object.spec.volumes.exists(v, v.name == 'kete-publish-writer' && has(v.secret) && m.mountPath == '/etc/kete-publish-writers/' + v.secret.secretName))))) && has(object.spec.securityContext) && has(object.spec.securityContext.runAsNonRoot) && object.spec.securityContext.runAsNonRoot && has(object.spec.volumes) && object.spec.volumes.all(v, (v.name == 'kete-outbox' && has(v.persistentVolumeClaim) && has(v.persistentVolumeClaim.readOnly) && v.persistentVolumeClaim.readOnly) || (v.name == 'kete-publish-config' && has(v.configMap) && v.configMap.name == 'kete-publisher') || (v.name == 'kete-publish-writer' && has(v.secret) && v.secret.secretName in variables.writerSecrets) || (v.name == 'kete-publish-ca' && has(v.secret) && variables.publisherCA != '' && v.secret.secretName == variables.publisherCA) || (v.name == 'kete-publish-proxy' && has(v.secret) && variables.publisherProxy != '' && v.secret.secretName == variables.publisherProxy)))"
+      message: "publisher pods run only `kete-job-host publish` (fixed arguments) from the runner image, non-root, no capabilities, hooks or probes, read-only root file system, and mount only their outbox, configuration and Secrets read-only at their fixed paths"
       reason: Forbidden
     - expression: "has(object.spec.enableServiceLinks) && object.spec.enableServiceLinks == false"
       message: "job pods must set enableServiceLinks: false"

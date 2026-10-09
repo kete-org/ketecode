@@ -99,7 +99,8 @@ docker run -d --name kete-gitlab --network $NET --ip "$GITLAB_IP" -p 127.0.0.1:1
 wait_for 30 "fake GitLab" curl -sf $GADMIN/state
 rnd() { head -c 30 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 26; }
 MINTER="glpat-$(rnd)" WRITER="glpat-$(rnd)"
-curl -sf -X POST $GADMIN/projects -d "{\"path\":\"$PROJECT\",\"from\":\"/seed/org/repo.git\"}" >/dev/null || fail "gitlab project"
+out=$(curl -s -w '\n%{http_code}' -X POST $GADMIN/projects -d "{\"path\":\"$PROJECT\",\"from\":\"/seed/org/repo.git\"}")
+[ "$(tail -1 <<<"$out")" = 200 ] || fail "gitlab project: $out"
 curl -sf -X POST $GADMIN/minter -d "{\"token\":\"$MINTER\"}" >/dev/null
 curl -sf -X POST $GADMIN/writer -d "{\"user\":\"kete-bot\",\"token\":\"$WRITER\"}" >/dev/null
 BASE=$(gstate | jq -r --arg p $PROJECT '.branches[$p][] | select(startswith("main ")) | split(" ")[1]')
@@ -190,6 +191,9 @@ denied "a publisher pod running something else" kubectl --as=$SA create -f <(jq 
   securityContext: {runAsNonRoot: true, runAsUser: 65532}, containers: [{name: "publish", image: $img, command: ["/usr/local/bin/kete-fake-platform"],
   securityContext: {readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}, volumeMounts: [{name: "w", mountPath: "/w", readOnly: true}]}],
   volumes: [{name: "w", secret: {secretName: "gitlab-writer"}}]}}')
+denied "a job pod reading the writer Secret through its environment" kubectl --as=$SA create -f <(jq -n --arg ns $JOBS --arg img "$JOB_IMAGE" '{apiVersion: "v1", kind: "Pod",
+  metadata: {name: "kete-job-steal2", namespace: $ns}, spec: {runtimeClassName: "kete-test", automountServiceAccountToken: false, enableServiceLinks: false,
+  containers: [{name: "job", image: $img, securityContext: {capabilities: {drop: ["ALL"]}}, env: [{name: "T", valueFrom: {secretKeyRef: {name: "gitlab-writer", key: "token"}}}]}]}}')
 
 assign() { # assign <machine> <job> <claim token> <branch>
   curl -sf -X POST $ADMIN/assign -d "{\"host_id\":\"$HOST\",\"machine_id\":\"$1\",\"job_id\":\"$2\",\"image\":\"$JOB_IMAGE\",\"deadline_seconds\":1500,\"repository\":\"$REPO\",\"claim_token\":\"$3\",\"publish\":{\"branch\":\"$4\",\"open_mr\":true}}" >/dev/null
@@ -201,10 +205,10 @@ M1=8b3c4d5e-6f7a-4b8c-9d0e-000000000001 B1=kete/job/e2e00001
 assign $M1 "$(fake_job job_id)" "$(fake_job claim_token)" $B1
 wait_for 240 "M1 pod created" kubectl -n $JOBS get pod kete-job-$M1
 tokens() { gstate | jq -c '[.tokens[]? | {name, revoked, clones}]'; }
-wait_for 120 "a clone token minted for M1" bash -c "curl -sf $GADMIN/state | jq -e --arg n kete-job-$M1 'any(.tokens[]?; .name == \$n and (.scopes == [\"read_repository\"]) and .access_level == 20)'"
+wait_for 120 "a clone token minted for M1" bash -c "curl -sf $GADMIN/state | jq -e --arg n kete-job-$REL-$M1 'any(.tokens[]?; .name == \$n and (.scopes == [\"read_repository\"]) and .access_level == 20)'"
 wait_for 900 "fake: finish accepted" test -s "$STATE/fake/finished"
 wait_for 120 "M1 publishing" is_state $M1 publishing/
-gstate | jq -e --arg n kete-job-$M1 'any(.tokens[]; .name == $n and .revoked and .clones >= 1)' >/dev/null || fail "the clone token wasn't used then revoked: $(tokens)"
+gstate | jq -e --arg n kete-job-$REL-$M1 'any(.tokens[]; .name == $n and .revoked and .clones >= 1)' >/dev/null || fail "the clone token wasn't used then revoked: $(tokens)"
 wait_for 60 "M1's job pod gone" bash -c "! kubectl -n $JOBS get pod kete-job-$M1"
 sleep 5
 kubectl -n $JOBS get pod kete-publish-$M1 >/dev/null 2>&1 && fail "a publisher started before the platform's go-ahead"
@@ -214,7 +218,7 @@ wait_for 120 "the publisher pod" kubectl -n $JOBS get pod kete-publish-$M1
 kubectl -n $JOBS get pod kete-publish-$M1 -o json | jq -e --arg img "$RUNNER_IMAGE" '.spec.runtimeClassName == "kete-test" and .spec.containers[0].image == $img and
   .spec.securityContext.runAsNonRoot and .spec.containers[0].securityContext.readOnlyRootFilesystem and
   ([.spec.volumes[] | select(.persistentVolumeClaim) | .persistentVolumeClaim.readOnly] == [true]) and
-  ([.spec.containers[0].volumeMounts[] | .readOnly] | all)' >/dev/null || fail "publisher pod spec"
+  ([.spec.containers[0].volumeMounts[] | .readOnly] | all) and (.spec.containers[0].args | index("--base-sha")) != null' >/dev/null || fail "publisher pod spec"
 wait_for 300 "M1 published" bash -c "curl -sf $ADMIN/hosts | jq -e --arg m $M1 '.[0].Machines[\$m] | .State == \"destroyed\" and .Reason == \"exited\" and .Publish.status == \"created\"'"
 pub=$(machine $M1 | jq -c .Publish)
 log "outcome $pub"
