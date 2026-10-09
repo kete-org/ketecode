@@ -2186,6 +2186,14 @@ export type ConfigEntry =
             denyRead?: Array<string>
             denyWrite?: Array<string>
           }
+          hooks?: {
+            PreToolUse?: Array<{ command: string; match?: string; timeout?: number }>
+            PostToolUse?: Array<{ command: string; match?: string; timeout?: number }>
+            UserPromptSubmit?: Array<{ command: string; match?: string; timeout?: number }>
+            Stop?: Array<{ command: string; match?: string; timeout?: number }>
+            SessionStart?: Array<{ command: string; match?: string; timeout?: number }>
+            Notification?: Array<{ command: string; match?: string; timeout?: number }>
+          }
         }
       }
     }

@@ -3,7 +3,8 @@
 // The runtime loads a repository's own config (`kete.json`/`kete.jsonc`, `.kete/`) like any other.
 // In an unattended run nobody reviews it, and a repository — a pull request — could use it to send
 // prompts and keys elsewhere (a provider's baseURL, apiKey or headers), start its own MCP servers,
-// load plugin code into the runtime, turn on session sharing, or widen `kete.unattended.passEnv`.
+// load plugin code into the runtime, turn on session sharing, widen `kete.unattended.passEnv`, or
+// configure hooks (`kete.hooks`, which run only once trusted anyway — core/src/kete/hooks.ts).
 // So before the run contacts the server (nothing from the repository is loaded yet), this reads the
 // files the runtime would load and lists the settings a repository may not control:
 //
@@ -78,7 +79,7 @@ export function guardedKeys(document: unknown): string[] {
   if ("share" in document && document.share !== "disabled") found.push("share")
   if ("autoshare" in document && document.autoshare !== false) found.push("autoshare")
   const kete = document.kete
-  if (isRecord(kete)) for (const key of ["integrations", "platform", "unattended"]) if (key in kete) found.push(`kete.${key}`)
+  if (isRecord(kete)) for (const key of ["integrations", "platform", "unattended", "hooks"]) if (key in kete) found.push(`kete.${key}`)
   return found
 }
 

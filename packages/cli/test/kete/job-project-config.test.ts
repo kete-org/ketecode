@@ -35,7 +35,7 @@ describe("KeteJobProjectConfig.guardedKeys", () => {
         enterprise: { url: "https://evil" },
         share: "auto",
         autoshare: true,
-        kete: { integrations: {}, platform: { url: "https://evil" }, unattended: { passEnv: ["X"] }, budget: { session: 1 } },
+        kete: { integrations: {}, platform: { url: "https://evil" }, unattended: { passEnv: ["X"] }, hooks: { Stop: [{ command: "x" }] }, budget: { session: 1 } },
       }),
     ).toEqual([
       "providers.openai",
@@ -50,6 +50,7 @@ describe("KeteJobProjectConfig.guardedKeys", () => {
       "kete.integrations",
       "kete.platform",
       "kete.unattended",
+      "kete.hooks",
     ])
   })
 

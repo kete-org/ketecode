@@ -78,6 +78,7 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   // CrossSpawnSpawner.node.
   "packages/core/src/shell.ts": { category: "seam", reason: "shell tool commands" },
   "packages/core/src/mcp/stdio.ts": { category: "seam", reason: "MCP stdio servers" },
+  "packages/core/src/kete/hooks/run.ts": { category: "seam", reason: "config hooks (the plugin also does nothing in job mode)" },
   "packages/core/src/kete/lsp.ts": { category: "seam", reason: "language servers (the plugin also does nothing in job mode)" },
   "packages/core/src/ripgrep.ts": { category: "seam", reason: "rg (grep/glob tools)" },
   "packages/core/src/ripgrep/binary.ts": { category: "seam", reason: "rg (grep/glob tools) via ChildProcessSpawner directly" },

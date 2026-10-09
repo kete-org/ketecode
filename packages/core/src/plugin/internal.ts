@@ -117,6 +117,7 @@ import { KeteStaleWrite } from "../kete/stale-write.js" // kete_change
 import { KeteWorkflows } from "../kete/workflows.js" // kete_change
 import { KeteTodo } from "../kete/todo.js" // kete_change
 import { KeteLsp } from "../kete/lsp.js" // kete_change
+import { KeteHooks } from "../kete/hooks.js" // kete_change
 import { PermissionSaved } from "../permission/saved.js" // kete_change
 import { Project } from "../project.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
@@ -303,6 +304,8 @@ const pre = [
   KeteTodo.Plugin,
   // kete_change: language server diagnostics appended to edit results; see kete/lsp.ts
   KeteLsp.Plugin,
+  // kete_change: shell commands configured under kete.hooks (project hooks only once trusted); see kete/hooks.ts
+  KeteHooks.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 const post = [
