@@ -979,6 +979,8 @@ existing plugin RPC route, so no endpoint or protocol change. Plan mode's allowl
 | `core/src/plugin/internal.ts` | Import; `KeteTodo.Plugin` last in `pre` | internal plugin registration list |
 | `tui/src/plugin/builtins.ts` | Import; `KeteTodo` in `builtins` | built-in TUI plugin list |
 | `app/src/composer/composer.tsx` | Import; `<KeteTodoDock />` before `ComposerEditor` | the composer has no slot above the editor |
+| `core/test/location-layer.test.ts` | `"todowrite"` in the two expected tool lists (marked) | the test lists every registered tool |
+| `tui/test/fixture/tui-client.ts` | A marked route answering `kete.todo/get` with an empty list | the fixture refuses unknown requests, and the TUI asks for the list when a session opens |
 
 **Sync checklist:** if upstream brings back a todo tool (`todowrite`) or a todo dock, drop Kete's and
 keep the RPC only if clients still need it. session-ui's timeline hides `todowrite` parts
