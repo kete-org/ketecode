@@ -1,7 +1,7 @@
 ---
 module: hooks
 paths: [packages/core/src/kete/hooks.ts, packages/core/src/kete/hooks/*, packages/schema/src/config/kete.ts]
-verified-at: bc9125516c
+verified-at: 3ccf873486
 ---
 ## Quick answers
 - Where are hooks configured? `kete.hooks` (`ConfigKete.Hooks`/`Hook`/`HookEvents` in `schema/src/config/kete.ts`): six events, each a list of `{command, match?, timeout?}`. Read from **every** config document (not `Config.latest`), user (under the global config dir) vs project, like the sandbox settings (`hooks/settings.ts`).
