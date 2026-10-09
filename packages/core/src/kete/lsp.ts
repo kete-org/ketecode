@@ -31,20 +31,24 @@ import path from "path"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import { Global } from "@opencode/util/global"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
-import { Effect, Exit, Fiber, Predicate, Queue, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, Option, Predicate, Queue, Scope, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config.js"
 import { Environment } from "../environment/index.js"
 import { FileAccess } from "../file-access.js"
 import { Location } from "../location.js"
 import { Shell } from "../shell.js"
+import type { Agent } from "../agent.js"
 import { ManagedPolicy } from "../managed-policy.js"
+import { Permission } from "../permission.js"
+import type { SessionSchema } from "../session/schema.js"
 import { Wildcard } from "../util/wildcard.js"
 import { KeteLspClient } from "./lsp/client.js"
 import { KeteLspDiagnostics } from "./lsp/diagnostics.js"
 import { KeteLspExecutable } from "./lsp/executable.js"
 import { KeteLspServers } from "./lsp/servers.js"
 import { KeteSandbox } from "./sandbox.js"
+import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteSandboxResolve } from "./sandbox/resolve.js"
 import { KeteBubblewrap } from "./sandbox/bubblewrap.js"
 import { KeteSeatbelt } from "./sandbox/seatbelt.js"
@@ -170,11 +174,18 @@ export async function siblingTsserver(program: string, workspace: string): Promi
   return undefined
 }
 
+/** The edit that started a server: the session its `sandbox_off` check is made for. */
+export interface Caller {
+  readonly sessionID: string
+  readonly agent: string
+  readonly server: string
+}
+
 export interface Deps {
   /** Finds a program (default: lsp/executable.ts over absolute PATH entries, outside the workspace). */
   readonly find?: (command: string) => Promise<string | undefined>
   /** Overrides the sandbox decision (tests); default: the OS sandbox per `kete.sandbox`. */
-  readonly sandbox?: (command: ReadonlyArray<string>, env: Record<string, string>) => Promise<Launch | undefined>
+  readonly sandbox?: (command: ReadonlyArray<string>, env: Record<string, string>, caller: Caller) => Promise<Launch | undefined>
   readonly timeouts?: Partial<KeteLspClient.Timeouts>
   readonly env?: Record<string, string | undefined>
 }
@@ -222,9 +233,29 @@ export function make(deps: Deps = {}) {
       const warnOnce = (key: string, message: string, fields: Record<string, unknown>) =>
         warned.has(key) ? Effect.void : Effect.sync(() => warned.add(key)).pipe(Effect.andThen(Effect.logWarning(message, fields)))
 
+      const permission = Option.getOrUndefined(yield* Effect.serviceOption(Permission.Service))
+      const offAllowed = (caller: Caller, reason: "disabled" | "unavailable") =>
+        permission
+          ? Effect.runPromise(
+              permission
+                .assert({
+                  action: KeteSandboxActions.off,
+                  resources: [`language-server: ${caller.server}`],
+                  save: [],
+                  metadata: { command: `language-server: ${caller.server}`, reason, kind: "language-server" },
+                  sessionID: caller.sessionID as SessionSchema.ID,
+                  agent: caller.agent as Agent.ID,
+                })
+                .pipe(
+                  Effect.as(true),
+                  Effect.catchCause(() => Effect.succeed(false)),
+                ),
+            )
+          : Promise.resolve(true)
+
       const sandboxLaunch =
         deps.sandbox ??
-        (async (command: ReadonlyArray<string>, launchEnv: Record<string, string>): Promise<Launch | undefined> => {
+        (async (command: ReadonlyArray<string>, launchEnv: Record<string, string>, caller: Caller): Promise<Launch | undefined> => {
           const entries = await Effect.runPromise(config.entries())
           const settings = KeteSandbox.settingsFrom(entries, global.config, env)
           // Without an active sandbox: only when the user's global config opts in, and never when a
@@ -241,6 +272,18 @@ export function make(deps: Deps = {}) {
                 warnOnce(`unsandboxed ${why}`, "language servers not started: the OS sandbox isn't active", {
                   reason: why,
                   hint: "set kete.lsp.unsandboxed: true in the global config to run them without it",
+                }),
+              )
+              return undefined
+            }
+            // Like an unsandboxed shell command, it passes the `sandbox_off` permission check, which
+            // organization policies (synced `{"action":"sandbox_off",…}` rules, `sandbox_off:*`
+            // statements) and agent rules can refuse; the reason makes it a check that never asks.
+            const reason = settings.mode === "off" ? "disabled" : "unavailable"
+            if (!(await offAllowed(caller, reason))) {
+              await Effect.runPromise(
+                warnOnce(`unsandboxed policy ${caller.server}`, "language server not started: a policy denies running it outside the OS sandbox", {
+                  server: caller.server,
                 }),
               )
               return undefined
@@ -301,7 +344,7 @@ export function make(deps: Deps = {}) {
         }),
       )
 
-      const start = async (server: KeteLspServers.Server, root: string, key: string): Promise<Running | undefined> => {
+      const start = async (server: KeteLspServers.Server, root: string, key: string, caller: Omit<Caller, "server">): Promise<Running | undefined> => {
         const candidates = [server.command, ...(server.alternatives ?? [])]
         let command: ReadonlyArray<string> | undefined
         for (const candidate of candidates) {
@@ -325,7 +368,7 @@ export function make(deps: Deps = {}) {
           }
         }
         const launchEnv = serverEnvironment(env, server.env)
-        const launch = await sandboxLaunch(command, launchEnv)
+        const launch = await sandboxLaunch(command, launchEnv, { ...caller, server: server.id })
         // Not marked broken: turning the sandbox on, or opting in, takes effect on the next edit.
         if (!launch) return undefined
         const scope = await Effect.runPromise(Scope.fork(pluginScope))
@@ -392,7 +435,7 @@ export function make(deps: Deps = {}) {
         }
       }
 
-      const get = async (server: KeteLspServers.Server, root: string) => {
+      const get = async (server: KeteLspServers.Server, root: string, caller: Omit<Caller, "server">) => {
         const key = `${server.id}\u0000${root}`
         if (broken.has(key)) return undefined
         let entry = running.get(key)
@@ -408,7 +451,7 @@ export function make(deps: Deps = {}) {
               void stop(oldest)
             }
           }
-          entry = start(server, root, key)
+          entry = start(server, root, key, caller)
           running.set(key, entry)
           entry.then((value) => {
             if (!value && running.get(key) === entry) running.delete(key)
@@ -426,7 +469,7 @@ export function make(deps: Deps = {}) {
       const exists = async (candidate: string) => fs.access(candidate).then(() => true, () => false)
 
       /** Diagnostics for each file (absolute path), from every server that handles it. */
-      const diagnose = async (files: ReadonlyArray<string>) => {
+      const diagnose = async (files: ReadonlyArray<string>, caller: Omit<Caller, "server">) => {
         const entries = await Effect.runPromise(config.entries())
         const settings = KeteLspServers.resolve({
           documents: entries.flatMap((entry) => (entry.type === "document" ? [{ path: entry.path, lsp: entry.info.lsp }] : [])),
@@ -454,7 +497,7 @@ export function make(deps: Deps = {}) {
             await Promise.all(
               servers.map(async (server) => {
                 const root = await KeteLspServers.root(server, file, workspace, exists)
-                const entry = await get(server, root)
+                const entry = await get(server, root, caller)
                 if (!entry) return
                 entry.client.touch(file, text)
                 all.push(...(await entry.client.diagnostics(file)))
@@ -483,7 +526,7 @@ export function make(deps: Deps = {}) {
           }
           const unique = [...new Set(absolute)].slice(0, MAX_FILES_PER_EDIT)
           if (unique.length === 0) return
-          const diagnostics = yield* Effect.promise(() => diagnose(unique))
+          const diagnostics = yield* Effect.promise(() => diagnose(unique, { sessionID: event.sessionID, agent: event.agent }))
           if (diagnostics.size === 0) return
           const text = KeteLspDiagnostics.report({ sessionID: event.sessionID, workspace, files: diagnostics, reported })
           if (text === undefined) return

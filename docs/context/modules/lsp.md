@@ -4,6 +4,7 @@ paths: [packages/core/src/kete/lsp.ts, packages/core/src/kete/lsp/*]
 verified-at: 0f5cf9baaa
 ---
 ## Quick answers
+- Which `sandbox_off` policy forms count? Both: an unsandboxed start also passes `permission.assert(sandbox_off, "language-server: <id>", reason)` for the editing session (no prompt), so synced Kete rules `{action: sandbox_off}` and `sandbox_off:*` statements refuse it.
 - Did upstream have LSP? v1 did (`packages/opencode/src/lsp`, tag v1.4.9; reference for the protocol flow). v2 has none (TODOs in `core/src/file-mutation.ts`, `tool/plugin/edit.ts`, `tool/plugin/write.ts`) but keeps the `lsp` config key (`schema/src/config/lsp.ts`, normalized in `core/src/config/normalize.ts`), which this module reads. No upstream tool was edited: diagnostics are appended in a `tool.execute.after` hook.
 - Which servers? Built-ins in `lsp/servers.ts` (typescript, python with a basedpyright alternative, go, rust), found by `lsp/executable.ts` (absolute PATH entries only, no cwd, PATHEXT on Windows, never a real path inside the workspace — not the generic `util/which.ts`, which searches cwd on Windows); never downloaded.
 - Can a repository add a server command? No: `command`/`env`/`initialization`/new servers count only from documents under the global config dir; a project can only disable (`lsp: false`, `<id>.disabled`). `ignored` is logged once.

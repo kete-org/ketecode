@@ -55,6 +55,18 @@ const policies = [
     rules: [{ action: "edit", resource: "*bun.lock", effect: "ask", description: "" }],
     updated_at: "2026-09-27T09:00:00.000Z",
   },
+  {
+    // The form docs/sandbox.md documents for requiring the OS sandbox.
+    id: "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+    name: "Require the sandbox",
+    description: "",
+    category: "security",
+    enforcement: "enforced",
+    environment_kinds: [],
+    agents: null,
+    rules: [{ action: "sandbox_off", resource: "*", effect: "deny", description: "Commands run in the OS sandbox" }],
+    updated_at: "2026-09-27T09:00:00.000Z",
+  },
 ]
 
 const cleanup: Array<() => unknown> = []
@@ -185,6 +197,20 @@ describe("organization policies in the runtime", () => {
       expect((yield* permission.evaluate({ action: "edit", resources: [".github/workflows/ci.yml"], effect: "ask" })).effect).toBe("ask")
       // Audit-only: allowed as before.
       expect((yield* permission.evaluate({ action: "edit", resources: ["bun.lock"], effect: "allow" })).effect).toBe("allow")
+    }),
+  )
+
+  it.live("a policy denying sandbox_off refuses every unsandboxed run: shell commands, language servers, hooks", () =>
+    Effect.gen(function* () {
+      const fake = platform()
+      const permission = yield* start(yield* account(fake.url))
+      const check = (resource: string, reason: string) =>
+        permission.evaluate({ action: "sandbox_off", resources: [resource], effect: "allow", metadata: { reason } } as never)
+      const shell = yield* eventually(check("make test", "unavailable"), (result) => result.effect === "deny")
+      expect(shell.message).toContain("Require the sandbox")
+      expect((yield* check("language-server: typescript", "unavailable")).effect).toBe("deny")
+      expect((yield* check("hook: ./scripts/check.sh", "disabled")).effect).toBe("deny")
+      expect((yield* permission.evaluate({ action: "shell", resources: ["make test"], effect: "allow" })).effect).toBe("allow")
     }),
   )
 
