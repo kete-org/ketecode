@@ -121,7 +121,15 @@ func (c *cloneCreds) credential(ctx context.Context, s driver.Spec, src config.R
 		}
 	}
 	// The base ref must exist and the credential must read it (spec §4.5 step 2).
-	refs, err := gitproto.LsRefs(ctx, gitproto.Endpoint{URL: src.CloneURL, Username: user, Password: token, Client: c.http}, "refs/heads/"+s.Repository.BaseRef)
+	var refs map[string]string
+	var err error
+	for i := range 3 { // a transient network failure is retried twice
+		refs, err = gitproto.LsRefs(ctx, gitproto.Endpoint{URL: src.CloneURL, Username: user, Password: token, Client: c.http, Timeout: 30 * time.Second}, "refs/heads/"+s.Repository.BaseRef)
+		if gitproto.ErrorCode(err) != gitproto.CodeUnavailable || i == 2 || sleep(ctx, time.Second) != nil {
+			break
+		}
+		c.log.Warn("base_ref_resolve_retry", "machine_id", s.MachineID, "error", err.Error())
+	}
 	if err == nil && refs["refs/heads/"+s.Repository.BaseRef] == "" {
 		err = errors.New("the base ref doesn't exist")
 	}

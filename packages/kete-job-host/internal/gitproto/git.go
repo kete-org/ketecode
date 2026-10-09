@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -67,6 +68,25 @@ func (e *Error) Error() string {
 }
 
 func gerr(code, detail string) *Error { return &Error{Code: code, Detail: detail} }
+
+// transportDetail is a transport error without the request URL, cut short.
+func transportDetail(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	return CutMessage(err.Error(), 200)
+}
+
+// scrub removes the endpoint's user name and password from a message.
+func (ep Endpoint) scrub(s string) string {
+	for _, v := range []string{ep.Password, ep.Username} {
+		if len(v) >= 4 {
+			s = strings.ReplaceAll(s, v, "[redacted]")
+		}
+	}
+	return s
+}
 
 // ErrorCode is err's code, or "" when it isn't an *Error.
 func ErrorCode(err error) string {
@@ -230,8 +250,9 @@ func (ep Endpoint) request(ctx context.Context, method, path string, headers map
 	}
 	resp, err := ep.client().Do(req)
 	if err != nil {
-		// Not echoed: it may carry the URL.
-		return response{}, gerr(CodeUnavailable, "")
+		// The URL error's inner error only (never the URL, which could carry userinfo), with the
+		// credentials scrubbed in case anything echoed them.
+		return response{}, gerr(CodeUnavailable, ep.scrub(transportDetail(err)))
 	}
 	defer resp.Body.Close()
 	switch s := resp.StatusCode; {
@@ -248,7 +269,7 @@ func (ep Endpoint) request(ctx context.Context, method, path string, headers map
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, cap+1))
 	if err != nil {
-		return response{}, gerr(CodeUnavailable, "")
+		return response{}, gerr(CodeUnavailable, ep.scrub("reading the response: "+transportDetail(err)))
 	}
 	if int64(len(data)) > cap {
 		return response{}, gerr(CodeTooLarge, "")
