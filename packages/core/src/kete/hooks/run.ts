@@ -6,8 +6,8 @@
 // - macOS/Linux: `/bin/sh -c`, with stdin redirected by the shell from a private temp file (also
 //   named by KETE_HOOK_INPUT) rather than written through a pipe: a hook that exits without reading
 //   stdin would otherwise make the spawner's write fail (EPIPE).
-// - Windows: the command is one line of a temporary batch file run by `cmd.exe /d /c <file>`, with
-//   stdin redirected from the payload file inside the batch. A batch file needs no quoting of the
+// - Windows: the command is the line of a temporary batch file, called by a second batch file with
+//   stdin redirected from the payload file, run by `cmd.exe /d /c <file>`. A batch file needs no quoting of the
 //   command on cmd's command line (node's argument quoting doesn't match cmd's rules); the cost is
 //   batch semantics (`%%` for a literal `%`). NoDefaultCurrentDirectoryInExePath keeps the current
 //   directory out of program lookup.
@@ -53,13 +53,19 @@ export function shell(
   platform: NodeJS.Platform = process.platform,
   env: Record<string, string | undefined> = process.env,
   directory = "",
-): { file: string; args: string[]; script?: { path: string; content: string } } {
+): { file: string; args: string[]; scripts?: ReadonlyArray<{ path: string; content: string }> } {
   if (platform === "win32") {
-    const script = path.win32.join(directory, "hook.cmd")
+    // hook.cmd holds the command line exactly as configured (no wrapping that an unbalanced `)`
+    // could break); run.cmd calls it with stdin redirected from the payload file.
+    const hook = path.win32.join(directory, "hook.cmd")
+    const runner = path.win32.join(directory, "run.cmd")
     return {
       file: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
-      args: ["/d", "/c", script],
-      script: { path: script, content: `@echo off\r\n(\r\n${command}\r\n) < "%${INPUT_VARIABLE}%"\r\nexit /b %ERRORLEVEL%\r\n` },
+      args: ["/d", "/c", runner],
+      scripts: [
+        { path: hook, content: `@echo off\r\n${command}\r\n` },
+        { path: runner, content: `@call "${hook}" < "%${INPUT_VARIABLE}%"\r\n@exit /b %ERRORLEVEL%\r\n` },
+      ],
     }
   }
   return { file: "/bin/sh", args: ["-c", `exec <"$${INPUT_VARIABLE}"\n${command}`] }
@@ -140,7 +146,7 @@ export const run = (input: Input): Effect.Effect<Outcome> =>
       const base: Record<string, string> = { ...input.env, [INPUT_VARIABLE]: inputFile }
       if (process.platform === "win32") base.NoDefaultCurrentDirectoryInExePath = "1"
       const built = shell(input.command, process.platform, base, directory)
-      if (built.script) yield* Effect.promise(() => fs.writeFile(built.script!.path, built.script!.content, { mode: 0o600 }))
+      for (const script of built.scripts ?? []) yield* Effect.promise(() => fs.writeFile(script.path, script.content, { mode: 0o600 }))
       const sandbox = input.sandbox
       const launch = sandbox
         ? yield* Effect.acquireRelease(

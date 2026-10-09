@@ -61,7 +61,8 @@ hooks and config, can't read credentials (`~/.ssh`, `~/.aws`, …), and has **no
 entry sets `network: true`.
 
 - `sandbox: false` takes a hook out of the sandbox, with your full access. Only your global config
-  can do that, and never when a policy denies `sandbox_off` (an organization requiring the sandbox).
+  can do that, and never when a policy denies `sandbox_off` (an organization requiring the sandbox;
+  either form in [the sandbox docs](sandbox.md#organizations)).
 - Where there is no active sandbox (you turned it off, Linux without `bwrap`, Windows), your global
   hooks run unsandboxed (unless a policy denying `sandbox_off` forbids it — then they don't run) and
   **project hooks don't run** unless your global config sets `"kete": { "hooks": { "unsandboxed": true } }`
@@ -73,9 +74,11 @@ entry sets `network: true`.
 
 ## What a hook gets
 
-The command runs in the project directory: `sh -c` on macOS and Linux; on Windows it is one line of
-a temporary batch file run by `cmd.exe /d /c` (batch rules apply: write `%%` for a literal `%`). The
-environment is yours without Kete Code's own credentials (`KETE_*` keys and tokens), plus
+The command runs in the project directory: `sh -c` on macOS and Linux; on Windows it is the line of
+a temporary batch file, called with stdin redirected and run by `cmd.exe /d /c` (batch rules apply:
+write `%%` for a literal `%`). The environment is yours without Kete Code's own credentials
+(`KETE_*` keys and tokens) — and, for a **project** hook, without any variable that looks like a
+credential (`*_TOKEN`, `*_KEY`, `*_SECRET`, `AWS_*` keys, …), as in unattended runs — plus
 `KETE_HOOK_EVENT`, `KETE_PROJECT_DIR` and `KETE_HOOK_INPUT` (a private temp file holding the event
 JSON, removed afterwards); on Windows also `NoDefaultCurrentDirectoryInExePath=1`, so programs are
 never looked up in the current directory. The event comes as JSON on stdin:
@@ -120,9 +123,14 @@ one would run in a session, Kete Code shows every project hook (commands JSON-qu
 hidden; which ones get network) and the repository files they run, and asks.
 
 - Your answer is remembered for that repository and exactly those hooks: event, match, timeout,
-  `network`, `sandbox`, the command, **and the contents of every repository file a command names**
-  (its program and any argument that is a file in the repository, e.g. `scripts/hook.sh`). If any of
-  that changes, you're asked again. "Don't run them" holds until Kete Code restarts.
+  `network`, `sandbox`, the command, and the contents of the repository files a command names
+  **literally** (its program and any argument that is a file in the repository, e.g.
+  `scripts/hook.sh`). If any of that changes, you're asked again. "Don't run them" holds until Kete
+  Code restarts.
+- That change detection is best effort: a file the command reaches some other way — one a script
+  runs or sources, `npm run` targets in `package.json`, a path built from a variable — isn't
+  covered, so a trusted hook can start running changed code without asking again. The sandbox still
+  contains it. Trust only hooks whose whole effect you're willing to accept.
 - Trusted repositories are recorded in `hooks-trust.json` in Kete Code's state directory (delete an
   entry to be asked again).
 - A project command with control characters (other than tab) or text-reordering (bidi) characters
