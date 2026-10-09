@@ -263,6 +263,9 @@ craft() { # craft <machine> <bundle file> <job id>: a helper pod (as the control
 vector() { jq -r --arg n "$1" '.cases[] | select(.name == $n) | .bundle_b64' "$vectors/bundles.json" | base64 -d >"$STATE/$2"; [ -s "$STATE/$2" ] || fail "no vector $1"; }
 python3 - "$STATE/good.tar.gz" <<'PY'
 import io, json, sys, tarfile, gzip
+# The entrypoint's Go writer ends the archive with exactly two zero blocks; tarfile would pad to a
+# 10240-byte record, which the validator (like the platform's) refuses as trailing data.
+tarfile.RECORDSIZE = tarfile.BLOCKSIZE
 data = b"# fake repository (crafted)\n"
 manifest = json.dumps([{"path": "README.md", "mode": "100644"}]).encode()
 buf = io.BytesIO()
