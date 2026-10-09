@@ -383,3 +383,82 @@
   font-family: var(--kete-mono);
   font-size: 12px;
 }
+
+/* ---------- Task list dock (todo-dock.tsx) ---------- */
+
+[data-kete="todo-dock"] {
+  border: 1px solid var(--kete-border);
+  border-radius: var(--kete-r-container);
+  background: var(--kete-surface);
+  font-family: var(--kete-ui-font);
+  font-size: 13px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+[data-kete="todo-header"] {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: 0;
+  color: var(--kete-text-1);
+  cursor: pointer;
+  text-align: left;
+}
+
+[data-kete="todo-title"] {
+  font-weight: 600;
+}
+
+[data-kete="todo-progress"] {
+  color: var(--kete-text-3);
+}
+
+[data-kete="todo-current"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kete-text-2);
+}
+
+[data-kete="todo-list"] {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 8px;
+}
+
+[data-kete="todo-item"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--kete-text-1);
+}
+
+[data-kete="todo-item"][data-status="completed"] [data-kete="todo-content"] {
+  color: var(--kete-text-3);
+  text-decoration: line-through;
+}
+
+[data-kete="todo-mark"] {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--kete-text-3);
+}
+
+[data-kete="todo-item"][data-status="in_progress"] [data-kete="todo-mark"] {
+  border-color: var(--kete-brand-soft);
+  background: var(--kete-brand-soft);
+}
+
+[data-kete="todo-item"][data-status="completed"] [data-kete="todo-mark"] {
+  border-color: var(--kete-text-3);
+  background: var(--kete-text-3);
+}

@@ -68,14 +68,14 @@ const network: ReadonlySet<string> = new Set(["webfetch", "websearch"])
 
 /**
  * What Plan mode lets through (other checks still apply): reading and searching, questions, skills,
- * read-only shell commands, web requests (asked), MCP resource reads, budget prompts, and
+ * read-only shell commands, web requests (asked), MCP resource reads, budget prompts, the task list, and
  * subagents — which run in Plan mode too, since a subagent follows its root session's mode.
  * Everything else, including MCP tools (the runtime has no read-only marking for them) and
  * worktrees, is denied.
  */
 export const planAllowed: ReadonlySet<string> = new Set([
   "read", "glob", "grep", "question", "skill", "budget", "external_directory", "webfetch", "websearch",
-  "shell", "subagent", "opencode_list_mcp_resources", "opencode_read_mcp_resource",
+  "shell", "subagent", "opencode_list_mcp_resources", "opencode_read_mcp_resource", "todowrite",
 ])
 
 export const parse = KetePermissionModes.parse

@@ -12,6 +12,7 @@ import { formatKeybind, useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { ComposerModel } from "./model"
 import { KeteCommandsButton, KeteModeToggle } from "@/kete/composer-controls" // kete_change
+import { KeteTodoDock } from "@/kete/todo-dock" // kete_change
 
 export function Composer(props: {
   class?: string
@@ -25,6 +26,7 @@ export function Composer(props: {
 
   return (
     <div class="flex flex-col gap-3">
+      <KeteTodoDock /> {/* kete_change: the session task list above the composer */}
       <ComposerEditor
         controller={props.model}
         borderUnderlay={props.borderUnderlay}

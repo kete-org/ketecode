@@ -7,6 +7,7 @@ import SidebarMcp from "../feature-plugins/sidebar/mcp"
 import KeteBalance from "../kete/balance" // kete_change
 import KeteLocalStatus from "../kete/local-status" // kete_change
 import KeteSandboxStatus from "../kete/sandbox-status" // kete_change
+import KeteTodo from "../kete/todo" // kete_change
 import DiffViewer from "../feature-plugins/system/diff-viewer"
 import Notifications from "../feature-plugins/system/notifications"
 import Plugins from "../feature-plugins/system/plugins"
@@ -23,6 +24,7 @@ export const builtins = [
   KeteBalance, // kete_change: Kete credit balance under the session context
   KeteLocalStatus, // kete_change: "Offline" footer indicator
   KeteSandboxStatus, // kete_change: "Unsandboxed" footer warning
+  KeteTodo, // kete_change: the session task list (sidebar list, footer progress)
   SidebarMcp,
   SidebarFooter,
   Notifications,
