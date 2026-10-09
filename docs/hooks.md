@@ -46,7 +46,8 @@ one event run one after another, in config order.
 ## What a hook gets
 
 The command runs in the project directory in `sh -c` (macOS, Linux) or `cmd.exe /d /s /c`
-(Windows), with these variables added to your environment: `KETE_HOOK_EVENT`, `KETE_PROJECT_DIR`.
+(Windows), with these variables added to your environment: `KETE_HOOK_EVENT`, `KETE_PROJECT_DIR`,
+and `KETE_HOOK_INPUT` (a private temp file holding the same JSON, removed afterwards).
 Kete Code's own credentials (`KETE_*` keys and tokens) are removed. The event comes as JSON on
 stdin:
 

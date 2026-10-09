@@ -83,10 +83,11 @@ describe("output", () => {
     expect(KeteHooksRun.interpret(2, "", "not allowed\n")).toEqual({ kind: "deny", reason: "not allowed" })
     expect(KeteHooksRun.interpret(1, "", "boom")).toEqual({ kind: "error", message: "exited with 1: boom" })
     expect(KeteHooksRun.interpret(0, "x".repeat(KeteHooksRun.MAX_TEXT + 10), "").kind).toBe("ok")
-    expect(KeteHooksRun.shell("echo", "win32", { ComSpec: "C:\\Windows\\cmd.exe" })).toEqual({
+    expect(KeteHooksRun.shell("echo hi", "win32", { ComSpec: "C:\\Windows\\cmd.exe" })).toEqual({
       file: "C:\\Windows\\cmd.exe",
-      args: ["/d", "/s", "/c", "echo"],
+      args: ["/d", "/s", "/c", '"(echo hi) < "%KETE_HOOK_INPUT%""'],
     })
+    expect(KeteHooksRun.shell("echo hi", "linux")).toEqual({ file: "/bin/sh", args: ["-c", 'exec <"$KETE_HOOK_INPUT"\necho hi'] })
   })
 })
 

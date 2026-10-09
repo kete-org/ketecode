@@ -1,6 +1,6 @@
 // Runs one config hook (kete/hooks.ts): the command in the platform's shell (`/bin/sh -c` on macOS
 // and Linux, `cmd.exe /d /s /c` on Windows) in the project directory, with the event as JSON on
-// stdin, through the location's process spawner (the same seam as the shell tool, so job mode's
+// stdin (redirected from a private temp file, also named by KETE_HOOK_INPUT), through the location's process spawner (the same seam as the shell tool, so job mode's
 // tool runner would refuse it — hooks don't run in job mode anyway). Bounded: stdout is kept up to
 // 64 KiB and stderr up to 16 KiB; past its timeout the command and its process group are stopped.
 //
@@ -12,6 +12,9 @@
 
 export * as KeteHooksRun from "./run.js"
 
+import fs from "fs/promises"
+import os from "os"
+import path from "path"
 import { Duration, Effect, Fiber, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -26,9 +29,18 @@ export type Outcome =
   | { readonly kind: "deny"; readonly reason: string }
   | { readonly kind: "error"; readonly message: string }
 
+/** The variable holding the payload file's path (also documented for hooks that prefer a file). */
+export const INPUT_VARIABLE = "KETE_HOOK_INPUT"
+
+/**
+ * The shell command line. Stdin is redirected from the payload file by the shell itself rather than
+ * written through a pipe: a hook that exits without reading stdin would otherwise make the write
+ * fail (EPIPE) in the spawner.
+ */
 export function shell(command: string, platform: NodeJS.Platform = process.platform, env: Record<string, string | undefined> = process.env) {
-  if (platform === "win32") return { file: env.ComSpec ?? env.COMSPEC ?? "cmd.exe", args: ["/d", "/s", "/c", command] }
-  return { file: "/bin/sh", args: ["-c", command] }
+  if (platform === "win32")
+    return { file: env.ComSpec ?? env.COMSPEC ?? "cmd.exe", args: ["/d", "/s", "/c", `"(${command}) < "%${INPUT_VARIABLE}%""`] }
+  return { file: "/bin/sh", args: ["-c", `exec <"$${INPUT_VARIABLE}"\n${command}`] }
 }
 
 export function clip(text: string, max = MAX_TEXT) {
@@ -86,14 +98,21 @@ export interface Input {
 export const run = (input: Input): Effect.Effect<Outcome> =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { file, args } = shell(input.command, process.platform, input.env)
-      const stdin = new TextEncoder().encode(JSON.stringify(input.payload))
+      // The payload in a private temp file (0600), removed when the hook is done.
+      const directory = yield* Effect.acquireRelease(
+        Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "kete-hook-"))),
+        (dir) => Effect.promise(() => fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)),
+      )
+      const inputFile = path.join(directory, "event.json")
+      yield* Effect.promise(() => fs.writeFile(inputFile, JSON.stringify(input.payload), { mode: 0o600 }))
+      const env = { ...input.env, [INPUT_VARIABLE]: inputFile }
+      const { file, args } = shell(input.command, process.platform, env)
       const handle = yield* input.spawner.spawn(
         ChildProcess.make(file, args, {
           cwd: input.cwd,
-          env: input.env,
+          env,
           extendEnv: false,
-          stdin: { stream: Stream.make(stdin), endOnDone: true },
+          stdin: "ignore",
           stdout: "pipe",
           stderr: "pipe",
           forceKillAfter: "2 seconds",
