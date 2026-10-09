@@ -128,7 +128,7 @@ export type HookEvent = (typeof HookEvents)[number]
 export class Hook extends Schema.Class<Hook>("ConfigKete.Hook")({
   command: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)).annotate({
     description:
-      "Shell command to run (sh -c on macOS/Linux, cmd.exe on Windows) in the project directory. It gets the event as JSON on stdin; see docs/hooks.md for exit codes and output.",
+      "Shell command to run (sh -c on macOS/Linux, a cmd.exe batch line on Windows) in the project directory, inside the OS sandbox. It gets the event as JSON on stdin; see docs/hooks.md for exit codes and output.",
   }),
   match: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)).pipe(optional).annotate({
     description:
@@ -136,6 +136,14 @@ export class Hook extends Schema.Class<Hook>("ConfigKete.Hook")({
   }),
   timeout: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(600)).pipe(optional).annotate({
     description: "Seconds before the command is stopped (1-600, default 60).",
+  }),
+  network: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Give the hook network access inside the OS sandbox (default false). For a project's hook this is part of what you trust.",
+  }),
+  sandbox: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "false runs the hook outside the OS sandbox, with your full access: a sandbox escape. Honoured only in the global config; never when a policy denies sandbox_off.",
   }),
 }) {}
 
@@ -148,6 +156,10 @@ export class Hooks extends Schema.Class<Hooks>("ConfigKete.Hooks")({
   Stop: hookList("When the agent finishes its turn."),
   SessionStart: hookList("When a session is created; can add context for the agent."),
   Notification: hookList("When Kete Code needs you (a permission prompt or a question)."),
+  unsandboxed: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Global config only: let trusted project hooks run when the OS sandbox isn't active (turned off, unavailable, Windows). Off by default; a policy denying sandbox_off always wins.",
+  }),
 }) {}
 
 export class Lsp extends Schema.Class<Lsp>("ConfigKete.Lsp")({

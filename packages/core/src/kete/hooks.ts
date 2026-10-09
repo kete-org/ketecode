@@ -11,24 +11,32 @@
 // | Stop             | `session.execution.succeeded/failed/interrupted`      | — (notify, log, run checks)           |
 // | Notification     | `permission.asked`, `form.created`                    | — (notify)                            |
 //
+// Sandbox. Every hook runs in the OS sandbox (kete/sandbox.ts, the same profile as the agent's shell
+// commands: the workspace and caches writable, credentials unreadable), without network unless the
+// hook sets `network: true`. Only a hook in the global config may opt out (`sandbox: false`, a
+// sandbox escape), and never against a policy denying `sandbox_off`. Without an active sandbox
+// (turned off, unavailable, Windows) user hooks run unsandboxed (unless a policy forbids it) and
+// project hooks run only when the global config sets `kete.hooks.unsandboxed` (hooks/settings.ts
+// `placement`).
+//
 // Trust. A repository's own configuration is written by whoever wrote the repository, so its hooks
 // are a way to run code on this machine. Hooks from the global config (`~/.config/kete/`) run
-// directly; project hooks run only once the user trusts their exact commands: the first time they
-// would run in a session, a form lists every project hook command and asks. Trust is remembered per
-// repository and fingerprint (hooks/trust.ts) and asked again whenever the hooks change; a "no" lasts
-// until the runtime restarts. Stop and Notification never ask (they'd interrupt at the wrong time);
-// they run project hooks only when already trusted. Unattended runs never ask: project hooks run only
-// when already trusted.
+// directly; project hooks run only once the user trusts them: the first time they would run in a
+// session, a form lists every project hook command (JSON-escaped), its network setting and the
+// repository files it names, and asks. Trust is remembered per repository and fingerprint
+// (settings.ts: the hooks and the referenced files' contents) and asked again whenever either
+// changes; a "no" lasts until the runtime restarts. Commands with control or bidi characters are
+// refused outright. Stop and Notification never ask; unattended runs never ask: project hooks run
+// only when already trusted.
 //
 // - A policy denying `hooks:<event>` (`{"action":"permission","resource":"hooks:*","effect":"deny"}`,
-//   from the organization or configuration) turns hooks off.
+//   from the organization or the global config — not a project's) turns hooks off.
 // - Never in job mode (cloud, self-hosted and review jobs); its server doesn't load project config
 //   either.
-// - Hooks run with the user's permissions, outside the OS sandbox, like git hooks: they are commands
-//   the user configured or explicitly trusted. Kete's own credentials are removed from their
-//   environment.
-// - A PreToolUse hook that fails, times out or can't start blocks the call (fail closed), with a
-//   reason naming the hook. Failures of other events are logged and reported, never fatal.
+// - Kete's own credentials are removed from the environment.
+// - A PreToolUse hook that fails, times out, can't start, isn't allowed to run, or would get a
+//   truncated input blocks the call (fail closed), with a reason naming the hook. Failures of other
+//   events are logged, never fatal. At most `MAX_BACKGROUND` Stop/Notification hooks run at once.
 
 export * as KeteHooks from "./hooks.js"
 
@@ -50,26 +58,62 @@ import type { SessionSchema } from "../session/schema.js"
 import { KeteHooksRun } from "./hooks/run.js"
 import { KeteHooksSettings } from "./hooks/settings.js"
 import { KeteHooksTrust } from "./hooks/trust.js"
+import { KeteSandbox } from "./sandbox.js"
+import { KeteSandboxResolve } from "./sandbox/resolve.js"
+import { KeteBubblewrap } from "./sandbox/bubblewrap.js"
+import { KeteSeatbelt } from "./sandbox/seatbelt.js"
+import { Shell } from "../shell.js"
 import { KeteToolEnv } from "./tool-env.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
 
 type Event = KeteHooksSettings.Event
 type Entry = KeteHooksSettings.Entry
 
-/** Characters of a tool's input or output put in a hook's payload. */
+/** Characters of a tool's output (PostToolUse) or a prompt put in a hook's payload. */
 export const MAX_PAYLOAD_TEXT = 32 * 1024
+/** Bytes of a tool's input a PreToolUse hook gets; a larger input blocks the call. */
+export const MAX_TOOL_INPUT = 4 * 1024 * 1024
+/** Stop and Notification hooks running at once; more are skipped (logged). */
+export const MAX_BACKGROUND = 8
 
 /** Events that may ask the user to trust project hooks. */
 const asking: ReadonlySet<Event> = new Set(["PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart"])
 
 export const TRUST_FORM_KIND = "kete.hooks.trust"
 
-/** The trust form's question (exported for tests). */
-export function trustDescription(repository: string, entries: ReadonlyArray<Entry>) {
+/** The trust form's question (exported for tests). Commands are JSON-escaped so nothing is hidden. */
+export function trustDescription(
+  repository: string,
+  entries: ReadonlyArray<Entry>,
+  files: ReadonlyArray<KeteHooksSettings.Referenced> = [],
+) {
   const lines = entries
     .filter((entry) => entry.source === "project")
-    .map((entry) => `- ${entry.event}${entry.match ? ` (${entry.match})` : ""}: ${entry.command}`)
-  return `This repository's configuration (${repository}) runs these commands on your computer, with your permissions, during sessions:\n\n${lines.join("\n")}\n\nRun them? You'll be asked again if they change.`
+    .map(
+      (entry) =>
+        `- ${entry.event}${entry.match ? ` (${JSON.stringify(entry.match)})` : ""}${entry.network ? " [network]" : ""}: ${JSON.stringify(entry.command)}`,
+    )
+  const referenced = files.length
+    ? `\n\nFiles in the repository they run (their current contents are part of what you trust):\n${files.map((file) => `- ${JSON.stringify(file.path)} (sha256 ${file.sha256.slice(0, 12)})`).join("\n")}`
+    : ""
+  return `This repository's configuration (${JSON.stringify(repository)}) runs these commands during sessions — in the OS sandbox, with network only where marked, unless your global config lets project hooks run without it:\n\n${lines.join("\n")}${referenced}\n\nRun them? You'll be asked again if they or those files change.`
+}
+
+/** Escapes hook output placed in the `<hook>` pseudo-markup. */
+export function escape(text: string) {
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+}
+
+/** A PreToolUse hook's view of the tool input: in full, unless larger than MAX_TOOL_INPUT. */
+export function toolInput(input: unknown): { readonly value: unknown; readonly truncated: boolean } {
+  let text: string
+  try {
+    text = JSON.stringify(input) ?? "null"
+  } catch {
+    return { value: null, truncated: true }
+  }
+  if (Buffer.byteLength(text) <= MAX_TOOL_INPUT) return { value: input, truncated: false }
+  return { value: null, truncated: true }
 }
 
 function bounded(value: unknown): unknown {
@@ -81,6 +125,16 @@ function bounded(value: unknown): unknown {
     return null
   }
   return text.length > MAX_PAYLOAD_TEXT ? text.slice(0, MAX_PAYLOAD_TEXT) + "…" : value
+}
+
+function postResult(tool: string, input: unknown, status: "completed" | "error", text: string) {
+  const truncated = text.length > MAX_PAYLOAD_TEXT
+  const value = truncated ? text.slice(0, MAX_PAYLOAD_TEXT) : text
+  return {
+    tool,
+    tool_input: bounded(input),
+    tool_result: { status, ...(status === "completed" ? { output: value } : { error: value }), ...(truncated ? { truncated: true } : {}) },
+  }
 }
 
 function resultText(content: unknown) {
@@ -99,9 +153,16 @@ const sessionOf = (data: unknown) =>
 export interface Deps {
   readonly env?: Record<string, string | undefined>
   /** Asks the user whether to trust the project hooks; default: a form in the session. */
-  readonly ask?: (input: { sessionID: string; repository: string; entries: ReadonlyArray<Entry> }) => Effect.Effect<boolean>
+  readonly ask?: (input: {
+    sessionID: string
+    repository: string
+    entries: ReadonlyArray<Entry>
+    files: ReadonlyArray<KeteHooksSettings.Referenced>
+  }) => Effect.Effect<boolean>
   /** Whether the session belongs to an unattended run; default: KeteUnattendedPolicy. */
   readonly unattended?: (sessionID: string) => Effect.Effect<boolean>
+  /** Overrides the OS sandbox's availability (tests). */
+  readonly availability?: () => Promise<{ available: true; mechanism: "seatbelt" | "bubblewrap"; executable: string } | { available: false; reason: string }>
 }
 
 export function make(deps: Deps = {}) {
@@ -121,7 +182,7 @@ export function make(deps: Deps = {}) {
       const cwd = location.directory
       const repository = location.project.directory ?? location.directory
       const repositoryKey = yield* Effect.promise(() => fs.realpath(repository).catch(() => path.resolve(repository)))
-      const hookEnv = (event: Event) => {
+      const hookEnv = (event: Event): Record<string, string> => {
         const result: Record<string, string> = {}
         for (const [name, value] of Object.entries(KeteToolEnv.withoutKeteCredentials(env)))
           if (value !== undefined) result[name] = value
@@ -132,7 +193,7 @@ export function make(deps: Deps = {}) {
 
       const ask =
         deps.ask ??
-        ((input: { sessionID: string; repository: string; entries: ReadonlyArray<Entry> }) =>
+        ((input: { sessionID: string; repository: string; entries: ReadonlyArray<Entry>; files: ReadonlyArray<KeteHooksSettings.Referenced> }) =>
           Effect.gen(function* () {
             if (!forms) return false
             const state = yield* forms
@@ -145,7 +206,7 @@ export function make(deps: Deps = {}) {
                     key: "decision",
                     type: "string",
                     title: "Repository hooks",
-                    description: trustDescription(input.repository, input.entries),
+                    description: trustDescription(input.repository, input.entries, input.files),
                     required: true,
                     options: [
                       { value: "trust", label: "Trust and run them" },
@@ -175,35 +236,119 @@ export function make(deps: Deps = {}) {
       const warnOnce = (key: string, message: string, fields: Record<string, unknown>) =>
         warned.has(key) ? Effect.void : Effect.sync(() => warned.add(key)).pipe(Effect.andThen(Effect.logWarning(message, fields)))
 
-      const policies = (entries: ReadonlyArray<ConfigEntry>) => [
-        ...entries.flatMap((entry) => (entry.type === "document" ? (entry.info.experimental?.policies ?? []) : [])),
-        ...managed.current().statements,
-      ]
+      const userDocument = (file: string | undefined) => file !== undefined && KeteHooksSettings.inside(file, global.config)
+      // Policies from the global config and the organization only: a repository can't switch the
+      // user's own hooks off, or loosen anything.
+      const policies = Effect.fnUntraced(function* (entries: ReadonlyArray<ConfigEntry>) {
+        for (const entry of entries)
+          if (
+            entry.type === "document" &&
+            !userDocument(entry.path) &&
+            (entry.info.experimental?.policies ?? []).some((policy) => policy.resource.startsWith("hooks:"))
+          )
+            yield* warnOnce(`project policy ${entry.path}`, "ignored hooks policy statements in project configuration", { file: entry.path })
+        return [
+          ...entries.flatMap((entry) =>
+            entry.type === "document" && userDocument(entry.path) ? (entry.info.experimental?.policies ?? []) : [],
+          ),
+          ...managed.current().statements,
+        ]
+      })
+      const availability = deps.availability ?? (() => Effect.runPromise(KeteSandbox.availability))
+
+      /** Where each hook runs, and the sandbox wrapper for those that run sandboxed. */
+      const place = Effect.fnUntraced(function* (entries: ReadonlyArray<ConfigEntry>, entry: Entry) {
+        const settings = KeteSandbox.settingsFrom(entries, global.config, env)
+        const available = yield* Effect.promise(() => availability())
+        const documents = entries.flatMap((item) => (item.type === "document" ? [{ path: item.path, hooks: item.info.kete?.hooks }] : []))
+        if (entry.source === "project" && entry.sandbox === false)
+          yield* warnOnce(`project sandbox false ${entry.command}`, "ignored sandbox: false on a project hook (global config only)", {
+            command: entry.command.slice(0, 200),
+          })
+        const placement = KeteHooksSettings.placement(entry, {
+          mode: settings.mode,
+          available: available.available,
+          ...(available.available ? {} : { unavailableReason: available.reason }),
+          projectOptIn: KeteHooksSettings.unsandboxedOptIn(documents, global.config),
+          policyDeniesSandboxOff: KeteHooksSettings.sandboxOffDenied(yield* policies(entries)),
+        })
+        if (placement.kind !== "sandboxed" || !available.available) return { placement, sandbox: undefined }
+        const network = placement.network
+        const sandbox: KeteHooksRun.Sandbox = async (input) => {
+          const resolved = await KeteSandboxResolve.resolve(
+            {
+              platform: available.mechanism === "seatbelt" ? "darwin" : "linux",
+              home: global.home,
+              workspace: repositoryKey,
+              directory: cwd,
+              kete: global,
+              shellOutput: path.join(global.data, Shell.DIRECTORY),
+              settings,
+              network,
+              privateTmp: input.tmp,
+              env,
+            },
+            KeteSandboxResolve.shared,
+          )
+          const wrapped =
+            available.mechanism === "seatbelt"
+              ? KeteSeatbelt.command(resolved.policy, input.file, input.args)
+              : KeteBubblewrap.command(available.executable, resolved.policy, cwd, input.file, input.args)
+          const sandboxEnv: Record<string, string> = {}
+          for (const [name, value] of Object.entries(KeteSandbox.environment(input.env, input.tmp, network)))
+            if (value !== undefined) sandboxEnv[name] = value
+          return { ...wrapped, env: sandboxEnv, release: resolved.release }
+        }
+        return { placement, sandbox }
+      })
 
       /** The hooks to run for an event in a session (user first, then trusted project hooks). */
       const select = Effect.fnUntraced(function* (event: Event, sessionID: string, tool?: string) {
         const entries = yield* config.entries()
-        if (KeteHooksSettings.disabledByPolicy(policies(entries), event)) return []
+        if (KeteHooksSettings.disabledByPolicy(yield* policies(entries), event)) return { entries, selected: [] as Entry[] }
         const all = KeteHooksSettings.collect(
           entries.flatMap((entry) => (entry.type === "document" ? [{ path: entry.path, hooks: entry.info.kete?.hooks }] : [])),
           global.config,
         )
         const relevant = all.filter((entry) => entry.event === event && KeteHooksSettings.matches(entry, tool))
         const user = relevant.filter((entry) => entry.source === "user")
-        const project = relevant.filter((entry) => entry.source === "project")
-        if (project.length === 0) return user
-        const fingerprint = KeteHooksSettings.fingerprint(all)
-        if (yield* Effect.promise(() => trust.trusted(repositoryKey, fingerprint).catch(() => false))) return [...user, ...project]
-        if (declined.has(fingerprint) || !asking.has(event)) return user
+        const result = (selected: Entry[]) => ({ entries, selected })
+        // Project hooks that couldn't run anyway (no active sandbox, no opt-in) are skipped before
+        // anyone is asked to trust them.
+        const project: Entry[] = []
+        for (const entry of relevant.filter((item) => item.source === "project")) {
+          const where = yield* place(entries, entry)
+          if (where.placement.kind !== "refused") project.push(entry)
+          else
+            yield* warnOnce(`project refused ${where.placement.reason}`, "project hooks skipped", {
+              repository: repositoryKey,
+              reason: where.placement.reason,
+            })
+        }
+        if (project.length === 0) return result(user)
+        const allProject = all.filter((entry) => entry.source === "project")
+        const unsafe = allProject.map((entry) => KeteHooksSettings.unsafeCommand(entry.command)).find((reason) => reason !== undefined)
+        if (unsafe) {
+          yield* warnOnce(`unsafe ${repositoryKey}`, `project hooks refused: a command can't be shown faithfully (${unsafe})`, {
+            repository: repositoryKey,
+          })
+          return result(user)
+        }
+        const files = (yield* Effect.promise(() =>
+          Promise.all(allProject.map((entry) => KeteHooksSettings.referencedFiles(entry.command, repositoryKey, cwd))),
+        )).flat()
+        const fingerprint = KeteHooksSettings.fingerprint(all, files)
+        if (yield* Effect.promise(() => trust.trusted(repositoryKey, fingerprint).catch(() => false))) return result([...user, ...project])
+        if (declined.has(fingerprint) || !asking.has(event)) return result(user)
         if (yield* unattended(sessionID)) {
           yield* warnOnce(`unattended ${fingerprint}`, "project hooks skipped in an unattended run: they aren't trusted", {
             repository: repositoryKey,
           })
-          return user
+          return result(user)
         }
         let question = pending.get(fingerprint)
         if (!question) {
-          question = Effect.runPromise(ask({ sessionID, repository: repositoryKey, entries: all })).then(async (yes) => {
+          question = Effect.runPromise(ask({ sessionID, repository: repositoryKey, entries: all, files })).then(async (yes) => {
             if (yes)
               await trust.trust(
                 repositoryKey,
@@ -217,21 +362,26 @@ export function make(deps: Deps = {}) {
           question.finally(() => pending.delete(fingerprint)).catch(() => undefined)
         }
         const yes = yield* Effect.promise(() => question!.catch(() => false))
-        return yes ? [...user, ...project] : user
+        return result(yes ? [...user, ...project] : user)
       })
 
       const runAll = Effect.fnUntraced(function* (event: Event, sessionID: string, payload: Record<string, unknown>, tool?: string) {
-        const selected = yield* select(event, sessionID, tool)
+        const { entries, selected } = yield* select(event, sessionID, tool)
         const outcomes: Array<{ entry: Entry; outcome: KeteHooksRun.Outcome }> = []
         for (const entry of selected) {
-          const outcome = yield* KeteHooksRun.run({
-            spawner: environment.spawner,
-            command: entry.command,
-            cwd,
-            env: hookEnv(event),
-            payload: { event, session_id: sessionID, cwd, ...payload },
-            timeout: entry.timeout,
-          })
+          const where = yield* place(entries, entry)
+          const outcome: KeteHooksRun.Outcome =
+            where.placement.kind === "refused"
+              ? { kind: "error", message: `not run: ${where.placement.reason}` }
+              : yield* KeteHooksRun.run({
+                  spawner: environment.spawner,
+                  command: entry.command,
+                  cwd,
+                  env: hookEnv(event),
+                  payload: { event, session_id: sessionID, cwd, ...payload },
+                  timeout: entry.timeout,
+                  ...(where.sandbox ? { sandbox: where.sandbox } : {}),
+                })
           if (outcome.kind === "error")
             yield* Effect.logWarning("hook failed", { event, source: entry.source, command: entry.command.slice(0, 200), error: outcome.message })
           outcomes.push({ entry, outcome })
@@ -247,14 +397,24 @@ export function make(deps: Deps = {}) {
           if (outcome.kind === "ok" && outcome.decision === "deny" && outcome.reason) return [outcome.reason]
           if (outcome.kind === "deny") return [outcome.reason]
           return []
-        }).map((text) => `<hook event="${event}">\n${text}\n</hook>`)
+        }).map((text) => `<hook event="${event}">\n${escape(text)}\n</hook>`)
 
       const short = (command: string) => (command.length > 80 ? command.slice(0, 77) + "..." : command)
 
       // PreToolUse: block on deny, exit 2, or a hook that failed (fail closed).
       yield* ctx.tool.hook("execute.before", (event) =>
         Effect.gen(function* () {
-          const outcomes = yield* runAll("PreToolUse", event.sessionID, { tool: event.tool, tool_input: bounded(event.input) }, event.tool)
+          const input = toolInput(event.input)
+          const outcomes = yield* runAll(
+            "PreToolUse",
+            event.sessionID,
+            { tool: event.tool, tool_input: input.value, ...(input.truncated ? { tool_input_truncated: true } : {}) },
+            event.tool,
+          )
+          if (input.truncated && outcomes.length > 0)
+            return yield* new Tool.Error({
+              message: `Blocked: the tool input is larger than PreToolUse hooks receive (${MAX_TOOL_INPUT} bytes), so they couldn't check it.`,
+            })
           for (const { entry, outcome } of outcomes) {
             if (outcome.kind === "deny") return yield* new Tool.Error({ message: `Blocked by a PreToolUse hook: ${outcome.reason}` })
             if (outcome.kind === "ok" && outcome.decision === "deny")
@@ -272,8 +432,8 @@ export function make(deps: Deps = {}) {
         Effect.gen(function* () {
           const payload =
             event.status === "completed"
-              ? { tool: event.tool, tool_input: bounded(event.input), tool_result: { status: "completed", output: bounded(resultText(event.result.content)) } }
-              : { tool: event.tool, tool_input: bounded(event.input), tool_result: { status: "error", error: bounded(event.error.message) } }
+              ? postResult(event.tool, event.input, "completed", resultText(event.result.content))
+              : postResult(event.tool, event.input, "error", event.error.message)
           const added = contexts("PostToolUse", yield* runAll("PostToolUse", event.sessionID, payload, event.tool))
           if (added.length === 0) return
           const text = added.join("\n")
@@ -300,8 +460,19 @@ export function make(deps: Deps = {}) {
         }).pipe(Effect.catchCause((cause) => Effect.logWarning("UserPromptSubmit hooks failed", { cause }))),
       )
 
+      let inFlight = 0
       const background = (event: Event, sessionID: string, payload: Record<string, unknown>) =>
-        runAll(event, sessionID, payload).pipe(Effect.catchCause((cause) => Effect.logWarning(`${event} hooks failed`, { cause }).pipe(Effect.as([]))))
+        Effect.suspend(() => {
+          if (inFlight >= MAX_BACKGROUND)
+            return Effect.logWarning(`${event} hook skipped: ${MAX_BACKGROUND} hooks already running`).pipe(
+              Effect.as([] as Array<{ entry: Entry; outcome: KeteHooksRun.Outcome }>),
+            )
+          inFlight++
+          return runAll(event, sessionID, payload).pipe(
+            Effect.catchCause((cause) => Effect.logWarning(`${event} hooks failed`, { cause }).pipe(Effect.as([]))),
+            Effect.ensuring(Effect.sync(() => inFlight--)),
+          )
+        })
 
       yield* ctx.event.subscribe().pipe(
         Stream.runForEach((event) => {

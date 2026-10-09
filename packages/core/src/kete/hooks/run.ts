@@ -1,8 +1,19 @@
-// Runs one config hook (kete/hooks.ts): the command in the platform's shell (`/bin/sh -c` on macOS
-// and Linux, `cmd.exe /d /s /c` on Windows) in the project directory, with the event as JSON on
-// stdin (redirected from a private temp file, also named by KETE_HOOK_INPUT), through the location's process spawner (the same seam as the shell tool, so job mode's
-// tool runner would refuse it — hooks don't run in job mode anyway). Bounded: stdout is kept up to
-// 64 KiB and stderr up to 16 KiB; past its timeout the command and its process group are stopped.
+// Runs one config hook (kete/hooks.ts): the command in the platform's shell in the project directory,
+// with the event as JSON on stdin, through the location's process spawner (the same seam as the
+// shell tool, so job mode's tool runner would refuse it — hooks don't run in job mode anyway), and
+// wrapped by the OS sandbox when the caller passes a `sandbox`.
+//
+// - macOS/Linux: `/bin/sh -c`, with stdin redirected by the shell from a private temp file (also
+//   named by KETE_HOOK_INPUT) rather than written through a pipe: a hook that exits without reading
+//   stdin would otherwise make the spawner's write fail (EPIPE).
+// - Windows: the command is one line of a temporary batch file run by `cmd.exe /d /c <file>`, with
+//   stdin redirected from the payload file inside the batch. A batch file needs no quoting of the
+//   command on cmd's command line (node's argument quoting doesn't match cmd's rules); the cost is
+//   batch semantics (`%%` for a literal `%`). NoDefaultCurrentDirectoryInExePath keeps the current
+//   directory out of program lookup.
+//
+// Bounded: stdout is kept up to 64 KiB and stderr up to 16 KiB; past its timeout the command and
+// its process group are stopped.
 //
 // What the result means (docs/hooks.md):
 // - exit 0: success. Stdout that is a JSON object may carry `decision` ("allow" | "deny"), `reason`
@@ -37,11 +48,30 @@ export const INPUT_VARIABLE = "KETE_HOOK_INPUT"
  * written through a pipe: a hook that exits without reading stdin would otherwise make the write
  * fail (EPIPE) in the spawner.
  */
-export function shell(command: string, platform: NodeJS.Platform = process.platform, env: Record<string, string | undefined> = process.env) {
-  if (platform === "win32")
-    return { file: env.ComSpec ?? env.COMSPEC ?? "cmd.exe", args: ["/d", "/s", "/c", `"(${command}) < "%${INPUT_VARIABLE}%""`] }
+export function shell(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  env: Record<string, string | undefined> = process.env,
+  directory = "",
+): { file: string; args: string[]; script?: { path: string; content: string } } {
+  if (platform === "win32") {
+    const script = path.win32.join(directory, "hook.cmd")
+    return {
+      file: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
+      args: ["/d", "/c", script],
+      script: { path: script, content: `@echo off\r\n(\r\n${command}\r\n) < "%${INPUT_VARIABLE}%"\r\nexit /b %ERRORLEVEL%\r\n` },
+    }
+  }
   return { file: "/bin/sh", args: ["-c", `exec <"$${INPUT_VARIABLE}"\n${command}`] }
 }
+
+/** Wraps a hook's process in the OS sandbox (kete/hooks.ts builds it); `tmp` is the hook's private temp directory. */
+export type Sandbox = (input: {
+  readonly file: string
+  readonly args: ReadonlyArray<string>
+  readonly env: Record<string, string>
+  readonly tmp: string
+}) => Promise<{ file: string; args: string[]; env: Record<string, string>; release: () => Promise<void> }>
 
 export function clip(text: string, max = MAX_TEXT) {
   const trimmed = text.trim()
@@ -93,6 +123,8 @@ export interface Input {
   readonly payload: unknown
   /** Seconds. */
   readonly timeout: number
+  /** Runs it in the OS sandbox; unsandboxed when undefined. */
+  readonly sandbox?: Sandbox
 }
 
 export const run = (input: Input): Effect.Effect<Outcome> =>
@@ -105,12 +137,21 @@ export const run = (input: Input): Effect.Effect<Outcome> =>
       )
       const inputFile = path.join(directory, "event.json")
       yield* Effect.promise(() => fs.writeFile(inputFile, JSON.stringify(input.payload), { mode: 0o600 }))
-      const env = { ...input.env, [INPUT_VARIABLE]: inputFile }
-      const { file, args } = shell(input.command, process.platform, env)
+      const base: Record<string, string> = { ...input.env, [INPUT_VARIABLE]: inputFile }
+      if (process.platform === "win32") base.NoDefaultCurrentDirectoryInExePath = "1"
+      const built = shell(input.command, process.platform, base, directory)
+      if (built.script) yield* Effect.promise(() => fs.writeFile(built.script!.path, built.script!.content, { mode: 0o600 }))
+      const sandbox = input.sandbox
+      const launch = sandbox
+        ? yield* Effect.acquireRelease(
+            Effect.tryPromise(() => sandbox({ file: built.file, args: built.args, env: base, tmp: directory })),
+            (wrapped) => Effect.promise(() => wrapped.release().catch(() => undefined)),
+          )
+        : { file: built.file, args: built.args, env: base }
       const handle = yield* input.spawner.spawn(
-        ChildProcess.make(file, args, {
+        ChildProcess.make(launch.file, launch.args, {
           cwd: input.cwd,
-          env,
+          env: launch.env,
           extendEnv: false,
           stdin: "ignore",
           stdout: "pipe",

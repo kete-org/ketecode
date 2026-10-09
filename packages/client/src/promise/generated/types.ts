@@ -2187,12 +2187,43 @@ export type ConfigEntry =
             denyWrite?: Array<string>
           }
           hooks?: {
-            PreToolUse?: Array<{ command: string; match?: string; timeout?: number }>
-            PostToolUse?: Array<{ command: string; match?: string; timeout?: number }>
-            UserPromptSubmit?: Array<{ command: string; match?: string; timeout?: number }>
-            Stop?: Array<{ command: string; match?: string; timeout?: number }>
-            SessionStart?: Array<{ command: string; match?: string; timeout?: number }>
-            Notification?: Array<{ command: string; match?: string; timeout?: number }>
+            PreToolUse?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
+            PostToolUse?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
+            UserPromptSubmit?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
+            Stop?: Array<{ command: string; match?: string; timeout?: number; network?: boolean; sandbox?: boolean }>
+            SessionStart?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
+            Notification?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
+            unsandboxed?: boolean
           }
           lsp?: { unsandboxed?: boolean }
         }
