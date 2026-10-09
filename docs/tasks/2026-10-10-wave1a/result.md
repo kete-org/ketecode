@@ -1,6 +1,6 @@
 # Result: Wave 1a — todo list, LSP diagnostics, config shell hooks
 
-Status: built; three PRs open, CI green at the time of writing, not merged.
+Status: #29 merged; #30 and #31 updated after the security review (merges, no rebase), not merged.
 
 | PR | Branch | Scope |
 | --- | --- | --- |
@@ -25,4 +25,4 @@ Each branch contains the previous one's commits and targets `main`.
 - Hooks live under `kete.hooks` (Kete's namespace), not a new top-level key, to avoid an upstream schema edit.
 - UserPromptSubmit can add context but can't block (session hooks can't fail).
 - `kete job run --trust-project-config` lets a repository with `kete.hooks` run, but untrusted project hooks are still skipped in the unattended session; they run only if the user trusted those exact hooks interactively before. (Passing the flag's trust to the server would need a new field in the versioned unattended metadata.)
-- Hooks run outside the OS sandbox (documented); language servers run inside it without network.
+- After the security review: hooks and language servers run inside the OS sandbox (hooks with network only when `network: true`); unsandboxed only via global opt-ins (`kete.hooks.unsandboxed`, `kete.lsp.unsandboxed`, a hook's `sandbox: false`), never against a policy denying `sandbox_off`. Windows hook command line (batch file) is unit-tested only.
