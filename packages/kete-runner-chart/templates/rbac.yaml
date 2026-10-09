@@ -27,9 +27,10 @@ rules:
     verbs: [get, delete]
   {{- end }}
   {{- $clone := list }}
-  {{- range .Values.repositorySources }}{{ $clone = append $clone .cloneSecret }}{{ end }}
+  {{- range .Values.repositorySources }}{{ with .cloneSecret }}{{ $clone = append $clone . }}{{ end }}{{ with .minterSecret }}{{ $clone = append $clone . }}{{ end }}{{ end }}
   {{- with ($clone | uniq) }}
-  # The repositories' read credentials (copied into each job's per-job Secret): read only.
+  # The repositories' static read credentials (copied into each job's per-job Secret) and the
+  # Maintainer tokens that mint per-job clone tokens: read only. Never a writer (jobs namespace).
   - apiGroups: [""]
     resources: [secrets]
     resourceNames: [{{ range $i, $n := . }}{{ if $i }}, {{ end }}{{ $n | quote }}{{ end }}]
@@ -68,7 +69,8 @@ metadata:
   labels:
     {{- include "kete-runner.labels" . | nindent 4 }}
 rules:
-  # Job pods (one per machine) and their per-machine Secrets. No exec, attach or port-forward.
+  # Job and publisher pods (one each per machine) and the per-machine Secrets. No exec, attach or
+  # port-forward.
   - apiGroups: [""]
     resources: [pods]
     verbs: [create, get, list, delete]
@@ -80,9 +82,11 @@ rules:
   - apiGroups: [""]
     resources: [persistentvolumeclaims]
     verbs: [create, get, list, delete]
+  # Per-machine Secrets: written and deleted, never read back (no `get`: the enterprise's
+  # publisher Secrets in this namespace stay unreadable to the controller).
   - apiGroups: [""]
     resources: [secrets]
-    verbs: [create, get, delete]
+    verbs: [create, delete]
   # Kubernetes Events on job pods (kubectl describe shows the controller's actions).
   - apiGroups: [""]
     resources: [events]
@@ -118,7 +122,7 @@ rules:
   {{- $names := include "kete-runner.policyNames" . | fromJson }}
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicies, validatingadmissionpolicybindings]
-    resourceNames: [{{ $names.pods | quote }}, {{ $names.jobSecrets | quote }}, {{ $names.outboxes | quote }}, {{ $names.controllerSecrets | quote }}]
+    resourceNames: [{{ $names.pods | quote }}, {{ $names.jobSecrets | quote }}, {{ $names.outboxes | quote }}, {{ $names.controllerSecrets | quote }}, {{ $names.publisherSecrets | quote }}]
     verbs: [get]
   {{- with .Values.jobs.outbox.storageClass }}
   # The outbox StorageClass's provisioner and mount options (checked before any start).

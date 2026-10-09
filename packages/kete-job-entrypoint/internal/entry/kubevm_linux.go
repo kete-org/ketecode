@@ -147,6 +147,7 @@ func runtimeDeps(cfg layout.Config, boot bootenv.Values, pc *platform.Client, gi
 		Boundary: platform.DataBoundary{Summary: l.Boundary.Summary, Denials: l.Boundary.Denials, PublishRefs: l.Boundary.PublishRefs},
 		Outbox:   outbox.Dir{Path: cfg.OutboxDir, UID: 0, GID: layout.OutboxGID},
 		Head:     git.Head,
+		CloneAt:  git.CloneAt,
 	}, nil
 }
 

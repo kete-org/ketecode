@@ -31,6 +31,10 @@ proxy:
   authSecret:
     name: ""
     key: auth
+  # Repository hosts the controller and the publisher pods reach directly instead of through the
+  # proxy (exact names, or .suffix for subdomains), e.g. an internal GitLab. The platform is always
+  # reached through the proxy.
+  noProxy: []
 
 caBundle:
   # Secret with extra trusted roots (PEM), e.g. a TLS-inspecting proxy's CA: added to the system
@@ -94,11 +98,29 @@ jobs:
 # Runtime repository names this runner serves (e.g. gitlab:payments/api). A job naming another is
 # refused (repository_unknown) before anything starts.
 repositories: []
-# Where each repository is cloned from (required for every repository with podDriver kubevm): an
-# https URL and a Secret in the release namespace with keys `username` and `token` (a read-only
-# deploy token; it reaches only the job's root entrypoint). Minted per-job tokens arrive in P3.
-#   - {name: "gitlab:payments/api", url: "https://gitlab.corp/payments/api.git", cloneSecret: gitlab-payments-read}
+# The runner's repository registry (GitLab self-managed; required for every repository with
+# podDriver kubevm). README "GitLab" explains the bot, the tokens and the protected branches.
+#   - name: "gitlab:payments/api"
+#     url: "https://gitlab.corp/payments/api.git"      # https, no credentials
+#     apiURL: ""                                       # only when GitLab lives under a relative URL root
+#     # The job's read credential (RECOMMENDED: static):
+#     cloneMode: static                                # the default: a read-only deploy token
+#     cloneSecret: gitlab-payments-read                #   (keys username, token) in the release namespace
+#     # cloneMode: minted                              # or a project access token per job (revoked after
+#     # minterSecret: gitlab-kete-minter               #   the clone), minted with a Maintainer token
+#     #                                                #   (scope api) the controller holds: needs
+#     #                                                #   acceptMinterRisk: true (below)
+#     # Publishing (a new branch and a draft merge request per job):
+#     writerSecret: gitlab-kete-writer                 # Secret in the JOBS namespace with key `token`
+#                                                      #   (the bot's token, scopes api + write_repository);
+#                                                      #   only publisher pods mount it, the controller
+#                                                      #   can't read it
+#     writerUsername: kete-bot                         # the bot's user name (git over HTTPS)
 repositorySources: []
+# cloneMode minted gives the controller a Maintainer token with scope api. A compromised controller
+# could use it to mint write tokens, so the writer's isolation from the controller then no longer
+# holds. Set true only to accept that (a dedicated minter bot with no other role is recommended).
+acceptMinterRisk: false
 # Report the names above to the platform (names only).
 advertiseRepositories: false
 
@@ -115,6 +137,27 @@ podDriver: kubevm
 placeholder:
   # [{image: <allowlisted digest ref>, seconds: N}]: placeholder machines of that image exit after N s.
   exitAfter: []
+
+# Publisher pods (one per job that asked to push, once the platform authorizes it): the runner image
+# running `kete-job-host publish`, in the jobs namespace and its VM-isolated RuntimeClass, non-root,
+# no capabilities, the job's outbox mounted read-only. They validate the job's change bundle as
+# hostile, push a new branch (create-only) onto the job's base commit and open a draft merge
+# request. Rendered only when a repository source names a writerSecret.
+publisher:
+  resources: {cpu: 500m, memory: 512Mi}
+  timeoutSeconds: 900
+  # Author and committer of every job commit ("Name <email>"; default Kete Code <jobs@noreply.ketecode.ai>).
+  commitIdentity: ""
+  # Job commits carry [skip ci] unless this is true.
+  ciOnJobBranches: false
+  # Secrets in the JOBS namespace that publisher pods mount: the CA bundle for GitLab and the
+  # proxy (key ca.crt), and the proxy credential (key auth, username:password).
+  caBundleSecret: ""
+  proxyAuthSecret: ""
+  # Where publisher pods may connect besides DNS (NetworkPolicy): GitLab, or the proxy.
+  egress:
+    cidrs: []
+    ports: [443]
 
 controller:
   serviceAccountName: kete-runner
@@ -139,6 +182,11 @@ networkPolicy:
     port: 6443
   # The platform, or the proxy when proxy.url is set: CIDRs and ports.
   platform:
+    cidrs: []
+    ports: [443]
+  # GitLab, when the controller reaches it directly (proxy.noProxy): minting clone tokens and
+  # resolving each job's base branch. Through the proxy, platform.cidrs covers it.
+  repositories:
     cidrs: []
     ports: [443]
   dns:

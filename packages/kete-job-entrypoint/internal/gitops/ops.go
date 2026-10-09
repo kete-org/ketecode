@@ -23,6 +23,24 @@ func (r Runner) Clone(ctx context.Context, url, ref, username, token, dest strin
 	return err
 }
 
+// CloneAt makes the pristine copy at exactly sha (kubevm: the commit the runner resolved ref to):
+// an empty bare repository, then a shallow fetch of that one commit into refs/heads/<ref>, with the
+// credential in an http.extraHeader. It fails when the server no longer has the commit.
+func (r Runner) CloneAt(ctx context.Context, url, ref, sha, username, token, dest string) error {
+	if len(sha) != 40 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return ErrMismatch
+	}
+	if _, err := r.Run(ctx, Call{Args: []string{"init", "--bare", "-q", "--", dest}}); err != nil {
+		return err
+	}
+	_, err := r.Run(ctx, Call{
+		Args:    []string{"--git-dir=" + dest, "fetch", "--depth=1", "--no-tags", "--", url, "+" + sha + ":refs/heads/" + ref},
+		Config:  [][2]string{{"http.extraHeader", BasicHeader(username, token)}},
+		Timeout: r.CloneTimeout,
+	})
+	return err
+}
+
 // ErrMismatch is a pristine copy that isn't at base_sha (or isn't what was asked for).
 var ErrMismatch = errors.New("git: clone does not match base_sha")
 

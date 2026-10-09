@@ -5,6 +5,8 @@
 //	kete-job-host enroll [--config PATH] [--replace] [--token-file PATH]   token on stdin or in the file
 //	kete-job-host run [--config PATH] [--debug]
 //	kete-job-host kubernetes [--config PATH] [--debug]                    the Kubernetes runner (non-root pod)
+//	kete-job-host publish --machine ID --job ID --repository NAME --base-ref REF --branch BRANCH [--open-mr]
+//	                                                                       the runner's publisher pod (fixed paths)
 //	kete-job-host doctor [--config PATH]
 //	kete-job-host fingerprint [--config PATH]
 //	kete-job-host version
@@ -42,13 +44,15 @@ import (
 // version is set at build time (-ldflags "-X main.version=…").
 var version = "0.0.0-dev"
 
-const usage = `usage: kete-job-host <enroll|run|kubernetes|doctor|fingerprint|version> [--config PATH]
+const usage = `usage: kete-job-host <enroll|run|kubernetes|publish|doctor|fingerprint|version> [--config PATH]
   enroll       generate the host keys and enroll with the token read from stdin
                (--token-file PATH: from a root-only file, removed once the platform answered;
                a dedicated host's boot enrollment after a provider rebuild)
   run          run the agent (the systemd service)
   kubernetes   run the Kubernetes runner's controller (driver kubernetes; a non-root pod of the
                kete-runner Helm chart: Lease, keys and state in Secrets, enrolls from a token Secret)
+  publish      the runner's publisher pod: validate a job's outbox, push a new branch, open a draft
+               merge request, write the outcome as the termination message
   doctor       check the configuration, keys, state and host
   fingerprint  print the host key fingerprint
   version      print the agent version`
@@ -62,6 +66,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usage)
 		return 2
+	}
+	if args[0] == "publish" {
+		return cmdPublish(args[1:], stderr)
 	}
 	cmd := args[0]
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)

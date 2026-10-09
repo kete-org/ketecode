@@ -201,6 +201,9 @@ kete-job-host run [--config PATH] [--debug]                 # the service
 kete-job-host doctor [--config PATH]                        # checks only
 kete-job-host fingerprint [--config PATH]
 kete-job-host version
+kete-job-host kubernetes [--config PATH] [--debug]          # the Kubernetes runner's controller
+kete-job-host publish --machine ID --job ID --repository NAME --base-ref REF --branch BRANCH [--open-mr]
+                                                            # the Kubernetes runner's publisher pod (fixed paths)
 ```
 
 Exit codes: `0` done, `1` failed, `2` usage or configuration (including a driver that can't be built from it), `3`
@@ -408,8 +411,11 @@ proxy and CA bundle for the platform connection, and machines as labelled pods
 (`internal/driver/kubernetes`, with the node boot-ID Secret handoff). It never runs the VM host
 guard (`internal/hostguard`): it is a pod by design and isolates nothing itself; each job pod is
 VM-isolated (RuntimeClass, the chart's admission policy, the entrypoint's boot-ID check). P1
-ships only a test-only placeholder pod driver (`-tags kete_testdriver`); release builds refuse it.
-See the chart README and `docs/context/modules/kubernetes-runner.md`.
+shipped a test-only placeholder pod driver (`-tags kete_testdriver`; release builds refuse it), P2
+the `kubevm` pod driver, P3 the GitLab provider and publisher (`internal/repo/gitlab`,
+`internal/bundle`, `internal/gitproto`, `internal/publish`, `kete-job-host publish`; the
+`publishing` machine state). See the chart README and `docs/context/modules/kubernetes-runner.md`,
+`gitlab-provider.md`.
 
 ## Guest kernel
 

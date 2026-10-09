@@ -80,19 +80,43 @@ type KubernetesFile struct {
 	// JobProxyAuthFile is the jobs' own proxy credential (`username:password`), distinct from the
 	// controller's: every job VM holds it in memory. None by default.
 	JobProxyAuthFile string `json:"job_proxy_auth_file,omitempty"`
-	// RepositorySources are where the kubevm pod driver clones each repository from, with a
-	// static read credential (a deploy token) from a Secret in the controller's namespace. P3
-	// adds minted credentials and the publisher.
+	// RepositorySources are the runner's repository registry (kubevm): where each repository is
+	// cloned from, how the job's read credential is obtained (a static deploy token or a project
+	// access token minted per job) and, for publishing, the writer Secret's name (gitlab.go).
 	RepositorySources []RepositorySourceFile `json:"repository_sources,omitempty"`
+	// NoProxy are repository hosts the controller and the publisher reach directly rather than
+	// through Proxy (exact names or .suffix). The platform is always reached through Proxy.
+	NoProxy []string `json:"no_proxy,omitempty"`
+	// Publisher configures the publisher pods (required when a source names a writer_secret).
+	Publisher *PublisherFile `json:"publisher,omitempty"`
+	// AcceptMinterRisk must be true for any clone_mode minted source: the minter is a Maintainer
+	// token with scope api in the controller, so a compromised controller could mint write
+	// tokens — writer isolation against a compromised controller holds only with static
+	// deploy tokens.
+	AcceptMinterRisk bool `json:"accept_minter_risk,omitempty"`
 	// JobPod configures the kubevm pod driver's job pods (required by it).
 	JobPod *JobPodFile `json:"job_pod,omitempty"`
 }
 
-// RepositorySourceFile is one repository's clone source.
+// RepositorySourceFile is one repository's entry in the runner's registry.
 type RepositorySourceFile struct {
-	Name        string `json:"name"`
-	CloneURL    string `json:"clone_url"`
-	CloneSecret string `json:"clone_secret"`
+	Name     string `json:"name"`
+	CloneURL string `json:"clone_url"`
+	// CloneSecret is a static read credential's Secret (keys username, token) in the controller's
+	// namespace (clone_mode static, the default).
+	CloneSecret string `json:"clone_secret,omitempty"`
+	// Provider is gitlab (the default; the only one).
+	Provider string `json:"provider,omitempty"`
+	// APIURL is the GitLab instance URL when it isn't the clone URL's origin (a relative URL root).
+	APIURL string `json:"api_url,omitempty"`
+	// CloneMode is static (CloneSecret) or minted (a project access token per job, minted with the
+	// Maintainer token in MinterSecret, key token, in the controller's namespace).
+	CloneMode    string `json:"clone_mode,omitempty"`
+	MinterSecret string `json:"minter_secret,omitempty"`
+	// WriterSecret is the publisher's writer credential (key token): a Secret in the jobs namespace
+	// that only publisher pods mount. The controller names it and can't read it. Empty: jobs of
+	// this repository can't publish.
+	WriterSecret string `json:"writer_secret,omitempty"`
 }
 
 // JobPodFile sizes and connects the kubevm job pods.
@@ -166,6 +190,10 @@ type Kubernetes struct {
 	// Sources maps a repository name to its clone source (kubevm).
 	Sources map[string]RepositorySourceFile
 	JobPod  *JobPod
+	// NoProxy are repository hosts reached without the proxy; Publisher configures the publisher
+	// pods (nil: nothing is published).
+	NoProxy   []string
+	Publisher *Publisher
 }
 
 // JobPod is the validated job_pod section.

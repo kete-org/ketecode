@@ -5,6 +5,11 @@ verified-at: 99f9825fb1
 ---
 
 ## Quick answers
+- Pinned base (P3)? `local.repository.base_sha` (the commit the runner resolved `ref` to): the
+  runtime clones with `gitops.CloneAt` (empty bare repo + shallow fetch of exactly that commit into
+  `refs/heads/<ref>`), and fails `clone` with code `base_unavailable` when the server no longer has
+  it, or `verify` with that code when the head differs (`internal/job/job.go` afterClaim). Without
+  it (an older runner) the clone's head is the base, as in P2.
 - What is the kubevm profile? The Kubernetes runner's job pods (enterprise runtime P2; README
   "kubevm"): `--config-file /run/kete-config/config.json` (`bootenv.ReadConfigFile`,
   `ParseKubeVMConfig`, the `local` section in `internal/bootenv/kubevm.go`); `setup_host` checks the

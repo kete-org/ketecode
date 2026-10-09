@@ -47,6 +47,13 @@ type Machine struct {
 	Reason     string    `json:"reason,omitempty"`
 	// StopReason is the destroyed reason a `stopping` machine will get.
 	StopReason string `json:"stop_reason,omitempty"`
+	// Publishing (job-host-v2): the run carried `publish` (WantsPublish) with this branch; the
+	// publisher was started; its outcome, kept on the destroyed (exited) tombstone and, briefly,
+	// on the `publishing` machine while its outputs are removed.
+	WantsPublish   bool                     `json:"wants_publish,omitempty"`
+	PublishBranch  string                   `json:"publish_branch,omitempty"`
+	PublishStarted bool                     `json:"publish_started,omitempty"`
+	Publish        *contract.PublishOutcome `json:"publish,omitempty"`
 }
 
 // State is the file.
@@ -100,8 +107,14 @@ func (s State) Validate() error {
 			!terminal && m.Reason != "",
 			m.State == contract.StateStopping && !contract.DestroyedReason(m.StopReason):
 			return fmt.Errorf("state: machine %s has an inconsistent state", m.MachineID)
-		case !terminal && m.State != contract.StatePreparing && m.State != contract.StateStarting && m.State != contract.StateRunning && m.State != contract.StateStopping:
+		case !terminal && m.State != contract.StatePreparing && m.State != contract.StateStarting && m.State != contract.StateRunning &&
+			m.State != contract.StateStopping && m.State != contract.StatePublishing:
 			return fmt.Errorf("state: machine %s has an unknown state", m.MachineID)
+		case m.Publish != nil && !(m.State == contract.StatePublishing || (m.State == contract.StateDestroyed && m.Reason == contract.ReasonExited)),
+			m.Publish != nil && m.Publish.Validate() != nil,
+			(m.State == contract.StatePublishing || m.PublishStarted || m.Publish != nil) && !m.WantsPublish,
+			m.PublishBranch != "" && !contract.ValidJobBranch(m.PublishBranch):
+			return fmt.Errorf("state: machine %s has an inconsistent publish record", m.MachineID)
 		}
 	}
 	return nil

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
@@ -70,6 +71,8 @@ type Options struct {
 	PolicyEvery time.Duration
 	// PullGrace is the driver's ImagePullGrace (default 60 s).
 	PullGrace time.Duration
+	// RepoHTTP is the client for repository hosts (tests; nil: built from the proxy and CA bundle).
+	RepoHTTP *http.Client
 }
 
 // ErrNotEnrolled means the runner has no keys and no enrollment token was found within ctx.
@@ -111,11 +114,26 @@ func Run(ctx context.Context, o Options) error {
 			}
 		}
 	}
-	pd, err := podDriver(o)
+	copts, err := clientOptions(o)
 	if err != nil {
 		return err
 	}
-	copts, err := clientOptions(o)
+	var creds *cloneCreds
+	if k.PodDriver == config.PodDriverKubeVM {
+		proxy, err := repoProxy(o)
+		if err != nil {
+			return err
+		}
+		hc := o.RepoHTTP
+		if hc == nil {
+			hc = repoHTTPClient(proxy, k.NoProxy, copts.RootCAs)
+		}
+		creds = &cloneCreds{
+			kube: o.Kube, namespace: k.Namespace, jobsNS: k.JobsNamespace, instance: k.Instance, sources: k.Sources, now: o.Now, log: o.Log,
+			http: hc, minted: map[string]minted{}, done: map[string]bool{}, bases: map[string]string{},
+		}
+	}
+	pd, err := podDriver(o, creds)
 	if err != nil {
 		return err
 	}
@@ -192,11 +210,18 @@ func Run(ctx context.Context, o Options) error {
 		return finish(err)
 	}
 	guard.start(rctx)
-	drv, err := kdriver.New(kdriver.Options{
+	dopts := kdriver.Options{
 		Client: o.Kube, Namespace: k.JobsNamespace, Instance: k.Instance, StartTimeout: k.StartTimeout, Pod: pd.pod,
 		Secret: pd.secret, Outbox: pd.outbox, ReadLogs: pd.logs, ImagePullGrace: o.PullGrace,
-		Log: o.Log, Now: o.Now, PollEvery: o.DriverPoll, Blocked: guard.blocked,
-	})
+		Log: o.Log, Now: o.Now, PollEvery: o.DriverPoll, Blocked: guard.blocked, Publish: pd.publish,
+	}
+	if creds != nil {
+		dopts.CloneDone, dopts.JobEnded, dopts.Forget = creds.revoke, creds.revoke, creds.forget
+		if dopts.Publish != nil {
+			dopts.Publish.BaseSHA = creds.baseSHA
+		}
+	}
+	drv, err := kdriver.New(dopts)
 	if err != nil {
 		return finish(err)
 	}
@@ -204,12 +229,20 @@ func Run(ctx context.Context, o Options) error {
 		wg.Add(1)
 		go func() { defer wg.Done(); collectOutboxes(rctx, o, drv) }()
 	}
+	if creds != nil && hasMinted(k.Sources) {
+		wg.Add(1)
+		go func() { defer wg.Done(); creds.run(rctx) }()
+	}
+	hold := 24 * time.Hour
+	if k.JobPod != nil {
+		hold = k.JobPod.OutboxHold
+	}
 	a, err := agent.New(agent.Options{
 		Config: o.Config, Keys: ks, Driver: drv, Verifier: pd.verifier,
 		Client: client.New(o.Config.Origin, o.Config.Authority, o.Now, copts), Clock: o.Clock,
 		Versions: contract.Versions{Agent: o.AgentVersion, HostKernel: o.HostKernel}, Log: o.Log, Now: o.Now,
 		Interval: o.Interval, SuperviseEvery: o.SuperviseEvery, Store: store,
-		V2: &agent.V2{Kubernetes: kver, RuntimeClasses: k.RuntimeClasses, Repositories: k.Repositories, Advertise: k.AdvertiseRepos, Boundary: k.Boundary},
+		V2: &agent.V2{Kubernetes: kver, RuntimeClasses: k.RuntimeClasses, Repositories: k.Repositories, Advertise: k.AdvertiseRepos, Boundary: k.Boundary, PublishHold: hold},
 	})
 	if err != nil {
 		return finish(err)
@@ -226,11 +259,12 @@ type podDriverParts struct {
 	outbox   *kdriver.OutboxOptions
 	logs     bool
 	verifier image.Verifier
+	publish  *kdriver.PublishOptions
 }
 
 // podDriver picks the pod builder, Secret builder, outbox and image verifier for the configured
 // pod driver.
-func podDriver(o Options) (podDriverParts, error) {
+func podDriver(o Options, creds *cloneCreds) (podDriverParts, error) {
 	k := o.Config.Kube
 	switch k.PodDriver {
 	case config.PodDriverPlaceholder:
@@ -251,6 +285,9 @@ func podDriver(o Options) (podDriverParts, error) {
 				s, err := o.Kube.GetSecret(ctx, k.Namespace, name)
 				return s.Data, err
 			},
+		}
+		if creds != nil {
+			ko.Credential, ko.BaseSHA = creds.credential, creds.baseSHA
 		}
 		if k.JobProxyAuthFile != "" {
 			// The jobs' own credential, never the controller's: every job VM holds it.
@@ -274,12 +311,44 @@ func podDriver(o Options) (podDriverParts, error) {
 		if v == nil {
 			v = kubeVMVerifier()
 		}
-		return podDriverParts{
+		parts := podDriverParts{
 			pod: kdriver.KubeVMPod(ko), secret: kdriver.KubeVMSecret(ko), logs: true, verifier: v,
 			outbox: &kdriver.OutboxOptions{Size: k.JobPod.OutboxSize, StorageClass: k.JobPod.OutboxStorageClass, AccessMode: k.JobPod.OutboxAccessMode, MountPath: kdriver.OutboxPath, Hold: k.JobPod.OutboxHold},
-		}, nil
+		}
+		if p := k.Publisher; p != nil {
+			writers := map[string]string{}
+			for name, src := range k.Sources {
+				if src.WriterSecret != "" {
+					writers[name] = src.WriterSecret
+				}
+			}
+			parts.publish = &kdriver.PublishOptions{
+				Image: p.Image, RuntimeClass: class, ConfigMap: p.ConfigMap, CASecret: p.CASecret, ProxyAuthSecret: p.ProxyAuthSecret,
+				CPU: p.CPU, Memory: p.Memory, Timeout: time.Duration(p.TimeoutSeconds) * time.Second, Writers: writers,
+			}
+		}
+		return parts, nil
 	}
 	return podDriverParts{}, fmt.Errorf("runner: unknown pod driver %q", k.PodDriver)
+}
+
+// repoProxy is the proxy for repository hosts: the controller's own (with its credential), never
+// the jobs'.
+func repoProxy(o Options) (*url.URL, error) {
+	k := o.Config.Kube
+	if k.Proxy == nil {
+		return nil, nil
+	}
+	u := *k.Proxy
+	if k.ProxyAuthFile != "" {
+		auth, err := readProxyAuth(k.ProxyAuthFile)
+		if err != nil {
+			return nil, fmt.Errorf("runner: proxy credentials: %w", err)
+		}
+		user, pass, _ := strings.Cut(auth, ":")
+		u.User = url.UserPassword(user, pass)
+	}
+	return &u, nil
 }
 
 // maxJobCABundle is the entrypoint's limit for a job's CA bundle (bootenv).

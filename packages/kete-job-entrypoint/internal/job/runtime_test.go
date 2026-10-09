@@ -204,3 +204,35 @@ func TestRuntimeOutboxFailureSendsNoFinish(t *testing.T) {
 		t.Error("the read credential outlived the clone")
 	}
 }
+
+// A runner that resolved the base pins it: the pristine copy is fetched at exactly that commit
+// (CloneAt, the credential included), and a commit the server no longer has fails the job with
+// its own code before anything runs.
+func TestRuntimePinnedBase(t *testing.T) {
+	e, _ := newRuntimeEnv(t)
+	var at string
+	e.d.Runtime.Repo.BaseSHA = sha
+	e.d.Runtime.CloneAt = func(_ context.Context, _, ref, s, username, token, _ string) error {
+		at = ref + "@" + s + " " + username + ":" + token
+		return nil
+	}
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d; log %s", code, e.out)
+	}
+	if at != "main@"+sha+" deploy:gldt-0123456789" || e.git.token != "" {
+		t.Fatalf("pinned clone %q, plain clone token %q", at, e.git.token)
+	}
+
+	e2, _ := newRuntimeEnv(t)
+	e2.d.Runtime.Repo.BaseSHA = sha
+	e2.d.Runtime.CloneAt = func(context.Context, string, string, string, string, string, string) error {
+		return errors.New("fatal: remote error: upload-pack: not our ref")
+	}
+	_ = e2.run(t)
+	if !strings.Contains(e2.out.String(), `"step":"clone","event":"failed","code":"base_unavailable"`) || len(e2.pf.find("finish-outbox")) != 0 && strings.Contains(e2.pf.find("result")[0].body, "completed") {
+		t.Fatalf("log %s", e2.out)
+	}
+	if strings.Contains(e2.out.String(), `"step":"agent","event":"start"`) {
+		t.Fatal("the agent ran without its base")
+	}
+}

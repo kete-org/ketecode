@@ -41,9 +41,21 @@ spec:
         {{- range .Values.networkPolicy.platform.ports }}
         - {protocol: TCP, port: {{ int . }}}
         {{- end }}
+    {{- if .Values.networkPolicy.repositories.cidrs }}
+    # GitLab reached directly (proxy.noProxy): clone-token minting and base-ref resolution.
+    - to:
+        {{- range .Values.networkPolicy.repositories.cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.repositories.ports }}
+        - {protocol: TCP, port: {{ int . }}}
+        {{- end }}
+    {{- end }}
 ---
 # Jobs namespace: default deny both ways; job pods may reach DNS and the configured egress
 # (proxy, GitLab, model endpoints, registry mirrors). The in-pod firewall stays the inner layer.
+# Publisher pods are excluded here and get their own, narrower policy below.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -52,7 +64,9 @@ metadata:
   labels:
     {{- include "kete-runner.labels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - {key: kete.dev/role, operator: NotIn, values: [publish]}
   policyTypes: [Ingress, Egress]
   ingress: []
   egress:
@@ -73,6 +87,42 @@ spec:
         {{- end }}
       ports:
         {{- range .Values.jobs.egress.ports }}
+        - {protocol: TCP, port: {{ int . }}}
+        {{- end }}
+    {{- end }}
+---
+# Publisher pods: no ingress; egress to DNS and GitLab (or the proxy) only (publisher.egress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kete-publishers
+  namespace: {{ .Values.jobs.namespace | quote }}
+  labels:
+    {{- include "kete-runner.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      kete.dev/role: publish
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    {{- if .Values.publisher.egress.cidrs }}
+    - to:
+        {{- range .Values.publisher.egress.cidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        {{- range .Values.publisher.egress.ports }}
         - {protocol: TCP, port: {{ int . }}}
         {{- end }}
     {{- end }}
