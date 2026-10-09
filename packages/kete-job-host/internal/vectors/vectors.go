@@ -25,7 +25,7 @@ func dir(name string) string {
 var Files = []string{"config-disk.json", "hpke.json", "signatures.json"}
 
 // FilesV2 are the v2 vector files, in SHA256SUMS order.
-var FilesV2 = []string{"hpke.json", "messages.json", "signatures.json"}
+var FilesV2 = []string{"hpke.json", "messages.json", "orchestration.json", "signatures.json"}
 
 // Signatures is signatures.json.
 type Signatures struct {

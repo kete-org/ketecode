@@ -289,8 +289,8 @@ func readVector(t *testing.T) (harnessVector, []byte) {
 
 // jobsVectors are the jobs-v1 vectors copied byte for byte from kete-code-platform
 // docs/contracts/test-vectors/jobs-v1/, in SHA256SUMS order (regenerate with
-// `shasum -a 256 claim-harness-code.json claim-runtime-repo.json result-boundary.json`).
-var jobsVectors = []string{"claim-harness-code.json", "claim-runtime-repo.json", "result-boundary.json"}
+// `shasum -a 256 claim-harness-code.json claim-runtime-repo.json orchestration.json result-boundary.json`).
+var jobsVectors = []string{"claim-harness-code.json", "claim-runtime-repo.json", "orchestration.json", "result-boundary.json"}
 
 func TestJobsVectorsChecksums(t *testing.T) {
 	sums, err := os.ReadFile(filepath.Join("testdata", "jobs-v1", "SHA256SUMS"))

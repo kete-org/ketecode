@@ -163,3 +163,18 @@ describe("KeteJobSecrets organization overlay", () => {
     expect(KeteJobSecrets.organization()).toBe("573b7e15-80c5-4db4-9e43-a8841b97f055")
   })
 })
+
+describe("KeteJobSecrets orchestration overlay", () => {
+  const spec = { version: 1, id: "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d", role: "coordinator", turn: 1, final: false, plan: null, titles: "send" }
+  test("refuses a bad job id or section, then is write-once", () => {
+    expect(KeteJobSecrets.orchestration()).toBeUndefined()
+    expect(() => KeteJobSecrets.setOrchestration({ jobID: "../x", spec })).toThrow("not a valid job id")
+    expect(() => KeteJobSecrets.setOrchestration({ jobID: "c3d8f1a2-6b4e-4f7a-9c2d-8e1f0a3b5c7d", spec: { ...spec, role: "boss" } })).toThrow(
+      "orchestration.role",
+    )
+    expect(KeteJobSecrets.orchestration()).toBeUndefined()
+    KeteJobSecrets.setOrchestration({ jobID: "c3d8f1a2-6b4e-4f7a-9c2d-8e1f0a3b5c7d", spec })
+    expect(KeteJobSecrets.orchestration()?.spec.role).toBe("coordinator")
+    expect(() => KeteJobSecrets.setOrchestration({ jobID: "c3d8f1a2-6b4e-4f7a-9c2d-8e1f0a3b5c7d", spec })).toThrow("already set")
+  })
+})

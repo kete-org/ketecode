@@ -16,6 +16,7 @@ export * as JobSpec from "./job-spec.js"
 import path from "node:path"
 import { SchemaParser } from "effect"
 import { KeteUnattendedSchema } from "@opencode/schema/kete/unattended"
+import { KeteOrchestrationSpec } from "@opencode/util/kete/orchestration-spec"
 import { Model } from "@opencode/schema/model"
 
 /** A job's `policy`: the shared schema's `Policy`, with `budget`/`timeout` required — a job always
@@ -32,6 +33,9 @@ export interface Spec {
   readonly model?: string
   readonly policy: Policy
   readonly branch?: string
+  /** An orchestrated job's section (jobs-v1 `JobSpecOrchestration`): only the cloud job entrypoint
+   * writes it, copied from a claim that carried it; `kete job run` accepts it only in job mode. */
+  readonly orchestration?: KeteOrchestrationSpec.Spec
 }
 
 export class SpecError extends Error {
@@ -54,7 +58,7 @@ const MAX_PROMPT_FILE_BYTES = 256 * 1024
  * rule the runtime would ignore. */
 const NEVER_ALLOWED: ReadonlySet<string> = new Set(["question", "budget"])
 
-const TOP_LEVEL_KEYS: ReadonlySet<string> = new Set(["version", "prompt", "prompt_file", "agent", "model", "policy", "branch"])
+const TOP_LEVEL_KEYS: ReadonlySet<string> = new Set(["version", "prompt", "prompt_file", "agent", "model", "policy", "branch", "orchestration"])
 const POLICY_KEYS: ReadonlySet<string> = new Set(["version", "allow", "budget", "timeout"])
 const ALLOW_RULE_KEYS: ReadonlySet<string> = new Set(["action", "resource"])
 
@@ -215,5 +219,13 @@ export async function parse(text: string, options: { readonly specDir: string; r
     branch = value
   }
 
-  return { version: 1, prompt, agent, model, policy, branch }
+  let orchestration: KeteOrchestrationSpec.Spec | undefined
+  if (raw["orchestration"] !== undefined) {
+    const parsed = KeteOrchestrationSpec.parse(raw["orchestration"])
+    if (!parsed.ok) fail(parsed.field, "is not a valid orchestration section (jobs-v1 JobSpecOrchestration)")
+    orchestration = parsed.spec
+    if (branch === undefined) fail("branch", "an orchestrated job always names its branch")
+  }
+
+  return { version: 1, prompt, agent, model, policy, branch, ...(orchestration ? { orchestration } : {}) }
 }

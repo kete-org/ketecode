@@ -67,3 +67,109 @@ ADR 0026.
 - Local laptop orchestration across processes is not provided; the `workflow` tool and worktree
   subagents remain the local answer. Revisit nested orchestration, approvals between steps, the
   §67 workflow engine and cross-zone work only with a new ADR.
+
+## Contract notes (O1, 2026-10-09)
+
+Carried over from kete-code-platform ADR 0026 "Contract notes (O1)" and "Review amendments (O1)" (the
+contract task `docs/tasks/2026-10-09-orchestration-contracts` there), so this ADR and the platform's
+agree on what was built; the copies of the contracts are `docs/platform/orchestrations-v1.md`,
+`jobs-v1.md` "Orchestrated jobs" and `job-host-v2.md` "Orchestration".
+
+The contracts are defined (task `docs/tasks/2026-10-09-orchestration-contracts`): `orchestrations-v1`
+(`packages/shared/src/api/v1/orchestrations.ts`, `docs/contracts/orchestrations-v1.md`), additive
+jobs-v1 feature `orchestration_v1` and additive job-host-v2 fields, with vectors. Nothing is served;
+the status stays Proposed until the Phase 8 S0 spike. Precisions and deviations from the design
+spec, recorded here so O3–O11 and kete-code build to the contract:
+
+- **Prompts stay out, digests come in.** The proposal carries a SHA-256 `prompt_digest` per node as
+  well as the file's `plan_digest`, so the platform can refuse a changed succeeded node and bind the
+  committed plan file to the proposal (Kete cloud: it recomputes `orchestrationPlanProposal` from
+  the bundle) without ever holding a prompt.
+- **Integer money and per-node attempts in the plan file.** Nodes carry `budget_micros` (not
+  `budget_usd`), `max_attempts` (1–3) and the plan an optional lower `max_parallel`.
+- **The worker spec has no prompt.** `JobSpec` is unchanged; an orchestrated claim's spec is the
+  separate `JobOrchestratedSpec` (prompt only for a coordinator, no `review`). `spec.orchestration.plan`
+  is `{ rev, branch, sha }` (the path is fixed by the contract); `fetch` entries are
+  `{ name: plan | nodes/<key>, branch, sha }`, exposed as `refs/kete/<name>`; the claim schema itself
+  refuses any fetch, branch or clone ref that isn't this orchestration's. A coordinator's spec says
+  whether titles may be sent (`titles`); there is no `state` in the spec (the tool reads it from
+  `GET …/orchestration`).
+- **Result v1 is unchanged.** The handoff note lives in the node commit's message
+  (`orchestrationNodeCommitMessage`, trailers last); the integration outcome is the orchestration's
+  `integration` (decision, turn, push status, PR/MR, commit).
+- **Boundary key** `orchestration_titles` is a flat, optional key of `JobDataBoundary` (absent =
+  `omit`), not a nested `orchestration.titles`.
+- **job-host-v2 gains more than `cleanup`:** report `features` (`orchestration_v1`, allowed only with
+  `publish_refs: send` — the mechanism behind "a runner that refuses SHAs doesn't advertise the
+  feature"), run machine `repository.base_sha` with the failed reason `ref_mismatch` (pinned bases
+  on runtime repositories) and `publish.orchestration` (`plan` / `node` / `integration`: the
+  publisher must know which bundle rule, branch and commit message apply). Cleanup items are checked
+  one by one so a bad item can't discard a desired state.
+- **Names.** Node keys `plan` and `plan-…` are reserved (plan branches); the integration branch
+  defaults to `kete/job/<o8>` and a `branch_suffix` starting with 8 hex digits and `-` is refused.
+- **DAG rules made precise** (`validateOrchestrationPlan`, vectors): a dependency is a listed node or
+  a held `succeeded`/`succeeded_empty` one; `base_from` is any transitive dependency; repeating a
+  succeeded node exactly is a no-op; held `pending`/`ready`/`blocked` nodes left out are superseded.
+- **Not served yet, guarded.** The served v2 poll treats a report with any of the new fields as one
+  failing the schema (as before they existed) until O11, because `job_data_boundary_valid` still
+  takes exactly three keys.
+
+### Review amendments (O1, 2026-10-09)
+
+- **Budget floor.** Each coordinator turn gets `coordinator_turn_budget_micros` and the same amount is
+  held as the reserve, so creation requires `budget ≥ 2 × reserve + 0.25 USD` (the least a node may
+  be given); the minimum budget is 1.25 USD. A plan fits when `allocated + plan cost + reserve ≤
+  budget`, where `allocated` already counts the running turn and the plan cost is the budget of every
+  listed node that will run (new, redefined `pending`/`ready`/`superseded`, retries), exact repeats of
+  succeeded nodes excluded (`orchestrationPlanCost`).
+- **Branch namespace (narrows jobs-v1).** A requested `branch_suffix` of 8 hex digits alone or
+  followed by `-`, any case, is refused for every job and orchestration, so no member can pre-create
+  an orchestration's create-only branches. Cleanup items name exactly a plan or node branch. The
+  platform never issues an orchestration id whose `<o8>` collides with an orchestration of the same
+  repository that is still open or still has branches awaiting cleanup.
+- **Prompt binding.** A worker's spec carries the committed `prompt_digest`; the entrypoint refuses a
+  plan-file prompt with another digest (`prompt_mismatch`).
+- **Titles** are refused (`title_not_permitted`), not silently dropped, when the narrowed boundary
+  omits them; stored titles and summaries pass the platform's secret-shape redactor. A decision's
+  summary is ≤ 4,096 UTF-8 bytes and refused with a NUL or a lone surrogate.
+- **One reading of a plan file.** Strict JSON: canonical non-negative integers only and no duplicate
+  or case-variant member names (`not_canonical`), case-sensitive names, so TypeScript and Go read the
+  same bytes identically. Issues sort by code units.
+- **Retries.** A retry is refused once the attempts made reach the smallest of the node's
+  `max_attempts` as first committed (a revision may lower it, never raise it), the listed value and
+  the hard cap.
+- **Accepted residual risk: a metadata covert channel.** A coordinator (or code steering it) in an
+  enterprise zone chooses node keys, dependency shapes, budgets, timeouts, attempt counts and the
+  timing of plans and decisions, all of which reach the platform. A compromised coordinator could
+  encode a few hundred bytes of repository content per turn into them. The plan-file content (prompts,
+  notes) never crosses, keys are bounded (32 characters, ≤ 16 nodes, ≤ 6 turns) and titles are
+  boundary-gated; the remaining low-bandwidth channel is accepted, as for job outcomes and timing
+  today, and is noted for enterprise reviews.
+- **Guard.** Until O11 the served v2 poll also treats a report with a machine reason `ref_mismatch` as
+  failing the schema.
+
+## Runtime notes (O2, O6, O7, 2026-10-10)
+
+What kete-code built against the contract (task `docs/tasks/2026-10-10-orchestration-runtime`):
+
+- **Feature.** The cloud entrypoint announces `orchestration_v1` (with `clone_revoke_callback`);
+  the `kubevm` entrypoint doesn't until the runner's publisher handles orchestrated jobs (O10). An
+  orchestrated claim passes `checkOrchestratedClaim`'s port before anything is cloned.
+- **Pinned base.** When the orchestration's base branch has moved past the pinned `base_sha`, the
+  entrypoint remakes the pristine copy at exactly that commit, fetched by its id (a git host must
+  serve reachable commits by id, as GitHub does; Harness Code is unverified). A node-based job's base
+  that moved is refused (`ref_mismatch`), never followed.
+- **Extra refs.** Fetched in the clone phase as `refs/heads/<branch>` into `refs/kete/<name>`, each
+  checked at its pinned commit, then copied into the agent's working copy. A worker fetches the tips
+  only (reference); a coordinator fetches the history down to the pinned base, so the tool user can
+  merge node branches locally with no network.
+- **Bundles.** A coordinator turn whose working tree holds `.kete-orchestration/plan.json` publishes
+  exactly that file (any other change is left out, with a note on the job); every other bundle, of
+  every job, refuses a `.kete-orchestration` path (`push_error: unreadable`).
+- **The tool.** `orchestrate` exists only in job mode for a coordinator turn; it needs no policy
+  `allow` of its own (the role is the platform's), but an agent whose rules wholly deny
+  `orchestrate` doesn't get it (and the turn then ends `coordinator_no_decision`). Titles and the
+  decision's summary leave only on Kete cloud (`KETE_RUNTIME_TYPE=kete_cloud`) and only where the
+  claim allows; elsewhere they stay in-zone until the runner's boundary is wired in (O10). The job's
+  id reaches `kete` as `KETE_JOB_ID`; the orchestration section travels to `kete serve` on the
+  existing descriptor channel.

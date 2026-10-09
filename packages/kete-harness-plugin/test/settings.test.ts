@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { Settings } from "../src/settings"
 
 const run = (extra: Record<string, string>) => ({
@@ -225,5 +227,23 @@ describe("cloud mode", () => {
     const s = Settings.parse(cloud({ PLUGIN_PUSH_BRANCH: "kete/job/fix-1" }))
     expect(s.mode === "cloud" && s.push).toEqual({ suffix: "fix-1" })
     expect(refusal(cloud({ PLUGIN_PUSH_BRANCH: "a..b" }))).toContain("suffix")
+  })
+})
+
+describe("Settings: reserved branch suffixes (jobs-v1, 2026-10-09)", () => {
+  // The shared vector's `branch_suffixes` (kete-code-platform docs/contracts/test-vectors/jobs-v1/orchestration.json).
+  const vector: Array<{ suffix: string; valid: boolean }> = JSON.parse(
+    readFileSync(
+      path.join(import.meta.dir, "..", "..", "kete-job-entrypoint", "internal", "fakeplatform", "testdata", "jobs-v1", "orchestration.json"),
+      "utf8",
+    ),
+  ).branch_suffixes
+
+  test("8 hex digits, alone or followed by '-', any case, are refused before anything is sent", () => {
+    for (const { suffix, valid } of vector) {
+      if (valid) expect(Settings.parse(cloud({ PLUGIN_PUSH_BRANCH: suffix })).mode).toBe("cloud")
+      else expect(refusal(cloud({ PLUGIN_PUSH_BRANCH: suffix }))).toContain("PLUGIN_PUSH_BRANCH")
+    }
+    expect(refusal(cloud({ PLUGIN_PUSH_BRANCH: "kete/job/DEADBEEF-x" }))).toContain("Kete reserves")
   })
 })

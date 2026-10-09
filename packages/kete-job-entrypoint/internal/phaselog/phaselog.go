@@ -40,7 +40,9 @@ const (
 	StepClone      Step = "clone"
 	StepVerify     Step = "verify"
 	StepRevoke     Step = "revoke"
-	StepCloneDone  Step = "clone_done" // POST …/clone-done: the platform deletes a Harness Code clone token
+	StepCloneDone  Step = "clone_done"  // POST …/clone-done: the platform deletes a Harness Code clone token
+	StepFetch      Step = "fetch"       // an orchestrated job's extra refs, checked at their pinned commits
+	StepPlanPrompt Step = "plan_prompt" // a node attempt's prompt, read from the plan file
 	StepAgentCopy  Step = "agent_copy"
 	StepAgent      Step = "agent"
 	StepStop       Step = "stop_agents"
@@ -79,7 +81,8 @@ const (
 	CodeSymlink        Code = "symlink"
 	CodeUnreadable     Code = "unreadable"
 	CodeMissing        Code = "missing"
-	CodeSignal         Code = "signal" // SIGTERM/SIGINT: the job was aborted
+	CodeSignal         Code = "signal"       // SIGTERM/SIGINT: the job was aborted
+	CodeRefMismatch    Code = "ref_mismatch" // an orchestrated job's branch isn't at its pinned commit
 
 	// The isolation self-check's reasons (module README "Isolation check"): what the tool user
 	// could reach, or why the check itself couldn't run.

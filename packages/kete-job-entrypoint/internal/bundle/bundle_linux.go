@@ -37,6 +37,7 @@ type Options struct {
 	TmpDir     string // root 0700; a mkdtemp under it holds the index and the bundle
 	BaseSHA    string
 	Limits     Limits
+	Kind       Kind // the orchestrations-v1 rule (KindOther for every plain job)
 }
 
 type outcome int
@@ -310,6 +311,11 @@ func Build(ctx context.Context, o Options) (*Result, error) {
 			return nil, err
 		}
 	}
+	entries, notes, err := applyOrchestration(entries, o.Kind)
+	if err != nil {
+		return nil, err
+	}
+	res.Notes = append(res.Notes, notes...)
 	if err := limitChecks(entries, o.Limits); err != nil {
 		return nil, err
 	}

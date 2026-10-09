@@ -1,4 +1,4 @@
-<!-- Copied from kete-code-platform docs/contracts/jobs-v1.md at commit e5e32ee (kete-org/ketecode-portal#73, 2026-10-07: the runtime repository features, ADR 0025). The platform copy is the source of truth; update both together, and re-copy the test vectors into packages/kete-job-entrypoint/internal/fakeplatform/testdata/jobs-v1/ with them. -->
+<!-- Copied from kete-code-platform docs/contracts/jobs-v1.md at commit 214e543 (kete-org/ketecode-portal#79, 2026-10-09: orchestrated jobs and reserved branch suffixes, ADR 0026; review jobs, ADR 0028). The platform copy is the source of truth; update both together, and re-copy the test vectors into packages/kete-job-entrypoint/internal/fakeplatform/testdata/jobs-v1/ with them -->
 
 # Job API contract — v1
 
@@ -61,6 +61,13 @@ for a terminal job or one whose branch creation has begun.
   (max 25,000,000), `timeout_minutes` 30 (max 120), `push` and `open_pr` `false`, `base_ref`
   the repository's default branch, `branch_suffix` 8 hex characters (the branch is
   `kete/job/<suffix>`).
+- **Reserved suffixes (narrowed 2026-10-09, ADR 0026):** a requested `branch_suffix` of 8 hex digits
+  alone or followed by `-`, in any case, is `400 invalid_request` (`isReservedJobBranchSuffix`). That
+  namespace is the platform's: its generated defaults, an orchestration's `kete/job/<o8>` and its
+  create-only plan and node branches `kete/job/<o8>-…`, which a member could otherwise pre-create.
+  No Kete client generates such a suffix (the portal form, the Harness step and the API pass the
+  user's own; Slack, schedules and GitHub mentions use the default). Vector: `branch_suffixes` in
+  `docs/contracts/test-vectors/jobs-v1/orchestration.json`.
 - **`Job`:** `status` is the platform's (`queued`, `provisioning`, `running`, `finalizing`,
   `cancelling`, then `succeeded`, `failed`, `cancelled` or `timed_out`). `outcome` is the
   runtime's outcome verbatim, one the entrypoint reports itself, or a platform outcome — a
@@ -154,6 +161,66 @@ everything and make no more callbacks.
 
   Examples: `docs/contracts/test-vectors/jobs-v1/claim-runtime-repo.json` (claim request and
   response, finish, and the responses a `kubevm` entrypoint must refuse) and `result-boundary.json` (one result and its bounded forms).
+- **Pull request review (additive, 2026-10-08; ADR 0028).** A review job's `spec` carries `review`
+  (`JobSpecReview`: `pull_number`, `head_sha`, `base_ref`, `head_ref` = `refs/pull/<n>/head`,
+  `untrusted`, `max_findings`). Negotiated exactly like `clone_revoke_callback`:
+  - the claim is refused (404, the job fails `refused`, `entrypoint_outdated`) unless the request's
+    `features` contains **`review_v1`**, before anything is minted; a job without `spec.review` is
+    unchanged whatever `features` says, so an entrypoint that doesn't send `review_v1` never sees
+    the field;
+  - `clone.ref` is the pull request's base branch and `clone.base_sha` the pinned head commit: the
+    entrypoint fetches `spec.review.head_ref` (it may come from a fork; the base repository serves
+    it) and the base branch with the clone token, and checks the checkout is at `clone.base_sha`;
+  - the runtime reviews the changes between the merge base and the head **read-only** (no edits, no
+    shell or other subprocess on the checkout, no network beyond the gateway), treats every file as
+    untrusted when `untrusted` is true, and reports `JobReviewOutput` in the result's `review`
+    (≤ 50 findings, ≤ 64 KiB serialized; `side` RIGHT = the head's line numbers, LEFT = the base's).
+    The result is otherwise result v1: `review` is validated separately (`parseJobReviewOutput`), so
+    an invalid or missing review never fails the result; it is then recorded `invalid` or `missing`
+    and no review is posted. Uploads ask for no bundle (`push` is false).
+
+  Example: `docs/contracts/test-vectors/jobs-v1/review.json` (claim request and response, a result
+  with findings, and reviews the platform refuses).
+- **Orchestrated jobs (additive, 2026-10-09; ADR 0026; contract
+  [orchestrations-v1](orchestrations-v1.md)).** A coordinator turn or a node's attempt of an
+  orchestration is an ordinary job whose claim carries `spec.orchestration`. Negotiated exactly like
+  `review_v1`:
+  - the claim is refused (404, the job fails `refused`, `entrypoint_outdated`) unless the request's
+    `features` contains **`orchestration_v1`** (a runtime repository's also needs `runtime_repo` and
+    `runtime_publish`), before anything is minted; every other claim is unchanged whatever
+    `features` says, so an entrypoint that doesn't send it never sees anything below;
+  - the response is `JobOrchestratedClaimResponse` (or, for a runtime repository,
+    `JobRuntimeOrchestratedClaimResponse`, checked by the `kubevm` entrypoint with
+    `parseRuntimeOrchestratedClaimResponse`): the usual response with `spec` a
+    `JobOrchestratedSpec` — `JobSpec` without `review`, with `orchestration` (`JobSpecOrchestration`:
+    a coordinator's `turn`, `final`, latest committed `plan` and `titles`; a worker's `node`,
+    `attempt`, `plan`, `prompt_digest` and `base_from`) and with `prompt` **only for a coordinator** — and `fetch`
+    (≤ 17 refs `{ name, branch, sha }`). No pre-orchestration parser accepts it (`JobSpec` is strict);
+  - **a worker's prompt is never on the platform:** the entrypoint fetches the plan revision
+    (`fetch` name `plan`) and reads its own node's prompt with `readOrchestrationNodePrompt`, refusing
+    one whose SHA-256 isn't `spec.orchestration.prompt_digest` (`prompt_mismatch`), then
+    gives `kete job run` a spec with that prompt and the `orchestration` section (kete job spec v1
+    gains an optional `orchestration` object in kete-code);
+  - **fetches** happen only in the clone phase, with the clone credential, always as
+    `refs/heads/<branch>` (never a bare name a tag could shadow), each checked to be at its `sha` and
+    exposed read-only in the agent's copy as `refs/kete/<name>` (`plan`, `nodes/<key>`).
+    The response is refused unless every fetched branch is this orchestration's (`plan` =
+    `kete/job/<o8>-plan-<rev>` and equal to `spec.orchestration.plan`, present exactly when that is
+    set; `nodes/<key>` = `kete/job/<o8>-<key>`), names and branches are unique, a worker's
+    `spec.branch` is its node's branch and a coordinator's isn't under `kete/job/<o8>-`, and (with a
+    `clone`) a worker with `base_from` clones that node's branch at its pinned commit
+    (`clone.base_sha`, which must equal that node's `fetch` entry when it has one) while every other
+    orchestrated job clones the orchestration's base, never a `kete/job/` branch;
+  - **bundles:** a plan turn's bundle must be exactly `.kete-orchestration/plan.json`; every other
+    bundle refuses `.kete-orchestration` (`checkOrchestrationBundle`). A node's commit message
+    carries its handoff note (`orchestrationNodeCommitMessage`); result v1 is unchanged;
+  - `Job` gains optional `orchestration` (`{ id, role, node_key?, attempt?, turn? }`), absent on
+    every other job; `JobDataBoundary` gains optional `orchestration_titles` (`omit` | `send`, absent
+    = `omit`), which `narrowJobDataBoundary` adds only when either side sets it, so boundaries
+    without it narrow exactly as before.
+
+  Examples: `docs/contracts/test-vectors/jobs-v1/orchestration.json` (the claim request, four
+  responses to accept, a runtime one, 22 to refuse, `Job.orchestration`, boundary cases and reserved branch suffixes).
 - **Push reasons** (`Job.push_reason`, text) gain, for Harness Code jobs: `harness_<code>`
   (an API or git error code), `harness_rule_violation` (a branch/push rule or hook refused the
   push), `harness_git_host_mismatch` (the repository's git URL isn't on the cluster's git host),
@@ -266,8 +333,23 @@ export const JobGitRef = z.string().refine(isJobGitRef, 'Not a valid branch name
 export const JOB_BRANCH_PREFIX = 'kete/job/'
 /** Always `kete/job/<suffix>`. */
 export const JobBranch = z.string().refine((b) => b.startsWith(JOB_BRANCH_PREFIX) && b.length > JOB_BRANCH_PREFIX.length && isJobGitRef(b))
-/** The branch is `kete/job/<suffix>`; the suffix must make it a valid ref. Default: 8 hex characters. */
-export const JobBranchSuffix = z.string().refine((s) => s.length > 0 && isJobGitRef(`${JOB_BRANCH_PREFIX}${s}`), 'Not a valid branch suffix.')
+/**
+ * A requested suffix may not be 8 hex digits, alone or followed by `-` (any case): that namespace is
+ * the platform's — its generated default suffixes, an orchestration's default integration branch
+ * `kete/job/<o8>` and its plan and node branches `kete/job/<o8>-…`. Narrowed 2026-10-09 (ADR 0026):
+ * a member could otherwise pre-create an orchestration's branches, which are create-only.
+ */
+export function isReservedJobBranchSuffix(suffix: string): boolean {
+  return /^[0-9a-f]{8}(?:-|$)/i.test(suffix)
+}
+/**
+ * The branch is `kete/job/<suffix>`; the suffix must make it a valid ref and must not be reserved
+ * (`isReservedJobBranchSuffix`). Default (generated by the platform, not requested): 8 hex characters.
+ */
+export const JobBranchSuffix = z
+  .string()
+  .refine((s) => s.length > 0 && isJobGitRef(`${JOB_BRANCH_PREFIX}${s}`), 'Not a valid branch suffix.')
+  .refine((s) => !isReservedJobBranchSuffix(s), 'This suffix is reserved for branches the platform names.')
 
 /** A full commit SHA-1, as the entrypoint checks it. */
 export const GitSha = z.string().regex(/^[0-9a-f]{40}$/)
@@ -305,6 +387,52 @@ export const JobAllowRule = z.strictObject({
   resource: z.string().min(1).max(500),
 })
 export type JobAllowRule = z.infer<typeof JobAllowRule>
+
+// ---------------------------------------------------------------- orchestration identifiers (additive, ADR 0026)
+
+/**
+ * Bounds every orchestration shares with jobs-v1 (orchestrations-v1 holds the rest). Contract
+ * maxima: the platform may configure lower limits and reports them (`OrchestrationLimits`).
+ */
+export const ORCHESTRATION_MAX_TURNS = 6
+export const ORCHESTRATION_MAX_ATTEMPTS = 3
+export const ORCHESTRATION_MAX_NODES = 16
+/** Extra refs one claim may fetch: every node branch plus the plan branch. */
+export const ORCHESTRATION_MAX_FETCH = ORCHESTRATION_MAX_NODES + 1
+
+/** An orchestration's id: a UUID in lowercase hex, as the platform issues it. */
+export const OrchestrationId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+
+/**
+ * A node's key: a lowercase letter, then up to 31 lowercase letters, digits or `-`. `plan` and
+ * `plan-…` are reserved (the plan branches' names). Unique in its orchestration and stable across
+ * plan revisions.
+ */
+export const OrchestrationNodeKey = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]{0,31}$/)
+  .refine((k) => k !== 'plan' && !k.startsWith('plan-'), 'Reserved node key.')
+export type OrchestrationNodeKey = z.infer<typeof OrchestrationNodeKey>
+
+/** The first 8 hex digits of an orchestration's id: the prefix of its plan and node branches. */
+export function orchestrationShortId(id: string): string {
+  return id.slice(0, 8)
+}
+/** `kete/job/<o8>-plan-<rev>`: a plan revision's branch (base + exactly the plan file). */
+export function orchestrationPlanBranch(id: string, rev: number): string {
+  return `${JOB_BRANCH_PREFIX}${orchestrationShortId(id)}-plan-${rev}`
+}
+/** `kete/job/<o8>-<key>`: a node's branch (one commit on its base). */
+export function orchestrationNodeBranch(id: string, key: string): string {
+  return `${JOB_BRANCH_PREFIX}${orchestrationShortId(id)}-${key}`
+}
+
+export const OrchestrationRole = z.enum(['coordinator', 'worker'])
+export type OrchestrationRole = z.infer<typeof OrchestrationRole>
+
+/** Whether node titles may leave the zone (a runner's boundary `orchestration_titles`; Kete cloud: `send`). */
+export const OrchestrationTitles = z.enum(['omit', 'send'])
+export type OrchestrationTitles = z.infer<typeof OrchestrationTitles>
 
 // ---------------------------------------------------------------- user routes
 
@@ -362,6 +490,19 @@ export const Job = z.object({
     denied_count: z.number().int().nonnegative(),
     summary_text: z.string().nullable(),
   }),
+  /**
+   * Additive (ADR 0026): present only on a job of an orchestration — a coordinator turn (`turn`) or
+   * a node's attempt (`node_key`, `attempt`). Absent on every other job.
+   */
+  orchestration: z
+    .object({
+      id: OrchestrationId,
+      role: OrchestrationRole,
+      node_key: OrchestrationNodeKey.optional(),
+      attempt: z.number().int().min(1).max(ORCHESTRATION_MAX_ATTEMPTS).optional(),
+      turn: z.number().int().min(1).max(ORCHESTRATION_MAX_TURNS).optional(),
+    })
+    .optional(),
 })
 export type Job = z.infer<typeof Job>
 
@@ -401,16 +542,40 @@ export const JobClaimRequest = z.strictObject({
    * failure. A Harness Code repository's claim is refused without it. `runtime_repo` and
    * `runtime_publish` (ADR 0025): it clones from a repository its runner serves and publishes
    * through the runner's outbox (`JobRuntimeClaimResponse`, `JobRuntimeFinishRequest`). A
-   * `runtime` repository's claim is refused unless both are present.
+   * `runtime` repository's claim is refused unless both are present. `review_v1` (ADR 0028) and
+   * `orchestration_v1` (ADR 0026): a review job's or an orchestrated job's claim is refused without it.
    */
   features: z.array(z.string().regex(/^[a-z0-9_]{1,40}$/)).max(16).optional(),
 })
 export type JobClaimRequest = z.infer<typeof JobClaimRequest>
 
 /**
+ * A pull request review job (additive, 2026-10-08; ADR 0028). Present only on review jobs, whose
+ * claim is refused unless the entrypoint sends the `review_v1` feature, so an entrypoint that
+ * doesn't know this field never receives it. The runtime fetches `head_ref` (the pull request's
+ * head, which may come from a fork) and `base_ref`, checks the checkout is at `head_sha`
+ * (`clone.base_sha`), reviews the changes between their merge base and `head_sha` read-only (no
+ * edits, no shell, no network beyond the gateway) and reports `JobReviewOutput` in
+ * `result.review`. `untrusted`: the head comes from a fork — every file is untrusted content.
+ */
+export const JobSpecReview = z.strictObject({
+  version: z.literal(1),
+  pull_number: z.number().int().positive().max(2_147_483_647),
+  head_sha: GitSha,
+  /** The pull request's base branch (equals `clone.ref`). */
+  base_ref: JobGitRef,
+  /** Always `refs/pull/<pull_number>/head`. */
+  head_ref: z.string().regex(/^refs\/pull\/[1-9][0-9]{0,9}\/head$/),
+  untrusted: z.boolean(),
+  /** At most this many findings are accepted (`JOB_REVIEW_MAX_FINDINGS`). */
+  max_findings: z.number().int().min(1).max(50),
+})
+export type JobSpecReview = z.infer<typeof JobSpecReview>
+
+/**
  * A kete job spec v1 as the platform compiles it (docs/jobs.md §5; the runtime's own rules are
  * kete-code docs/jobs.md "Spec v1"). The platform always sets `agent`, `model`, `policy.budget`,
- * `policy.timeout` and `branch`, and never `prompt_file`.
+ * `policy.timeout` and `branch`, and never `prompt_file`. `review` only on review jobs.
  */
 export const JobSpec = z.strictObject({
   version: z.literal(1),
@@ -427,6 +592,7 @@ export const JobSpec = z.strictObject({
     timeout: z.number().int().min(1).max(JOB_TIMEOUT_MAX_MINUTES),
   }),
   branch: JobBranch,
+  review: JobSpecReview.optional(),
 })
 export type JobSpec = z.infer<typeof JobSpec>
 
@@ -513,6 +679,11 @@ export const JobRunResult = z.object({
   audit_local: z.boolean().optional(),
   denied: z.array(JobRunDenial),
   message: z.string().optional(),
+  /**
+   * A review job's findings (additive, 2026-10-08): validated separately with `JobReviewOutput`,
+   * so an invalid review never fails the result. Ignored on other jobs.
+   */
+  review: z.unknown().optional(),
 })
 export type JobRunResult = z.infer<typeof JobRunResult>
 
@@ -559,7 +730,7 @@ export type JobCloneDoneRequest = z.infer<typeof JobCloneDoneRequest>
 // ---------------------------------------------------------------- enterprise runtime (additive, ADR 0025)
 
 /** Claim features the platform knows (`JobClaimRequest.features`); other names are ignored. */
-export const JOB_CLAIM_FEATURES = ['clone_revoke_callback', 'runtime_repo', 'runtime_publish'] as const
+export const JOB_CLAIM_FEATURES = ['clone_revoke_callback', 'runtime_repo', 'runtime_publish', 'review_v1', 'orchestration_v1'] as const
 export type JobClaimFeature = (typeof JOB_CLAIM_FEATURES)[number]
 /** A `runtime` repository's claim is refused (404, outcome `refused`) unless the request names all of these. */
 export const JOB_RUNTIME_CLAIM_FEATURES = ['runtime_repo', 'runtime_publish'] as const satisfies readonly JobClaimFeature[]
@@ -616,13 +787,16 @@ export type JobRuntimeFinishRequest = z.infer<typeof JobRuntimeFinishRequest>
  * `message`) and local paths (`worktree`, `directory`, `audit_log`) — `none` drops them, `redacted`
  * keeps `text`/`message` redacted and drops the paths, `full` keeps all. `denials`: `count` only the
  * number, `actions` action names with counts, `full` as reported. `publish_refs`: whether the
- * publish outcome carries branch, commit SHAs and the merge request reference. Every setting only
- * narrows: the stricter of the runner's and the organization's applies.
+ * publish outcome carries branch, commit SHAs and the merge request reference.
+ * `orchestration_titles` (additive, ADR 0026): whether orchestration node titles may leave; absent
+ * means `omit`. Every setting only narrows: the stricter of the runner's and the organization's
+ * applies.
  */
 export const JobDataBoundary = z.strictObject({
   summary: z.enum(['none', 'redacted', 'full']),
   denials: z.enum(['count', 'actions', 'full']),
   publish_refs: z.enum(['omit', 'send']),
+  orchestration_titles: OrchestrationTitles.optional(),
 })
 export type JobDataBoundary = z.infer<typeof JobDataBoundary>
 
@@ -631,13 +805,19 @@ export const JOB_DATA_BOUNDARY_DEFAULT: JobDataBoundary = { summary: 'none', den
 
 const stricter = <T extends string>(options: readonly T[], x: T, y: T): T => (options.indexOf(x) <= options.indexOf(y) ? x : y)
 
-/** The stricter of two boundaries, setting by setting (each enum is ordered strictest first). */
+/**
+ * The stricter of two boundaries, setting by setting (each enum is ordered strictest first).
+ * `orchestration_titles` appears only when either side sets it (absent counts as `omit`), so two
+ * boundaries without it narrow exactly as before.
+ */
 export function narrowJobDataBoundary(a: JobDataBoundary, b: JobDataBoundary): JobDataBoundary {
-  return {
+  const narrowed: JobDataBoundary = {
     summary: stricter(JobDataBoundary.shape.summary.options, a.summary, b.summary),
     denials: stricter(JobDataBoundary.shape.denials.options, a.denials, b.denials),
     publish_refs: stricter(JobDataBoundary.shape.publish_refs.options, a.publish_refs, b.publish_refs),
   }
+  if (a.orchestration_titles === undefined && b.orchestration_titles === undefined) return narrowed
+  return { ...narrowed, orchestration_titles: stricter(OrchestrationTitles.options, a.orchestration_titles ?? 'omit', b.orchestration_titles ?? 'omit') }
 }
 
 /**
@@ -696,6 +876,211 @@ export function boundJobRunResult(result: JobRuntimeRunResult, boundary: JobData
   for (const d of result.denied) byAction.set(d.action, (byAction.get(d.action) ?? 0) + (d.count ?? 1))
   const denied = [...byAction].map(([action, count]) => ({ action, resources: [], count }))
   return { ...out, denied, denied_count: total }
+}
+
+// ---------------------------------------------------------------- pull request review (additive, ADR 0028)
+
+/** A review job's claim (`spec.review` set) is refused (404, outcome `refused`) unless the request names it. */
+export const JOB_REVIEW_CLAIM_FEATURE = 'review_v1' satisfies JobClaimFeature
+export const JOB_REVIEW_MAX_FINDINGS = 50
+export const JOB_REVIEW_SUMMARY_MAX_CHARS = 4000
+export const JOB_REVIEW_BODY_MAX_CHARS = 2000
+/** The serialized `result.review` (UTF-8 JSON) may not exceed this. */
+export const JOB_REVIEW_MAX_BYTES = 64 * 1024
+
+export const JobReviewSeverity = z.enum(['info', 'minor', 'major', 'critical'])
+export type JobReviewSeverity = z.infer<typeof JobReviewSeverity>
+
+/**
+ * One finding: a line of the pull request's diff (`side` RIGHT = the head's line number, LEFT =
+ * the base's). The platform posts it inline when that line is in the diff, else in the review body.
+ * `path` is repository-relative with `/` separators.
+ */
+export const JobReviewFinding = z.strictObject({
+  path: z
+    .string()
+    .min(1)
+    .max(1024)
+    // oxlint-disable-next-line no-control-regex -- matching control characters is the point.
+    .refine((p) => !p.startsWith('/') && !p.includes('\\') && !p.split('/').some((s) => s === '' || s === '.' || s === '..') && !/[\u0000-\u001f\u007f]/.test(p), 'Not a repository path.'),
+  line: z.number().int().min(1).max(1_000_000),
+  side: z.enum(['RIGHT', 'LEFT']).default('RIGHT'),
+  severity: JobReviewSeverity,
+  title: z.string().max(200).optional(),
+  body: z.string().min(1).max(JOB_REVIEW_BODY_MAX_CHARS),
+})
+export type JobReviewFinding = z.infer<typeof JobReviewFinding>
+
+/** `result.review` of a review job (strict; at most `JOB_REVIEW_MAX_BYTES` serialized). */
+export const JobReviewOutput = z.strictObject({
+  version: z.literal(1),
+  summary: z.string().max(JOB_REVIEW_SUMMARY_MAX_CHARS),
+  findings: z.array(JobReviewFinding).max(JOB_REVIEW_MAX_FINDINGS),
+})
+export type JobReviewOutput = z.infer<typeof JobReviewOutput>
+
+/** `result.review` checked against the contract and the byte cap (`missing` when absent). */
+export function parseJobReviewOutput(value: unknown): { ok: true; review: JobReviewOutput } | { ok: false; reason: 'missing' | 'too_large' | 'invalid' } {
+  if (value === undefined || value === null) return { ok: false, reason: 'missing' }
+  let size: number
+  try {
+    size = new TextEncoder().encode(JSON.stringify(value)).length
+  } catch {
+    return { ok: false, reason: 'invalid' }
+  }
+  if (size > JOB_REVIEW_MAX_BYTES) return { ok: false, reason: 'too_large' }
+  const parsed = JobReviewOutput.safeParse(value)
+  return parsed.success ? { ok: true, review: parsed.data } : { ok: false, reason: 'invalid' }
+}
+
+// ---------------------------------------------------------------- orchestrated jobs (additive, ADR 0026)
+
+/**
+ * An orchestrated job's claim (`spec.orchestration` set) is refused (404, the job fails `refused`,
+ * `entrypoint_outdated`) unless the request names it, before anything is minted. A claim for any
+ * other job is unchanged whatever `features` says.
+ */
+export const JOB_ORCHESTRATION_CLAIM_FEATURE = 'orchestration_v1' satisfies JobClaimFeature
+/** The plan file, in-zone only: the plan branch's one file. */
+export const ORCHESTRATION_PLAN_PATH = '.kete-orchestration/plan.json'
+
+/** A committed plan revision: its branch and the commit the platform (or the runner) recorded for it. */
+export const OrchestrationPlanRef = z.strictObject({
+  rev: z.number().int().min(1).max(ORCHESTRATION_MAX_TURNS),
+  branch: JobBranch,
+  sha: GitSha,
+})
+export type OrchestrationPlanRef = z.infer<typeof OrchestrationPlanRef>
+
+/**
+ * `spec.orchestration` of an orchestrated job's claim. A **coordinator** turn: `turn` (1 plans), `final`
+ * (it may only finish: integrate or abandon), `plan` (the latest committed revision; null before the
+ * first) and `titles` (whether node titles may be sent to the platform; the runtime also applies its
+ * runner's boundary, and sends them only when both allow). A **worker** (a node's attempt): `node`,
+ * `attempt`, `plan` (the revision holding its prompt), `prompt_digest` (the committed prompt's
+ * SHA-256: the entrypoint refuses a plan file whose prompt for this node differs, `prompt_mismatch`)
+ * and `base_from` (the node whose branch it is based on; null: the orchestration's base).
+ */
+export const JobSpecOrchestration = z.discriminatedUnion('role', [
+  z.strictObject({
+    version: z.literal(1),
+    id: OrchestrationId,
+    role: z.literal('coordinator'),
+    turn: z.number().int().min(1).max(ORCHESTRATION_MAX_TURNS),
+    final: z.boolean(),
+    plan: OrchestrationPlanRef.nullable(),
+    titles: OrchestrationTitles,
+  }),
+  z.strictObject({
+    version: z.literal(1),
+    id: OrchestrationId,
+    role: z.literal('worker'),
+    node: OrchestrationNodeKey,
+    attempt: z.number().int().min(1).max(ORCHESTRATION_MAX_ATTEMPTS),
+    plan: OrchestrationPlanRef,
+    /** SHA-256 (lowercase hex) of the node's prompt as committed; the plan file's prompt must match it. */
+    prompt_digest: z.string().regex(/^[0-9a-f]{64}$/),
+    base_from: OrchestrationNodeKey.nullable(),
+  }),
+])
+export type JobSpecOrchestration = z.infer<typeof JobSpecOrchestration>
+
+/**
+ * The compiled spec of an orchestrated job: `JobSpec` without `review`, with `orchestration`, and
+ * with `prompt` exactly for a coordinator (the orchestration's prompt). A worker's prompt is never on
+ * the platform: the entrypoint reads it from the plan file at `spec.orchestration.plan` (its own
+ * node's `prompt`) and puts it into the spec it gives `kete job run`.
+ */
+export const JobOrchestratedSpec = JobSpec.omit({ prompt: true, review: true })
+  .extend({ prompt: JobPrompt.optional(), orchestration: JobSpecOrchestration })
+  .superRefine((s, ctx) => {
+    if ((s.orchestration.role === 'coordinator') !== (s.prompt !== undefined))
+      ctx.addIssue({ code: 'custom', path: ['prompt'], message: '`prompt` exactly for a coordinator.' })
+  })
+export type JobOrchestratedSpec = z.infer<typeof JobOrchestratedSpec>
+
+/**
+ * An extra ref the entrypoint fetches in the clone phase (only then), checks it is at `sha` and exposes
+ * read-only as `refs/kete/<name>` — always as `refs/heads/<branch>`, never a bare name git could resolve
+ * to a tag or another ref: `plan` (the plan revision of `spec.orchestration.plan`) or
+ * `nodes/<key>` (a node's branch: a worker's dependencies, or every succeeded node for a coordinator).
+ */
+export const JobOrchestrationFetch = z.strictObject({
+  name: z.string().regex(/^(?:plan|nodes\/[a-z][a-z0-9-]{0,31})$/),
+  branch: JobBranch,
+  sha: GitSha,
+})
+export type JobOrchestrationFetch = z.infer<typeof JobOrchestrationFetch>
+
+type OrchestratedClaim = { spec: JobOrchestratedSpec; fetch: JobOrchestrationFetch[]; clone?: { ref: string; base_sha: string } | undefined }
+
+/**
+ * The checks every orchestrated claim response passes (fail closed: the entrypoint refuses the claim
+ * otherwise). Every fetched branch is this orchestration's: `plan` is `kete/job/<o8>-plan-<rev>` and
+ * equals `spec.orchestration.plan` (present exactly when that is set), `nodes/<key>` is
+ * `kete/job/<o8>-<key>`; names and branches are unique. A worker's `spec.branch` is its node's branch
+ * and a coordinator's isn't under `kete/job/<o8>-`. With a `clone` (not a runtime repository): a
+ * worker based on another node clones that node's branch (`clone.base_sha` is its pinned SHA); every
+ * other orchestrated job clones the orchestration's base, which is never a `kete/job/` branch; when the
+ * base node is also fetched, its `sha` equals `clone.base_sha`.
+ */
+function checkOrchestratedClaim(r: OrchestratedClaim, ctx: z.RefinementCtx): void {
+  const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message })
+  const o = r.spec.orchestration
+  const prefix = `${JOB_BRANCH_PREFIX}${orchestrationShortId(o.id)}-`
+  const names = r.fetch.map((f) => f.name)
+  if (new Set(names).size !== names.length) issue(['fetch'], 'Duplicate fetch name.')
+  if (new Set(r.fetch.map((f) => f.branch)).size !== r.fetch.length) issue(['fetch'], 'Duplicate fetch branch.')
+  r.fetch.forEach((f, i) => {
+    if (f.name === 'plan') {
+      if (o.plan === null || f.branch !== o.plan.branch || f.sha !== o.plan.sha) issue(['fetch', i], '`plan` must be `spec.orchestration.plan`.')
+      return
+    }
+    const key = f.name.slice('nodes/'.length)
+    if (!OrchestrationNodeKey.safeParse(key).success || f.branch !== orchestrationNodeBranch(o.id, key)) issue(['fetch', i], 'Not this orchestration’s node branch.')
+  })
+  if (o.plan !== null) {
+    if (o.plan.branch !== orchestrationPlanBranch(o.id, o.plan.rev)) issue(['spec', 'orchestration', 'plan'], 'Not this orchestration’s plan branch.')
+    if (!names.includes('plan')) issue(['fetch'], 'The plan revision must be fetched.')
+  }
+  if (o.role === 'worker' && r.spec.branch !== orchestrationNodeBranch(o.id, o.node)) issue(['spec', 'branch'], 'A worker pushes its node’s branch.')
+  if (o.role === 'coordinator' && r.spec.branch.startsWith(prefix)) issue(['spec', 'branch'], 'A coordinator’s branch is the integration branch.')
+  if (r.clone !== undefined) {
+    const based = o.role === 'worker' && o.base_from !== null
+    if (based && r.clone.ref !== orchestrationNodeBranch(o.id, o.base_from!)) issue(['clone', 'ref'], 'A worker based on a node clones that node’s branch.')
+    const baseFetch = based ? r.fetch.find((f) => f.name === `nodes/${o.base_from}`) : undefined
+    if (baseFetch !== undefined && r.clone.base_sha !== baseFetch.sha) issue(['clone', 'base_sha'], 'The base node’s fetch and the clone disagree.')
+    if (!based && r.clone.ref.startsWith(JOB_BRANCH_PREFIX)) issue(['clone', 'ref'], 'The orchestration’s base is never a job branch.')
+  }
+}
+
+/**
+ * POST …/claim → 200 for an orchestrated job on a GitHub or Harness Code repository (feature
+ * `orchestration_v1`): `JobClaimResponse` with an orchestrated `spec` and `fetch` (≤ 17 refs, all
+ * fetched with the clone token in the clone phase).
+ */
+export const JobOrchestratedClaimResponse = JobClaimResponse.extend({
+  spec: JobOrchestratedSpec,
+  fetch: z.array(JobOrchestrationFetch).max(ORCHESTRATION_MAX_FETCH),
+}).superRefine(checkOrchestratedClaim)
+export type JobOrchestratedClaimResponse = z.infer<typeof JobOrchestratedClaimResponse>
+
+/**
+ * POST …/claim → 200 for an orchestrated job on a `runtime` repository (features `runtime_repo`,
+ * `runtime_publish` and `orchestration_v1`): `JobRuntimeClaimResponse` with an orchestrated `spec` and
+ * `fetch`. The entrypoint fetches with the credential its runner gave it; the runner pinned the base
+ * (job-host-v2 `repository.base_sha`).
+ */
+export const JobRuntimeOrchestratedClaimResponse = JobRuntimeClaimResponse.extend({
+  spec: JobOrchestratedSpec,
+  fetch: z.array(JobOrchestrationFetch).max(ORCHESTRATION_MAX_FETCH),
+}).superRefine(checkOrchestratedClaim)
+export type JobRuntimeOrchestratedClaimResponse = z.infer<typeof JobRuntimeOrchestratedClaimResponse>
+
+/** The `kubevm` entrypoint's check for an orchestrated claim: as `parseRuntimeClaimResponse`. */
+export function parseRuntimeOrchestratedClaimResponse(value: unknown, localName: string): JobRuntimeOrchestratedClaimResponse | null {
+  const parsed = JobRuntimeOrchestratedClaimResponse.safeParse(value)
+  return parsed.success && parsed.data.repository.name === localName ? parsed.data : null
 }
 ```
 

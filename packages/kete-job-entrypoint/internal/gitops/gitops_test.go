@@ -166,3 +166,103 @@ func TestScrubBasicValue(t *testing.T) {
 		t.Errorf("scrubbed = %q", s)
 	}
 }
+
+func TestOrchestrationFetchArgv(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	git, log := fakeGit(t, 0)
+	r := runner(git)
+	token := "SECRETTOKEN0123456789"
+	refs := []RefSpec{{Name: "plan", Branch: "kete/job/ab12cd34-plan-1"}, {Name: "nodes/sdk-core", Branch: "kete/job/ab12cd34-sdk-core"}}
+	if err := r.FetchRefs(context.Background(), "/p.git", "https://github.com/org/repo.git", "x-access-token", token, refs, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.FetchRefs(context.Background(), "/p.git", "https://github.com/org/repo.git", "x-access-token", token, refs[:1], false); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "pristine.git")
+	if err := r.PinBase(context.Background(), "https://github.com/org/repo.git", "main", "x-access-token", token, strings.Repeat("a", 40), dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.CopyKeteRefs(context.Background(), "/p.git", "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(log)
+	var argv []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "ARGS ") {
+			argv = append(argv, strings.TrimPrefix(line, "ARGS "))
+			if strings.Contains(line, token) {
+				t.Error("token in argv")
+			}
+		}
+	}
+	want := []string{
+		"--git-dir=/p.git fetch --no-tags --no-write-fetch-head --depth=1 -- https://github.com/org/repo.git +refs/heads/kete/job/ab12cd34-plan-1:refs/kete/plan +refs/heads/kete/job/ab12cd34-sdk-core:refs/kete/nodes/sdk-core",
+		"--git-dir=/p.git fetch --no-tags --no-write-fetch-head -- https://github.com/org/repo.git +refs/heads/kete/job/ab12cd34-plan-1:refs/kete/plan",
+		"init --bare -q -- " + dest,
+		"--git-dir=" + dest + " fetch --depth=1 --no-tags --no-write-fetch-head -- https://github.com/org/repo.git +" + strings.Repeat("a", 40) + ":refs/heads/main",
+		"--git-dir=" + dest + " symbolic-ref HEAD refs/heads/main",
+		"-C /repo fetch --no-tags --no-write-fetch-head --update-shallow -- /p.git +refs/kete/*:refs/kete/*",
+	}
+	if strings.Join(argv, "\n") != strings.Join(want, "\n") {
+		t.Errorf("argv:\n%s\nwant:\n%s", strings.Join(argv, "\n"), strings.Join(want, "\n"))
+	}
+	if !strings.Contains(string(data), "Authorization: Basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))) {
+		t.Error("fetches without the clone's header")
+	}
+}
+
+// TestKeteRefsRealGit: with the real git, refs/kete/* of a shallow pristine copy reach the agent's
+// working copy through CopyKeteRefs, and ResolveCommit reads them (local transport only).
+func TestKeteRefsRealGit(t *testing.T) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	r := Runner{Git: gitBin, Home: dir, Timeout: 20 * time.Second, CloneTimeout: 20 * time.Second, MaxStdout: 1 << 20, MaxStderr: 1 << 16}
+	sh := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(gitBin, args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	pristine := filepath.Join(dir, "pristine.git")
+	work := filepath.Join(dir, "work")
+	sh("init", "-q", "-b", "main", work)
+	if err := os.WriteFile(filepath.Join(work, "a"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh("-C", work, "add", "a")
+	sh("-C", work, "commit", "-q", "-m", "base")
+	base := sh("-C", work, "rev-parse", "HEAD")
+	sh("-C", work, "checkout", "-q", "-b", "node")
+	if err := os.WriteFile(filepath.Join(work, "b"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh("-C", work, "add", "b")
+	sh("-C", work, "commit", "-q", "-m", "node")
+	node := sh("-C", work, "rev-parse", "HEAD")
+	sh("init", "-q", "--bare", pristine)
+	sh("--git-dir="+pristine, "fetch", "-q", work, "+refs/heads/main:refs/heads/main", "+refs/heads/node:refs/kete/nodes/n")
+	repo := filepath.Join(dir, "repo")
+	if err := r.AgentCopy(context.Background(), pristine, repo, "kete/job/x", base); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.CopyKeteRefs(context.Background(), pristine, repo); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.ResolveCommit(context.Background(), filepath.Join(repo, ".git"), "refs/kete/nodes/n")
+	if err != nil || got != node {
+		t.Fatalf("refs/kete/nodes/n = %q, %v; want %s", got, err, node)
+	}
+	if _, err := r.ResolveCommit(context.Background(), pristine, "refs/kete/plan"); err == nil {
+		t.Error("a missing ref resolved")
+	}
+}

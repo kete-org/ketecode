@@ -1,5 +1,7 @@
 // Job mode's MCP and model restrictions (D3, D4): registered in plugin/internal.ts's `post` list,
-// right before KeteUnattended.Plugin (last). A no-op outside job mode.
+// right before KeteUnattended.Plugin (last). A no-op outside job mode. It also installs the
+// orchestration pieces of an orchestrated job (kete/orchestrate.ts: the coordinator's `orchestrate`
+// tool and the `.kete-orchestration` rule); nothing for any other job.
 //
 // - Every MCP server is disabled: global config, well-known and platform-synced, stdio and remote
 //   (D12). Registered after KeteAgentSync.Plugin, so synced servers are covered too.
@@ -14,6 +16,7 @@ import { define } from "@opencode/plugin/effect/plugin"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
 import { Effect } from "effect"
 import { KeteGateway } from "./gateway.js"
+import { KeteOrchestrate } from "./orchestrate.js"
 
 export const Plugin = define({
   id: "kete.job-mode",
@@ -33,5 +36,7 @@ export const Plugin = define({
         models.remove(model.providerID, model.id)
       }
     })
+
+    yield* KeteOrchestrate.install(ctx)
   }),
 })

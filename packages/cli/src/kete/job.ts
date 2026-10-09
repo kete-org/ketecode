@@ -29,6 +29,7 @@ import { JobRun } from "./job-run"
 import { JobSpec } from "./job-spec"
 import { KeteJobStandalone } from "./job-standalone"
 import { KeteJobSync } from "./job-sync"
+import { KeteJobOrchestration } from "./job-orchestration"
 
 const exists = (file: string) =>
   access(file)
@@ -119,6 +120,12 @@ export default Runtime.handler(
       return
     }
     const spec = parsed.spec
+    // An orchestrated job's section is the cloud entrypoint's, copied from its claim: never honoured
+    // outside job mode, and never without the job's own id (the coordinator routes name it).
+    const orchestration = spec.orchestration
+      ? KeteJobOrchestration.resolve({ jobMode, spec: spec.orchestration, environment: process.env })
+      : undefined
+    if (orchestration?.kind === "refused") return report(refusedResult(orchestration.message), input.json)
 
     const server = Option.getOrUndefined(input.server)
     const connection = JobConnection.resolve({ server, standalone: input.standalone })
@@ -150,6 +157,7 @@ export default Runtime.handler(
         ? yield* KeteJobStandalone.start({
             gatewayKey: preflight.gatewayKey,
             organization: synced.organization,
+            ...(orchestration?.kind === "ok" ? { orchestration: orchestration.value } : {}),
             auditFd: preflight.auditFd,
           }).pipe(
             Effect.map((value) => ({ ok: true as const, value })),

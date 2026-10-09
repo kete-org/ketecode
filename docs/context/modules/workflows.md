@@ -1,10 +1,11 @@
 ---
 module: workflows
-paths: [packages/core/src/kete/workflows.ts, packages/schema/src/config/kete.ts]
-verified-at: 460d1de894
+paths: [packages/core/src/kete/workflows.ts, packages/core/src/kete/dag.ts, packages/schema/src/config/kete.ts]
+verified-at: eea2edce48
 ---
 
 ## Quick answers
+- Where does the step ordering live now? The Kahn ordering is the shared `KeteDag.order` (`core/src/kete/dag.ts`), called from `validate` (`workflows.ts:64`) and also used by the orchestration contract mirror (`core/src/kete/orchestration/contract.ts`).
 - Anything new for workflows? Only the `kete` config schema gained `offline` (`schema/src/config/kete.ts:72`); workflow behaviour is unchanged.
 - Where workflows are configured: `kete.workflows` (a record keyed by workflow name), schema at `packages/schema/src/config/kete.ts:64-69`, each entry a `Workflow` (`:64-69`) of `WorkflowStep`s (`:47-62`).
 - How a step's task is filled in: `{{input}}` (the workflow call's `input`) and `{{steps.<id>}}` (an earlier step's final answer) — `render()`, `workflows.ts:116-120`, placeholder regex `:34`.

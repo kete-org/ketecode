@@ -30,6 +30,9 @@ type ClaimResponse struct {
 	GatewayURL  string `json:"gateway_url"`
 	PlatformURL string `json:"platform_url"`
 	Deadline    string `json:"deadline"`
+
+	// Fetch is an orchestrated claim's extra refs (jobs-v1 "Orchestrated jobs"); absent otherwise.
+	Fetch json.RawMessage `json:"fetch"`
 }
 
 // ParseClaim decodes the body.
@@ -64,6 +67,10 @@ type Claim struct {
 	Ref           string
 	BaseSHA       string
 	Deadline      time.Time
+
+	// Orchestrated is set for an orchestration's coordinator turn or node attempt (the spec
+	// carries `orchestration`; jobs-v1 "Orchestrated jobs"), checked by ParseOrchestrated.
+	Orchestrated *OrchestratedClaim
 }
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)

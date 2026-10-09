@@ -1,0 +1,1706 @@
+{
+  "description": "orchestrations-v1 DAG rules (validateOrchestrationPlan): `nodes` is a schema-valid plan revision (OrchestrationProposalNode), `existing` the nodes the orchestration holds with their state and attempts, `limits` the configured limits (default 8 per plan, 16 in total, 3 attempts), `titles` the orchestration’s narrowed titles setting (default send). `issues` is the exact result: every issue once, sorted by code, then key, by UTF-16 code units (empty: valid). `plan_cost_micros` is orchestrationPlanCost (what the revision asks to allocate).",
+  "cases": [
+    {
+      "name": "one node",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "diamond, based on an ancestor two levels up",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [
+            "a"
+          ],
+          "base_from": "a",
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "c",
+          "depends_on": [
+            "a"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "d",
+          "depends_on": [
+            "b",
+            "c"
+          ],
+          "base_from": "a",
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 4000000
+    },
+    {
+      "name": "eight nodes",
+      "nodes": [
+        {
+          "key": "n0",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n1",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n2",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n3",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n4",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n5",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n6",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n7",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 8000000
+    },
+    {
+      "name": "nine nodes",
+      "nodes": [
+        {
+          "key": "n0",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n1",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n2",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n3",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n4",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n5",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n6",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n7",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "n8",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "too_many_nodes"
+        }
+      ],
+      "plan_cost_micros": 9000000
+    },
+    {
+      "name": "a configured lower limit",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "c",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "limits": {
+        "nodes_per_plan": 2,
+        "nodes_total": 16,
+        "attempts_per_node": 3
+      },
+      "issues": [
+        {
+          "code": "too_many_nodes"
+        }
+      ],
+      "plan_cost_micros": 3000000
+    },
+    {
+      "name": "a title while titles are omitted",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "title": "Core"
+        },
+        {
+          "key": "b",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "titles": "omit",
+      "issues": [
+        {
+          "code": "title_not_permitted",
+          "key": "a"
+        }
+      ],
+      "plan_cost_micros": 2000000
+    },
+    {
+      "name": "no title while titles are omitted",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "titles": "omit",
+      "issues": [],
+      "plan_cost_micros": 2000000
+    },
+    {
+      "name": "retry raising max_attempts above the committed one",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 2,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "failed",
+          "attempts": 2
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "attempts_exhausted",
+          "key": "core"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "retry within a configured hard cap of 2",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "failed",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "limits": {
+        "nodes_per_plan": 8,
+        "nodes_total": 16,
+        "attempts_per_node": 2
+      },
+      "issues": [],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "retry at a configured hard cap of 2",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "failed",
+          "attempts": 2
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "limits": {
+        "nodes_per_plan": 8,
+        "nodes_total": 16,
+        "attempts_per_node": 2
+      },
+      "issues": [
+        {
+          "code": "attempts_exhausted",
+          "key": "core"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "duplicate key",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "duplicate_key",
+          "key": "a"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "self dependency",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [
+            "a"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "self_dependency",
+          "key": "a"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "duplicate dependency",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [
+            "a",
+            "a"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "duplicate_dependency",
+          "key": "b"
+        }
+      ],
+      "plan_cost_micros": 2000000
+    },
+    {
+      "name": "unknown dependency",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [
+            "ghost"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "unknown_dependency",
+          "key": "a"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "two-node cycle",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [
+            "b"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [
+            "a"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "c",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "cycle",
+          "key": "a"
+        },
+        {
+          "code": "cycle",
+          "key": "b"
+        }
+      ],
+      "plan_cost_micros": 3000000
+    },
+    {
+      "name": "three-node cycle and a node behind it",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [
+            "c"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [
+            "a"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "c",
+          "depends_on": [
+            "b"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "d",
+          "depends_on": [
+            "c"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "cycle",
+          "key": "a"
+        },
+        {
+          "code": "cycle",
+          "key": "b"
+        },
+        {
+          "code": "cycle",
+          "key": "c"
+        },
+        {
+          "code": "cycle",
+          "key": "d"
+        }
+      ],
+      "plan_cost_micros": 4000000
+    },
+    {
+      "name": "base_from not a dependency",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [],
+          "base_from": "a",
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "base_from_not_ancestor",
+          "key": "b"
+        }
+      ],
+      "plan_cost_micros": 2000000
+    },
+    {
+      "name": "base_from itself",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": "a",
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "base_from_not_ancestor",
+          "key": "a"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "base_from a sibling",
+      "nodes": [
+        {
+          "key": "a",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "b",
+          "depends_on": [
+            "a"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "c",
+          "depends_on": [
+            "a"
+          ],
+          "base_from": "b",
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "base_from_not_ancestor",
+          "key": "c"
+        }
+      ],
+      "plan_cost_micros": 3000000
+    },
+    {
+      "name": "revision 2: retry a failed node, depend on a succeeded one, base on it through its recorded dependencies",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "types",
+            "depends_on": [
+              "core"
+            ],
+            "base_from": "core",
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "web",
+            "depends_on": [
+              "types"
+            ],
+            "base_from": "types",
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "failed",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "web",
+          "depends_on": [
+            "types"
+          ],
+          "base_from": "core",
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "depend on a failed node not re-listed",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "failed",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "web",
+          "depends_on": [
+            "core"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "inactive_dependency",
+          "key": "web"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "depend on a superseded node",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "superseded",
+          "attempts": 0
+        }
+      ],
+      "nodes": [
+        {
+          "key": "web",
+          "depends_on": [
+            "core"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "inactive_dependency",
+          "key": "web"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "depend on a succeeded_empty node",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded_empty",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "web",
+          "depends_on": [
+            "core"
+          ],
+          "base_from": "core",
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "repeat a succeeded node exactly",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "web",
+          "depends_on": [
+            "core"
+          ],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "change a succeeded node",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "issues": [
+        {
+          "code": "node_succeeded_changed",
+          "key": "core"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "a succeeded node keeps its key even with another title",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "title": "Core"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 0
+    },
+    {
+      "name": "retry after the last attempt",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "failed",
+          "attempts": 3
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "attempts_exhausted",
+          "key": "core"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "retry with fewer attempts than made",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "blocked",
+          "attempts": 2
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 2,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "attempts_exhausted",
+          "key": "core"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "redefine a pending node",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "pending",
+          "attempts": 0
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 2000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 2000000
+    },
+    {
+      "name": "a running node",
+      "existing": [
+        {
+          "node": {
+            "key": "core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "running",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "core",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "node_running",
+          "key": "core"
+        }
+      ],
+      "plan_cost_micros": 1000000
+    },
+    {
+      "name": "seventeen nodes in total",
+      "existing": [
+        {
+          "node": {
+            "key": "old0",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old1",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old2",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old3",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old4",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old5",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old6",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old7",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old8",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old9",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "new0",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new1",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new2",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new3",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new4",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new5",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new6",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [
+        {
+          "code": "too_many_total_nodes"
+        }
+      ],
+      "plan_cost_micros": 7000000
+    },
+    {
+      "name": "sixteen nodes in total",
+      "existing": [
+        {
+          "node": {
+            "key": "old0",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old1",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old2",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old3",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old4",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old5",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old6",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old7",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old8",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        },
+        {
+          "node": {
+            "key": "old9",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 1000000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "state": "succeeded",
+          "attempts": 1
+        }
+      ],
+      "nodes": [
+        {
+          "key": "new0",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new1",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new2",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new3",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new4",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "key": "new5",
+          "depends_on": [],
+          "base_from": null,
+          "agent": "developer",
+          "budget_micros": 1000000,
+          "timeout_minutes": 30,
+          "max_attempts": 3,
+          "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "issues": [],
+      "plan_cost_micros": 6000000
+    }
+  ]
+}

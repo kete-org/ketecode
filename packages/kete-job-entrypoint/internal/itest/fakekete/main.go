@@ -230,6 +230,10 @@ func spawn(socket, cwd string, argv []string) (string, error) {
 	return string(out), nil
 }
 
+// PlanText is what the orchestration-plan scenario writes as the plan file (the test proposes its
+// digest to the fake platform first).
+const PlanText = "{\"plan\":\"itest\"}\n"
+
 func randomID() string {
 	const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	b := make([]byte, 26)
@@ -287,6 +291,28 @@ func main() {
 	old, _ := os.ReadFile(readme)
 	if err := os.WriteFile(readme, append(old, []byte("edited by the fake kete\n")...), 0o644); err != nil {
 		failed = append(failed, "edit")
+	}
+	// Orchestrated jobs (the entrypoint's O6): refs/kete/* in the working copy, a node merge with the
+	// real git as the tool user, the pinned base, and a plan file in a coordinator's tree.
+	orch := func(script, name string) {
+		out, err := spawn(os.Getenv("KETE_JOB_TOOL_SOCKET"), cwd, []string{"/bin/sh", "-c", script + " && echo ORCH_OK"})
+		if err != nil || !strings.Contains(out, "ORCH_OK") {
+			failed = append(failed, name)
+		}
+	}
+	switch {
+	case strings.HasPrefix(scenario, "orchestration-worker:"):
+		orch("git rev-parse --verify -q refs/kete/plan && git rev-parse --verify -q refs/kete/nodes/sdk-core && test -f sdk-core.txt", "orchestration-refs")
+	case scenario == "orchestration-merge":
+		orch("git -c user.name=t -c user.email=t@kete.test merge -q --no-edit refs/kete/nodes/sdk-core && test -f sdk-core.txt", "orchestration-merge")
+	case scenario == "orchestration-base":
+		orch("test ! -f moved.txt && test -f README.md", "orchestration-base")
+	case scenario == "orchestration-plan":
+		if err := os.MkdirAll(filepath.Join(cwd, ".kete-orchestration"), 0o775); err != nil {
+			failed = append(failed, "plan-dir")
+		} else if err := os.WriteFile(filepath.Join(cwd, ".kete-orchestration", "plan.json"), []byte(PlanText), 0o644); err != nil {
+			failed = append(failed, "plan-file")
+		}
 	}
 	switch scenario {
 	case "stray":

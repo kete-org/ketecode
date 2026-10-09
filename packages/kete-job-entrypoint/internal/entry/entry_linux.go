@@ -484,6 +484,7 @@ func KeteEnvList(cfg layout.Config, e job.KeteEnv) []string {
 		"KETE_RUNTIME_TYPE=kete_cloud",
 		"KETE_GATEWAY_URL=" + e.GatewayURL,
 		"KETE_PLATFORM_URL=" + e.PlatformURL,
+		"KETE_JOB_ID=" + e.JobID,
 		"KETE_JOB_GATEWAY_KEY_FD=3",
 		"KETE_JOB_AUDIT_FD=" + strconv.Itoa(layout.KeteAuditFD),
 		"KETE_DISABLE_MODELS_FETCH=1",
@@ -860,10 +861,10 @@ func (m *machine) OpenProxyLog() (io.ReadCloser, int64, error) {
 	return f, info.Size(), nil
 }
 
-func (m *machine) BuildBundle(ctx context.Context, baseSHA string) (*bundle.Result, error) {
+func (m *machine) BuildBundle(ctx context.Context, baseSHA string, kind bundle.Kind) (*bundle.Result, error) {
 	return bundle.Build(ctx, bundle.Options{
 		Git: m.git, GitDir: m.cfg.Pristine(), WorkParent: m.cfg.WorkParent, RepoName: m.cfg.RepoName,
-		TmpDir: m.cfg.RootTmp(), BaseSHA: baseSHA,
+		TmpDir: m.cfg.RootTmp(), BaseSHA: baseSHA, Kind: kind,
 		Limits: bundle.Limits{
 			MaxFile: layout.BundleMaxFile, MaxBinaryFile: layout.BundleMaxBinaryFile, MaxBinaries: layout.BundleMaxBinaries,
 			MaxEntries: layout.BundleMaxEntries, MaxTar: layout.BundleMaxTar, MaxGzip: layout.BundleMaxGzip,

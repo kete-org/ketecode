@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/orchestration"
 )
 
 // Result is a built bundle.
@@ -253,4 +255,51 @@ func writeTar(w io.Writer, entries []entry, lim Limits) ([]ManifestEntry, error)
 		return nil, err
 	}
 	return manifest, nil
+}
+
+// Kind is the orchestrations-v1 bundle rule a build applies (checkOrchestrationBundle).
+type Kind int
+
+const (
+	// KindOther is every bundle but a coordinator turn's: any path component that folds to
+	// `.kete-orchestration` is refused, deletions included.
+	KindOther Kind = iota
+	// KindCoordinator is an orchestration's coordinator turn: when the plan file is among the
+	// changes (the `orchestrate` tool wrote it after the platform accepted the proposal) the
+	// bundle is a plan bundle, exactly that file; otherwise KindOther's rule applies.
+	KindCoordinator
+)
+
+// applyOrchestration applies the orchestration rule to the listed changes: it returns the entries
+// to bundle and fixed notes. A plan bundle keeps only the plan file (a plan turn publishes nothing
+// else; what else changed is left out, and a note says how much); a refusal is an unreadable
+// refusal with a fixed note.
+func applyOrchestration(entries []entry, kind Kind) ([]entry, []string, error) {
+	view := func(es []entry) []orchestration.BundleEntry {
+		out := make([]orchestration.BundleEntry, 0, len(es))
+		for _, e := range es {
+			out = append(out, orchestration.BundleEntry{Path: e.Path, Deleted: e.Deleted, Mode: e.Mode, Size: int64(len(e.data))})
+		}
+		return out
+	}
+	if kind == KindCoordinator {
+		for _, e := range entries {
+			if e.Path != orchestration.PlanPath || e.Deleted {
+				continue
+			}
+			plan := []entry{e}
+			if r := orchestration.CheckBundle(view(plan), orchestration.BundlePlan); r != "" {
+				return nil, nil, refuse(RefuseUnreadable, "the plan bundle was refused ("+string(r)+")")
+			}
+			var notes []string
+			if n := len(entries) - 1; n > 0 {
+				notes = append(notes, fmt.Sprintf("plan turn: only the plan file is published; %d other change(s) left out", n))
+			}
+			return plan, notes, nil
+		}
+	}
+	if r := orchestration.CheckBundle(view(entries), orchestration.BundleOther); r != "" {
+		return nil, nil, refuse(RefuseUnreadable, "a change touches .kete-orchestration ("+string(r)+")")
+	}
+	return entries, nil, nil
 }
