@@ -7,7 +7,7 @@
 // job.stdout and job.exit (the job container's stdout and exit code) — and, for TestExportScan,
 // the job container's `docker export` stream on stdin.
 //
-// One test per scenario: TestLifecycle, TestAC5, TestNoAgent; e2e.sh runs the one that matches.
+// One test per scenario: TestLifecycle, TestAC5, TestNoAgent, TestOrchestrate; e2e.sh runs the one that matches.
 package e2e
 
 import (
@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/fakeplatform"
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/orchestration"
 )
 
 var (
@@ -532,4 +533,48 @@ func TestNoAgent(t *testing.T) {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// TestOrchestrate: a coordinator turn with the real kete (O6/O7). The scripted model calls the
+// `orchestrate` tool, which exists only for a coordinator in job mode; the tool proposes the plan to
+// the fake's coordinator routes with the job's key (metadata and digests, no prompt or notes) and
+// writes the plan file after the 200; kete records the proposal in its own state; the entrypoint
+// then publishes exactly the plan file, which the fake checks against the proposal's digest.
+func TestOrchestrate(t *testing.T) {
+	s := load(t, fakeplatform.ScenarioOrchestrate)
+	common(t, s, "put:audit", "put:bundle", "put:proxy_log")
+	if r := s.result(t); r.Outcome != "completed" {
+		t.Errorf("result %+v", r)
+	}
+	for _, check := range []string{"orchestrate_tool", "plan_accepted"} {
+		if !s.checks[check] {
+			t.Errorf("check %s failed: checks %v", check, s.checks)
+		}
+	}
+	i, put := s.first("orchestration:plan")
+	if put == nil || put.Status != 200 {
+		t.Fatalf("no accepted plan proposal: calls %v", s.kinds())
+	}
+	if strings.Contains(put.Body, fakeplatform.OrchestrateNodePrompt) || strings.Contains(put.Body, "e2e notes") {
+		t.Error("a prompt or the notes left the zone")
+	}
+	if j, _ := s.first("result"); j < i {
+		t.Error("the proposal came after the result")
+	}
+	manifest, files := readBundle(t, s.upload(t, "bundle"))
+	want := []manifestEntry{{Path: orchestration.PlanPath, Mode: "100644"}}
+	if got, _ := json.Marshal(manifest); string(got) != mustJSON(want) {
+		t.Fatalf("manifest %s, want %s", got, mustJSON(want))
+	}
+	plan, reason := orchestration.ParsePlanFile(files[orchestration.PlanPath])
+	if plan == nil || plan.OrchestrationID != fakeplatform.OrchestrationID || len(plan.Nodes) != 1 || plan.Nodes[0].Prompt != fakeplatform.OrchestrateNodePrompt {
+		t.Errorf("plan file: %+v %s", plan, reason)
+	}
+	var body struct {
+		PlanDigest string `json:"plan_digest"`
+	}
+	_ = json.Unmarshal([]byte(put.Body), &body)
+	if body.PlanDigest != orchestration.SHA256Hex(files[orchestration.PlanPath]) {
+		t.Error("the published plan file isn't the proposal's")
+	}
 }

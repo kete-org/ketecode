@@ -18,14 +18,14 @@
 # The image's entrypoint sets user.max_user_namespaces=0, a host-wide value in Colima's VM or on the
 # CI runner: it is saved first and restored on exit. The host table is removed on exit too.
 #
-# Usage: scripts/e2e.sh <image> [--scenario lifecycle|ac5|no-agent|all] (default all)
+# Usage: scripts/e2e.sh <image> [--scenario lifecycle|ac5|orchestrate|no-agent|all] (default all)
 # Environment: E2E_STATE (state directory, default .build/e2e-state), E2E_JOB_TIMEOUT (seconds,
 # default 900), E2E_KEEP_LOGS=1 (also copy the job's /var/log/kete-job into the state, for debugging).
 # The test layer's binaries come from scripts/build.sh's staged context for the image's architecture.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image="${1:?usage: e2e.sh <image> [--scenario lifecycle|ac5|no-agent|all]}"
+image="${1:?usage: e2e.sh <image> [--scenario lifecycle|ac5|orchestrate|no-agent|all]}"
 shift
 scenario=all
 while [ $# -gt 0 ]; do
@@ -35,8 +35,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$scenario" in
-  all) scenarios=(no-agent lifecycle ac5) ;;
-  lifecycle|ac5|no-agent) scenarios=("$scenario") ;;
+  all) scenarios=(no-agent lifecycle ac5 orchestrate) ;;
+  lifecycle|ac5|orchestrate|no-agent) scenarios=("$scenario") ;;
   *) echo "e2e.sh: unknown scenario $scenario" >&2; exit 2 ;;
 esac
 
@@ -173,6 +173,7 @@ for sc in "${scenarios[@]}"; do
     lifecycle) name=TestLifecycle ;;
     ac5) name=TestAC5 ;;
     no-agent) name=TestNoAgent ;;
+    orchestrate) name=TestOrchestrate ;;
   esac
   echo "-- $name"
   docker run --rm -v "$st:/state" --entrypoint /usr/local/libexec/kete-e2e/e2e.test "$test_image" \

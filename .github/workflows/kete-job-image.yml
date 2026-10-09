@@ -1,7 +1,8 @@
 # Kete-owned. The cloud job image's end-to-end test (packages/kete-job-image/README.md): builds the
 # Linux x64 `kete`, the Go binaries and the image once, then runs scripts/e2e.sh: the image's real
 # entrypoint, root helper, egress proxy and `kete` against the containerised fake platform, for the
-# no-agent, lifecycle and AC5 (real npm, PyPI and crates.io installs through the proxy) scenarios.
+# no-agent, lifecycle, AC5 (real npm, PyPI and crates.io installs through the proxy) and orchestrate
+# (a coordinator turn: the `orchestrate` tool against the fake's coordinator routes, the plan bundle) scenarios.
 # Path-filtered to the job path, protecting the shared CI minutes budget (see kete-build.yml);
 # ~12-15 minutes. On failure the e2e state (minus the test credentials) is uploaded.
 name: kete-job-image

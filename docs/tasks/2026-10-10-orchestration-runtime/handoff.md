@@ -59,3 +59,7 @@ None blocking.
   case already agrees.
 - N5: ADR 0012 threat model: plan metadata is model-chosen and leaves the zone; fine on Kete cloud,
   to reconsider for O10.
+- Job-image e2e: new scenario `orchestrate` (real `kete`, a coordinator turn: the scripted model
+  calls `orchestrate` plan against the fake's coordinator routes; the asserter checks the tool was
+  offered, the proposal carried no prompt or notes, and the bundle is exactly the plan file with the
+  proposal's digest). This supersedes the "deferred" entry above.

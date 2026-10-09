@@ -46,7 +46,7 @@ import (
 func main() {
 	addr := flag.String("addr", "198.51.100.10", "the IPv4 address to serve HTTPS (:443) and DNS (:53) on")
 	state := flag.String("state", "/state", "the state directory")
-	scenario := flag.String("scenario", "lifecycle", "lifecycle, ac5 or no-agent")
+	scenario := flag.String("scenario", "lifecycle", "lifecycle, ac5, orchestrate or no-agent")
 	backend := flag.String("git-http-backend", "/usr/lib/git-core/git-http-backend", "git http-backend")
 	deadline := flag.Duration("deadline", 25*time.Minute, "the job's deadline, from now")
 	timeout := flag.Int("policy-timeout", 15, "the spec's policy.timeout in minutes")
@@ -65,6 +65,9 @@ func main() {
 		knobs.Scenario = fakeplatform.ScenarioLifecycle
 	case "ac5":
 		knobs.Scenario = fakeplatform.ScenarioAC5
+	case "orchestrate":
+		knobs.Scenario = fakeplatform.ScenarioOrchestrate
+		knobs.Orchestration = fakeplatform.OrchestrationCoordinator
 	case "no-agent":
 		knobs.Scenario = fakeplatform.ScenarioLifecycle
 		knobs.OmitAgent = true
