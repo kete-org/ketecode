@@ -75,6 +75,7 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   "packages/core/src/kete/hooks.ts": { category: "off-in-job", reason: "config hooks (realpath of the repository); the plugin does nothing in job mode" },
   "packages/core/src/kete/hooks/run.ts": { category: "off-in-job", reason: "a hook's payload temp file; the hooks plugin does nothing in job mode" },
   "packages/core/src/kete/hooks/trust.ts": { category: "data-dir", reason: "the hooks trust store in kete's state directory" },
+  "packages/core/src/kete/lsp/executable.ts": { category: "off-in-job", reason: "finds language server programs (stat/realpath); the LSP plugin does nothing in job mode" },
   "packages/core/src/shell/select.ts": { category: "not-worktree", reason: "checks the shell binary's path" },
   "packages/core/src/kete/sandbox/probe.ts": { category: "off-in-job", reason: "checks for sandbox-exec/bwrap; the local sandbox never runs in job mode" },
   "packages/core/src/kete/sandbox.ts": { category: "off-in-job", reason: "creates a session's private temp directory for the local sandbox; never runs in job mode" },

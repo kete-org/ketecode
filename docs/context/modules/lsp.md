@@ -5,25 +5,27 @@ verified-at: 0f5cf9baaa
 ---
 ## Quick answers
 - Did upstream have LSP? v1 did (`packages/opencode/src/lsp`, tag v1.4.9; reference for the protocol flow). v2 has none (TODOs in `core/src/file-mutation.ts`, `tool/plugin/edit.ts`, `tool/plugin/write.ts`) but keeps the `lsp` config key (`schema/src/config/lsp.ts`, normalized in `core/src/config/normalize.ts`), which this module reads. No upstream tool was edited: diagnostics are appended in a `tool.execute.after` hook.
-- Which servers? Built-ins in `lsp/servers.ts` (typescript, python with a basedpyright alternative, go, rust), only from PATH (`core/src/util/which.ts`); never downloaded.
+- Which servers? Built-ins in `lsp/servers.ts` (typescript, python with a basedpyright alternative, go, rust), found by `lsp/executable.ts` (absolute PATH entries only, no cwd, PATHEXT on Windows, never a real path inside the workspace — not the generic `util/which.ts`, which searches cwd on Windows); never downloaded.
 - Can a repository add a server command? No: `command`/`env`/`initialization`/new servers count only from documents under the global config dir; a project can only disable (`lsp: false`, `<id>.disabled`). `ignored` is logged once.
-- Sandbox? Each server is wrapped by Seatbelt/bwrap via `KeteSandboxResolve.resolve` with a private temp dir passed as the "workspace" (so nothing in the real workspace is writable and Linux placeholders land in that temp dir), `network: false`; sandbox `off` or unavailable+`auto` → unsandboxed; `required`+unavailable → not started (`lsp.ts:134`).
+- Sandbox? Each server is wrapped by Seatbelt/bwrap via `KeteSandboxResolve.resolve` with a private temp dir passed as the "workspace" (so nothing in the real workspace is writable and Linux placeholders land in that temp dir), `network: false`. Without an active sandbox (off, unavailable, Windows) nothing starts unless the global config sets `kete.lsp.unsandboxed: true` and no policy denies `sandbox_off` (`unsandboxedAllowed`). Env: `serverEnvironment` allowlist minus credential names; `NoDefaultCurrentDirectoryInExePath=1` on Windows.
+- Why `kete.lsp.unsandboxed` and not `lsp.unsandboxed`? The upstream `lsp` schema is a record of server entries; an unknown boolean entry is dropped by normalization.
 - Job mode / review mode? The plugin returns immediately (`KeteJobMode.enabled`); remote-workspace locations too. Spawns go through `Environment.spawner` (classified `seam` in `core/test/kete/job-spawn-sites.test.ts`).
 
 ## Purpose
 Feed compiler/linter errors from language servers back to the agent after its edits.
 
 ## Entry points
-- `KeteLsp.Plugin` / `make(deps)` (`core/src/kete/lsp.ts:113`), registered after `KeteTodo` in `pre` (`core/src/plugin/internal.ts:305`).
+- `KeteLsp.Plugin` / `make(deps)` (`core/src/kete/lsp.ts:196`), registered after `KeteTodo` in `pre` (`core/src/plugin/internal.ts:305`).
 
 ## Key files
 | File | Role |
 | --- | --- |
-| `packages/core/src/kete/lsp.ts` | plugin: touched files (`touched`, `:63`), sandboxed launch, lazy start/LRU (`MAX_SERVERS`, `:49`), `diagnose`, the after hook (`:358`) |
+| `packages/core/src/kete/lsp.ts` | plugin: touched files (`touched`, `:67`), sandboxed launch, lazy start/LRU (`MAX_SERVERS`, `:53`), `diagnose`, the after hook (`:475`) |
 | `packages/core/src/kete/lsp/rpc.ts` | Content-Length JSON-RPC connection (16 MiB frame cap, timeouts, unknown requests answered) |
 | `packages/core/src/kete/lsp/client.ts` | initialize, didOpen/didChange (full text), publishDiagnostics with a quiet period |
 | `packages/core/src/kete/lsp/servers.ts` | catalogue, settings from `lsp` per document, root markers, language ids |
-| `packages/core/src/kete/lsp/diagnostics.ts` | parse, clean, per-session dedupe (`Reported`), bounded report |
+| `packages/core/src/kete/lsp/diagnostics.ts` | parse, clean, escape, per-session dedupe (`Reported`), bounded report |
+| `packages/core/src/kete/lsp/executable.ts` | program lookup that the repository can't influence |
 
 ## Data flow
 `edit`/`write`/`patch` completes → absolute paths (write `output.target`, patch `output.applied[].target`, edit `input.path` via `FileAccess.resolve`) → servers by extension → root → start or reuse → `touch` → wait (quiet 300 ms, max 4 s) → `report` → appended text content.
@@ -39,6 +41,7 @@ Feed compiler/linter errors from language servers back to the agent after its ed
 
 ## Changes
 - 2026-10-10 created (wave 1a, `docs/tasks/2026-10-10-wave1a`).
+- 2026-10-10 security review fixes: own executable lookup, no unsandboxed servers without global opt-in, env allowlist, sibling tsserver, cargo wrapper overrides, escaped report, linear RPC reader.
 
 ## Gotchas
 - `typescript-language-server` needs TypeScript 5.x (`tsserver.js`); TypeScript 7 has none — set `initialization.tsserver.path` in the global config or the server fails to start (logged, skipped).

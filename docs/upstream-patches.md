@@ -997,6 +997,15 @@ tools and their TODOs are untouched (`docs/lsp.md`).
 | `core/src/plugin/internal.ts` | Import; `KeteLsp.Plugin` after `KeteTodo.Plugin` in `pre` | internal plugin registration list |
 | `core/test/kete/job-spawn-sites.test.ts` | (Kete-owned) `kete/lsp.ts` classified `seam` | — |
 
+**Follow-up (not fixed):** upstream's formatter lookup (`core/src/formatter/builtins.ts`
+`findExecutable`, via `core/src/util/which.ts` and the `which` package) has the flaw the LSP lookup
+avoids: on Windows it searches the current directory first, and relative `PATH` entries resolve
+against the current directory, so a repository could plant a formatter binary. Kete's LSP uses
+`core/src/kete/lsp/executable.ts` instead (absolute PATH entries only, never inside the workspace).
+Fixing the formatter means changing upstream code; left for a separate change.
+
+`kete.lsp.unsandboxed` (Kete's schema) regenerated `protocol/openapi.json` and the client types.
+
 **Sync checklist:** if upstream brings back an LSP runtime (its `file-mutation.ts`/`edit.ts` TODOs
 resolved), compare and drop Kete's in favour of upstream's, keeping the sandboxing and the
 project-config restriction. If upstream changes the `lsp` config schema, update `lsp/servers.ts`.

@@ -2,10 +2,20 @@
 // configuration key (`schema/src/config/lsp.ts`, which OpenCode v2 keeps but no longer reads).
 //
 // Built-in servers: TypeScript/JavaScript, Python, Go and Rust, each used only when its program is
-// already on PATH — Kete Code never downloads a language server. Their settings turn off features
-// that run the project's code or reach the network on their own: rust-analyzer's build scripts and
-// proc macros, TypeScript's automatic type acquisition, Go toolchain and module downloads, cargo's
-// network.
+// already on PATH — Kete Code never downloads a language server.
+//
+// A language server runs code the repository controls, which is why it runs in the OS sandbox
+// without network (lsp.ts). Known paths: typescript-language-server loads the project's
+// `node_modules/typescript` (unless lsp.ts finds a TypeScript installed beside the server) and the
+// tsserver plugins a `tsconfig.json` names; pyright runs the interpreter of a `venvPath`/`venv` the
+// repository's `pyrightconfig.json`/`pyproject.toml` names; rust-analyzer runs cargo and rustc, which
+// honour the repository's `.cargo/config.toml` (`build.rustc`, wrappers) and a `rust-toolchain.toml`
+// toolchain path, and reads `rust-analyzer.toml`; gopls runs `go list`, which may run `pkg-config`
+// for cgo. The settings below turn off what is cheap to turn off: rust-analyzer's build scripts,
+// proc macros and check-on-save; cargo's rustc wrappers (empty `RUSTC_WRAPPER` and
+// `CARGO_BUILD_RUSTC_*WRAPPER` override the config files) and network; TypeScript's automatic type
+// acquisition and probe-location plugins; Go toolchain and module downloads. The rest is contained
+// by the sandbox, not prevented.
 //
 // Configuration (`lsp`), read per document like the sandbox settings (sandbox/settings.ts):
 // - `lsp: false` anywhere turns every server off; `lsp: { <id>: { disabled: true } }` one server.
@@ -59,7 +69,12 @@ export const builtins: ReadonlyArray<Server> = [
     command: ["rust-analyzer"],
     extensions: [".rs"],
     roots: ["Cargo.toml"],
-    env: { CARGO_NET_OFFLINE: "true" },
+    env: {
+      CARGO_NET_OFFLINE: "true",
+      RUSTC_WRAPPER: "",
+      CARGO_BUILD_RUSTC_WRAPPER: "",
+      CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER: "",
+    },
     initialization: {
       cargo: { buildScripts: { enable: false } },
       procMacro: { enable: false },

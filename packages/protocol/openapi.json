@@ -13359,6 +13359,15 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "lsp": {
+                "type": "object",
+                "properties": {
+                  "unsandboxed": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

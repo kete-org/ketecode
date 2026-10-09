@@ -17,7 +17,7 @@ ERROR [12:7] Type 'string' is not assignable to type 'number'. (typescript 2322)
 
 | Language | Server (must be on your `PATH`) | Install, for example |
 | --- | --- | --- |
-| TypeScript, JavaScript | `typescript-language-server` (uses the project's `typescript` 5.x) | `npm i -g typescript-language-server typescript` |
+| TypeScript, JavaScript | `typescript-language-server` (with TypeScript 5.x installed beside it, else the project's) | `npm i -g typescript-language-server typescript` |
 | Python | `pyright-langserver`, else `basedpyright-langserver` | `npm i -g pyright` or `pip install basedpyright` |
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
@@ -41,22 +41,41 @@ quietly.
 
 ## Safety
 
-A language server reads your project and can run parts of it (TypeScript loads the project's
-`typescript`; rust-analyzer can run build scripts). So:
+A language server runs code the repository controls. Known paths: `typescript-language-server`
+loads the project's `node_modules/typescript` and any tsserver plugins its `tsconfig.json` names;
+pyright runs the Python interpreter of a `venvPath`/`venv` set in the repository's
+`pyrightconfig.json` or `pyproject.toml`; rust-analyzer runs cargo and rustc, which follow the
+repository's `.cargo/config.toml` (`build.rustc`, rustc wrappers) and a `rust-toolchain.toml`
+toolchain path, and it reads `rust-analyzer.toml`; gopls runs `go list`, which can run `pkg-config`
+for cgo. So:
 
 - Each server runs in Kete Code's [OS sandbox](sandbox.md) **without network** and with **nothing
   writable** except a private temp directory and the toolchain caches — not even the workspace. It
-  can't read credentials. If you turned the sandbox off, or your platform has none (Windows, Linux
-  without `bwrap`), servers run unsandboxed like formatters and MCP servers; if the sandbox is
-  `required` and unavailable, no server starts.
-- Built-in settings turn off features that run project code or use the network: rust-analyzer's
-  build scripts, proc macros and check-on-save; TypeScript's automatic type acquisition; Go
-  toolchain and module downloads (`GOTOOLCHAIN=local`, `GOPROXY=off`); cargo's network
-  (`CARGO_NET_OFFLINE`).
-- Kete Code's own credentials are removed from a server's environment.
+  can't read credentials.
+- **No sandbox, no servers.** When the sandbox is turned off, unavailable (Linux without `bwrap`) or
+  missing (Windows), language servers don't start. To run them anyway, set
+  `"kete": { "lsp": { "unsandboxed": true } }` in your **global** config — they then run the
+  project's code with your full access. A policy denying `sandbox_off` (for example from your
+  organization) always wins: no unsandboxed servers. A sandbox that is `required` but unavailable
+  never runs them.
+- Programs are found only in **absolute** `PATH` entries: never the current directory (Windows'
+  default), never relative entries, and never a file whose real path is inside the workspace — a
+  repository can't plant its own `gopls.exe` or `typescript-language-server.cmd`. On Windows the
+  servers also get `NoDefaultCurrentDirectoryInExePath=1`.
+- Settings turn off what is cheap to turn off: rust-analyzer's build scripts, proc macros and
+  check-on-save; cargo's rustc wrappers (`RUSTC_WRAPPER`, `CARGO_BUILD_RUSTC_WRAPPER`,
+  `CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER` set empty) and network (`CARGO_NET_OFFLINE`); TypeScript's
+  automatic type acquisition and probe-location plugins, and Kete Code uses a TypeScript installed
+  next to `typescript-language-server` when there is one; Go toolchain and module downloads
+  (`GOTOOLCHAIN=local`, `GOPROXY=off`). The rest (tsconfig plugins, a configured venv interpreter,
+  `build.rustc`, toolchain paths, `pkg-config`) is contained by the sandbox, not prevented.
+- A server's environment is an allowlist — `PATH`, `HOME`, user and locale variables, temp
+  directories, the XDG and Windows system directories, and toolchain locations (`GOPATH`, `GOROOT`,
+  `GOCACHE`, `GOMODCACHE`, `CARGO_HOME`, `RUSTUP_HOME`, `NODE_PATH`, `NVM_DIR`) — never a name that
+  looks like a credential, plus the server's own `env`.
 - A repository's configuration can only turn servers **off**. Commands, environment and settings
-  for a server are read only from your global configuration (`~/.config/kete/`), because a
-  repository's config would otherwise name a program that runs on the first edit, without asking.
+  for a server are read only from your global configuration (`~/.config/kete/`).
+- Kete Code sets no memory or CPU limits on servers (at most four run at once).
 - Never in jobs (cloud, self-hosted, review jobs): they start no processes beyond their tool runner.
   Not for locations in a remote workspace.
 

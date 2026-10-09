@@ -2194,6 +2194,7 @@ export type ConfigEntry =
             SessionStart?: Array<{ command: string; match?: string; timeout?: number }>
             Notification?: Array<{ command: string; match?: string; timeout?: number }>
           }
+          lsp?: { unsandboxed?: boolean }
         }
       }
     }

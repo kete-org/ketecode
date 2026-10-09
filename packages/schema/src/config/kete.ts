@@ -150,6 +150,13 @@ export class Hooks extends Schema.Class<Hooks>("ConfigKete.Hooks")({
   Notification: hookList("When Kete Code needs you (a permission prompt or a question)."),
 }) {}
 
+export class Lsp extends Schema.Class<Lsp>("ConfigKete.Lsp")({
+  unsandboxed: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Start language servers even when the OS sandbox isn't active (turned off, unavailable, Windows). Off by default: servers then run the project's code with your full access. Read only from the global config; a policy denying sandbox_off always wins.",
+  }),
+}) {}
+
 export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   offline: Schema.Boolean.pipe(optional).annotate({
     description:
@@ -174,5 +181,8 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   hooks: Hooks.pipe(optional).annotate({
     description:
       "Shell commands run at points of the agent loop (docs/hooks.md). Hooks in a project's config run only after you trust them.",
+  }),
+  lsp: Lsp.pipe(optional).annotate({
+    description: "Kete Code's language server settings; the servers themselves are configured under the top-level `lsp` key (docs/lsp.md)",
   }),
 }) {}
