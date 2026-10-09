@@ -47,6 +47,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | audit-log | local append-only audit log for unattended runs (ADR 0008): line format v1, the redactor, storage and cap, fail-closed writes |
 | worktrees-parallel | subagent worktrees, leases, session_move checks, stale writes |
 | workflows | `kete.workflows` and the `workflow` tool |
+| todo | the session task list: `todowrite` tool, `kete.todo` RPC, TUI sidebar/footer, web dock |
 | config-kete | the `kete` config section, discovery, adding a key end to end |
 | mcp-presets | built-in MCP presets (`kete mcp add harness`, `kete mcp add slack`, `kete mcp presets`): catalogue, stored MCP secrets (`{kete-secret:mcp:<name>}`), permission rules, offline skip |
 | cli | Kete commands in the CLI, disabled self-update |

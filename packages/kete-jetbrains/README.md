@@ -27,6 +27,8 @@ folder).
   browser (JCEF), themed from the IDE's colours and fonts. The permission-mode toggle, approvals,
   sessions and models work as in the web UI. Without JCEF the tool window explains why and offers
   **Open in Terminal**.
+- **Task list:** for multi-step work the agent keeps a task list, shown above the message box with the
+  item in progress and the count done (click to fold).
 - **Context:** the current file and selection follow the editor into the chat as one chip. Secret-looking
   files (`.env`, keys, `.npmrc`, `.netrc`) and anything the IDE excludes or ignores are never shared
   automatically. **Add to Kete Code** (`Alt+K`, editor, editor tab and project-view context menus) adds

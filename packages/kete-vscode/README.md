@@ -54,6 +54,8 @@ starts it for you, so there is nothing else to install.
   for your approval, and opens one in the chat. **Copy Session Link** (on each session) makes a
   link back to it in your editor's own scheme (`vscode://ketecode.kete-code/session?id=…` in VS Code,
   `windsurf://…`, `cursor://…` or `vscodium://…` in the forks).
+- **Task list:** for multi-step work the agent keeps a task list; it shows above the message box
+  with the item in progress and the count done (click to fold).
 - **Looks like VS Code:** the chat takes your theme's colours and fonts, and follows theme changes.
 - **Send Selection / Send File to Chat** (editor context menu) to add code to the prompt.
 - **Terminal:** the Kete Code terminal UI beside the editor (**Kete Code: Open Kete Code** in the
