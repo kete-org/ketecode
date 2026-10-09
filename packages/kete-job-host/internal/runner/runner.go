@@ -287,7 +287,7 @@ func podDriver(o Options, creds *cloneCreds) (podDriverParts, error) {
 			},
 		}
 		if creds != nil {
-			ko.Credential = creds.credential
+			ko.Credential, ko.BaseSHA = creds.credential, creds.baseSHA
 		}
 		if k.JobProxyAuthFile != "" {
 			// The jobs' own credential, never the controller's: every job VM holds it.

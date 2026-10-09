@@ -160,6 +160,7 @@ jobs:
 repositories: ["$REPO"]
 repositorySources:
   - {name: "$REPO", url: "https://gitlab.corp.test/$PROJECT.git", cloneMode: minted, minterSecret: gitlab-minter, writerSecret: gitlab-writer, writerUsername: kete-bot}
+acceptMinterRisk: true   # the e2e exercises minted tokens
 publisher:
   caBundleSecret: publisher-ca
   egress: {cidrs: ["$JH_IP/32"], ports: [3128]}

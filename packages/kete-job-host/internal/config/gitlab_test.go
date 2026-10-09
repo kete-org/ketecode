@@ -34,7 +34,7 @@ func TestGitLabProject(t *testing.T) {
 func TestGitLabSources(t *testing.T) {
 	mut := func(old, new string) string { return kubeConfig("16", strings.Replace(kubeVMSection, old, new, 1)) }
 	minted := `"clone_mode":"minted","minter_secret":"gitlab-minter","writer_secret":"gitlab-writer"`
-	pub := `,"publisher":{"image":"registry.corp.example/kete/runner@sha256:3333333333333333333333333333333333333333333333333333333333333333","config_map":"kete-publisher"}`
+	pub := `,"accept_minter_risk":true,"publisher":{"image":"registry.corp.example/kete/runner@sha256:3333333333333333333333333333333333333333333333333333333333333333","config_map":"kete-publisher"}`
 	c, err := Parse([]byte(mut(`"clone_secret":"gitlab-payments-read"}]`, minted+`}]`+pub)))
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +49,7 @@ func TestGitLabSources(t *testing.T) {
 	for name, raw := range map[string]string{
 		"writer without publisher":  mut(`"clone_secret":"gitlab-payments-read"}]`, `"clone_secret":"gitlab-payments-read","writer_secret":"w"}]`),
 		"minted with clone secret":  mut(`"clone_secret":"gitlab-payments-read"}]`, `"clone_secret":"gitlab-payments-read","clone_mode":"minted","minter_secret":"m"}]`),
+		"minted without accepting":  mut(`"clone_secret":"gitlab-payments-read"}]`, minted+`}]`+strings.Replace(pub, `"accept_minter_risk":true,`, ``, 1)),
 		"minted without minter":     mut(`"clone_secret":"gitlab-payments-read"}]`, `"clone_mode":"minted"}]`),
 		"static without secret":     mut(`"clone_secret":"gitlab-payments-read"}]`, `"clone_mode":"static"}]`),
 		"unknown mode":              mut(`"clone_secret":"gitlab-payments-read"}]`, `"clone_secret":"x","clone_mode":"oauth"}]`),

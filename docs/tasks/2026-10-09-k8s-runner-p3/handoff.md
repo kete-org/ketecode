@@ -71,3 +71,32 @@
     ancestor rule (logged). Persisting it (state or a PVC label) would close that.
   - Two runner instances with the same release name sharing a GitLab project would sweep each
     other's tokens. Release names must be unique per project.
+
+## 2026-10-09 implementer (Claude) — independent security review round
+- Fixed on the branch:
+  - **S1:** `cloneMode: static` is the recommended default. `minted` needs `acceptMinterRisk: true`
+    (the chart and `config.Parse` both refuse it otherwise). The README, cards and parent spec
+    state that writer isolation against a compromised controller holds only in static mode, and
+    recommend a dedicated minter bot.
+  - **S2:** an existing merge request is reused only if it is from and to this project, from the
+    job branch into the base, a draft, and its author is the writer (`GET /user`); otherwise the
+    publisher opens its own. Tested with fork, other-author, other-target and non-draft MRs in the
+    fake.
+  - **S3:** the controller's resolved base SHA travels in the job Secret
+    (`local.repository.base_sha`). The entrypoint fetches exactly that commit (`gitops.CloneAt`) and
+    fails `clone`/`verify` with code `base_unavailable` otherwise. In the publisher a base mismatch
+    is `failed/provider_error`: the job-host-v2 reason table has no precise reason for it.
+  - **S4:** the publisher refuses `.gitlab/` paths and the project's `ci_config_path`
+    (`refused/bundle_invalid`). The README lists what `[skip ci]` doesn't stop on GitLab.
+  - **Nits:**
+    - publisher pods pinned further: no hostAliases or dnsConfig, dnsPolicy default, runAsUser
+      65532, allowPrivilegeEscalation false, terminationMessagePolicy File;
+    - job pods can't project the `kete-publisher` ConfigMap;
+    - the commit date is clamped to ±1 day of now;
+    - gitproto server messages redact GitLab token shapes;
+    - manifest refusals are logged as a code only;
+    - an unreadable publisher creation time counts as timed out;
+    - the sweep comment is corrected (`clone_done` isn't persisted).
+- **Platform follow-up:** add `.gitlab` to the platform validator's `CI_DIRS` (and regenerate
+  `testdata/bundle-v1`). Until then the runner's publisher is stricter than the platform's
+  validator there.

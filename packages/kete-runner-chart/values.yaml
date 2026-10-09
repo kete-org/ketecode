@@ -103,13 +103,13 @@ repositories: []
 #   - name: "gitlab:payments/api"
 #     url: "https://gitlab.corp/payments/api.git"      # https, no credentials
 #     apiURL: ""                                       # only when GitLab lives under a relative URL root
-#     # The job's read credential, one of:
-#     cloneMode: minted                                # recommended: a project access token per job
-#     minterSecret: gitlab-kete-minter                 #   (read_repository, revoked after the clone),
-#                                                      #   minted with this Secret's `token` (a Maintainer
-#                                                      #   bot's token, scope api) in the release namespace
-#     # cloneSecret: gitlab-payments-read              # or static: a deploy token (keys username, token)
-#     #                                                #   in the release namespace, rotated by you
+#     # The job's read credential (RECOMMENDED: static):
+#     cloneMode: static                                # the default: a read-only deploy token
+#     cloneSecret: gitlab-payments-read                #   (keys username, token) in the release namespace
+#     # cloneMode: minted                              # or a project access token per job (revoked after
+#     # minterSecret: gitlab-kete-minter               #   the clone), minted with a Maintainer token
+#     #                                                #   (scope api) the controller holds: needs
+#     #                                                #   acceptMinterRisk: true (below)
 #     # Publishing (a new branch and a draft merge request per job):
 #     writerSecret: gitlab-kete-writer                 # Secret in the JOBS namespace with key `token`
 #                                                      #   (the bot's token, scopes api + write_repository);
@@ -117,6 +117,10 @@ repositories: []
 #                                                      #   can't read it
 #     writerUsername: kete-bot                         # the bot's user name (git over HTTPS)
 repositorySources: []
+# cloneMode minted gives the controller a Maintainer token with scope api. A compromised controller
+# could use it to mint write tokens, so the writer's isolation from the controller then no longer
+# holds. Set true only to accept that (a dedicated minter bot with no other role is recommended).
+acceptMinterRisk: false
 # Report the names above to the platform (names only).
 advertiseRepositories: false
 

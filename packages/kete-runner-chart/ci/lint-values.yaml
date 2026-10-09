@@ -27,6 +27,7 @@ repositories: ["gitlab:payments/api", "gitlab:payments/web"]
 repositorySources:
   - {name: "gitlab:payments/api", url: "https://gitlab.corp.example/payments/api.git", cloneMode: minted, minterSecret: gitlab-kete-minter, writerSecret: gitlab-kete-writer, writerUsername: kete-bot}
   - {name: "gitlab:payments/web", url: "https://gitlab.corp.example/payments/web.git", cloneSecret: gitlab-web-read}
+acceptMinterRisk: true
 publisher:
   caBundleSecret: corp-ca-publisher
   proxyAuthSecret: corp-proxy-auth-publisher

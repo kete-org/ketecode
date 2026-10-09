@@ -268,15 +268,21 @@ Create a bot user (e.g. `kete-bot`) and, per repository:
 | Credential | Where | Scopes / role | Used by |
 |---|---|---|---|
 | **Writer** (`writerSecret`, key `token`) | Secret in the **jobs** namespace | the bot's personal access token: `api`, `write_repository`; the bot is **Developer** on the project | publisher pods only: project and branch reads, the create-only push, the draft merge request |
-| **Minter** (`minterSecret`, key `token`; `cloneMode: minted`, recommended) | Secret in the **release** namespace | a token with `api` of a user who is **Maintainer** on the project (GitLab requires Maintainer to create project access tokens) | the controller: per job it creates a project access token `kete-job-<release>-<machine>` (scope `read_repository`, role Reporter, expiring the next day), checks it by resolving the job's base branch, puts it in the job's Secret, and revokes it when the job reports `clone_done`, again when the job pod ends, and in a sweep every 5 minutes (tokens left by a restart) |
-| **Deploy token** (`cloneSecret`, keys `username`, `token`; `cloneMode: static`) | Secret in the **release** namespace | a project deploy token with `read_repository` | the controller copies it into each job's Secret (no revocation: rotate it yourself) |
+| **Deploy token** (`cloneSecret`, keys `username`, `token`; `cloneMode: static`, **recommended, the default**) | Secret in the **release** namespace | a project deploy token with `read_repository` | the controller copies it into each job's Secret and checks it by resolving the job's base branch (no revocation: rotate it yourself) |
+| **Minter** (`minterSecret`, key `token`; `cloneMode: minted`, needs `acceptMinterRisk: true`) | Secret in the **release** namespace | a token with `api` of a user who is **Maintainer** on the project (GitLab requires Maintainer to create project access tokens); use a **dedicated minter bot with no other role** | the controller: per job it creates a project access token `kete-job-<release>-<machine>` (scope `read_repository`, role Reporter, expiring the next day), checks it by resolving the job's base branch, puts it in the job's Secret, and revokes it when the job reports `clone_done`, again when the job pod ends, and in a sweep every 5 minutes (tokens left by a restart) |
+
+> **Threat model: writer isolation holds against a compromised controller only with
+> `cloneMode: static`.** A minter is a Maintainer token with scope `api` inside the controller; a
+> compromised controller could use it to mint tokens that can write. The chart refuses `minted`
+> unless you set `acceptMinterRisk: true`. In both modes the writer itself never reaches the
+> controller or a job pod.
 
 Use separate tokens for the minter and the writer even if one bot owns both: the writer must be
 the identity that **can't** push to your base branches (below), and a Maintainer usually can.
 
 ```sh
 kubectl -n kete-jobs   create secret generic gitlab-kete-writer --from-literal=token=glpat-…   # jobs namespace
-kubectl -n kete-system create secret generic gitlab-kete-minter --from-literal=token=glpat-…   # release namespace
+kubectl -n kete-system create secret generic gitlab-payments-read --from-literal=username=gitlab+deploy-token-1 --from-literal=token=gldt-…   # release namespace
 ```
 
 ```yaml
@@ -284,8 +290,8 @@ repositories: ["gitlab:payments/api"]
 repositorySources:
   - name: "gitlab:payments/api"
     url: "https://gitlab.corp/payments/api.git"
-    cloneMode: minted
-    minterSecret: gitlab-kete-minter
+    cloneMode: static                            # recommended
+    cloneSecret: gitlab-payments-read            # deploy token: keys username, token
     writerSecret: gitlab-kete-writer
     writerUsername: kete-bot
     # apiURL: https://corp.example/gitlab        # only for a relative URL root
@@ -312,6 +318,17 @@ for the bot must be false. With a Developer bot the default protection ("Allowed
 Maintainers") is enough; if the bot is a Maintainer, set "Allowed to push and merge" to "No one" or
 a group without it. A branch whose protection can't be read fails `protection_unknown`.
 
+### GitLab CI and job branches
+
+Job commits carry `[skip ci]` (unless `publisher.ciOnJobBranches`), which stops GitLab's branch
+pipeline for the push. It does **not** stop merge request pipelines (`workflow:rules` on
+`merge_request_event` when the draft MR opens), scheduled or manually triggered pipelines on the
+branch, webhooks and integrations that act on every push or MR, or other CI systems watching the
+project. The publisher refuses bundles that touch GitLab's CI configuration: `.gitlab-ci.yml`
+(the validator), anything under `.gitlab/` and the project's custom `ci_config_path` when it is a
+path in this repository (the publisher, stricter than the platform's validator). A job still
+writes ordinary code that a later pipeline runs: protect your base branches and review the MR.
+
 ### What a publish does
 
 When the job pod has exited and the platform's poll answer carries `publish.authorized: true` (the
@@ -324,15 +341,18 @@ publisher, with nothing but its read-only mounts:
 2. validates the bundle with the Go port of the platform's validator (`internal/bundle`, held to
    the platform's own results on 226 bundles: `packages/kete-job-host/testdata/bundle-v1`):
    limits, tar entry types (no symlinks), protected and CI paths, case collisions, secret shapes;
-3. checks that the job's recorded base commit is the base branch's head or an ancestor of it, both
-   branches' protection, and that the job branch `kete/job/<suffix>` doesn't exist;
+3. checks that the job's recorded base commit is the commit the controller resolved for the job
+   (the job clones exactly that commit) and is on the base branch, both branches' protection, and
+   that the job branch `kete/job/<suffix>` doesn't exist (a branch already holding exactly this
+   commit — a re-run — counts as published);
 4. fetches the base commit's trees (git smart HTTP, protocol v2, `filter blob:none`, `deepen 1`) and
    refuses changes that collide with them (symlinks, submodules, case collisions, paths under files);
 5. builds one commit whose only parent is the base (`[skip ci]` unless `publisher.ciOnJobBranches`,
    author `publisher.commitIdentity`) and pushes it with a single create-only command (old id zero:
    GitLab refuses it if the branch exists; never a force push);
 6. opens a **draft** merge request (`Draft: Kete job <id>`, fixed text with a link to the job page)
-   when the job asked for one and completed;
+   when the job asked for one and completed; an existing one is reused only if it is from and to
+   this project, from the job branch into the base branch, a draft, opened by the writer;
 7. writes its outcome — fixed codes only — as its termination message.
 
 The controller reports the outcome on the machine (job-host-v2 `publish`: `created`, `no_changes`,

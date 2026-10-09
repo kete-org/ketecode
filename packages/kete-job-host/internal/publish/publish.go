@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kete-org/ketecode/packages/kete-job-host/internal/bundle"
@@ -107,7 +108,8 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 	// 1. The outbox, hostile.
 	m, err := ReadManifest(o.OutboxDir, req.JobID, req.Repository, req.BaseRef)
 	if err != nil {
-		log.Error("outbox_manifest_refused", "error", err.Error())
+		_ = err // its text may quote the hostile file: only the code is logged
+		log.Error("outbox_manifest_refused")
 		return failed(rPublisher)
 	}
 	switch m.PushError {
@@ -140,9 +142,9 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		return refused(rBundleInvalid)
 	}
 	if req.BaseSHA != "" && m.BaseSHA != req.BaseSHA {
-		// The job claims a base other than the commit the controller resolved for it.
+		// The job claims a base other than the commit the controller resolved and pinned for it.
 		log.Warn("base_not_the_resolved_commit")
-		return refused(rBundleInvalid)
+		return failed(rProviderError)
 	}
 	if len(entries) == 0 {
 		return withBase(contract.PublishOutcome{Status: contract.PublishNoChanges}, m.BaseSHA)
@@ -165,6 +167,11 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 	if req.Branch == project.DefaultBranch || req.Branch == req.BaseRef {
 		return refused(rBranchExists)
 	}
+	if c := gitlabCIPath(entries, project.CIConfigPath); c != "" {
+		// GitLab's own CI configuration: stricter than the platform's validator (handoff).
+		log.Warn("bundle_refused", "code", c)
+		return refused(rBundleInvalid)
+	}
 
 	// 3. The base: the job's recorded commit must be the base branch's head or an ancestor of it
 	// (a job can't make the publisher build on a commit of its choosing).
@@ -181,12 +188,12 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		switch {
 		case gitlab.IsCode(err, gitlab.CodeNotFound), gitlab.IsCode(err, gitlab.CodeRefused):
 			log.Warn("base_not_in_repository")
-			return refused(rBundleInvalid)
+			return failed(rProviderError)
 		case err != nil:
 			return providerFailure(err)
 		case mb != m.BaseSHA:
 			log.Warn("base_not_on_base_ref")
-			return refused(rBundleInvalid)
+			return failed(rProviderError)
 		}
 	}
 
@@ -280,8 +287,8 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 	}
 	// A deterministic time (the outbox's written_at), so a re-run builds the same commit.
 	when, err := time.Parse(time.RFC3339, m.WrittenAt)
-	if err != nil {
-		when = o.Now()
+	if now := o.Now(); err != nil || when.Before(now.Add(-24*time.Hour)) || when.After(now.Add(24*time.Hour)) {
+		when = now // job-written: only a plausible time is used
 	}
 	commit := gitproto.CommitObject(root, m.BaseSHA, o.Config.Identity, when.UTC(), CommitMessage(req.JobID, o.Config.CIOnJobBranches))
 	commitSHA := gitproto.ObjectID("commit", commit)
@@ -290,7 +297,7 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 			return withBase(refused(rBranchExists), m.BaseSHA)
 		}
 		log.Info("branch_already_published")
-		return openMR(ctx, gl, o, req, m, contract.PublishOutcome{Status: contract.PublishCreated, BaseSHA: m.BaseSHA, CommitSHA: commitSHA}, log)
+		return openMR(ctx, gl, o, req, m, project.ID, contract.PublishOutcome{Status: contract.PublishCreated, BaseSHA: m.BaseSHA, CommitSHA: commitSHA}, log)
 	}
 	objects = append(objects, gitproto.Object{Type: "commit", Data: commit})
 	pack := gitproto.WritePack(objects)
@@ -334,22 +341,29 @@ func run(ctx context.Context, o Options, req Request, log *slog.Logger) contract
 		}
 		return withBase(failed(rProviderError), m.BaseSHA)
 	}
-	return openMR(ctx, gl, o, req, m, contract.PublishOutcome{Status: contract.PublishCreated, BaseSHA: m.BaseSHA, CommitSHA: commitSHA}, log)
+	return openMR(ctx, gl, o, req, m, project.ID, contract.PublishOutcome{Status: contract.PublishCreated, BaseSHA: m.BaseSHA, CommitSHA: commitSHA}, log)
 }
 
 // openMR is step 9: the draft merge request, for a job that completed and asked for one (an open
 // one from the branch is reused).
-func openMR(ctx context.Context, gl *gitlab.Client, o Options, req Request, m Manifest, created contract.PublishOutcome, log *slog.Logger) contract.PublishOutcome {
+func openMR(ctx context.Context, gl *gitlab.Client, o Options, req Request, m Manifest, projectID int64, created contract.PublishOutcome, log *slog.Logger) contract.PublishOutcome {
 	if !req.OpenMR || m.Outcome != "completed" {
 		return created
 	}
-	if found, err := gl.FindOpenMergeRequest(ctx, req.Branch); err == nil && found != nil && contract.ValidChangeRequestURL(found.WebURL) {
+	writer, err := gl.CurrentUser(ctx)
+	if err != nil {
+		log.Warn("merge_request_failed", "error", err.Error())
+		created.Reason = rMRFailed
+		return created
+	}
+	// Reuse only a merge request that is ours (this project into itself, a draft, by the writer).
+	if found, err := gl.FindOpenMergeRequest(ctx, projectID, writer.ID, req.Branch, req.BaseRef); err == nil && found != nil && contract.ValidChangeRequestURL(found.WebURL) {
 		created.MR = &contract.MergeRequest{IID: found.IID, URL: found.WebURL}
 		return created
 	}
 	mr, err := gl.CreateDraftMergeRequest(ctx, req.Branch, req.BaseRef, MRTitle(req.JobID), MRDescription(o.Config.PlatformURL, req.JobID))
 	if err != nil && gitlab.IsCode(err, gitlab.CodeUnavailable) {
-		if found, ferr := gl.FindOpenMergeRequest(ctx, req.Branch); ferr == nil && found != nil {
+		if found, ferr := gl.FindOpenMergeRequest(ctx, projectID, writer.ID, req.Branch, req.BaseRef); ferr == nil && found != nil {
 			mr, err = *found, nil
 		}
 	}
@@ -409,4 +423,30 @@ func retry[T any](ctx context.Context, o Options, f func() (T, error)) (T, error
 		}
 	}
 	return v, err
+}
+
+// gitlabCIPath returns "ci_path" when a bundle entry touches GitLab's CI configuration: anything
+// under .gitlab/ (templates, CI includes; folded like the validator's names) or the project's
+// custom ci_config_path when it is a path in this repository (one with @ or : names another
+// project or a URL and is not in this bundle's reach).
+func gitlabCIPath(entries []bundle.Entry, ciConfigPath string) string {
+	custom := ""
+	if ciConfigPath != "" && !strings.ContainsAny(ciConfigPath, "@:") {
+		custom = foldPath(strings.TrimPrefix(ciConfigPath, "/"))
+	}
+	for _, e := range entries {
+		f := foldPath(e.Path)
+		if f == ".gitlab" || strings.HasPrefix(f, ".gitlab/") || (custom != "" && f == custom) {
+			return "ci_path"
+		}
+	}
+	return ""
+}
+
+func foldPath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, c := range parts {
+		parts[i] = bundle.Fold(c)
+	}
+	return strings.Join(parts, "/")
 }

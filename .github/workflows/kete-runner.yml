@@ -141,6 +141,7 @@ jobs:
           refuse --set publisher.commitIdentity=evil
           refuse --set-json 'proxy.noProxy=["Gitlab.Corp"]'
           refuse --set publisher.timeoutSeconds=10
+          refuse --set acceptMinterRisk=false   # lint-values has a minted source
 
       - name: The chart's configuration parses (the controller's own parser)
         run: |

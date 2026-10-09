@@ -11,6 +11,10 @@ verified-at: eea2edce48
   registry, the jobs' read credentials, and `kete-job-host publish`, which turns a job's outbox into
   a new branch and a draft merge request. The controller side (the `publishing` state, publisher
   pods) is card `kubernetes-runner`.
+- Static or minted? **Static (a read-only deploy token) is the recommended default.** `minted`
+  needs `accept_minter_risk` (chart `acceptMinterRisk: true`): the minter is a Maintainer token
+  with scope `api` in the controller, so writer isolation against a compromised controller holds
+  only in static mode.
 - Where is the registry? `kubernetes.repository_sources` (`internal/config/gitlab.go`,
   `checkSourceP3`): `clone_url`, optional `api_url` (relative URL root; `GitLabProject` derives
   base + project path), `clone_mode` `static` (`clone_secret`: username, token) or `minted`
@@ -24,12 +28,14 @@ verified-at: eea2edce48
 - What does the publisher do? `internal/publish/publish.go` `Run`: manifest (strict, this
   job/repository/ref) → `push_error` mapping → recorded base = `--base-sha` → bundle file (size + SHA-256) → `bundle.Validate` →
   empty = `no_changes` → GitLab project (writer) → base is base_ref's head or an ancestor
-  (`MergeBase`) → protection of the default and base branches (`BranchProtection`: protected and
+  (`MergeBase`; a base that isn't the controller's resolved commit or isn't on the branch →
+  `failed/provider_error`) → `.gitlab/` and the project's `ci_config_path` refused (`gitlabCIPath`) → protection of the default and base branches (`BranchProtection`: protected and
   `can_push` false) → job branch absent → `gitproto.FetchBase` (v2, blob:none, deepen 1) →
   `baseListings` + `checkAgainstBase` (`base.go`, the platform's checks) → `ResultTrees`, one
   commit on the base (`CommitMessage`, `[skip ci]`) → `ReceivePackRefs` + `PushCreateRef`
   (old id zero; unknown → read back) → draft MR (`Draft:` title, fixed `MRDescription`) for a
-  completed job that asked. Outcome reasons are job-host-v2's fixed codes only.
+  completed job that asked; an existing MR is reused only if `MergeRequest.Ours` (this project
+  into itself, source/target branches, a draft, author = the writer from `GET /user`). Outcome reasons are job-host-v2's fixed codes only.
 - Where does the validator come from? `internal/bundle` is a port of kete-code-platform
   `apps/portal/lib/jobs/bundle/*` (gzip, tar, paths/fold, secrets, a strict JSON parser that keeps
   JS semantics: exact keys, last duplicate wins, lone surrogates refused as paths, BOM stripped).

@@ -23,7 +23,7 @@
 {{- if eq .Values.podDriver "kubevm" -}}
 {{- $sources := list -}}
 {{- range .Values.repositorySources -}}
-{{- $src := dict "name" .name "clone_url" .url "clone_mode" (.cloneMode | default (ternary "static" "minted" (not (empty .cloneSecret)))) -}}
+{{- $src := dict "name" .name "clone_url" .url "clone_mode" (.cloneMode | default "static") -}}
 {{- with .cloneSecret }}{{ $_ := set $src "clone_secret" . }}{{ end -}}
 {{- with .minterSecret }}{{ $_ := set $src "minter_secret" . }}{{ end -}}
 {{- with .writerSecret }}{{ $_ := set $src "writer_secret" . }}{{ end -}}
@@ -38,6 +38,7 @@
 {{- with $internal }}{{ $_ := set $jp "internal" . }}{{ end -}}
 {{- $_ := set $k "job_pod" $jp -}}
 {{- with .Values.proxy.noProxy }}{{ $_ := set $k "no_proxy" . }}{{ end -}}
+{{- if .Values.acceptMinterRisk }}{{ $_ := set $k "accept_minter_risk" true }}{{ end -}}
 {{- if include "kete-runner.publishing" . -}}
 {{- $pub := dict "image" (include "kete-runner.image" .) "config_map" "kete-publisher" "cpu" (toString .Values.publisher.resources.cpu) "memory" (toString .Values.publisher.resources.memory) "timeout_seconds" (int .Values.publisher.timeoutSeconds) -}}
 {{- with .Values.publisher.caBundleSecret }}{{ $_ := set $pub "ca_secret" . }}{{ end -}}

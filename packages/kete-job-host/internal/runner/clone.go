@@ -219,8 +219,10 @@ func (c *cloneCreds) revokeToken(ctx context.Context, repo string, id int64) err
 	return gl.RevokeToken(ctx, id)
 }
 
-// sweep revokes every active kete-job-<machine> token of the minted sources whose machine has no
-// job pod any more or whose clone is done: tokens a restart or a failed revoke left behind.
+// sweep revokes this runner instance's active kete-job-<instance>-<machine> tokens whose job pod
+// is gone (a restart or a failed revocation left them): tokens minted in the last five minutes are
+// skipped (their pod may not exist yet); a token whose job still runs is left to its own hooks
+// (clone_done is not persisted, so after a restart such a token lives until its pod ends).
 func (c *cloneCreds) sweep(ctx context.Context) {
 	for name, src := range c.sources {
 		if src.CloneMode != config.CloneMinted {

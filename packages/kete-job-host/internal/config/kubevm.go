@@ -152,6 +152,9 @@ func parseKubeVM(f KubernetesFile, k *Kubernetes) error {
 		if src.CloneMode == "" {
 			src.CloneMode = CloneStatic
 		}
+		if src.CloneMode == CloneMinted && !f.AcceptMinterRisk {
+			return fmt.Errorf("config: repository source %q: clone_mode minted puts a Maintainer token in the controller; set accept_minter_risk (chart acceptMinterRisk) to accept that, or use a static deploy token", src.Name)
+		}
 		if src.WriterSecret != "" {
 			needPublisher = true
 		}

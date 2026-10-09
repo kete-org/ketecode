@@ -183,7 +183,8 @@ func (d *Driver) PublishResult(ctx context.Context, id string) (contract.Publish
 	if d.o.Publish != nil {
 		timeout = d.o.Publish.Timeout
 	}
-	age := time.Duration(0)
+	// An unreadable creation time counts as timed out (fail closed).
+	age := timeout + 3*time.Minute
 	if t, err := time.Parse(time.RFC3339, p.Metadata.CreationTimestamp); err == nil {
 		age = d.o.Now().Sub(t)
 	}

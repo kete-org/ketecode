@@ -574,6 +574,9 @@
           }
         }
       }
+    },
+    "acceptMinterRisk": {
+      "type": "boolean"
     }
   },
   "additionalProperties": false

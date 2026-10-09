@@ -108,17 +108,18 @@ const (
 
 	// The host-boundary probe's reasons (root, before the in-guest rules), and the tool user's
 	// extra per-profile reasons in the isolation check.
-	CodeGateway      Code = "gateway"       // the default gateway (the host) on a sample port
-	CodePrivateRange Code = "private_range" // an RFC 1918, CGNAT or ULA sample address
-	CodeIPv6         Code = "ipv6"          // a public IPv6 sample address
-	CodeConfigDisk   Code = "config_disk"   // a block device still holds the config disk header
-	CodeMetadataDrop Code = "metadata_drop" // cloudvm: kete-job-init's metadata drop table is missing
-	CodeGuardedPath  Code = "guarded_path"  // a path the profile guards opens for the tool user
-	CodeKubeAPI      Code = "kube_api"      // kubevm: the Kubernetes API (KUBERNETES_SERVICE_HOST:PORT)
-	CodeNode         Code = "node"          // kubevm: one of the node's addresses on a sample port
-	CodeConfigSecret Code = "config_secret" // kubevm: the config Secret's volume is still mounted or not empty
-	CodeOutbox       Code = "outbox"        // kubevm: the outbox volume is missing, not empty or not writable
-	CodeRepository   Code = "repository"    // kubevm: the claim names another repository, or carries a clone
+	CodeGateway      Code = "gateway"          // the default gateway (the host) on a sample port
+	CodePrivateRange Code = "private_range"    // an RFC 1918, CGNAT or ULA sample address
+	CodeIPv6         Code = "ipv6"             // a public IPv6 sample address
+	CodeConfigDisk   Code = "config_disk"      // a block device still holds the config disk header
+	CodeMetadataDrop Code = "metadata_drop"    // cloudvm: kete-job-init's metadata drop table is missing
+	CodeGuardedPath  Code = "guarded_path"     // a path the profile guards opens for the tool user
+	CodeKubeAPI      Code = "kube_api"         // kubevm: the Kubernetes API (KUBERNETES_SERVICE_HOST:PORT)
+	CodeNode         Code = "node"             // kubevm: one of the node's addresses on a sample port
+	CodeConfigSecret Code = "config_secret"    // kubevm: the config Secret's volume is still mounted or not empty
+	CodeOutbox       Code = "outbox"           // kubevm: the outbox volume is missing, not empty or not writable
+	CodeRepository   Code = "repository"       // kubevm: the claim names another repository, or carries a clone
+	CodeBase         Code = "base_unavailable" // kubevm: the commit the runner resolved can't be fetched
 )
 
 // Logger writes phase lines; safe for concurrent use.

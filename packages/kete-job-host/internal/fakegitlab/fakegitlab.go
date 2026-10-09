@@ -47,13 +47,18 @@ type Token struct {
 
 // MergeRequest is a created merge request.
 type MergeRequest struct {
-	IID         int64  `json:"iid"`
-	Project     string `json:"project"`
-	Source      string `json:"source_branch"`
-	Target      string `json:"target_branch"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	WebURL      string `json:"web_url"`
+	IID     int64  `json:"iid"`
+	Project string `json:"project"`
+	// SourceProject and AuthorID (WriterID for the writer's own) tell a fork's or another user's
+	// merge request from the publisher's.
+	SourceProject int64  `json:"source_project_id"`
+	AuthorID      int64  `json:"author_id"`
+	Draft         bool   `json:"draft"`
+	Source        string `json:"source_branch"`
+	Target        string `json:"target_branch"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	WebURL        string `json:"web_url"`
 }
 
 // Project is one repository.
@@ -64,8 +69,13 @@ type Project struct {
 	// Protected branches and whether the writer may push to them directly.
 	Protected map[string]bool `json:"protected"`
 	CanPush   map[string]bool `json:"can_push"`
-	dir       string
+	// CIConfigPath is the project's custom CI configuration path.
+	CIConfigPath string `json:"ci_config_path"`
+	dir          string
 }
+
+// WriterID is the writer bot's user id.
+const WriterID = 7
 
 // Server is the fake.
 type Server struct {
@@ -338,6 +348,17 @@ func reply(w http.ResponseWriter, status int, v any) {
 }
 
 func (s *Server) api(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/v4/user" && r.Method == http.MethodGet {
+		s.mu.Lock()
+		rl, user := s.apiRole(r), s.writerUser
+		s.mu.Unlock()
+		if rl != roleWriter {
+			reply(w, 401, map[string]string{"message": "401 Unauthorized"})
+			return
+		}
+		reply(w, 200, map[string]any{"id": WriterID, "username": user})
+		return
+	}
 	rest := strings.TrimPrefix(r.URL.EscapedPath(), "/api/v4/projects/")
 	if rest == r.URL.EscapedPath() {
 		reply(w, 404, map[string]string{"message": "404 Not Found"})
@@ -370,8 +391,11 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case sub == "" && r.Method == http.MethodGet:
+		s.mu.Lock()
+		ci := p.CIConfigPath
+		s.mu.Unlock()
 		reply(w, 200, map[string]any{"id": p.ID, "path_with_namespace": p.Path, "default_branch": p.DefaultBranch,
-			"http_url_to_repo": "https://" + s.Host + "/" + p.Path + ".git"})
+			"http_url_to_repo": "https://" + s.Host + "/" + p.Path + ".git", "ci_config_path": ci})
 	case strings.HasPrefix(sub, "repository/branches/") && r.Method == http.MethodGet && rl == roleWriter:
 		name, err := url.PathUnescape(strings.TrimPrefix(sub, "repository/branches/"))
 		if err != nil {
@@ -420,6 +444,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		iid := int64(len(s.mrs) + 1)
 		mr := MergeRequest{IID: iid, Project: p.Path, Source: in.Source, Target: in.Target, Title: in.Title, Description: in.Description,
+			SourceProject: p.ID, AuthorID: WriterID, Draft: strings.HasPrefix(in.Title, "Draft:"),
 			WebURL: "https://" + s.Host + "/" + p.Path + "/-/merge_requests/" + strconv.FormatInt(iid, 10)}
 		s.mrs = append(s.mrs, mr)
 		s.mu.Unlock()
@@ -430,7 +455,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		for _, mr := range s.mrs {
 			if mr.Project == p.Path && mr.Source == src {
-				out = append(out, map[string]any{"iid": mr.IID, "web_url": mr.WebURL})
+				out = append(out, map[string]any{"iid": mr.IID, "web_url": mr.WebURL, "source_project_id": mr.SourceProject, "target_project_id": p.ID,
+					"source_branch": mr.Source, "target_branch": mr.Target, "draft": mr.Draft, "author": map[string]int64{"id": mr.AuthorID}})
 			}
 		}
 		s.mu.Unlock()
@@ -576,4 +602,25 @@ func (s *Server) CommitFile(project, branch, path, content string) (string, erro
 		return "", err
 	}
 	return git(w, "rev-parse", "HEAD")
+}
+
+// AddMergeRequest records a merge request someone else opened (a fork's, or another user's) into
+// project from source: the publisher must never take it for its own.
+func (s *Server) AddMergeRequest(project, source, target string, sourceProject, author int64, draft bool) MergeRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	iid := int64(len(s.mrs) + 1)
+	mr := MergeRequest{IID: iid, Project: project, Source: source, Target: target, Title: "spoof", SourceProject: sourceProject, AuthorID: author, Draft: draft,
+		WebURL: "https://" + s.Host + "/" + project + "/-/merge_requests/" + strconv.FormatInt(iid, 10)}
+	s.mrs = append(s.mrs, mr)
+	return mr
+}
+
+// SetCIConfigPath sets a project's custom CI configuration path.
+func (s *Server) SetCIConfigPath(project, path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p := s.projects[project]; p != nil {
+		p.CIConfigPath = path
+	}
 }

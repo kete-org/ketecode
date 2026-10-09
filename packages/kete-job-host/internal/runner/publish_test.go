@@ -63,7 +63,7 @@ func publishConfig(t *testing.T, source string) config.Config {
 	    "runtime_class_names":["kete-test"],"repositories":["gitlab:payments/api"],
 	    "boundary":{"summary":"none","denials":"actions","publish_refs":"send"},
 	    "repository_sources":[%s],
-	    "publisher":{"image":%q,"config_map":"kete-publisher"},
+	    "publisher":{"image":%q,"config_map":"kete-publisher"},"accept_minter_risk":true,
 	    "pod_driver":"kubevm","job_pod":{"cpu":"1","memory":"2Gi","ephemeral_storage":"4Gi","outbox_size":"1Gi","outbox_hold_hours":1}}}`,
 		authority, imageA, sysNS, jobsNS, source, runnerImage)
 	c, err := config.Parse([]byte(raw))
@@ -114,7 +114,7 @@ func TestRunnerPublishes(t *testing.T) {
 	e.assign(host, mid(1), jid(1), imageA, repo, pub, time.Hour)
 	e.eventually("the machine Secret", func() bool { return e.kube.Get("secrets", jobsNS, kdriver.PodName(mid(1))) != nil })
 	r := e.jobConfig(mid(1))["local"].(map[string]any)["repository"].(map[string]any)
-	if r["username"] != "kete-job" || !strings.HasPrefix(r["token"].(string), "glpat-") {
+	if r["username"] != "kete-job" || !strings.HasPrefix(r["token"].(string), "glpat-") || len(r["base_sha"].(string)) != 40 {
 		t.Fatalf("clone credential %v", r)
 	}
 	toks := gl.State().Tokens

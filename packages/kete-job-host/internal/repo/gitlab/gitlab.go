@@ -189,6 +189,26 @@ type Project struct {
 	ID                int64  `json:"id"`
 	PathWithNamespace string `json:"path_with_namespace"`
 	DefaultBranch     string `json:"default_branch"`
+	// CIConfigPath is the project's custom CI configuration path ("" = .gitlab-ci.yml).
+	CIConfigPath string `json:"ci_config_path"`
+}
+
+// User is the token's own user.
+type User struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+}
+
+// CurrentUser returns the token's user (GET /user).
+func (c *Client) CurrentUser(ctx context.Context) (User, error) {
+	var u User
+	if _, err := c.do(ctx, "user", http.MethodGet, "/api/v4/user", nil, nil, &u); err != nil {
+		return User{}, err
+	}
+	if u.ID < 1 {
+		return User{}, &Error{Code: CodeInvalidResponse, Op: "user"}
+	}
+	return u, nil
 }
 
 // GetProject reads the project. Its path must be the configured one (a renamed or transferred
@@ -272,8 +292,25 @@ func (c *Client) MergeBase(ctx context.Context, a, b string) (string, error) {
 
 // MergeRequest is a created or found merge request.
 type MergeRequest struct {
-	IID    int64  `json:"iid"`
-	WebURL string `json:"web_url"`
+	IID             int64  `json:"iid"`
+	WebURL          string `json:"web_url"`
+	SourceProjectID int64  `json:"source_project_id"`
+	TargetProjectID int64  `json:"target_project_id"`
+	SourceBranch    string `json:"source_branch"`
+	TargetBranch    string `json:"target_branch"`
+	Draft           bool   `json:"draft"`
+	WorkInProgress  bool   `json:"work_in_progress"`
+	Author          struct {
+		ID int64 `json:"id"`
+	} `json:"author"`
+}
+
+// Ours reports a merge request the publisher may reuse: from and to this project, from source
+// into target, a draft, opened by the writer — never one a fork or another user opened with the
+// same branch name.
+func (mr MergeRequest) Ours(projectID, writerID int64, source, target string) bool {
+	return mr.IID >= 1 && mr.SourceProjectID == projectID && mr.TargetProjectID == projectID && mr.SourceBranch == source &&
+		mr.TargetBranch == target && (mr.Draft || mr.WorkInProgress) && writerID >= 1 && mr.Author.ID == writerID
 }
 
 // CreateDraftMergeRequest opens a draft merge request (the `Draft:` title prefix, which every
@@ -293,18 +330,20 @@ func (c *Client) CreateDraftMergeRequest(ctx context.Context, source, target, ti
 	return mr, nil
 }
 
-// FindOpenMergeRequest returns the open merge request from source, if any (an unknown create
-// outcome is read back once).
-func (c *Client) FindOpenMergeRequest(ctx context.Context, source string) (*MergeRequest, error) {
+// FindOpenMergeRequest returns the open merge request from source into target that is Ours, if
+// any (a re-run, or an unknown create outcome read back).
+func (c *Client) FindOpenMergeRequest(ctx context.Context, projectID, writerID int64, source, target string) (*MergeRequest, error) {
 	var list []MergeRequest
-	q := url.Values{"source_branch": {source}, "state": {"opened"}, "per_page": {"5"}}
+	q := url.Values{"source_branch": {source}, "target_branch": {target}, "state": {"opened"}, "per_page": {"20"}}
 	if _, err := c.do(ctx, "merge_requests", http.MethodGet, c.projectPath()+"/merge_requests", q, nil, &list); err != nil {
 		return nil, err
 	}
-	if len(list) == 0 || list[0].IID < 1 {
-		return nil, nil
+	for i := range list {
+		if list[i].Ours(projectID, writerID, source, target) {
+			return &list[i], nil
+		}
 	}
-	return &list[0], nil
+	return nil, nil
 }
 
 // ---------------------------------------------------------------- project access tokens

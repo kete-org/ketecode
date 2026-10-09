@@ -76,10 +76,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if not (has . $names) -}}{{- fail (printf "repository %q has no repositorySources entry (podDriver kubevm clones only from a configured source)" .) -}}{{- end -}}
 {{- end -}}
 {{- range .Values.repositorySources -}}
-{{- $mode := .cloneMode | default (ternary "static" "minted" (not (empty .cloneSecret))) -}}
+{{- $mode := .cloneMode | default "static" -}}
 {{- if and (eq $mode "static") (not .cloneSecret) -}}{{- fail (printf "repositorySources %q: cloneMode static needs cloneSecret" .name) -}}{{- end -}}
 {{- if and (eq $mode "minted") (or .cloneSecret (not .minterSecret)) -}}{{- fail (printf "repositorySources %q: cloneMode minted needs minterSecret (and no cloneSecret)" .name) -}}{{- end -}}
 {{- if and (eq $mode "static") .minterSecret -}}{{- fail (printf "repositorySources %q: minterSecret is for cloneMode minted" .name) -}}{{- end -}}
+{{- if and (eq $mode "minted") (not $.Values.acceptMinterRisk) -}}{{- fail (printf "repositorySources %q: cloneMode minted puts a Maintainer token (scope api) in the controller, which a compromised controller could use to mint write tokens; set acceptMinterRisk: true to accept that, or use cloneMode static with a deploy token (README \"GitLab\")" .name) -}}{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- if and (include "kete-runner.publishing" .) (ne .Values.podDriver "kubevm") -}}{{- fail "writerSecret (publishing) needs podDriver kubevm" -}}{{- end -}}

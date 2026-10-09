@@ -89,6 +89,11 @@ type KubernetesFile struct {
 	NoProxy []string `json:"no_proxy,omitempty"`
 	// Publisher configures the publisher pods (required when a source names a writer_secret).
 	Publisher *PublisherFile `json:"publisher,omitempty"`
+	// AcceptMinterRisk must be true for any clone_mode minted source: the minter is a Maintainer
+	// token with scope api in the controller, so a compromised controller could mint write
+	// tokens — writer isolation against a compromised controller holds only with static
+	// deploy tokens.
+	AcceptMinterRisk bool `json:"accept_minter_risk,omitempty"`
 	// JobPod configures the kubevm pod driver's job pods (required by it).
 	JobPod *JobPodFile `json:"job_pod,omitempty"`
 }

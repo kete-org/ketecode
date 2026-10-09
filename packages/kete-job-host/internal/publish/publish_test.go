@@ -232,7 +232,9 @@ func TestPublishRefusals(t *testing.T) {
 		{name: "manifest of another job", files: good, edit: func(m *Manifest) { m.JobID = "5e6f7a8b-9c0d-4e1f-8a2b-000000000000" }, status: "failed", reason: "publisher_failed"},
 		{name: "bundle digest mismatch", files: good, edit: func(m *Manifest) { f := m.Files["bundle"]; f.SHA256 = strings.Repeat("0", 64); m.Files["bundle"] = f }, status: "refused", reason: "bundle_invalid"},
 		{name: "no bundle", files: good, edit: func(m *Manifest) { delete(m.Files, "bundle") }, status: "refused", reason: "unreadable"},
-		{name: "base not in the repository", files: good, edit: func(m *Manifest) { m.BaseSHA = strings.Repeat("ab", 20) }, status: "refused", reason: "bundle_invalid"},
+		{name: "base not in the repository", files: good, edit: func(m *Manifest) { m.BaseSHA = strings.Repeat("ab", 20) }, status: "failed", reason: "provider_error"},
+		{name: "a .gitlab/ path", files: []file{{path: ".gitlab/issue_templates/x.md", mode: "100644", data: "x"}}, status: "refused", reason: "bundle_invalid"},
+		{name: "the custom CI configuration", files: []file{{path: "ci/Pipeline.yml", mode: "100644", data: "x: 1\n"}}, setup: func(w *world) { w.gl.SetCIConfigPath(project, "ci/pipeline.yml") }, status: "refused", reason: "bundle_invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := newWorld(t)
@@ -272,7 +274,7 @@ func TestPublishBaseSymlinkAndNoChanges(t *testing.T) {
 	if _, err := w.gl.CommitFile(project, "main", "moved.txt", "m\n"); err != nil {
 		t.Fatal(err)
 	}
-	if out := w.run(t, outbox(t, side, makeBundle(t, []file{{path: "new.txt", mode: "100644", data: "n\n"}}), nil), false); out.Status != contract.PublishRefused || out.Reason != "bundle_invalid" {
+	if out := w.run(t, outbox(t, side, makeBundle(t, []file{{path: "new.txt", mode: "100644", data: "n\n"}}), nil), false); out.Status != contract.PublishFailed || out.Reason != "provider_error" {
 		t.Fatalf("a base off main: %+v", out)
 	}
 	out := w.run(t, outbox(t, old, makeBundle(t, []file{{path: "new.txt", mode: "100644", data: "n\n"}}), nil), false)
@@ -291,7 +293,7 @@ func TestPublishBaseSHAAndFIFO(t *testing.T) {
 	o := w.opts
 	o.OutboxDir = outbox(t, w.base, makeBundle(t, []file{{path: "a.txt", mode: "100644", data: "a\n"}}), nil)
 	req := Request{MachineID: "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e", JobID: jobID, Repository: repoName, BaseRef: "main", Branch: branch, BaseSHA: strings.Repeat("c", 40)}
-	if out := Run(context.Background(), o, req); out.Status != contract.PublishRefused || out.Reason != "bundle_invalid" {
+	if out := Run(context.Background(), o, req); out.Status != contract.PublishFailed || out.Reason != "provider_error" {
 		t.Fatalf("another base: %+v", out)
 	}
 	req.BaseSHA = w.base
@@ -311,6 +313,21 @@ func TestPublishBaseSHAAndFIFO(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("a FIFO blocked the publisher")
+	}
+}
+
+// A merge request someone else opened from the same branch name (a fork's, another user's, or not
+// a draft) is never reported as the job's: the publisher opens its own.
+func TestPublishIgnoresSpoofedMergeRequests(t *testing.T) {
+	w := newWorld(t)
+	pid := w.gl.State().Projects[project].ID
+	w.gl.AddMergeRequest(project, branch, "main", pid+1000, fakegitlab.WriterID, true) // from a fork
+	w.gl.AddMergeRequest(project, branch, "main", pid, 99, true)                       // another user
+	w.gl.AddMergeRequest(project, branch, "other", pid, fakegitlab.WriterID, true)     // another target
+	w.gl.AddMergeRequest(project, branch, "main", pid, fakegitlab.WriterID, false)     // not a draft
+	out := w.run(t, outbox(t, w.base, makeBundle(t, []file{{path: "README.md", mode: "100644", data: "x\n"}}), nil), true)
+	if out.Status != contract.PublishCreated || out.MR == nil || out.MR.IID != 5 {
+		t.Fatalf("%+v", out)
 	}
 }
 

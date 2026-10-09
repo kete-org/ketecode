@@ -179,6 +179,10 @@ func text(b []byte) string {
 
 var spaceRun = regexp.MustCompile(`\s+`)
 
+// tokenShapes are GitLab token prefixes (internal/repo/gitlab Redact; kept here so gitproto has no
+// dependency on the REST client).
+var tokenShapes = regexp.MustCompile(`(glpat|gldt|glptt|gloas|glrt|glcbt|glimt|glagent|glsoat|glffct|glft|glwt)-[A-Za-z0-9_.-]{8,}`)
+
 // CutMessage strips control and format characters from a server message, collapses white space
 // and cuts it to max characters.
 func CutMessage(msg string, max int) string {
@@ -196,6 +200,8 @@ func CutMessage(msg string, max int) string {
 		b.WriteRune(r)
 	}
 	clean := strings.TrimSpace(spaceRun.ReplaceAllString(b.String(), " "))
+	// A server message never echoes a credential further (GitLab token shapes, spec §9.3).
+	clean = tokenShapes.ReplaceAllString(clean, "$1-[redacted]")
 	if utf8.RuneCountInString(clean) > max {
 		r := []rune(clean)
 		return string(r[:max-1]) + "…"
