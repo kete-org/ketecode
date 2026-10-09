@@ -232,3 +232,78 @@ func (r Runner) CatBlob(ctx context.Context, gitDir, sha string, max int64) ([]b
 	}
 	return out, nil
 }
+
+// --- orchestrated jobs (jobs-v1 "Orchestrated jobs") ---
+
+// ResolveCommit returns the commit a full ref (refs/heads/…, refs/kete/…) names in a git-dir.
+func (r Runner) ResolveCommit(ctx context.Context, gitDir, ref string) (string, error) {
+	out, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + gitDir, "rev-parse", "--verify", "--quiet", ref + "^{commit}"}})
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(string(out))
+	if len(sha) != 40 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return "", ErrMismatch
+	}
+	return sha, nil
+}
+
+// PinBase remakes the pristine copy at exactly baseSHA when the ref has moved on since the
+// orchestration pinned it: a fresh bare repository, the one commit fetched by its id (depth 1, the
+// same credential header as the clone), and refs/heads/<ref> pointing at it — so Verify's rules
+// (the ref at base_sha, no shallow boundary but base_sha) hold as for any clone.
+func (r Runner) PinBase(ctx context.Context, url, ref, username, token, baseSHA, dest string) error {
+	if err := os.RemoveAll(dest); err != nil {
+		return err
+	}
+	if _, err := r.Run(ctx, Call{Args: []string{"init", "--bare", "-q", "--", dest}}); err != nil {
+		return err
+	}
+	if _, err := r.Run(ctx, Call{
+		Args:    []string{"--git-dir=" + dest, "fetch", "--depth=1", "--no-tags", "--no-write-fetch-head", "--", url, "+" + baseSHA + ":refs/heads/" + ref},
+		Config:  [][2]string{{"http.extraHeader", BasicHeader(username, token)}},
+		Timeout: r.CloneTimeout,
+	}); err != nil {
+		return err
+	}
+	_, err := r.Run(ctx, Call{Args: []string{"--git-dir=" + dest, "symbolic-ref", "HEAD", "refs/heads/" + ref}})
+	return err
+}
+
+// RefSpec is one extra ref of an orchestrated claim: refs/heads/<Branch> fetched into
+// refs/kete/<Name>.
+type RefSpec struct {
+	Name   string
+	Branch string
+}
+
+// FetchRefs fetches every ref in one call, always as refs/heads/<branch> (never a bare name a tag
+// could shadow) into refs/kete/<name>, with the clone's credential header. depth1 fetches only the
+// tips (a worker reads them for reference); without it the history down to commits the pristine
+// copy already has comes along (a coordinator merges node branches, which all grow from the pinned
+// base), and git refuses anything that would move the shallow boundary.
+func (r Runner) FetchRefs(ctx context.Context, gitDir, url, username, token string, refs []RefSpec, depth1 bool) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	args := []string{"--git-dir=" + gitDir, "fetch", "--no-tags", "--no-write-fetch-head"}
+	if depth1 {
+		args = append(args, "--depth=1")
+	}
+	args = append(args, "--", url)
+	for _, s := range refs {
+		args = append(args, "+refs/heads/"+s.Branch+":refs/kete/"+s.Name)
+	}
+	_, err := r.Run(ctx, Call{Args: args, Config: [][2]string{{"http.extraHeader", BasicHeader(username, token)}}, Timeout: r.CloneTimeout})
+	return err
+}
+
+// CopyKeteRefs makes the pristine copy's refs/kete/* (fetched and checked in the clone phase)
+// available in the agent's working copy, from the local pristine copy only (no network).
+func (r Runner) CopyKeteRefs(ctx context.Context, pristine, repo string) error {
+	_, err := r.Run(ctx, Call{
+		Args:   []string{"-C", repo, "fetch", "--no-tags", "--no-write-fetch-head", "--update-shallow", "--", pristine, "+refs/kete/*:refs/kete/*"},
+		Config: [][2]string{{"protocol.file.allow", "always"}},
+	})
+	return err
+}

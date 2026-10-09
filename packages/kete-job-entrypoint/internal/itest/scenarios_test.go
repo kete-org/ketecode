@@ -212,7 +212,7 @@ func TestHarnessCodeLifecycle(t *testing.T) {
 	if !r.job.CloneDeleted {
 		t.Error("clone-done did not delete the token")
 	}
-	if strings.Join(r.job.Features, ",") != "clone_revoke_callback" {
+	if strings.Join(r.job.Features, ",") != "clone_revoke_callback,orchestration_v1" {
 		t.Errorf("claim features %v", r.job.Features)
 	}
 	// After clone-done, root reached the git host no more; the agent and report phases never did.
@@ -332,8 +332,9 @@ func TestCloneWrongCommit(t *testing.T) {
 	if res["outcome"] != "refused" || res["exit_code"] != 2.0 {
 		t.Errorf("result = %v", res)
 	}
-	if countCalls("revoke") != 0 {
-		t.Error("revoke after a wrong commit")
+	// Every clone-phase failure releases the clone token before the result (here GitHub's revoke).
+	if kinds := strings.Join(FP.Kinds(), " "); countCalls("revoke") != 1 || strings.Index(kinds, "revoke") > strings.Index(kinds, "result") {
+		t.Errorf("the clone token wasn't revoked once before the result: %s", kinds)
 	}
 	if _, err := os.Stat("/var/log/kete-job/kete.stdout"); err == nil {
 		t.Error("kete started")
@@ -714,4 +715,157 @@ func lookupID(t *testing.T, file, name string) int {
 	}
 	t.Fatalf("%s not in %s", name, file)
 	return 0
+}
+
+// planText is fakekete's PlanText (a separate main package).
+const planText = "{\"plan\":\"itest\"}\n"
+
+func bundleFiles(t *testing.T) map[string][]byte {
+	t.Helper()
+	gz, ok := FP.Uploaded("bundle")
+	if !ok {
+		t.Fatal("no bundle uploaded")
+	}
+	files, _ := readTar(t, gz)
+	return files
+}
+
+// TestOrchestrationWorker (O6): a node's attempt based on another node. The real git fetches the
+// plan and the node branch (refs/heads/…, depth 1) into refs/kete/* with the clone credential,
+// checks them at their pinned commits, reads the prompt from the plan file at the pinned plan commit
+// (digest checked) and hands it to kete; the working copy starts on the node's branch with
+// refs/kete/* present; the bundle holds no .kete-orchestration path.
+func TestOrchestrationWorker(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Orchestration: fakeplatform.OrchestrationWorker}, nil)
+	if r.code != 0 {
+		t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
+	}
+	res := resultOf(t)
+	if res["outcome"] != "completed" {
+		t.Fatalf("result %v", res)
+	}
+	if strings.Join(r.job.Features, ",") != "clone_revoke_callback,orchestration_v1" {
+		t.Errorf("claim features %v", r.job.Features)
+	}
+	spec, err := os.ReadFile(testConfig().SpecPath())
+	if err != nil || !strings.Contains(string(spec), fakeplatform.WorkerPrompt) || !strings.Contains(string(spec), `"orchestration"`) {
+		t.Errorf("kete's spec lacks the plan's prompt or the orchestration section: %s %v", spec, err)
+	}
+	files := bundleFiles(t)
+	if _, ok := files["files/README.md"]; !ok {
+		t.Errorf("bundle %v", keys(files))
+	}
+	if errs := FP.ContractErrors(); len(errs) != 0 {
+		t.Errorf("contract errors %v", errs)
+	}
+	if !strings.Contains(r.stdout, `"step":"fetch","event":"ok"`) || !strings.Contains(r.stdout, `"step":"plan_prompt","event":"ok"`) {
+		t.Errorf("phase log:\n%s", r.stdout)
+	}
+}
+
+// TestOrchestrationIntegration (O6): a coordinator's later turn fetches the plan and the succeeded
+// node with their history to the pinned base, and the tool user merges the node with the real git,
+// no network; the bundle is the merged tree (the node's file and the edit).
+func TestOrchestrationIntegration(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Orchestration: fakeplatform.OrchestrationIntegration, Prompt: "orchestration-merge"}, nil)
+	if r.code != 0 {
+		t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
+	}
+	if res := resultOf(t); res["outcome"] != "completed" {
+		t.Fatalf("result %v", res)
+	}
+	files := bundleFiles(t)
+	if string(files["files/"+fakeplatform.NodeFile]) != "core\n" || files["files/README.md"] == nil {
+		t.Errorf("bundle %v", keys(files))
+	}
+	if errs := FP.ContractErrors(); len(errs) != 0 {
+		t.Errorf("contract errors %v", errs)
+	}
+}
+
+// TestOrchestrationPlanBundle (O6): a coordinator turn whose proposal the platform accepted publishes
+// exactly the plan file; the other change is left out, with a note.
+func TestOrchestrationPlanBundle(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Orchestration: fakeplatform.OrchestrationCoordinator, Prompt: "orchestration-plan", OrchestrationProposalText: planText}, nil)
+	if r.code != 0 {
+		t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
+	}
+	files := bundleFiles(t)
+	if len(files) != 2 || string(files["files/.kete-orchestration/plan.json"]) != planText {
+		t.Errorf("bundle %v", keys(files))
+	}
+	if errs := FP.ContractErrors(); len(errs) != 0 {
+		t.Errorf("contract errors %v", errs)
+	}
+	noted := false
+	for _, c := range FP.Calls() {
+		if c.Kind == "events" && strings.Contains(string(c.Body), "only the plan file is published") {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Error("no note about the left-out change")
+	}
+}
+
+// TestOrchestrationStrayPlanFile: a coordinator turn without a standing proposal (no state from
+// kete) that has a plan file in its tree publishes its integration; the plan file is left out.
+func TestOrchestrationStrayPlanFile(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Orchestration: fakeplatform.OrchestrationIntegration, Prompt: "orchestration-stray-plan"}, nil)
+	if r.code != 0 {
+		t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
+	}
+	files := bundleFiles(t)
+	if _, ok := files["files/.kete-orchestration/plan.json"]; ok || files["files/README.md"] == nil {
+		t.Errorf("bundle %v", keys(files))
+	}
+	if errs := FP.ContractErrors(); len(errs) != 0 {
+		t.Errorf("contract errors %v", errs)
+	}
+}
+
+// TestOrchestrationPinnedBase (O6): the orchestration's base branch moved on since it was pinned; the
+// entrypoint fetches the pinned commit itself and the agent works on it.
+func TestOrchestrationPinnedBase(t *testing.T) {
+	r := runJob(t, fakeplatform.Knobs{Orchestration: fakeplatform.OrchestrationCoordinator, Prompt: "orchestration-base", OrchestrationBaseMoved: true}, nil)
+	if r.code != 0 {
+		t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
+	}
+	if res := resultOf(t); res["outcome"] != "completed" {
+		t.Fatalf("result %v", res)
+	}
+	if !strings.Contains(r.stdout, `"step":"clone","event":"note","code":"ref_mismatch"`) {
+		t.Errorf("phase log:\n%s", r.stdout)
+	}
+}
+
+// TestOrchestrationRefusals (O6): a fetched branch that isn't at its pinned commit, and a worker
+// whose plan prompt isn't the committed one, are refused before kete starts.
+func TestOrchestrationRefusals(t *testing.T) {
+	for name, k := range map[string]fakeplatform.Knobs{
+		"ref_mismatch":    {Orchestration: fakeplatform.OrchestrationIntegration, Prompt: "orchestration-merge", OrchestrationMovedFetch: true},
+		"prompt_mismatch": {Orchestration: fakeplatform.OrchestrationWorker, OrchestrationBadDigest: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := runJob(t, k, nil)
+			if r.code != 0 {
+				t.Fatalf("exit %d; stdout:\n%s", r.code, r.stdout)
+			}
+			res := resultOf(t)
+			if res["outcome"] != "refused" || !strings.Contains(res["message"].(string), name) {
+				t.Errorf("result %v", res)
+			}
+			if countCalls("messages") != 0 || strings.Contains(r.stdout, `"step":"agent","event":"start"`) {
+				t.Error("kete started")
+			}
+		})
+	}
+}
+
+func keys(m map[string][]byte) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

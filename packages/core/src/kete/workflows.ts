@@ -18,6 +18,7 @@ import { Effect, Schema, Stream } from "effect"
 import { Config } from "../config.js"
 import { SessionSchema } from "../session/schema.js"
 import { Tool } from "../tool.js"
+import { KeteDag } from "./dag.js"
 import { KeteSubagents } from "./subagents.js"
 
 export const name = "workflow"
@@ -59,21 +60,13 @@ export function validate(
   }
   if (errors.length > 0) return { errors }
 
-  // Order the steps so each follows its dependencies (Kahn); what's left over is a cycle.
-  const ordered: Step[] = []
-  const remaining = new Map([...direct].map(([id, deps]) => [id, new Set(deps)]))
-  while (remaining.size > 0) {
-    const ready = [...remaining].filter(([, deps]) => deps.size === 0).map(([id]) => id)
-    if (ready.length === 0) {
-      errors.push(`steps ${[...remaining.keys()].map((id) => `"${id}"`).join(", ")} depend on each other in a cycle`)
-      return { errors }
-    }
-    for (const id of ready) {
-      remaining.delete(id)
-      ordered.push(byID.get(id)!)
-      for (const deps of remaining.values()) deps.delete(id)
-    }
+  // Order the steps so each follows its dependencies (Kahn, the shared KeteDag); what's left over is a cycle.
+  const sorted = KeteDag.order([...direct])
+  if (sorted.cycle.length > 0) {
+    errors.push(`steps ${sorted.cycle.map((id) => `"${id}"`).join(", ")} depend on each other in a cycle`)
+    return { errors }
   }
+  const ordered: Step[] = sorted.order.map((id) => byID.get(id)!)
 
   // Everything each step comes after, directly or not.
   const dependencies = new Map<string, Set<string>>()

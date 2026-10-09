@@ -13,6 +13,7 @@ import (
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bootenv"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/bundle"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/egress"
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/gitops"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/layout"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/phaselog"
 	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/platform"
@@ -68,6 +69,17 @@ type Git interface {
 	Clone(ctx context.Context, url, ref, username, token, dest string) error
 	Verify(ctx context.Context, gitDir, ref, baseSHA string) error
 	AgentCopy(ctx context.Context, pristine, repo, branch, baseSHA string) error
+
+	// Orchestrated jobs (jobs-v1 "Orchestrated jobs"; orchestration.go): the commit a full ref
+	// names, the pristine copy remade at a pinned base the ref has moved past, the extra refs
+	// fetched into refs/kete/* (clone phase only, with the clone credential), a blob of the
+	// pristine copy (≤ max bytes, else gitops.ErrOutputTooLarge), and refs/kete/* copied into the
+	// agent's working copy.
+	ResolveCommit(ctx context.Context, gitDir, ref string) (string, error)
+	PinBase(ctx context.Context, url, ref, username, token, baseSHA, dest string) error
+	FetchRefs(ctx context.Context, gitDir, url, username, token string, refs []gitops.RefSpec, depth1 bool) error
+	CatBlob(ctx context.Context, gitDir, object string, max int64) ([]byte, error)
+	CopyKeteRefs(ctx context.Context, pristine, repo string) error
 }
 
 // KeteEnv is what `kete`'s environment needs from the claim.
@@ -75,6 +87,13 @@ type KeteEnv struct {
 	GatewayURL  string
 	PlatformURL string
 	GatewayKey  string
+	// JobID is the job's id (KETE_JOB_ID): an orchestration's coordinator turn calls its own
+	// job's orchestration routes with it. Not a secret.
+	JobID string
+	// Zone is the job's trust zone (KETE_JOB_ZONE): "kete_cloud" for the cloud path,
+	// "enterprise_private" for kubevm. The `orchestrate` tool lets node titles and a decision's
+	// summary leave only from Kete cloud (the runner's boundary is wired in with O10).
+	Zone string
 }
 
 // Machine is the OS side of the run.
@@ -101,7 +120,12 @@ type Machine interface {
 	// didn't finish in time.
 	OpenAudit() (io.ReadCloser, int64, error)
 	OpenProxyLog() (io.ReadCloser, int64, error)
-	BuildBundle(ctx context.Context, baseSHA string) (*bundle.Result, error)
+	// BuildBundle builds the change bundle under its orchestrations-v1 rule (bundle.Rule).
+	BuildBundle(ctx context.Context, baseSHA string, rule bundle.Rule) (*bundle.Result, error)
+	// ReadOrchestrationTurn reads the orchestration turn state `kete` records in its own state
+	// directory (layout.OrchestrationTurnRel; the job's tools can't write there): os.ErrNotExist
+	// when there is none.
+	ReadOrchestrationTurn() ([]byte, error)
 }
 
 // Runtime is the kubevm profile's runtime-repository path (jobs-v1 "Runtime repositories"; enterprise

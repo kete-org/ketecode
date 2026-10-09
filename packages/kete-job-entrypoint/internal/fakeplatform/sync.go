@@ -35,9 +35,13 @@ func (s *Server) headerLeaks(j *Job, r *http.Request) {
 	var forbidden map[string]string
 	switch host(r) {
 	case PlatformHost:
-		if strings.HasPrefix(r.URL.Path, "/api/v1/jobs/") {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/v1/jobs/"+j.ID+"/orchestration"):
+			// The coordinator routes take the turn's job key (orchestrations-v1), nothing else.
+			forbidden = map[string]string{"claim token": j.ClaimToken, "callback token": j.CallbackToken, "clone token": j.CloneToken}
+		case strings.HasPrefix(r.URL.Path, "/api/v1/jobs/"):
 			forbidden = map[string]string{"gateway key": j.GatewayKey}
-		} else {
+		default:
 			forbidden = map[string]string{"claim token": j.ClaimToken, "callback token": j.CallbackToken, "clone token": j.CloneToken}
 		}
 	case GatewayHost:

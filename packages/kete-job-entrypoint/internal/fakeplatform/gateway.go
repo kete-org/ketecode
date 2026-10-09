@@ -13,7 +13,13 @@ import (
 const (
 	ScenarioLifecycle = "lifecycle" // shell `id -un`, an edit of README.md, the symlink steps (LifecycleSymlinks), then final text
 	ScenarioAC5       = "ac5"       // an npm, a pip and a cargo install as the tool user, then final text
+	// ScenarioOrchestrate is a coordinator turn (Knobs.Orchestration coordinator): one
+	// `orchestrate` plan call, then final text.
+	ScenarioOrchestrate = "orchestrate"
 )
+
+// OrchestrateNode is the node the orchestrate scenario plans (its prompt stays in-zone).
+const OrchestrateNodePrompt = "E2E node prompt: add a CHANGELOG entry and run the tests."
 
 // The lifecycle scenario's edit: README.md's first line gains a suffix.
 const (
@@ -179,6 +185,17 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, j *Job, body [
 	case !req.hasTool("shell") || !req.hasTool("edit"):
 		// Not the agent's turn (e.g. a title or summary request): plain text.
 		answer, stop = block{text: "E2E job"}, "end_turn"
+	case j.Knobs.Scenario == ScenarioOrchestrate:
+		switch n {
+		case 0:
+			s.checks["orchestrate_tool"] = req.hasTool("orchestrate")
+			answer = block{tool: "orchestrate", input: map[string]any{"action": "plan", "notes": "e2e notes", "nodes": []any{map[string]any{
+				"key": "e2e-node", "title": "E2E node", "prompt": OrchestrateNodePrompt, "agent": AgentSlug, "budget_usd": 1, "timeout_minutes": 30,
+			}}}}
+		default:
+			s.checks["plan_accepted"] = strings.Contains(last, "Plan revision 1 accepted")
+			answer, stop = block{text: "Planned one node."}, "end_turn"
+		}
 	case j.Knobs.Scenario == ScenarioAC5:
 		if n > 0 && n <= len(AC5Steps) {
 			s.checks[AC5Steps[n-1].Marker] = strings.Contains(last, AC5Steps[n-1].Marker)

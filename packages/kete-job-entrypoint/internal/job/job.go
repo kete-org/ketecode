@@ -247,6 +247,21 @@ func (r *runner) run(ctx context.Context) int {
 		defer cancel()
 		return r.finalize(dctx, final{result: Synth("error", 1, "invalid claim response: "+field)})
 	}
+	if platform.HasOrchestration(resp.Spec) {
+		// An orchestrated job (announced by orchestration_v1): the strict spec, the fetches and
+		// the rules relating them to the clone, or nothing is cloned.
+		oc, err := platform.ParseOrchestrated(resp.Spec, resp.Fetch, &platform.CloneRef{Ref: claim.Ref, BaseSHA: claim.BaseSHA})
+		if err != nil {
+			resp.CallbackToken, resp.Clone.Token, resp.GatewayKey = "", "", ""
+			claim.CloneToken, claim.GatewayKey = "", ""
+			r.d.Platform.SetCallbackToken(claim.CallbackToken)
+			r.log.FailErr(pl.StepClaim, pl.CodeInvalid, err)
+			dctx, cancel := context.WithDeadline(ctx, claim.Deadline)
+			defer cancel()
+			return r.finalize(dctx, final{result: Synth("error", 1, "invalid claim response: orchestration")})
+		}
+		claim.Orchestrated = oc
+	}
 	resp.CallbackToken, resp.Clone.Token, resp.GatewayKey = "", "", ""
 	r.claim = claim
 	r.d.Platform.SetCallbackToken(claim.CallbackToken)
@@ -538,10 +553,27 @@ func (r *runner) cloneDone(ctx context.Context) error {
 	return err
 }
 
-// failClone ends a Harness Code job whose clone or verification failed: clone-done first (the
-// platform deletes the token), then finalize. A GitHub job finalizes as before.
+// failClone ends a job whose clone phase failed (clone, pinned base, verify, extra fetches) with
+// the clone token released first: Harness Code through clone-done (the platform deletes the
+// token), GitHub through its revoke endpoint (best effort, as on success; a failure is said on the
+// job). A kubevm job's credential is the runner's, never revoked from inside the job. Then finalize.
 func (r *runner) failClone(ctx context.Context, f final) int {
+	token := r.claim.CloneToken
 	r.claim.CloneToken = ""
+	if !r.harness() && r.d.Runtime == nil && token != "" {
+		r.log.Start(pl.StepRevoke)
+		if err := r.d.Platform.Revoke(ctx, r.claim.CloneHost, token); err != nil {
+			if ctx.Err() != nil {
+				return r.interrupted()
+			}
+			r.log.FailErr(pl.StepRevoke, pl.CodeFailed, err)
+			_ = r.event(ctx, platform.Event{Phase: "clone", Message: "clone token revoke failed"})
+		} else {
+			r.log.OK(pl.StepRevoke)
+		}
+		token = ""
+	}
+	_ = token
 	if r.harness() {
 		_ = r.cloneDone(ctx)
 		if r.isGone() || ctx.Err() != nil {
@@ -613,6 +645,11 @@ func (r *runner) afterClaim(ctx context.Context) int {
 	if r.d.Runtime != nil {
 		r.d.Runtime.Repo.Token = "" // the read credential's only other copy (c.CloneToken goes after verify)
 	}
+	if c.Orchestrated != nil {
+		if code, ok := r.pinBase(ctx); !ok {
+			return code
+		}
+	}
 
 	r.log.Start(pl.StepVerify)
 	if r.d.Runtime != nil {
@@ -635,8 +672,8 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		c.BaseSHA = head
 	}
 	if err := r.d.Git.Verify(ctx, r.d.Cfg.Pristine(), c.Ref, c.BaseSHA); err != nil {
-		c.CloneToken = ""
 		if ctx.Err() != nil {
+			c.CloneToken = ""
 			return r.interrupted()
 		}
 		if errors.Is(err, gitops.ErrMismatch) {
@@ -647,6 +684,9 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		return r.failClone(ctx, final{result: Synth("error", 1, "clone verification failed")})
 	}
 	r.log.OK(pl.StepVerify)
+	if code, ok := r.fetchRefs(ctx); !ok {
+		return code
+	}
 
 	if r.harness() || r.d.Runtime != nil {
 		// Harness Code: no request to the git host's API; the platform deletes the token.
@@ -675,8 +715,16 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		}
 	}
 
+	if code, ok := r.workerPrompt(ctx); !ok {
+		return code
+	}
+
 	r.log.Start(pl.StepAgentCopy)
-	if err := r.d.Git.AgentCopy(ctx, r.d.Cfg.Pristine(), r.d.Cfg.Repo(), c.Branch, c.BaseSHA); err != nil {
+	err := r.d.Git.AgentCopy(ctx, r.d.Cfg.Pristine(), r.d.Cfg.Repo(), c.Branch, c.BaseSHA)
+	if err == nil {
+		err = r.copyKeteRefs(ctx)
+	}
+	if err != nil {
 		if ctx.Err() != nil {
 			return r.interrupted()
 		}
@@ -711,7 +759,7 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		r.log.FailErr(pl.StepAgent, pl.CodeFailed, err)
 		return r.finalize(ctx, final{result: Synth("error", 1, "could not write the job spec")})
 	}
-	kete, err := r.d.Machine.StartKete(ctx, KeteEnv{GatewayURL: c.GatewayURL, PlatformURL: r.d.Boot.PlatformURL, GatewayKey: c.GatewayKey})
+	kete, err := r.d.Machine.StartKete(ctx, KeteEnv{GatewayURL: c.GatewayURL, PlatformURL: r.d.Boot.PlatformURL, GatewayKey: c.GatewayKey, JobID: r.d.Boot.JobID, Zone: r.zone()})
 	c.GatewayKey = ""
 	if err != nil {
 		r.log.FailErr(pl.StepAgent, pl.CodeFailed, err)
@@ -903,7 +951,7 @@ func (r *runner) finalize(ctx context.Context, f final) int {
 	var b *bundle.Result
 	if f.bundle && !alive && !r.proxyFailed {
 		r.log.Start(pl.StepBundle)
-		res, err := r.d.Machine.BuildBundle(ctx, r.claim.BaseSHA)
+		res, err := r.d.Machine.BuildBundle(ctx, r.claim.BaseSHA, r.bundleRule(ctx))
 		switch {
 		case err == nil:
 			b = res

@@ -1,0 +1,1752 @@
+{
+  "description": "jobs-v1 orchestrated claims (additive, feature orchestration_v1; docs/contracts/jobs-v1.md \"Orchestrated jobs\"). `request` names the feature; `responses` are JobOrchestratedClaimResponse (and one JobRuntimeOrchestratedClaimResponse, for the kubevm check with `local_repository_name`) an entrypoint must accept; `refusals` are responses it must refuse (each fails the schema). `job` is a Job with its orchestration reference; `boundaries` are narrowJobDataBoundary cases with orchestration_titles; `branch_suffixes` are CreateJobRequest/CreateOrchestrationRequest `branch_suffix` values (jobs-v1 narrowing 2026-10-09: 8 hex digits alone or followed by `-`, any case, are reserved).",
+  "request": {
+    "claim_token": "4f9c2a7e1b8d3f6a0c5e9b2d7f1a4c8e6b3d0f9a2c7e5b1d8f4a6c0e3b9d2f7a",
+    "features": [
+      "clone_revoke_callback",
+      "orchestration_v1"
+    ]
+  },
+  "responses": {
+    "coordinator_turn_1": {
+      "gateway_key": "kete_live_example",
+      "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+      "gateway_url": "https://gateway.kete.example",
+      "platform_url": "https://portal.kete.example",
+      "deadline": "2026-10-09T12:10:00Z",
+      "spec": {
+        "version": 1,
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "agent": "developer",
+        "model": "kete/claude-sonnet-4-5",
+        "policy": {
+          "version": 1,
+          "allow": [
+            {
+              "action": "shell",
+              "resource": "npm test*"
+            }
+          ],
+          "budget": 3,
+          "timeout": 30
+        },
+        "branch": "kete/job/payments-sdk-v3",
+        "orchestration": {
+          "version": 1,
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "role": "coordinator",
+          "turn": 1,
+          "final": false,
+          "plan": null,
+          "titles": "send"
+        }
+      },
+      "clone": {
+        "url": "https://github.com/acme/payments.git",
+        "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+        "ref": "main",
+        "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+      },
+      "fetch": []
+    },
+    "coordinator_integration_turn": {
+      "gateway_key": "kete_live_example",
+      "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+      "gateway_url": "https://gateway.kete.example",
+      "platform_url": "https://portal.kete.example",
+      "deadline": "2026-10-09T12:10:00Z",
+      "spec": {
+        "version": 1,
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "agent": "developer",
+        "model": "kete/claude-sonnet-4-5",
+        "policy": {
+          "version": 1,
+          "allow": [
+            {
+              "action": "shell",
+              "resource": "npm test*"
+            }
+          ],
+          "budget": 3,
+          "timeout": 30
+        },
+        "branch": "kete/job/payments-sdk-v3",
+        "orchestration": {
+          "version": 1,
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "role": "coordinator",
+          "turn": 3,
+          "final": false,
+          "plan": {
+            "rev": 2,
+            "branch": "kete/job/ab12cd34-plan-2",
+            "sha": "2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f"
+          },
+          "titles": "send"
+        }
+      },
+      "clone": {
+        "url": "https://github.com/acme/payments.git",
+        "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+        "ref": "main",
+        "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+      },
+      "fetch": [
+        {
+          "name": "plan",
+          "branch": "kete/job/ab12cd34-plan-2",
+          "sha": "2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f"
+        },
+        {
+          "name": "nodes/sdk-core",
+          "branch": "kete/job/ab12cd34-sdk-core",
+          "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        {
+          "name": "nodes/client-web",
+          "branch": "kete/job/ab12cd34-client-web",
+          "sha": "4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+        },
+        {
+          "name": "nodes/client-mobile",
+          "branch": "kete/job/ab12cd34-client-mobile",
+          "sha": "5f60718293a4b5c6d7e8f90a1b2c3d4e5f607182"
+        },
+        {
+          "name": "nodes/client-admin",
+          "branch": "kete/job/ab12cd34-client-admin",
+          "sha": "60718293a4b5c6d7e8f90a1b2c3d4e5f60718293"
+        }
+      ]
+    },
+    "worker_on_base": {
+      "gateway_key": "kete_live_example",
+      "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+      "gateway_url": "https://gateway.kete.example",
+      "platform_url": "https://portal.kete.example",
+      "deadline": "2026-10-09T12:10:00Z",
+      "spec": {
+        "version": 1,
+        "agent": "developer",
+        "model": "kete/claude-sonnet-4-5",
+        "policy": {
+          "version": 1,
+          "allow": [
+            {
+              "action": "shell",
+              "resource": "npm test*"
+            }
+          ],
+          "budget": 2,
+          "timeout": 45
+        },
+        "branch": "kete/job/ab12cd34-sdk-core",
+        "orchestration": {
+          "version": 1,
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "role": "worker",
+          "node": "sdk-core",
+          "attempt": 1,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+          "base_from": null
+        }
+      },
+      "clone": {
+        "url": "https://github.com/acme/payments.git",
+        "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+        "ref": "main",
+        "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+      },
+      "fetch": [
+        {
+          "name": "plan",
+          "branch": "kete/job/ab12cd34-plan-1",
+          "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+        }
+      ]
+    },
+    "worker_on_node": {
+      "gateway_key": "kete_live_example",
+      "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+      "gateway_url": "https://gateway.kete.example",
+      "platform_url": "https://portal.kete.example",
+      "deadline": "2026-10-09T12:10:00Z",
+      "spec": {
+        "version": 1,
+        "agent": "developer",
+        "model": "kete/claude-sonnet-4-5",
+        "policy": {
+          "version": 1,
+          "allow": [
+            {
+              "action": "shell",
+              "resource": "npm test*"
+            }
+          ],
+          "budget": 1.5,
+          "timeout": 30
+        },
+        "branch": "kete/job/ab12cd34-client-web",
+        "orchestration": {
+          "version": 1,
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "role": "worker",
+          "node": "client-web",
+          "attempt": 1,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+          "base_from": "sdk-core"
+        }
+      },
+      "clone": {
+        "url": "https://github.com/acme/payments.git",
+        "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+        "ref": "kete/job/ab12cd34-sdk-core",
+        "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      },
+      "fetch": [
+        {
+          "name": "plan",
+          "branch": "kete/job/ab12cd34-plan-1",
+          "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+        },
+        {
+          "name": "nodes/sdk-core",
+          "branch": "kete/job/ab12cd34-sdk-core",
+          "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        }
+      ]
+    }
+  },
+  "runtime": {
+    "local_repository_name": "gitlab:payments/api",
+    "response": {
+      "gateway_key": "kete_live_example",
+      "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+      "gateway_url": "https://gateway.kete.example",
+      "platform_url": "https://portal.kete.example",
+      "deadline": "2026-10-09T12:10:00Z",
+      "spec": {
+        "version": 1,
+        "agent": "developer",
+        "model": "kete/claude-sonnet-4-5",
+        "policy": {
+          "version": 1,
+          "allow": [
+            {
+              "action": "shell",
+              "resource": "npm test*"
+            }
+          ],
+          "budget": 1.5,
+          "timeout": 30
+        },
+        "branch": "kete/job/ab12cd34-client-web",
+        "orchestration": {
+          "version": 1,
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "role": "worker",
+          "node": "client-web",
+          "attempt": 1,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+          "base_from": "sdk-core"
+        }
+      },
+      "fetch": [
+        {
+          "name": "plan",
+          "branch": "kete/job/ab12cd34-plan-1",
+          "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+        },
+        {
+          "name": "nodes/sdk-core",
+          "branch": "kete/job/ab12cd34-sdk-core",
+          "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        }
+      ],
+      "repository": {
+        "provider": "runtime",
+        "name": "gitlab:payments/api"
+      }
+    },
+    "request_features": [
+      "runtime_repo",
+      "runtime_publish",
+      "orchestration_v1"
+    ]
+  },
+  "refusals": [
+    {
+      "name": "a worker with a prompt",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          },
+          "prompt": "from the platform"
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a coordinator without a prompt",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 3,
+            "timeout": 30
+          },
+          "branch": "kete/job/payments-sdk-v3",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "coordinator",
+            "turn": 1,
+            "final": false,
+            "plan": null,
+            "titles": "send"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "fetch": []
+      }
+    },
+    {
+      "name": "a review in an orchestrated spec",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          },
+          "review": {}
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a fetch of another orchestration’s branch",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ffee0011-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a fetch of a branch outside kete/job",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "main",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a node fetch under another key",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/client-admin",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a plan fetch at another commit",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no plan fetch",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a plan fetch on turn 1",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 3,
+            "timeout": 30
+          },
+          "branch": "kete/job/payments-sdk-v3",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "coordinator",
+            "turn": 1,
+            "final": false,
+            "plan": null,
+            "titles": "send"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a plan branch of another revision",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 2,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate fetch names",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a fetch name outside plan and nodes",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "heads/main",
+            "branch": "kete/job/ab12cd34-heads",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a worker pushing another node’s branch",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-sdk-core",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a coordinator pushing a node branch",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 3,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-sdk-core",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "coordinator",
+            "turn": 1,
+            "final": false,
+            "plan": null,
+            "titles": "send"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "fetch": []
+      }
+    },
+    {
+      "name": "a worker based on a node cloning the base",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a worker on the base cloning a job branch",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 2,
+            "timeout": 45
+          },
+          "branch": "kete/job/ab12cd34-sdk-core",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "sdk-core",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+            "base_from": null
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/other",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eighteen fetches",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 3,
+            "timeout": 30
+          },
+          "branch": "kete/job/payments-sdk-v3",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "coordinator",
+            "turn": 3,
+            "final": false,
+            "plan": {
+              "rev": 2,
+              "branch": "kete/job/ab12cd34-plan-2",
+              "sha": "2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f"
+            },
+            "titles": "send"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "fetch": [
+          {
+            "name": "nodes/n0",
+            "branch": "kete/job/ab12cd34-n0",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n1",
+            "branch": "kete/job/ab12cd34-n1",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n2",
+            "branch": "kete/job/ab12cd34-n2",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n3",
+            "branch": "kete/job/ab12cd34-n3",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n4",
+            "branch": "kete/job/ab12cd34-n4",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n5",
+            "branch": "kete/job/ab12cd34-n5",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n6",
+            "branch": "kete/job/ab12cd34-n6",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n7",
+            "branch": "kete/job/ab12cd34-n7",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n8",
+            "branch": "kete/job/ab12cd34-n8",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n9",
+            "branch": "kete/job/ab12cd34-n9",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n10",
+            "branch": "kete/job/ab12cd34-n10",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n11",
+            "branch": "kete/job/ab12cd34-n11",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n12",
+            "branch": "kete/job/ab12cd34-n12",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n13",
+            "branch": "kete/job/ab12cd34-n13",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n14",
+            "branch": "kete/job/ab12cd34-n14",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n15",
+            "branch": "kete/job/ab12cd34-n15",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n16",
+            "branch": "kete/job/ab12cd34-n16",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          },
+          {
+            "name": "nodes/n17",
+            "branch": "kete/job/ab12cd34-n17",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "turn 7",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 3,
+            "timeout": 30
+          },
+          "branch": "kete/job/payments-sdk-v3",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "coordinator",
+            "turn": 7,
+            "final": false,
+            "plan": null,
+            "titles": "send"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "fetch": []
+      }
+    },
+    {
+      "name": "attempt 4",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 4,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a worker without prompt_digest",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a base node fetched at another commit than the clone",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an unknown orchestration field",
+      "response": {
+        "gateway_key": "kete_live_example",
+        "callback_token": "a1c3e5f7092b4d6f8a0c2e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8e0f2b4d",
+        "gateway_url": "https://gateway.kete.example",
+        "platform_url": "https://portal.kete.example",
+        "deadline": "2026-10-09T12:10:00Z",
+        "spec": {
+          "version": 1,
+          "agent": "developer",
+          "model": "kete/claude-sonnet-4-5",
+          "policy": {
+            "version": 1,
+            "allow": [
+              {
+                "action": "shell",
+                "resource": "npm test*"
+              }
+            ],
+            "budget": 1.5,
+            "timeout": 30
+          },
+          "branch": "kete/job/ab12cd34-client-web",
+          "orchestration": {
+            "version": 1,
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "role": "worker",
+            "node": "client-web",
+            "attempt": 1,
+            "plan": {
+              "rev": 1,
+              "branch": "kete/job/ab12cd34-plan-1",
+              "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            },
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "base_from": "sdk-core",
+            "prompt": "x"
+          }
+        },
+        "clone": {
+          "url": "https://github.com/acme/payments.git",
+          "token": "ghs_EXAMPLEexampleEXAMPLEexample0000",
+          "ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "fetch": [
+          {
+            "name": "plan",
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          {
+            "name": "nodes/sdk-core",
+            "branch": "kete/job/ab12cd34-sdk-core",
+            "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+          }
+        ]
+      }
+    }
+  ],
+  "job_orchestration": [
+    {
+      "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "role": "coordinator",
+      "turn": 1
+    },
+    {
+      "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "role": "worker",
+      "node_key": "client-web",
+      "attempt": 2
+    }
+  ],
+  "boundaries": [
+    {
+      "a": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send"
+      },
+      "b": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send"
+      },
+      "narrowed": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send"
+      }
+    },
+    {
+      "a": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "send"
+      },
+      "b": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send"
+      },
+      "narrowed": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "omit"
+      }
+    },
+    {
+      "a": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "send"
+      },
+      "b": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "send"
+      },
+      "narrowed": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "send"
+      }
+    },
+    {
+      "a": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "omit"
+      },
+      "b": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "send"
+      },
+      "narrowed": {
+        "summary": "none",
+        "denials": "actions",
+        "publish_refs": "send",
+        "orchestration_titles": "omit"
+      }
+    }
+  ],
+  "branch_suffixes": [
+    {
+      "suffix": "upgrade-lodash",
+      "valid": true
+    },
+    {
+      "suffix": "fix-1",
+      "valid": true
+    },
+    {
+      "suffix": "ab12cd3",
+      "valid": true
+    },
+    {
+      "suffix": "ab12cd345",
+      "valid": true
+    },
+    {
+      "suffix": "ab12cd34x",
+      "valid": true
+    },
+    {
+      "suffix": "ab12cd34",
+      "valid": false
+    },
+    {
+      "suffix": "AB12CD34",
+      "valid": false
+    },
+    {
+      "suffix": "ab12cd34-sdk-core",
+      "valid": false
+    },
+    {
+      "suffix": "Ab12Cd34-plan-1",
+      "valid": false
+    },
+    {
+      "suffix": "ab12cd34-a/b",
+      "valid": false
+    },
+    {
+      "suffix": "deadbeef-",
+      "valid": false
+    }
+  ]
+}

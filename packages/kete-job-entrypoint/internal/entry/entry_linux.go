@@ -484,6 +484,8 @@ func KeteEnvList(cfg layout.Config, e job.KeteEnv) []string {
 		"KETE_RUNTIME_TYPE=kete_cloud",
 		"KETE_GATEWAY_URL=" + e.GatewayURL,
 		"KETE_PLATFORM_URL=" + e.PlatformURL,
+		"KETE_JOB_ID=" + e.JobID,
+		"KETE_JOB_ZONE=" + e.Zone,
 		"KETE_JOB_GATEWAY_KEY_FD=3",
 		"KETE_JOB_AUDIT_FD=" + strconv.Itoa(layout.KeteAuditFD),
 		"KETE_DISABLE_MODELS_FETCH=1",
@@ -860,10 +862,26 @@ func (m *machine) OpenProxyLog() (io.ReadCloser, int64, error) {
 	return f, info.Size(), nil
 }
 
-func (m *machine) BuildBundle(ctx context.Context, baseSHA string) (*bundle.Result, error) {
+func (m *machine) ReadOrchestrationTurn() ([]byte, error) {
+	f, size, err := setup.OpenNoFollow(m.cfg.KeteHome(), layout.OrchestrationTurnRel)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var st syscall.Stat_t
+	if err := syscall.Fstat(int(f.Fd()), &st); err != nil {
+		return nil, err
+	}
+	if st.Uid != m.ids.Kete.UID || size > layout.MaxOrchestrationTurn {
+		return nil, errors.New("orchestration turn state: not kete's, or too large")
+	}
+	return io.ReadAll(io.LimitReader(f, layout.MaxOrchestrationTurn))
+}
+
+func (m *machine) BuildBundle(ctx context.Context, baseSHA string, rule bundle.Rule) (*bundle.Result, error) {
 	return bundle.Build(ctx, bundle.Options{
 		Git: m.git, GitDir: m.cfg.Pristine(), WorkParent: m.cfg.WorkParent, RepoName: m.cfg.RepoName,
-		TmpDir: m.cfg.RootTmp(), BaseSHA: baseSHA,
+		TmpDir: m.cfg.RootTmp(), BaseSHA: baseSHA, Rule: rule,
 		Limits: bundle.Limits{
 			MaxFile: layout.BundleMaxFile, MaxBinaryFile: layout.BundleMaxBinaryFile, MaxBinaries: layout.BundleMaxBinaries,
 			MaxEntries: layout.BundleMaxEntries, MaxTar: layout.BundleMaxTar, MaxGzip: layout.BundleMaxGzip,

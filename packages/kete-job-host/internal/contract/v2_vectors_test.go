@@ -205,3 +205,98 @@ func TestV1BodiesUnderV2(t *testing.T) {
 		t.Error("an enroll response without version accepted")
 	}
 }
+
+// TestV2OrchestrationVectors: every case of orchestration.json (the orchestration additions, ADR
+// 0026) is accepted or refused exactly as the platform's schema does.
+func TestV2OrchestrationVectors(t *testing.T) {
+	var v vectors.Messages
+	if err := vectors.LoadV2("orchestration.json", &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Cases) != 37 {
+		t.Fatalf("%d cases, the contract has 37", len(v.Cases))
+	}
+	checks := map[string]func([]byte) error{
+		"JobHostV2Report":       schemas["JobHostV2Report"],
+		"JobHostV2RunMachine":   schemas["JobHostV2RunMachine"],
+		"JobHostV2PollResponse": schemas["JobHostV2PollResponse"],
+		"JobHostCleanupOutcome": decodeValidate[contract.CleanupOutcome],
+		"JobHostCleanupItem": func(raw []byte) error {
+			_, err := contract.ParseCleanupItem(raw)
+			return err
+		},
+	}
+	for _, c := range v.Cases {
+		t.Run(c.Schema+"/"+c.Name, func(t *testing.T) {
+			check, ok := checks[c.Schema]
+			if !ok {
+				t.Fatalf("no Go check for schema %s", c.Schema)
+			}
+			err := check(c.Value)
+			if c.Valid && err != nil {
+				t.Errorf("refused: %v", err)
+			}
+			if testing.Verbose() && err != nil {
+				t.Log(err)
+			}
+			if !c.Valid && err == nil {
+				t.Error("accepted")
+			}
+		})
+	}
+}
+
+// TestV2CleanupItemsOneByOne: a desired state with one bad cleanup item is accepted, and that item
+// alone fails JobHostCleanupItem (the host reports it refused/invalid_item).
+func TestV2CleanupItemsOneByOne(t *testing.T) {
+	raw := orchestrationValue(t, "JobHostV2PollResponse", "an invalid cleanup item does not discard the desired state")
+	p, err := contract.ParsePollResponseV2(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := 0
+	for _, item := range p.Desired.Cleanup {
+		if _, err := contract.ParseCleanupItem(item.Raw); err != nil {
+			bad++
+		}
+	}
+	if len(p.Desired.Cleanup) == 0 || bad != 1 {
+		t.Errorf("%d items, %d refused; want exactly the bad one refused", len(p.Desired.Cleanup), bad)
+	}
+}
+
+// TestV2ReportWithoutOrchestration: the agent's report without the additions marshals no new field.
+func TestV2ReportWithoutOrchestration(t *testing.T) {
+	raw := orchestrationValue(t, "JobHostV2Report", "no features or cleanup (as before)")
+	var r contract.ReportV2
+	if err := contract.Decode(raw, &r); err != nil {
+		t.Fatal(err)
+	}
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"features"`, `"cleanup"`, `"orchestration_titles"`} {
+		if strings.Contains(string(out), field) {
+			t.Errorf("report carries %s", field)
+		}
+	}
+	if contract.FailedReasonV2(contract.ReasonRefMismatch) != true {
+		t.Error("ref_mismatch is a v2 failed reason")
+	}
+}
+
+func orchestrationValue(t *testing.T, schema, name string) []byte {
+	t.Helper()
+	var v vectors.Messages
+	if err := vectors.LoadV2("orchestration.json", &v); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range v.Cases {
+		if c.Schema == schema && c.Name == name {
+			return c.Value
+		}
+	}
+	t.Fatalf("no case %s/%s", schema, name)
+	return nil
+}

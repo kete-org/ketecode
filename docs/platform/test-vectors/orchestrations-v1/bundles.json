@@ -1,0 +1,245 @@
+{
+  "description": "orchestrations-v1 bundle rule (checkOrchestrationBundle), applied after the bundle validator’s own rules: `kind` plan (a plan turn’s bundle) or other (every other bundle); `entries` are manifest entries with each file’s decompressed size; `refusal` is the result (null: acceptable).",
+  "cases": [
+    {
+      "name": "plan: exactly the plan file",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".kete-orchestration/plan.json",
+          "mode": "100644",
+          "size": 2048
+        }
+      ],
+      "refusal": null
+    },
+    {
+      "name": "plan: 256 KiB",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".kete-orchestration/plan.json",
+          "mode": "100644",
+          "size": 262144
+        }
+      ],
+      "refusal": null
+    },
+    {
+      "name": "plan: over 256 KiB",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".kete-orchestration/plan.json",
+          "mode": "100644",
+          "size": 262145
+        }
+      ],
+      "refusal": "plan_file_too_large"
+    },
+    {
+      "name": "plan: plus a code file",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".kete-orchestration/plan.json",
+          "mode": "100644",
+          "size": 2048
+        },
+        {
+          "path": "src/a.ts",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "plan_bundle_shape"
+    },
+    {
+      "name": "plan: a code file only",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": "src/a.ts",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "plan_bundle_shape"
+    },
+    {
+      "name": "plan: empty",
+      "kind": "plan",
+      "entries": [],
+      "refusal": "plan_bundle_shape"
+    },
+    {
+      "name": "plan: executable",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".kete-orchestration/plan.json",
+          "mode": "100755",
+          "size": 10
+        }
+      ],
+      "refusal": "plan_bundle_shape"
+    },
+    {
+      "name": "plan: deleted",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".kete-orchestration/plan.json",
+          "deleted": true
+        }
+      ],
+      "refusal": "plan_bundle_shape"
+    },
+    {
+      "name": "plan: other spelling",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".Kete-Orchestration/plan.json",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "plan_bundle_shape"
+    },
+    {
+      "name": "plan: another file in the directory",
+      "kind": "plan",
+      "entries": [
+        {
+          "path": ".kete-orchestration/notes.md",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "plan_bundle_shape"
+    },
+    {
+      "name": "other: code only",
+      "kind": "other",
+      "entries": [
+        {
+          "path": "src/a.ts",
+          "mode": "100644",
+          "size": 10
+        },
+        {
+          "path": "README.md",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": null
+    },
+    {
+      "name": "other: the plan file",
+      "kind": "other",
+      "entries": [
+        {
+          "path": "src/a.ts",
+          "mode": "100644",
+          "size": 10
+        },
+        {
+          "path": ".kete-orchestration/plan.json",
+          "mode": "100644",
+          "size": 2048
+        }
+      ],
+      "refusal": "orchestration_path"
+    },
+    {
+      "name": "other: deleting the plan file",
+      "kind": "other",
+      "entries": [
+        {
+          "path": ".kete-orchestration/plan.json",
+          "deleted": true
+        }
+      ],
+      "refusal": "orchestration_path"
+    },
+    {
+      "name": "other: nested directory",
+      "kind": "other",
+      "entries": [
+        {
+          "path": "packages/x/.kete-orchestration/plan.json",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "orchestration_path"
+    },
+    {
+      "name": "other: a file named so",
+      "kind": "other",
+      "entries": [
+        {
+          "path": "docs/.kete-orchestration",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "orchestration_path"
+    },
+    {
+      "name": "other: upper case",
+      "kind": "other",
+      "entries": [
+        {
+          "path": ".KETE-ORCHESTRATION/x",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "orchestration_path"
+    },
+    {
+      "name": "other: trailing dot and space",
+      "kind": "other",
+      "entries": [
+        {
+          "path": ".kete-orchestration. /x",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "orchestration_path"
+    },
+    {
+      "name": "other: an HFS-ignorable code point",
+      "kind": "other",
+      "entries": [
+        {
+          "path": ".kete-orches‌tration/x",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": "orchestration_path"
+    },
+    {
+      "name": "other: a similar name",
+      "kind": "other",
+      "entries": [
+        {
+          "path": ".kete-orchestrations/x",
+          "mode": "100644",
+          "size": 10
+        },
+        {
+          "path": "kete-orchestration/x",
+          "mode": "100644",
+          "size": 10
+        }
+      ],
+      "refusal": null
+    }
+  ]
+}

@@ -114,14 +114,22 @@ export type CommandInput = {
   readonly gatewayKey: string
   /** The organization id (a GUID) the parent's first sync found; not a secret. */
   readonly organization: string
+  /** An orchestrated job's spec section and job id (the `orchestrate` tool's); not a secret. */
+  readonly orchestration?: { readonly jobID: string; readonly spec: unknown }
   readonly socket: string
   readonly command?: ReadonlyArray<string>
   readonly cwd?: string
 }
 
 /** The secrets message the child reads from fd 3 (job-serve.ts). */
-export function secretsMessage(input: Pick<CommandInput, "password" | "gatewayKey" | "organization">) {
-  return JSON.stringify({ v: 1, password: input.password, gateway_key: input.gatewayKey, organization: input.organization })
+export function secretsMessage(input: Pick<CommandInput, "password" | "gatewayKey" | "organization" | "orchestration">) {
+  return JSON.stringify({
+    v: 1,
+    password: input.password,
+    gateway_key: input.gatewayKey,
+    organization: input.organization,
+    ...(input.orchestration ? { orchestration: { job_id: input.orchestration.jobID, spec: input.orchestration.spec } } : {}),
+  })
 }
 
 /** The child's command: `kete serve --stdio --socket <path>`, the secrets on fd 3. Pure. */
@@ -181,6 +189,8 @@ export type Started = {
 export type StartOptions = {
   readonly gatewayKey: string
   readonly organization: string
+  /** An orchestrated job's spec section and job id, for the child's `orchestrate` tool. */
+  readonly orchestration?: { readonly jobID: string; readonly spec: unknown }
   /** The entrypoint's audit pipe (our own descriptor, KETE_JOB_AUDIT_FD). */
   readonly auditFd: number
   readonly command?: ReadonlyArray<string>
@@ -202,7 +212,14 @@ export const start = Effect.fn("cli.kete.job.standalone")(
     )
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const proc = yield* spawner.spawn(
-      command({ password, gatewayKey: options.gatewayKey, organization: options.organization, socket, command: options.command }),
+      command({
+        password,
+        gatewayKey: options.gatewayKey,
+        organization: options.organization,
+        orchestration: options.orchestration,
+        socket,
+        command: options.command,
+      }),
     )
     // Relay the child's audit log into the entrypoint's pipe. On failure, stop reading and tell the
     // subscribers at once; the child's further writes block (see the header) rather than succeed.

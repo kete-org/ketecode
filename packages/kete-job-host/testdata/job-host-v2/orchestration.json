@@ -1,0 +1,1462 @@
+{
+  "description": "job-host-v2 orchestration additions (additive, ADR 0026; docs/contracts/job-host-v2.md \"Orchestration\"): each value must be accepted (valid: true) or refused (valid: false) by the named schema (packages/shared/src/api/v1/job-hosts-v2.ts). A missing field is absent. A host checks each desired-state cleanup item with JobHostCleanupItem on its own.",
+  "cases": [
+    {
+      "schema": "JobHostV2Report",
+      "name": "advertises orchestration_v1, reports cleanup outcomes",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send",
+          "orchestration_titles": "omit"
+        },
+        "machines": [],
+        "features": [
+          "orchestration_v1"
+        ],
+        "cleanup": [
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "deleted"
+          },
+          {
+            "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+            "status": "moved"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "orchestration_v1 while omitting publish references",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "omit",
+          "orchestration_titles": "omit"
+        },
+        "machines": [],
+        "features": [
+          "orchestration_v1"
+        ],
+        "cleanup": [
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "deleted"
+          },
+          {
+            "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+            "status": "moved"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "an unknown feature name",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send",
+          "orchestration_titles": "omit"
+        },
+        "machines": [],
+        "features": [
+          "orchestration_v1",
+          "some_future_feature"
+        ],
+        "cleanup": [
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "deleted"
+          },
+          {
+            "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+            "status": "moved"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "duplicate features",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send",
+          "orchestration_titles": "omit"
+        },
+        "machines": [],
+        "features": [
+          "orchestration_v1",
+          "orchestration_v1"
+        ],
+        "cleanup": [
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "deleted"
+          },
+          {
+            "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+            "status": "moved"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "titles sent",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send",
+          "orchestration_titles": "send"
+        },
+        "machines": [],
+        "features": [
+          "orchestration_v1"
+        ],
+        "cleanup": [
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "deleted"
+          },
+          {
+            "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+            "status": "moved"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "titles setting unknown",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send",
+          "orchestration_titles": "some"
+        },
+        "machines": [],
+        "features": [
+          "orchestration_v1"
+        ],
+        "cleanup": [
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "deleted"
+          },
+          {
+            "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+            "status": "moved"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "no features or cleanup (as before)",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send"
+        },
+        "machines": []
+      }
+    },
+    {
+      "schema": "JobHostV2Report",
+      "name": "duplicate cleanup ids",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "generation": "k8s-2026-10-07.1",
+        "versions": {
+          "agent": "0.11.0",
+          "kubernetes": "v1.31.4",
+          "host_kernel": "6.8.0-1015-azure"
+        },
+        "slots": {
+          "total": 16,
+          "free": 15
+        },
+        "starts_blocked": null,
+        "applied_revision": 42,
+        "runtime_classes": [
+          "kata-mshv-vm-isolation"
+        ],
+        "images": [
+          "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f"
+        ],
+        "repositories": [
+          "gitlab:payments/api"
+        ],
+        "boundary": {
+          "summary": "none",
+          "denials": "actions",
+          "publish_refs": "send",
+          "orchestration_titles": "omit"
+        },
+        "machines": [],
+        "features": [
+          "orchestration_v1"
+        ],
+        "cleanup": [
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "deleted"
+          },
+          {
+            "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+            "status": "absent"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "JobHostCleanupOutcome",
+      "name": "failed with a reason",
+      "valid": true,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "status": "failed",
+        "reason": "provider_unavailable"
+      }
+    },
+    {
+      "schema": "JobHostCleanupOutcome",
+      "name": "refused, invalid item",
+      "valid": true,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "status": "refused",
+        "reason": "invalid_item"
+      }
+    },
+    {
+      "schema": "JobHostCleanupOutcome",
+      "name": "failed without a reason",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "status": "failed"
+      }
+    },
+    {
+      "schema": "JobHostCleanupOutcome",
+      "name": "deleted with a reason",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "status": "deleted",
+        "reason": "provider_error"
+      }
+    },
+    {
+      "schema": "JobHostCleanupOutcome",
+      "name": "moved with the new commit",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "status": "moved",
+        "sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "a node branch",
+      "valid": true,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/ab12cd34-sdk-core",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "an integration branch",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/payments-sdk-v3",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "the default branch",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "main",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "a plan branch",
+      "valid": true,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/ab12cd34-plan-2",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "a plan branch of revision 7",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/ab12cd34-plan-7",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "a default (8 hex) job branch",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/ab12cd34",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "upper-case hex",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/AB12CD34-sdk-core",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "a nested name",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/ab12cd34-a/b",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "a key with an underscore",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/ab12cd34-sdk_core",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "no expected commit",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "gitlab:payments/api",
+        "branch": "kete/job/ab12cd34-sdk-core"
+      }
+    },
+    {
+      "schema": "JobHostCleanupItem",
+      "name": "a repository URL",
+      "valid": false,
+      "value": {
+        "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+        "repository": "https://gitlab.corp/payments/api.git",
+        "branch": "kete/job/ab12cd34-sdk-core",
+        "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "a node publish on a pinned node base",
+      "valid": true,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "publish": {
+          "branch": "kete/job/ab12cd34-client-web",
+          "open_mr": false,
+          "authorized": true,
+          "orchestration": {
+            "kind": "node",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "key": "client-web",
+            "attempt": 1
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "a plan publish",
+      "valid": true,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "publish": {
+          "branch": "kete/job/ab12cd34-plan-1",
+          "open_mr": false,
+          "authorized": true,
+          "orchestration": {
+            "kind": "plan",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "rev": 1,
+            "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "an integration publish",
+      "valid": true,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "publish": {
+          "branch": "kete/job/payments-sdk-v3",
+          "open_mr": true,
+          "authorized": true,
+          "orchestration": {
+            "kind": "integration",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "nodes": [
+              {
+                "key": "sdk-core",
+                "state": "succeeded",
+                "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+              },
+              {
+                "key": "client-admin",
+                "state": "failed",
+                "commit_sha": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "a coordinator turn before its finish",
+      "valid": true,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "publish": {
+          "branch": "kete/job/payments-sdk-v3",
+          "open_mr": true,
+          "authorized": false
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "a node publish to another branch",
+      "valid": false,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "publish": {
+          "branch": "kete/job/ab12cd34-sdk-core",
+          "open_mr": false,
+          "authorized": true,
+          "orchestration": {
+            "kind": "node",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "key": "client-web",
+            "attempt": 1
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "a plan publish opening a merge request",
+      "valid": false,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "publish": {
+          "branch": "kete/job/ab12cd34-plan-1",
+          "open_mr": true,
+          "authorized": true,
+          "orchestration": {
+            "kind": "plan",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "rev": 1,
+            "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "an integration without a merge request",
+      "valid": false,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "main",
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b"
+        },
+        "publish": {
+          "branch": "kete/job/payments-sdk-v3",
+          "open_mr": false,
+          "authorized": true,
+          "orchestration": {
+            "kind": "integration",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "nodes": [
+              {
+                "key": "sdk-core",
+                "state": "succeeded",
+                "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+              },
+              {
+                "key": "client-admin",
+                "state": "failed",
+                "commit_sha": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "an unknown publish kind",
+      "valid": false,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+        },
+        "publish": {
+          "branch": "kete/job/ab12cd34-client-web",
+          "open_mr": false,
+          "authorized": true,
+          "orchestration": {
+            "kind": "review",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2RunMachine",
+      "name": "a pinned base that is not a SHA",
+      "valid": false,
+      "value": {
+        "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+        "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+        "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+        "deadline": "2026-10-09T12:10:00Z",
+        "resources": {
+          "vcpus": 4,
+          "memory_mib": 8192,
+          "scratch_gib": 20
+        },
+        "repository": {
+          "name": "gitlab:payments/api",
+          "base_ref": "kete/job/ab12cd34-sdk-core",
+          "base_sha": "main"
+        },
+        "publish": {
+          "branch": "kete/job/ab12cd34-client-web",
+          "open_mr": false,
+          "authorized": true,
+          "orchestration": {
+            "kind": "node",
+            "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "key": "client-web",
+            "attempt": 1
+          }
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2PollResponse",
+      "name": "cleanup items",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "in_reply_to": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "host_id": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c",
+        "status": "active",
+        "next_poll_after": 10,
+        "desired": {
+          "revision": 43,
+          "run": [
+            {
+              "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+              "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-09T12:10:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 8192,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "kete/job/ab12cd34-sdk-core",
+                "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+              },
+              "publish": {
+                "branch": "kete/job/ab12cd34-client-web",
+                "open_mr": false,
+                "authorized": true,
+                "orchestration": {
+                  "kind": "node",
+                  "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+                  "key": "client-web",
+                  "attempt": 1
+                }
+              }
+            }
+          ],
+          "destroy": [],
+          "cleanup": [
+            {
+              "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-plan-1",
+              "expect_sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2PollResponse",
+      "name": "an invalid cleanup item does not discard the desired state",
+      "valid": true,
+      "value": {
+        "version": 2,
+        "in_reply_to": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "host_id": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c",
+        "status": "active",
+        "next_poll_after": 10,
+        "desired": {
+          "revision": 43,
+          "run": [
+            {
+              "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+              "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-09T12:10:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 8192,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "kete/job/ab12cd34-sdk-core",
+                "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+              },
+              "publish": {
+                "branch": "kete/job/ab12cd34-client-web",
+                "open_mr": false,
+                "authorized": true,
+                "orchestration": {
+                  "kind": "node",
+                  "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+                  "key": "client-web",
+                  "attempt": 1
+                }
+              }
+            }
+          ],
+          "destroy": [],
+          "cleanup": [
+            {
+              "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+              "repository": "gitlab:payments/api",
+              "branch": "main",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2PollResponse",
+      "name": "duplicate cleanup ids",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "in_reply_to": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "host_id": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c",
+        "status": "active",
+        "next_poll_after": 10,
+        "desired": {
+          "revision": 43,
+          "run": [
+            {
+              "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+              "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-09T12:10:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 8192,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "kete/job/ab12cd34-sdk-core",
+                "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+              },
+              "publish": {
+                "branch": "kete/job/ab12cd34-client-web",
+                "open_mr": false,
+                "authorized": true,
+                "orchestration": {
+                  "kind": "node",
+                  "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+                  "key": "client-web",
+                  "attempt": 1
+                }
+              }
+            }
+          ],
+          "destroy": [],
+          "cleanup": [
+            {
+              "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "JobHostV2PollResponse",
+      "name": "sixty-five cleanup items",
+      "valid": false,
+      "value": {
+        "version": 2,
+        "in_reply_to": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "host_id": "c2a7e9d4-3b5f-4a18-9c60-7e1d2f3a4b5c",
+        "status": "active",
+        "next_poll_after": 10,
+        "desired": {
+          "revision": 43,
+          "run": [
+            {
+              "machine_id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+              "job_id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+              "image": "registry.corp.example/kete/kete-job@sha256:8e1f4a7c2b9d6e3f0a5c8b1d4e7f2a9c6b3d0e5f8a1c4b7d2e9f6a3c0b5d8e1f",
+              "deadline": "2026-10-09T12:10:00Z",
+              "resources": {
+                "vcpus": 4,
+                "memory_mib": 8192,
+                "scratch_gib": 20
+              },
+              "repository": {
+                "name": "gitlab:payments/api",
+                "base_ref": "kete/job/ab12cd34-sdk-core",
+                "base_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+              },
+              "publish": {
+                "branch": "kete/job/ab12cd34-client-web",
+                "open_mr": false,
+                "authorized": true,
+                "orchestration": {
+                  "kind": "node",
+                  "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+                  "key": "client-web",
+                  "attempt": 1
+                }
+              }
+            }
+          ],
+          "destroy": [],
+          "cleanup": [
+            {
+              "id": "00000000-0000-4000-8000-000000000000",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000002",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000004",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000005",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000006",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000007",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000008",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000009",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000000a",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000000b",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000000c",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000000d",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000000e",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000000f",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000010",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000011",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000012",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000013",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000014",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000015",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000016",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000017",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000018",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000019",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000001a",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000001b",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000001c",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000001d",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000001e",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000001f",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000020",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000021",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000022",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000023",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000024",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000025",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000026",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000027",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000028",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000029",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000002a",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000002b",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000002c",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000002d",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000002e",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000002f",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000030",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000031",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000032",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000033",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000034",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000035",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000036",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000037",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000038",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000039",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000003a",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000003b",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000003c",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000003d",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000003e",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-00000000003f",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000040",
+              "repository": "gitlab:payments/api",
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "expect_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

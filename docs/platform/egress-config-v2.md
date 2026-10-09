@@ -1,4 +1,4 @@
-<!-- Copied from kete-code-platform docs/contracts/egress-config-v2.md at commit e5e32ee (kete-org/ketecode-portal#73, 2026-10-07). The platform copy is the source of truth for the v2 rules until packages/kete-egress/README.md takes them over; update both together, and re-copy the test vector into packages/kete-egress/internal/config/testdata/egress-config-v2/ with them. -->
+<!-- Copied from kete-code-platform docs/contracts/egress-config-v2.md at commit 214e543 (2026-10-09: kete-code's host-boundary and upstream-proxy DNS amendments carried into the platform copy). The platform copy is the source of truth for the v2 rules until packages/kete-egress/README.md takes them over; update both together, and re-copy the test vector into packages/kete-egress/internal/config/testdata/egress-config-v2/ with them. -->
 
 # Egress proxy configuration — v2
 
@@ -102,25 +102,25 @@ RFC 8215; 6to4; IPv6 link-local; AWS IPv6 metadata; IPv6 multicast). The schema'
   443; one inside a range only on that range's ports. Resolution happens per connection as in v1
   (no pinning across connections); an address in a forbidden range is refused even if a range
   would cover it — for the upstream proxy's resolved address too.
-- **Host boundary** *(kete-code amendment, enterprise runtime P2; to be carried into the platform's
-  copy)*: the `kubevm` profile's host-boundary probe runs as **root before the in-guest firewall**,
-  which reaches strictly more than any user after it, so a pass also holds after the firewall. It
-  probes cloud metadata, the default gateway, private-range samples, IPv6, the Kubernetes API
-  (`KUBERNETES_SERVICE_HOST:PORT`, required in a kubevm pod) and every node address, the API and
-  the nodes on the gateway sample ports **and on every port an `internal` range lists**; anything
-  answering exits before `claim` (`host_boundary`). It retries for up to 30 s (a NetworkPolicy may
-  be enforced after the pod starts) and passes only after two consecutive clean rounds. The runner
-  also refuses internal ranges containing the Kubernetes API's address, the node's addresses or the
+- **Host boundary** (amended 2026-10-09 from kete-code's implementation, enterprise runtime P2): the
+  `kubevm` profile's host-boundary probe runs as **root before the in-guest firewall**, which reaches
+  strictly more than any user after it, so a pass also holds after the firewall. It probes cloud
+  metadata, the default gateway, private-range samples, IPv6, the Kubernetes API
+  (`KUBERNETES_SERVICE_HOST:PORT`, required in a kubevm pod) and every node address, the API and the
+  nodes on the gateway sample ports **and on every port an `internal` range lists**; anything
+  answering exits before `claim` (`host_boundary`). It retries for up to 30 s (a NetworkPolicy may be
+  enforced after the pod starts) and passes only after two consecutive clean rounds. The runner also
+  refuses internal ranges containing the Kubernetes API's address, the node's addresses or the
   node's pod range. An internal range therefore can't open the cluster to a job.
-- **DNS with an upstream proxy** *(kete-code amendment)*: a proxied connection is opened as
-  `CONNECT host:port` **by name**, so the enterprise proxy resolves the destination itself.
-  kete-egress resolves and checks the name too (forbidden, internal, blocked rules) and refuses
-  it if no address passes, but the address the proxy finally connects to is the proxy's choice:
-  with an upstream proxy, forbidden-range enforcement on the final destination depends on the
-  enterprise proxy's resolution and policy. (`CONNECT` to the validated address is a possible
-  later option; it is not in v2.) A `407` stops every upstream connection for a minute (no
-  credential lock-out by retries); a `CONNECT` answer's head is read through a 16 KiB limit and a
-  2xx answer's body is never read.
+- **DNS with an upstream proxy** (amended 2026-10-09 from kete-code's implementation): a proxied
+  connection is opened as `CONNECT host:port` **by name**, so the enterprise proxy resolves the
+  destination itself. kete-egress resolves and checks the name too (forbidden, internal, blocked
+  rules) and refuses it if no address passes, but the address the proxy finally connects to is the
+  proxy's choice: with an upstream proxy, forbidden-range enforcement on the final destination
+  depends on the enterprise proxy's resolution and policy. (`CONNECT` to the validated address is a
+  possible later option; it is not in v2.) A `407` stops every upstream connection for a minute (no
+  credential lock-out by retries); a `CONNECT` answer's head is read through a 16 KiB limit and a 2xx
+  answer's body is never read.
 - **Logging:** proxy credentials and the CA bundle's contents are never logged. How the request log
   records proxied connections and refused `CONNECT`s is kete-egress's log format (P0c); a change
   there bumps the log's own `v`.

@@ -1,0 +1,1675 @@
+{
+  "description": "orchestrations-v1 schema cases (docs/contracts/orchestrations-v1.md): each value must be accepted (valid: true) or refused (valid: false) by the named schema (the Zod export of packages/shared/src/api/v1/orchestrations.ts; kete-code maps each to its TypeScript or Go type and validation). A missing field is absent.",
+  "cases": [
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "the worked example",
+      "valid": true,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "minimal",
+      "valid": true,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "agent": "developer",
+        "prompt": "Do it"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "budget 100 USD, timeout 480",
+      "valid": true,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 100000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 480,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "budget over 100 USD",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 100000001,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "budget under 1.25 USD",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 1249999,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "budget 1 USD (a turn and the reserve leave nothing for a node)",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 1000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "reserve leaves less than one node",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 3200000,
+        "coordinator_turn_budget_micros": 1500000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "reserve leaves exactly one node",
+      "valid": true,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 3250000,
+        "coordinator_turn_budget_micros": 1500000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "timeout 481",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 481,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "max_parallel 9",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 9,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "reserve equals the budget",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 3000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "budget 1.25 USD, default reserve 0.50 USD",
+      "valid": true,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 1250000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "duplicate worker agents",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer",
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "nine worker agents",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "agent-0",
+          "agent-1",
+          "agent-2",
+          "agent-3",
+          "agent-4",
+          "agent-5",
+          "agent-6",
+          "agent-7",
+          "agent-8"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "a suffix like an orchestration branch",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "ab12cd34-sdk-core"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "a suffix like an orchestration branch, upper case",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "AB12CD34-sdk-core"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "a suffix like a default integration branch",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "ab12cd34"
+      }
+    },
+    {
+      "schema": "CreateOrchestrationRequest",
+      "name": "push is not a field",
+      "valid": false,
+      "value": {
+        "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+        "repository_id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+        "base_ref": "main",
+        "agent": "developer",
+        "worker_agents": [
+          "developer"
+        ],
+        "prompt": "Migrate the payments service to SDK v3 and update its web, mobile and admin clients.",
+        "allow": [
+          {
+            "action": "shell",
+            "resource": "npm test*"
+          }
+        ],
+        "budget_micros": 20000000,
+        "coordinator_turn_budget_micros": 3000000,
+        "timeout_minutes": 240,
+        "max_parallel": 3,
+        "branch_suffix": "payments-sdk-v3",
+        "push": true
+      }
+    },
+    {
+      "schema": "OrchestrationPlanProposal",
+      "name": "the worked example",
+      "valid": true,
+      "value": {
+        "version": 1,
+        "rev": 1,
+        "plan_digest": "3da9fd7599faee89e063ccf85243105fbea3a42cb606792bc73a1dd56c884f6c",
+        "nodes": [
+          {
+            "key": "sdk-core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 2000000,
+            "timeout_minutes": 45,
+            "max_attempts": 3,
+            "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+            "title": "Port the core client to SDK v3"
+          },
+          {
+            "key": "client-web",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "title": "Update the web client"
+          },
+          {
+            "key": "client-mobile",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "ee5da4c25f2a9d635cb8d567c1096cccda4ebebc078666760c39cf4f526d23e3",
+            "title": "Update the mobile client"
+          },
+          {
+            "key": "client-admin",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "8000b29254d2ea42ba5a214221d0a49c07667e7dca43e8f38c0ec7e7c4e50734",
+            "title": "Update the admin client"
+          }
+        ],
+        "max_parallel": 3
+      }
+    },
+    {
+      "schema": "OrchestrationPlanProposal",
+      "name": "a prompt instead of its digest",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "rev": 1,
+        "plan_digest": "3da9fd7599faee89e063ccf85243105fbea3a42cb606792bc73a1dd56c884f6c",
+        "nodes": [
+          {
+            "key": "sdk-core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 2000000,
+            "timeout_minutes": 45,
+            "max_attempts": 3,
+            "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+            "title": "Port the core client to SDK v3",
+            "prompt": "Port payments/core"
+          }
+        ],
+        "max_parallel": 3
+      }
+    },
+    {
+      "schema": "OrchestrationPlanProposal",
+      "name": "notes",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "rev": 1,
+        "plan_digest": "3da9fd7599faee89e063ccf85243105fbea3a42cb606792bc73a1dd56c884f6c",
+        "nodes": [
+          {
+            "key": "sdk-core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 2000000,
+            "timeout_minutes": 45,
+            "max_attempts": 3,
+            "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+            "title": "Port the core client to SDK v3"
+          },
+          {
+            "key": "client-web",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "title": "Update the web client"
+          },
+          {
+            "key": "client-mobile",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "ee5da4c25f2a9d635cb8d567c1096cccda4ebebc078666760c39cf4f526d23e3",
+            "title": "Update the mobile client"
+          },
+          {
+            "key": "client-admin",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "8000b29254d2ea42ba5a214221d0a49c07667e7dca43e8f38c0ec7e7c4e50734",
+            "title": "Update the admin client"
+          }
+        ],
+        "max_parallel": 3,
+        "notes": "x"
+      }
+    },
+    {
+      "schema": "OrchestrationPlanProposal",
+      "name": "an uppercase digest",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "rev": 1,
+        "plan_digest": "3DA9FD7599FAEE89E063CCF85243105FBEA3A42CB606792BC73A1DD56C884F6C",
+        "nodes": [
+          {
+            "key": "sdk-core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 2000000,
+            "timeout_minutes": 45,
+            "max_attempts": 3,
+            "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+            "title": "Port the core client to SDK v3"
+          },
+          {
+            "key": "client-web",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+            "title": "Update the web client"
+          },
+          {
+            "key": "client-mobile",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "ee5da4c25f2a9d635cb8d567c1096cccda4ebebc078666760c39cf4f526d23e3",
+            "title": "Update the mobile client"
+          },
+          {
+            "key": "client-admin",
+            "depends_on": [
+              "sdk-core"
+            ],
+            "base_from": "sdk-core",
+            "agent": "developer",
+            "budget_micros": 1500000,
+            "timeout_minutes": 30,
+            "max_attempts": 3,
+            "prompt_digest": "8000b29254d2ea42ba5a214221d0a49c07667e7dca43e8f38c0ec7e7c4e50734",
+            "title": "Update the admin client"
+          }
+        ],
+        "max_parallel": 3
+      }
+    },
+    {
+      "schema": "OrchestrationPlanProposal",
+      "name": "no nodes",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "rev": 1,
+        "plan_digest": "3da9fd7599faee89e063ccf85243105fbea3a42cb606792bc73a1dd56c884f6c",
+        "nodes": [],
+        "max_parallel": 3
+      }
+    },
+    {
+      "schema": "OrchestrationPlanProposal",
+      "name": "a model for a node",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "rev": 1,
+        "plan_digest": "3da9fd7599faee89e063ccf85243105fbea3a42cb606792bc73a1dd56c884f6c",
+        "nodes": [
+          {
+            "key": "sdk-core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 2000000,
+            "timeout_minutes": 45,
+            "max_attempts": 3,
+            "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+            "title": "Port the core client to SDK v3",
+            "model": "kete/x"
+          }
+        ],
+        "max_parallel": 3
+      }
+    },
+    {
+      "schema": "OrchestrationPlanProposal",
+      "name": "a branch for a node",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "rev": 1,
+        "plan_digest": "3da9fd7599faee89e063ccf85243105fbea3a42cb606792bc73a1dd56c884f6c",
+        "nodes": [
+          {
+            "key": "sdk-core",
+            "depends_on": [],
+            "base_from": null,
+            "agent": "developer",
+            "budget_micros": 2000000,
+            "timeout_minutes": 45,
+            "max_attempts": 3,
+            "prompt_digest": "d57ef32c029e171bedc8e23c7a6c99972eafd4be2e5777c6ef28938adc4a1fa7",
+            "title": "Port the core client to SDK v3",
+            "branch": "kete/job/x"
+          }
+        ],
+        "max_parallel": 3
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "integrated with a summary",
+      "valid": true,
+      "value": {
+        "decision": "integrated",
+        "summary": "Merged four nodes; tests pass."
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "abandon without a summary",
+      "valid": true,
+      "value": {
+        "decision": "abandon"
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "plan is not a decision",
+      "valid": false,
+      "value": {
+        "decision": "plan"
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "a summary over 4096 bytes",
+      "valid": false,
+      "value": {
+        "decision": "integrated",
+        "summary": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "a summary of 4095 bytes in 1365 characters",
+      "valid": true,
+      "value": {
+        "decision": "integrated",
+        "summary": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "a summary of 4098 bytes in 1366 characters",
+      "valid": false,
+      "value": {
+        "decision": "integrated",
+        "summary": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "a summary with a NUL",
+      "valid": false,
+      "value": {
+        "decision": "integrated",
+        "summary": "done\u0000"
+      }
+    },
+    {
+      "schema": "OrchestrationDecisionRequest",
+      "name": "a summary with a lone surrogate",
+      "valid": false,
+      "value": {
+        "decision": "integrated",
+        "summary": "done \ud800"
+      }
+    },
+    {
+      "schema": "OrchestrationCoordinatorResponse",
+      "name": "turn 2 after a failed node",
+      "valid": true,
+      "value": {
+        "orchestration": {
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "status": "coordinating",
+          "turn": 2,
+          "final": false,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "proposal": null,
+          "decision": null,
+          "budget_micros": 20000000,
+          "reserve_micros": 3000000,
+          "allocated_micros": 9874000,
+          "spent_micros": 6874000,
+          "deadline": "2026-10-09T14:10:00Z",
+          "max_parallel": 3,
+          "worker_agents": [
+            "developer"
+          ],
+          "limits": {
+            "nodes_per_plan": 8,
+            "nodes_total": 16,
+            "turns": 6,
+            "attempts_per_node": 3,
+            "jobs_total": 32,
+            "max_parallel": 3
+          },
+          "titles": "send",
+          "nodes": [
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "client-admin",
+              "title": "Update the admin client",
+              "state": "failed",
+              "plan_rev": 1,
+              "depends_on": [
+                "sdk-core"
+              ],
+              "base_from": "sdk-core",
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 1500000,
+              "spent_micros": 1500000,
+              "timeout_minutes": 30,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-client-admin",
+              "commit_sha": null,
+              "outcome": "budget",
+              "summary": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationCoordinatorResponse",
+      "name": "titles omitted",
+      "valid": true,
+      "value": {
+        "orchestration": {
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "status": "coordinating",
+          "turn": 2,
+          "final": false,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "proposal": null,
+          "decision": null,
+          "budget_micros": 20000000,
+          "reserve_micros": 3000000,
+          "allocated_micros": 9874000,
+          "spent_micros": 6874000,
+          "deadline": "2026-10-09T14:10:00Z",
+          "max_parallel": 3,
+          "worker_agents": [
+            "developer"
+          ],
+          "limits": {
+            "nodes_per_plan": 8,
+            "nodes_total": 16,
+            "turns": 6,
+            "attempts_per_node": 3,
+            "jobs_total": 32,
+            "max_parallel": 3
+          },
+          "titles": "omit",
+          "nodes": [
+            {
+              "key": "sdk-core",
+              "title": null,
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": null
+            },
+            {
+              "key": "client-admin",
+              "title": null,
+              "state": "failed",
+              "plan_rev": 1,
+              "depends_on": [
+                "sdk-core"
+              ],
+              "base_from": "sdk-core",
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 1500000,
+              "spent_micros": 1500000,
+              "timeout_minutes": 30,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-client-admin",
+              "commit_sha": null,
+              "outcome": "budget",
+              "summary": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationCoordinatorResponse",
+      "name": "seventeen nodes",
+      "valid": false,
+      "value": {
+        "orchestration": {
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "status": "coordinating",
+          "turn": 2,
+          "final": false,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "proposal": null,
+          "decision": null,
+          "budget_micros": 20000000,
+          "reserve_micros": 3000000,
+          "allocated_micros": 9874000,
+          "spent_micros": 6874000,
+          "deadline": "2026-10-09T14:10:00Z",
+          "max_parallel": 3,
+          "worker_agents": [
+            "developer"
+          ],
+          "limits": {
+            "nodes_per_plan": 8,
+            "nodes_total": 16,
+            "turns": 6,
+            "attempts_per_node": 3,
+            "jobs_total": 32,
+            "max_parallel": 3
+          },
+          "titles": "send",
+          "nodes": [
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationCoordinatorResponse",
+      "name": "unknown node state",
+      "valid": false,
+      "value": {
+        "orchestration": {
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "status": "coordinating",
+          "turn": 2,
+          "final": false,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "proposal": null,
+          "decision": null,
+          "budget_micros": 20000000,
+          "reserve_micros": 3000000,
+          "allocated_micros": 9874000,
+          "spent_micros": 6874000,
+          "deadline": "2026-10-09T14:10:00Z",
+          "max_parallel": 3,
+          "worker_agents": [
+            "developer"
+          ],
+          "limits": {
+            "nodes_per_plan": 8,
+            "nodes_total": 16,
+            "turns": 6,
+            "attempts_per_node": 3,
+            "jobs_total": 32,
+            "max_parallel": 3
+          },
+          "titles": "send",
+          "nodes": [
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "waiting",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationCoordinatorResponse",
+      "name": "a later field is ignored",
+      "valid": true,
+      "value": {
+        "orchestration": {
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "status": "coordinating",
+          "turn": 2,
+          "final": false,
+          "plan": {
+            "rev": 1,
+            "branch": "kete/job/ab12cd34-plan-1",
+            "sha": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e"
+          },
+          "proposal": null,
+          "decision": null,
+          "budget_micros": 20000000,
+          "reserve_micros": 3000000,
+          "allocated_micros": 9874000,
+          "spent_micros": 6874000,
+          "deadline": "2026-10-09T14:10:00Z",
+          "max_parallel": 3,
+          "worker_agents": [
+            "developer"
+          ],
+          "limits": {
+            "nodes_per_plan": 8,
+            "nodes_total": 16,
+            "turns": 6,
+            "attempts_per_node": 3,
+            "jobs_total": 32,
+            "max_parallel": 3
+          },
+          "titles": "send",
+          "nodes": [
+            {
+              "key": "sdk-core",
+              "title": "Port the core client to SDK v3",
+              "state": "succeeded",
+              "plan_rev": 1,
+              "depends_on": [],
+              "base_from": null,
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 2000000,
+              "spent_micros": 1412000,
+              "timeout_minutes": 45,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-sdk-core",
+              "commit_sha": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+              "outcome": "completed",
+              "summary": "Ported core to SDK v3; 212 tests pass."
+            },
+            {
+              "key": "client-admin",
+              "title": "Update the admin client",
+              "state": "failed",
+              "plan_rev": 1,
+              "depends_on": [
+                "sdk-core"
+              ],
+              "base_from": "sdk-core",
+              "agent": "developer",
+              "prompt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "budget_micros": 1500000,
+              "spent_micros": 1500000,
+              "timeout_minutes": 30,
+              "attempts": 1,
+              "max_attempts": 3,
+              "branch": "kete/job/ab12cd34-client-admin",
+              "commit_sha": null,
+              "outcome": "budget",
+              "summary": null
+            }
+          ],
+          "later_field": 1
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationResponse",
+      "name": "succeeded, with jobs",
+      "valid": true,
+      "value": {
+        "orchestration": {
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "status": "succeeded",
+          "outcome": "integrated",
+          "partial": false,
+          "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+          "repository": {
+            "id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+            "full_name": "acme/payments",
+            "base_ref": "main"
+          },
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b",
+          "execution_target": "kete_cloud",
+          "agent": {
+            "id": "5e9a2c4b-8f1d-4a6e-b3c7-2d0f1e8a9b4c",
+            "slug": "developer"
+          },
+          "worker_agents": [
+            "developer"
+          ],
+          "branch": "kete/job/payments-sdk-v3",
+          "budget_micros": 20000000,
+          "reserve_micros": 3000000,
+          "allocated_micros": 13400000,
+          "spent_micros": 13400000,
+          "timeout_minutes": 240,
+          "deadline": "2026-10-09T14:10:00Z",
+          "max_parallel": 3,
+          "turns": 3,
+          "plan": {
+            "rev": 2,
+            "branch": "kete/job/ab12cd34-plan-2",
+            "sha": "2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f"
+          },
+          "integration": {
+            "decision": "integrated",
+            "turn": 3,
+            "push_status": "created",
+            "pr_url": "https://github.com/acme/payments/pull/88",
+            "commit_sha": "718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4"
+          },
+          "created_by": "9b1e4d7a-2c5f-4e8b-a1d3-6f0c9e2b5a8d",
+          "created_at": "2026-10-09T10:00:00Z",
+          "started_at": "2026-10-09T10:00:50Z",
+          "ended_at": "2026-10-09T12:31:10Z",
+          "reported": {
+            "summary_text": "Integrated four nodes; one conflict in packages/types resolved; all tests pass."
+          },
+          "jobs": [
+            {
+              "id": "c3d8f1a2-6b4e-4f7a-9c2d-8e1f0a3b5c7d",
+              "role": "coordinator",
+              "turn": 1,
+              "status": "succeeded",
+              "outcome": "completed"
+            },
+            {
+              "id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+              "role": "worker",
+              "node_key": "sdk-core",
+              "attempt": 1,
+              "status": "succeeded",
+              "outcome": "completed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationResponse",
+      "name": "unknown status",
+      "valid": false,
+      "value": {
+        "orchestration": {
+          "id": "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "status": "paused",
+          "outcome": "integrated",
+          "partial": false,
+          "project_id": "2f1c7e0a-5b8d-4c3e-9a71-0d6b4e2f8a13",
+          "repository": {
+            "id": "7a4e1b9c-3d2f-4e8a-b6c5-1f0e9d8c7b6a",
+            "full_name": "acme/payments",
+            "base_ref": "main"
+          },
+          "base_sha": "3f786850e387550fdab836ed7e6dc881de23001b",
+          "execution_target": "kete_cloud",
+          "agent": {
+            "id": "5e9a2c4b-8f1d-4a6e-b3c7-2d0f1e8a9b4c",
+            "slug": "developer"
+          },
+          "worker_agents": [
+            "developer"
+          ],
+          "branch": "kete/job/payments-sdk-v3",
+          "budget_micros": 20000000,
+          "reserve_micros": 3000000,
+          "allocated_micros": 13400000,
+          "spent_micros": 13400000,
+          "timeout_minutes": 240,
+          "deadline": "2026-10-09T14:10:00Z",
+          "max_parallel": 3,
+          "turns": 3,
+          "plan": {
+            "rev": 2,
+            "branch": "kete/job/ab12cd34-plan-2",
+            "sha": "2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f"
+          },
+          "integration": {
+            "decision": "integrated",
+            "turn": 3,
+            "push_status": "created",
+            "pr_url": "https://github.com/acme/payments/pull/88",
+            "commit_sha": "718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4"
+          },
+          "created_by": "9b1e4d7a-2c5f-4e8b-a1d3-6f0c9e2b5a8d",
+          "created_at": "2026-10-09T10:00:00Z",
+          "started_at": "2026-10-09T10:00:50Z",
+          "ended_at": "2026-10-09T12:31:10Z",
+          "reported": {
+            "summary_text": "Integrated four nodes; one conflict in packages/types resolved; all tests pass."
+          },
+          "jobs": [
+            {
+              "id": "c3d8f1a2-6b4e-4f7a-9c2d-8e1f0a3b5c7d",
+              "role": "coordinator",
+              "turn": 1,
+              "status": "succeeded",
+              "outcome": "completed"
+            },
+            {
+              "id": "e1a4c7d2-9b3f-4e6a-8c1d-5f2b0e7a9c3d",
+              "role": "worker",
+              "node_key": "sdk-core",
+              "attempt": 1,
+              "status": "succeeded",
+              "outcome": "completed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationErrorResponse",
+      "name": "plan_invalid with issues",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "not_permitted",
+          "message": "The plan has a cycle.",
+          "request_id": "b7748580-c34d-40ee-9d03-817e4455eddd",
+          "reason": "plan_invalid",
+          "issues": [
+            {
+              "code": "cycle",
+              "key": "a"
+            },
+            {
+              "code": "cycle",
+              "key": "b"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationErrorResponse",
+      "name": "not a coordinator",
+      "valid": true,
+      "value": {
+        "error": {
+          "code": "forbidden",
+          "message": "Only a coordinator turn may orchestrate.",
+          "request_id": "r",
+          "reason": "not_coordinator"
+        }
+      }
+    },
+    {
+      "schema": "OrchestrationErrorResponse",
+      "name": "unknown issue code",
+      "valid": false,
+      "value": {
+        "error": {
+          "code": "not_permitted",
+          "message": "The plan has a cycle.",
+          "request_id": "b7748580-c34d-40ee-9d03-817e4455eddd",
+          "reason": "plan_invalid",
+          "issues": [
+            {
+              "code": "too_clever"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,10 +1,11 @@
 ---
 module: harness-plugin
 paths: [packages/kete-harness-plugin/**, .github/workflows/kete-harness-plugin.yml]
-verified-at: 54042806e6
+verified-at: eea2edce48
 ---
 
 ## Quick answers
+- Does cloud mode accept any branch suffix? No: it refuses the reserved suffixes the orchestration contract keeps for plan and node branches (`isReservedBranchSuffix`, `src/settings.ts:147`, applied `:337`).
 - Does the step still need its key files now that `kete` strips credentials? It keeps them (README "Rules that must not break"): since 2026-10-05 `kete` removes credentials from an unattended run's shell commands (`core/src/kete/tool-env.ts`) and `kete job run` refuses a repository config that sets providers/MCP/plugins (`cli/src/kete/job-project-config.ts`); the step never passes `--trust-project-config` (a pipeline env `KETE_TRUST_PROJECT_CONFIG=1` passes through `sanitize` and opts in). README "Residual risks" and `docs/integrations/harness.md` "Keys and least privilege" updated.
 - What is it? The Kete Code step for Harness CI/CD pipelines: a Drone-compatible **Plugin** step image (`ghcr.io/kete-org/kete-harness-plugin`), settings as `PLUGIN_*` env. `run` mode = `kete job run` in the workspace; `cloud` mode = `POST /api/v1/jobs` + poll. User guide: `docs/integrations/harness.md` "Pipeline step"; settings table: the package README.
 - Why TypeScript + `bun build --compile`, not Go like `kete-job-entrypoint`? It reuses `KeteRedact` (`@opencode/util/kete/redact`) and the repo's Bun toolchain, and CI and dev machines have no Go requirement; one ~60 MB binary per arch (`scripts/build.sh`, `--target=bun-linux-<x64|arm64>`).

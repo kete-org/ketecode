@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/kete-org/ketecode/packages/kete-job-entrypoint/internal/orchestration"
 )
 
 // Result is a built bundle.
@@ -253,4 +255,78 @@ func writeTar(w io.Writer, entries []entry, lim Limits) ([]ManifestEntry, error)
 		return nil, err
 	}
 	return manifest, nil
+}
+
+// Kind is the orchestrations-v1 bundle rule a build applies (checkOrchestrationBundle).
+type Kind int
+
+const (
+	// KindOther is every bundle but a coordinator turn's: any path component that folds to
+	// `.kete-orchestration` is refused, deletions included.
+	KindOther Kind = iota
+	// KindPlan is a coordinator turn that has a standing proposal (the runtime recorded it in
+	// state the job's tools can't write, and no decision followed): the bundle is exactly the plan
+	// file, whose SHA-256 must be the proposal's plan_digest; anything else is left out.
+	KindPlan
+	// KindCoordinator is a coordinator turn without a standing proposal (it decided, or never
+	// planned): a `.kete-orchestration` path is left out (a plan file nobody proposed, written
+	// by hand) and the rest — the integration — is published under KindOther's rule.
+	KindCoordinator
+)
+
+// Rule is a build's orchestration rule: its Kind and, for KindPlan, the proposal's plan_digest.
+type Rule struct {
+	Kind       Kind
+	PlanDigest string
+}
+
+// isOrchestrationPath reports a path with a component that folds to `.kete-orchestration`.
+func isOrchestrationPath(e entry) bool {
+	return orchestration.CheckBundle([]orchestration.BundleEntry{{Path: e.Path, Deleted: e.Deleted, Mode: e.Mode}}, orchestration.BundleOther) != ""
+}
+
+// applyOrchestration applies the orchestration rule to the listed changes: it returns the entries
+// to bundle and fixed notes; a refusal is an unreadable refusal with a fixed note. This rule, not
+// the runtime's edit-permission deny (which a shell command can bypass), is what keeps code off a
+// plan branch: a plan bundle is exactly the proposed plan file.
+func applyOrchestration(entries []entry, rule Rule) ([]entry, []string, error) {
+	switch rule.Kind {
+	case KindPlan:
+		for _, e := range entries {
+			if e.Path != orchestration.PlanPath || e.Deleted {
+				continue
+			}
+			view := []orchestration.BundleEntry{{Path: e.Path, Mode: e.Mode, Size: int64(len(e.data))}}
+			if r := orchestration.CheckBundle(view, orchestration.BundlePlan); r != "" {
+				return nil, nil, refuse(RefuseUnreadable, "the plan bundle was refused ("+string(r)+")")
+			}
+			if orchestration.SHA256Hex(e.data) != rule.PlanDigest {
+				return nil, nil, refuse(RefuseUnreadable, "the plan file is not the one the platform accepted")
+			}
+			var notes []string
+			if n := len(entries) - 1; n > 0 {
+				notes = append(notes, fmt.Sprintf("plan turn: only the plan file is published; %d other change(s) left out", n))
+			}
+			return []entry{e}, notes, nil
+		}
+		return nil, nil, refuse(RefuseUnreadable, "a plan turn without its plan file")
+	case KindCoordinator:
+		kept := make([]entry, 0, len(entries))
+		for _, e := range entries {
+			if !isOrchestrationPath(e) {
+				kept = append(kept, e)
+			}
+		}
+		var notes []string
+		if n := len(entries) - len(kept); n > 0 {
+			notes = append(notes, fmt.Sprintf("coordinator turn without a standing plan proposal: %d .kete-orchestration change(s) left out", n))
+		}
+		return kept, notes, nil
+	}
+	for _, e := range entries {
+		if isOrchestrationPath(e) {
+			return nil, nil, refuse(RefuseUnreadable, "a change touches .kete-orchestration (orchestration_path)")
+		}
+	}
+	return entries, nil, nil
 }

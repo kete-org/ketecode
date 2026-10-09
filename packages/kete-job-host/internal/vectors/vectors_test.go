@@ -13,7 +13,7 @@ import (
 // TestVectorsMatchChecksums fails when a vector file drifts from the checked-in SHA256SUMS. The
 // files are a contract: change them only by re-copying the platform's files byte for byte and
 // regenerating SHA256SUMS (`shasum -a 256 config-disk.json hpke.json signatures.json`).
-// v2: `shasum -a 256 hpke.json messages.json signatures.json` in testdata/job-host-v2.
+// v2: `shasum -a 256 hpke.json messages.json orchestration.json signatures.json` in testdata/job-host-v2.
 func TestVectorsMatchChecksums(t *testing.T) {
 	checkSums(t, Dir(), Files)
 	checkSums(t, DirV2(), FilesV2)

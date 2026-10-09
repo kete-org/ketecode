@@ -1,4 +1,4 @@
-<!-- Copied from kete-code-platform docs/contracts/job-host-v2.md at commit e5e32ee (kete-org/ketecode-portal#73, 2026-10-07). The platform copy is the source of truth; update both together, and re-copy the test vectors into packages/kete-job-host/testdata/job-host-v2/ with them. -->
+<!-- Copied from kete-code-platform docs/contracts/job-host-v2.md at commit 214e543 (kete-org/ketecode-portal#79, 2026-10-09: the orchestration additions, ADR 0026; served from P4b). The platform copy is the source of truth; update both together, and re-copy the test vectors into packages/kete-job-host/testdata/job-host-v2/ with them -->
 
 # Job host API contract — v2
 
@@ -15,12 +15,13 @@ it** — the two routes, request strictness, the RFC 9421 profile and its verifi
 hygiene, replay protection, HPKE suite and envelope, acknowledgements, phase lines, the deadline
 killer, error handling. Kete's own fleet stays on v1; v1 is unchanged and stays served.
 
-Status: **contract defined, not served.** The platform serves v2 from piece P4a/P4b, behind
-`KETE_FLAG_ENTERPRISE_RUNTIME`; until then a v2-signed request is `400 signature_malformed` (the v1
-verifier's answer to an unknown tag). v2 may still gain fields before it is first served — the
-cross-runner orchestration work (O1, O11) is expected to add a desired-state `cleanup` list, its
-report outcomes and a boundary key for titles; the schemas leave room for that (responses are
-lenient, the boundary is one object).
+Status: **served from P4b (2026-10-08), behind `KETE_FLAG_ENTERPRISE_RUNTIME`.** With the flag off a
+v2-signed request is still `400 signature_malformed` (the v1 verifier's answer to an unknown tag), or
+`404` where no job host route is served. Only organizations' tokens enroll under v2. v2 gains
+additive fields: the cross-runner orchestration additions (O1, 2026-10-09; served with O11) are
+defined below in "Orchestration" — a host that doesn't report `orchestration_v1` never receives any
+of them, and until O11 the platform treats a report carrying `features`, `cleanup`,
+`boundary.orchestration_titles` or a machine reason `ref_mismatch` as one that fails the schema.
 
 **Test vectors** (both repos check them; kete-code copies them byte for byte):
 
@@ -31,6 +32,7 @@ lenient, the boundary is one object).
 | `docs/contracts/test-vectors/job-host-v2/messages.json` | 90 schema cases (value, schema, accepted or refused) covering drivers and profiles, `kubernetes` run machines without a repository, slots up to 128, `publishing`, the publish outcome and its boundary rules, served repositories, the effective boundary, image allowlists, new reasons and `version` |
 | `docs/contracts/test-vectors/jobs-v1/claim-runtime-repo.json`, `result-boundary.json` | the jobs-v1 side (claim without `clone`, `finish { outbox: true }`, the bounded result) |
 | `docs/contracts/test-vectors/egress-config-v2/configs.json` | egress config v2 ([egress-config-v2.md](egress-config-v2.md)), runtime-side |
+| `docs/contracts/test-vectors/job-host-v2/orchestration.json` | 31 schema cases for the orchestration additions (below): features, cleanup items and outcomes, publish kinds, pinned bases |
 
 Builders: `packages/shared/src/job-host-v2-test-vectors.ts` (secrets are SHA-256 of public labels).
 
@@ -180,13 +182,61 @@ port, and its path is RFC 3986 `pchar`s only (no query, fragment or userinfo).
   with its outbox and never published (spec §4.5, Q5: no publishing without the platform's
   acknowledgement). Without `publish` the host never pushes. A machine waiting in `publishing`
   longer than the runner's hold time (Helm `publish.holdHours`, default 24 h) reports
-  `failed`/`hold_expired`.
+  `failed`/`hold_expired`. Once the platform has recorded the outcome the job is terminal and the
+  machine leaves `run` (v1's acknowledgement); a desired state that still named it would say
+  `authorized: false` (informational: an outcome is never recorded twice).
 
 **Platform side (P4b).** The platform maps `publish.status` to `push_status` (the four values are
 `JobPushStatus` values) and moves the job terminal; `finalizing` timeouts apply as today. It
 refuses a report whose `boundary` or `publish` break the schema (`400 malformed_request`), and
 checks against its own records that `images` contains the image it names, that `publish` appears
 only for machines whose run had it, and that `runtime_classes` match the driver.
+
+## Orchestration (additive, 2026-10-09; ADR 0026)
+
+The runner side of [orchestrations-v1](orchestrations-v1.md). Every field is optional and new; a
+report without them and a desired state without them are exactly as before.
+
+- **Report `features`** (≤ 16 names, `^[a-z0-9_]{1,40}$`, unique; unknown names are ignored).
+  `orchestration_v1` says the host's publisher handles everything below. It may be reported only
+  while the report's `boundary.publish_refs` is `send` (else `400 malformed_request`): orchestration
+  needs branch names and commit SHAs. The platform places an orchestration's jobs only on hosts
+  reporting it, and narrows with the organization's boundary as for any job.
+- **Boundary `orchestration_titles`** (`omit` | `send`; absent = `omit`): whether node titles may
+  leave. Narrowed like the other settings (`narrowJobDataBoundary`). The coordinator's claim says the
+  platform's narrowed setting (`spec.orchestration.titles`); the runtime also applies its runner's
+  local boundary and sends titles only when both allow.
+- **Run machine `repository.base_sha`**: the commit `base_ref` must resolve to — the orchestration's
+  pinned base, or the recorded commit of the node branch a worker is based on (`base_ref` is then
+  that branch). On a mismatch the host fails the machine **`ref_mismatch`** (a new `failed` reason)
+  before anything starts.
+- **Run machine `publish.orchestration`** (`JobHostV2PublishOrchestration`), final only in a desired
+  state with `authorized: true` (a coordinator turn's kind is known once it has finished; before that
+  its `publish` is the integration branch with `open_mr: true` and no `orchestration`):
+
+  | `kind` | Bundle | Pushed to | Merge request |
+  |---|---|---|---|
+  | `plan` (`id`, `rev`, `plan_digest`) | exactly the plan file, whose SHA-256 must be `plan_digest` | `kete/job/<o8>-plan-<rev>` (must be `publish.branch`) | none |
+  | `node` (`id`, `key`, `attempt`) | ordinary, no `.kete-orchestration`; commit message `orchestrationNodeCommitMessage` with the local result text | `kete/job/<o8>-<key>` (must be `publish.branch`) | none |
+  | `integration` (`id`, `nodes`: key, state, commit) | ordinary, no `.kete-orchestration` | `publish.branch` (the integration branch) | draft, its body listing `nodes` and, in-zone, the coordinator's summary |
+
+  A publish **without** `orchestration` is an ordinary one, which refuses `.kete-orchestration` — so
+  a desired state that leaves the field out can't get a plan bundle published. Refusals use the
+  existing `refused`/`bundle_invalid`. Because the host sends publish references, a `created`
+  outcome carries `branch`, `base_sha` and `commit_sha`, which the platform records as the node's or
+  plan's commit.
+- **Desired state `cleanup`** (≤ 64 items, ids unique): branches to compare-and-delete after an
+  orchestration ends. The host checks **each item on its own** with `JobHostCleanupItem` —
+  `{ id, repository, branch, expect_sha }`, the branch exactly an orchestration's plan or node branch
+  (`isOrchestrationWorkBranch`: `kete/job/<8 lowercase hex>-plan-<1–6>` or `kete/job/<8 lowercase
+  hex>-<node key>`; never a job's or an integration branch, which jobs-v1's reserved suffixes keep
+  apart), the repository one it serves — so one bad item never
+  discards the desired state; it deletes the branch only if it still points at `expect_sha`.
+- **Report `cleanup`** (`JobHostCleanupOutcome`, ≤ 64, ids unique), repeated while the desired state
+  names the item; the platform records it once and drops the item: `deleted`, `absent`, `moved` (left
+  alone; the new commit isn't reported), `refused` (`invalid_item`, `repository_unknown`,
+  `branch_protected`), `failed` (`provider_unavailable`, `provider_error`; the platform may issue a
+  new item later). Fixed codes only.
 
 ## Sealed configuration and machine configuration
 
@@ -274,7 +324,20 @@ import {
   isValidJobHostConfigBinding,
   parseJobHostSignatureInput,
 } from './job-hosts'
-import { GitSha, JobBranch, JobDataBoundary, JobGitRef, JobRuntimeRepoName } from './jobs'
+import {
+  GitSha,
+  JobBranch,
+  JobDataBoundary,
+  JobGitRef,
+  JobRuntimeRepoName,
+  ORCHESTRATION_MAX_ATTEMPTS,
+  ORCHESTRATION_MAX_NODES,
+  ORCHESTRATION_MAX_TURNS,
+  OrchestrationId,
+  OrchestrationNodeKey,
+  orchestrationNodeBranch,
+  orchestrationPlanBranch,
+} from './jobs'
 
 /**
  * Job host API v2 — the enterprise runner (`kete-job-host` with the `kubernetes` driver, kete-code
@@ -310,6 +373,18 @@ export const JOB_HOST_V2_MAX_REPOSITORIES = 256
 /** VM-isolated RuntimeClasses a `kubernetes` host allows. */
 export const JOB_HOST_V2_MAX_RUNTIME_CLASSES = 8
 
+/**
+ * Host features the platform knows (additive, ADR 0026; the report's `features`). `orchestration_v1`:
+ * the host's publisher handles `publish.orchestration` (plan bundles, node branches and the handoff
+ * note, integration), pinned bases (`repository.base_sha`) and `cleanup`. The platform places an
+ * orchestration's jobs only on hosts that report it, and a host may report it only while its boundary
+ * sends publish references.
+ */
+export const JOB_HOST_V2_FEATURES = ['orchestration_v1'] as const
+export type JobHostV2Feature = (typeof JOB_HOST_V2_FEATURES)[number]
+/** Cleanup items in one desired state, and outcomes in one report. */
+export const JOB_HOST_V2_MAX_CLEANUP = 64
+
 // ---------------------------------------------------------------- enums
 
 /** v1's drivers plus `kubernetes` (one VM-isolated pod per machine). */
@@ -327,7 +402,11 @@ export const JOB_HOST_V2_DRIVER_PROFILE = { firecracker: 'microvm', dedicated: '
 export const JobHostV2MachineState = z.enum(['preparing', 'starting', 'running', 'stopping', 'publishing', 'destroyed', 'failed'])
 export type JobHostV2MachineState = z.infer<typeof JobHostV2MachineState>
 
-/** v1's reasons plus, for `failed`, the cluster and repository ones; the `destroyed` reasons are v1's. */
+/**
+ * v1's reasons plus, for `failed`, the cluster and repository ones and `ref_mismatch` (additive, ADR
+ * 0026: `repository.base_ref` doesn't resolve to the pinned `repository.base_sha`; nothing was
+ * started); the `destroyed` reasons are v1's.
+ */
 export const JobHostV2MachineReason = z.enum([
   // failed: refused or failed before the guest or pod ran
   'image_not_allowed',
@@ -345,6 +424,7 @@ export const JobHostV2MachineReason = z.enum([
   'image_pull_failed',
   'repository_unknown',
   'repository_unavailable',
+  'ref_mismatch',
   // destroyed
   'exited',
   'desired',
@@ -362,6 +442,7 @@ export const JOB_HOST_V2_FAILED_REASONS = [
   'image_pull_failed',
   'repository_unknown',
   'repository_unavailable',
+  'ref_mismatch',
 ] as const satisfies readonly JobHostV2MachineReason[]
 
 /** v1's reasons plus `cluster_unhealthy` (API server or nodes) and `runtime_class_missing`. */
@@ -587,6 +668,35 @@ export type JobHostV2ObservedMachine = z.infer<typeof JobHostV2ObservedMachine>
 const unique = (xs: readonly string[]) => new Set(xs).size === xs.length
 
 /**
+ * A cleanup item's outcome (additive, ADR 0026), reported while the desired state names the item:
+ * `deleted` (the branch pointed at `expect_sha` and was deleted), `absent` (no such branch), `moved`
+ * (it points elsewhere: left alone; the new commit is not reported), `refused` (`invalid_item`: the
+ * item fails `JobHostCleanupItem`; `repository_unknown`; `branch_protected`), `failed`
+ * (`provider_unavailable`, `provider_error`). Fixed codes only.
+ */
+export const JOB_HOST_CLEANUP_REASONS = {
+  deleted: [],
+  absent: [],
+  moved: [],
+  refused: ['invalid_item', 'repository_unknown', 'branch_protected'],
+  failed: ['provider_unavailable', 'provider_error'],
+} as const
+export const JobHostCleanupStatus = z.enum(['deleted', 'absent', 'moved', 'refused', 'failed'])
+export type JobHostCleanupStatus = z.infer<typeof JobHostCleanupStatus>
+export const JobHostCleanupOutcome = z
+  .strictObject({
+    id: JobHostUuid,
+    status: JobHostCleanupStatus,
+    reason: z.enum([...JOB_HOST_CLEANUP_REASONS.refused, ...JOB_HOST_CLEANUP_REASONS.failed]).optional(),
+  })
+  .superRefine((c, ctx) => {
+    const allowed: readonly string[] = JOB_HOST_CLEANUP_REASONS[c.status]
+    if (allowed.length > 0 && c.reason === undefined) ctx.addIssue({ code: 'custom', path: ['reason'], message: '`reason` is required.' })
+    if (c.reason !== undefined && !allowed.includes(c.reason)) ctx.addIssue({ code: 'custom', path: ['reason'], message: 'Reason does not fit the status.' })
+  })
+export type JobHostCleanupOutcome = z.infer<typeof JobHostCleanupOutcome>
+
+/**
  * POST /api/v1/job-hosts/poll body under v2. v1's report plus `version`, `runtime_classes`
  * (kubernetes hosts; re-reported because a Helm upgrade may change them without re-enrollment),
  * `images` (the job image digests the host accepts), `repositories` (the runtime repository names
@@ -609,10 +719,18 @@ export const JobHostV2Report = z
     repositories: z.array(JobRuntimeRepoName).max(JOB_HOST_V2_MAX_REPOSITORIES).nullable(),
     boundary: JobDataBoundary,
     machines: z.array(JobHostV2ObservedMachine).max(JOB_HOST_V2_REPORT_MAX_MACHINES),
+    /** Additive (ADR 0026): what the host supports (`JOB_HOST_V2_FEATURES`; other names are ignored). */
+    features: z.array(z.string().regex(/^[a-z0-9_]{1,40}$/)).max(16).optional(),
+    /** Additive (ADR 0026): outcomes of the desired state's `cleanup` items. */
+    cleanup: z.array(JobHostCleanupOutcome).max(JOB_HOST_V2_MAX_CLEANUP).optional(),
   })
   .superRefine((r, ctx) => {
     const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message })
     if (r.slots.free > r.slots.total) issue(['slots', 'free'], '`free` exceeds `total`.')
+    if (r.features && !unique(r.features)) issue(['features'], 'Duplicate feature.')
+    if (r.features?.includes('orchestration_v1') && r.boundary.publish_refs !== 'send')
+      issue(['features'], '`orchestration_v1` needs a boundary that sends publish references.')
+    if (r.cleanup && !unique(r.cleanup.map((c) => c.id))) issue(['cleanup'], 'Duplicate cleanup id.')
     if (!unique(r.machines.map((m) => m.machine_id))) issue(['machines'], 'Duplicate machine id.')
     if (!unique(r.images)) issue(['images'], 'Duplicate image.')
     if (r.repositories && !unique(r.repositories)) issue(['repositories'], 'Duplicate repository.')
@@ -669,6 +787,71 @@ export type JobMachineConfigV2 = z.infer<typeof JobMachineConfigV2>
 
 // ---------------------------------------------------------------- desired state (poll response)
 
+/**
+ * What an orchestrated job's publish is (additive, ADR 0026; only for a host reporting
+ * `orchestration_v1`, and final only in a desired state with `authorized: true` — a coordinator turn's
+ * kind is known once it has finished). `plan`: the bundle must be exactly the plan file
+ * (orchestrations-v1 `checkOrchestrationBundle`) whose SHA-256 is `plan_digest`, pushed to
+ * `kete/job/<o8>-plan-<rev>`, no merge request. `node`: an ordinary bundle without
+ * `.kete-orchestration`, pushed to `kete/job/<o8>-<key>`, no merge request, the commit message
+ * carrying the handoff note (`orchestrationNodeCommitMessage`) from the job's local result. `integration`:
+ * an ordinary bundle without `.kete-orchestration`, pushed to the integration branch with a draft merge
+ * request whose body lists `nodes` (and, in-zone, the coordinator's summary).
+ */
+export const JobHostV2PublishOrchestration = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('plan'),
+    id: OrchestrationId,
+    rev: z.number().int().min(1).max(ORCHESTRATION_MAX_TURNS),
+    plan_digest: z.string().regex(/^[0-9a-f]{64}$/),
+  }),
+  z.object({
+    kind: z.literal('node'),
+    id: OrchestrationId,
+    key: OrchestrationNodeKey,
+    attempt: z.number().int().min(1).max(ORCHESTRATION_MAX_ATTEMPTS),
+  }),
+  z.object({
+    kind: z.literal('integration'),
+    id: OrchestrationId,
+    nodes: z
+      .array(
+        z.object({
+          key: OrchestrationNodeKey,
+          state: z.enum(['succeeded', 'succeeded_empty', 'failed', 'blocked', 'superseded', 'cancelled']),
+          commit_sha: GitSha.nullable(),
+        }),
+      )
+      .max(ORCHESTRATION_MAX_NODES),
+  }),
+])
+export type JobHostV2PublishOrchestration = z.infer<typeof JobHostV2PublishOrchestration>
+
+/**
+ * Exactly an orchestration's plan branch (`kete/job/<8 lowercase hex>-plan-<1–6>`) or node branch
+ * (`kete/job/<8 lowercase hex>-<node key>`). Plain jobs can't own such names (jobs-v1 reserves the
+ * suffixes), and integration branches never match.
+ */
+export function isOrchestrationWorkBranch(branch: string): boolean {
+  const m = /^kete\/job\/[0-9a-f]{8}-(.+)$/.exec(branch)
+  if (m === null) return false
+  return /^plan-[1-6]$/.test(m[1]!) || OrchestrationNodeKey.safeParse(m[1]).success
+}
+
+/**
+ * A branch a host deletes for the platform (additive, ADR 0026): one of an orchestration's plan or node
+ * branches (`isOrchestrationWorkBranch`, never anything else), in a repository the host serves,
+ * deleted only if it still points at `expect_sha` (compare-and-delete). A host checks each item
+ * against this and reports `refused`/`invalid_item` for one that fails it.
+ */
+export const JobHostCleanupItem = z.strictObject({
+  id: JobHostUuid,
+  repository: JobRuntimeRepoName,
+  branch: JobBranch.refine(isOrchestrationWorkBranch, 'Not an orchestration plan or node branch.'),
+  expect_sha: GitSha,
+})
+export type JobHostCleanupItem = z.infer<typeof JobHostCleanupItem>
+
 export const JobHostV2RunMachine = z
   .object({
     machine_id: JobHostUuid,
@@ -687,16 +870,43 @@ export const JobHostV2RunMachine = z
      * Required on a `kubernetes` host (`JobHostV2KubernetesRunMachine`): such a host runs only
      * runtime repositories' jobs and fails any other run machine `config_invalid`.
      */
-    repository: z.object({ name: JobRuntimeRepoName, base_ref: JobGitRef }).optional(),
+    repository: z
+      .object({
+        name: JobRuntimeRepoName,
+        base_ref: JobGitRef,
+        /**
+         * Additive (ADR 0026), orchestrated jobs: the commit `base_ref` must resolve to (the
+         * orchestration's pinned base, or the recorded commit of the node branch it is based on). A
+         * mismatch fails the machine `ref_mismatch` before anything starts.
+         */
+        base_sha: GitSha.optional(),
+      })
+      .optional(),
     /**
      * Present when the job asked for a push. `authorized` turns true once the platform accepted the
      * job's `finish` and the job can no longer be cancelled; the host publishes only then, and never
      * for a machine the desired state no longer runs.
      */
-    publish: z.object({ branch: JobBranch, open_mr: z.boolean(), authorized: z.boolean() }).optional(),
+    publish: z
+      .object({
+        branch: JobBranch,
+        open_mr: z.boolean(),
+        authorized: z.boolean(),
+        /** Additive (ADR 0026): present on an orchestrated job's publish (`JobHostV2PublishOrchestration`). */
+        orchestration: JobHostV2PublishOrchestration.optional(),
+      })
+      .optional(),
     config: JobHostSealedConfig.optional(),
   })
   .refine((m) => m.publish === undefined || m.repository !== undefined, { path: ['publish'], message: '`publish` needs `repository`.' })
+  .superRefine((m, ctx) => {
+    const o = m.publish?.orchestration
+    if (o === undefined || m.publish === undefined) return
+    const branch =
+      o.kind === 'plan' ? orchestrationPlanBranch(o.id, o.rev) : o.kind === 'node' ? orchestrationNodeBranch(o.id, o.key) : undefined
+    if (branch !== undefined && m.publish.branch !== branch) ctx.addIssue({ code: 'custom', path: ['publish', 'branch'], message: 'Not the orchestration’s branch for this publish.' })
+    if ((o.kind === 'integration') !== m.publish.open_mr) ctx.addIssue({ code: 'custom', path: ['publish', 'open_mr'], message: 'Only an integration opens a merge request.' })
+  })
 export type JobHostV2RunMachine = z.infer<typeof JobHostV2RunMachine>
 
 /**
@@ -714,6 +924,17 @@ export const JobHostV2DesiredState = z.object({
   revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   run: z.array(JobHostV2RunMachine).max(JOB_HOST_V2_MAX_SLOTS),
   destroy: z.array(JobHostUuid).max(JOB_HOST_V2_REPORT_MAX_MACHINES),
+  /**
+   * Additive (ADR 0026): branches to compare-and-delete, sent only to hosts reporting
+   * `orchestration_v1`. Each item is checked on its own (`JobHostCleanupItem`), so one bad item never
+   * discards the desired state: it is reported `refused`/`invalid_item`. Ids are unique. The platform
+   * drops an item once it has recorded its outcome.
+   */
+  cleanup: z
+    .array(z.looseObject({ id: JobHostUuid }))
+    .max(JOB_HOST_V2_MAX_CLEANUP)
+    .refine((items) => unique(items.map((i) => i.id)), 'Duplicate cleanup id.')
+    .optional(),
 })
 export type JobHostV2DesiredState = z.infer<typeof JobHostV2DesiredState>
 

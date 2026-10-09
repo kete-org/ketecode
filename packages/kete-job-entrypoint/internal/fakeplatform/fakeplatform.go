@@ -56,6 +56,7 @@ const (
 
 	// FeatureCloneRevokeCallback is the claim feature a Harness Code claim requires.
 	FeatureCloneRevokeCallback = "clone_revoke_callback"
+	FeatureOrchestration       = "orchestration_v1"
 )
 
 // Config says where the fake listens.
@@ -104,6 +105,19 @@ type Knobs struct {
 	// is the name the claim answers instead (a compromised platform naming another repository).
 	RuntimeRepo string
 	ClaimRepo   string
+
+	// Orchestrated jobs (orchestration.go): Orchestration is the job's role (Orchestration*);
+	// OrchestrationBaseMoved clones MovedRef with the base pinned behind it (a coordinator's base
+	// branch moved on); OrchestrationBadDigest gives a worker a prompt_digest the plan doesn't
+	// match; OrchestrationMovedFetch pins the node fetch at a commit its branch isn't at.
+	Orchestration           string
+	OrchestrationBaseMoved  bool
+	OrchestrationBadDigest  bool
+	OrchestrationMovedFetch bool
+	// OrchestrationProposalText, when set, is a plan file whose proposal the coordinator turn is
+	// taken to have made (the integration suite's fake kete can't call the routes): its digest is
+	// what finish checks the plan bundle against.
+	OrchestrationProposalText string
 }
 
 // Call is one recorded request.
@@ -138,6 +152,14 @@ type Job struct {
 	uploads    map[string]*upload // by id
 	uploaded   map[string][]byte  // by kind
 	spec       map[string]any
+
+	// Orchestrated jobs: the claim's clone ref and fetch, the coordinator's proposal and decision,
+	// and the plan file its bundle published.
+	cloneRef     string
+	fetch        []any
+	orchProposal map[string]any
+	orchDecision string
+	PlanBundle   []byte
 }
 
 type upload struct {
@@ -153,6 +175,7 @@ type Server struct {
 	CAPEM   []byte
 	BaseSHA string // the repository's real main
 	repoDir string
+	orch    orchestrationRepo // the orchestration branches (orchestration.go)
 
 	mu        sync.Mutex
 	job       *Job
@@ -228,6 +251,18 @@ func (s *Server) Close() {
 	}
 }
 
+// gitOut runs git in dir (gitCmd's environment) and returns its trimmed stdout.
+func gitOut(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func gitCmd(dir string, env []string, args ...string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -282,10 +317,19 @@ func (s *Server) makeRepo() error {
 	if err := gitCmd(work, nil, "commit", "-q", "-m", "base"); err != nil {
 		return err
 	}
+	orch, err := makeOrchestrationBranches(work)
+	if err != nil {
+		return err
+	}
+	s.orch = orch
 	if err := os.MkdirAll(filepath.Join(s.repoDir, "org"), 0o755); err != nil {
 		return err
 	}
 	if err := gitCmd(s.cfg.StateDir, nil, "clone", "-q", "--bare", work, filepath.Join(s.repoDir, "org", "repo.git")); err != nil {
+		return err
+	}
+	// As GitHub: a reachable commit may be fetched by its id (a pinned base the branch moved past).
+	if err := gitCmd(s.cfg.StateDir, nil, "--git-dir="+filepath.Join(s.repoDir, "org", "repo.git"), "config", "uploadpack.allowReachableSHA1InWant", "true"); err != nil {
 		return err
 	}
 	head, err := os.ReadFile(filepath.Join(s.repoDir, "org", "repo.git", "refs", "heads", "main"))
@@ -342,6 +386,10 @@ func (s *Server) NewJob(k Knobs) *Job {
 		j.spec["agent"] = "e2e-unknown"
 	case !k.OmitAgent:
 		j.spec["agent"] = AgentSlug
+	}
+	j.cloneRef = "main"
+	if k.Orchestration != "" {
+		s.orchestrationSpec(j)
 	}
 	s.mu.Lock()
 	s.job, s.calls, s.contract, s.leaks, s.checks = j, nil, nil, nil, map[string]bool{}
@@ -460,6 +508,23 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	j := s.job
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
+	if j != nil && (len(parts) == 2 || len(parts) == 3) && parts[0] == j.ID && parts[1] == "orchestration" {
+		op, sub := "orchestration", ""
+		if len(parts) == 3 {
+			sub = parts[2]
+			op += ":" + sub
+		}
+		s.orchestrationRoute(r, j, sub, body, func(status int, v any) {
+			s.record(op, body, status)
+			s.mu.Unlock()
+			if v != nil {
+				writeJSON(w, status, v)
+				return
+			}
+			w.WriteHeader(status)
+		})
+		return
+	}
 	if j == nil || len(parts) != 2 || parts[0] != j.ID || r.Method != http.MethodPost {
 		s.record("unknown", nil, 404)
 		s.mu.Unlock()
@@ -506,9 +571,15 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			s.runtimeClaim(j, req.Features, reply)
 			return
 		}
-		hasRevoke := false
+		hasRevoke, hasOrchestration := false, false
 		for _, f := range req.Features {
 			hasRevoke = hasRevoke || f == FeatureCloneRevokeCallback
+			hasOrchestration = hasOrchestration || f == FeatureOrchestration
+		}
+		if j.Knobs.Orchestration != "" && !hasOrchestration {
+			// An orchestrated job's claim without the feature: refused before anything is minted.
+			reply(404, nil)
+			return
 		}
 		if !hasRevoke {
 			// This entrypoint always announces it; the platform refuses a Harness Code claim
@@ -526,18 +597,22 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		j.state = "running"
-		clone := map[string]string{"url": "https://" + GitHost + "/org/repo.git", "token": j.CloneToken, "ref": "main", "base_sha": j.BaseSHA}
+		clone := map[string]string{"url": "https://" + GitHost + "/org/repo.git", "token": j.CloneToken, "ref": j.cloneRef, "base_sha": j.BaseSHA}
 		if j.Knobs.Provider == ProviderHarnessCode {
 			clone["url"] = "https://" + HarnessGitHost + HarnessRepoPath
 			clone["provider"] = ProviderHarnessCode
 			clone["username"] = j.CloneUsername
 		}
-		reply(200, map[string]any{
+		resp := map[string]any{
 			"spec": j.spec, "gateway_key": j.GatewayKey, "callback_token": j.CallbackToken,
 			"clone":       clone,
 			"gateway_url": "https://" + GatewayHost, "platform_url": "https://" + PlatformHost,
 			"deadline": j.Deadline.UTC().Format(time.RFC3339Nano),
-		})
+		}
+		if j.Knobs.Orchestration != "" {
+			resp["fetch"] = j.fetch
+		}
+		reply(200, resp)
 		return
 	}
 	if r.Header.Get("Authorization") != "Bearer "+j.CallbackToken {
@@ -712,6 +787,7 @@ func (s *Server) platform(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		s.checkOrchestrationBundle(j)
 		j.finished = true
 		j.state = "done"
 		close(j.done)

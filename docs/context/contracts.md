@@ -478,6 +478,23 @@ the same PR.
 - **Change rule:** a new cmdline parameter or manifest field: the entrypoint README, the `job-image`
   and `job-entrypoint` cards and this section together.
 
+## 6h. Orchestrations v1 (cross-runner orchestration; in-repo doc + platform)
+
+- **Doc:** `docs/platform/orchestrations-v1.md`; ADR 0012 ("Contract notes (O1)", "Runtime notes").
+  Copies: platform repo (source), this repo's doc, TypeScript mirror `packages/core/src/kete/orchestration/contract.ts`
+  (+ `packages/util/src/kete/orchestration-spec.ts` for the spec section), Go mirrors in
+  `packages/kete-job-entrypoint/internal/orchestration/` and `packages/kete-job-host/internal/contract/v2_orchestration.go`.
+- **Vectors:** `docs/platform/test-vectors/orchestrations-v1/` (`bundles`, `dag`, `messages`, `naming`,
+  `plan-files` JSON + `SHA256SUMS`), one copy for Go and TypeScript; also `kete-job-entrypoint/internal/fakeplatform/testdata/jobs-v1/orchestration.json`
+  (claim) and `kete-job-host/testdata/job-host-v2/orchestration.json`.
+- **What the runtime relies on:** coordinator routes under the job's own id (`orchestrate` tool,
+  `client.ts`, 30 s, no retry); claim feature `orchestration_v1` (cloud entrypoint only, with
+  `clone_revoke_callback`); `fetch` refs checked at their pinned SHAs and `base_sha` (`ref_mismatch` otherwise);
+  the plan file `.kete-orchestration/plan.json` read at the pinned plan commit; the bundle rule (a coordinator
+  turn's plan bundle is exactly the plan file; every other bundle refuses `.kete-orchestration`);
+  `KETE_JOB_ID` in `kete`'s environment; `kete job` spec v1 optional `orchestration` section (job mode only).
+  job-host-v2 additions are mirrored but not advertised until O10. See the `job-entrypoint` and `job-mode` cards.
+
 ## 7. Local account state files (not wire contracts, but part of the shared surface)
 
 - `<config>/account.json` — `packages/util/src/kete/account.ts:18-28` (`Account`

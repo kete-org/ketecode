@@ -48,6 +48,7 @@ export type Deps = {
   readonly readDescriptor: (fd: number, options: KeteJobSecrets.ReadOptions) => Promise<string>
   readonly setGatewayKey: (key: string) => void
   readonly setOrganization: (id: string) => void
+  readonly setOrchestration: (value: { readonly jobID: string; readonly spec: unknown }) => void
   /** `undefined` when the audit descriptor is an open pipe or socket; else why not. */
   readonly validateAudit: (fd: number) => string | undefined
   readonly setCloexec: (fd: number) => void
@@ -65,6 +66,7 @@ const defaults = (): Deps => ({
   readDescriptor: KeteJobSecrets.readDescriptor,
   setGatewayKey: KeteJobSecrets.setGatewayKey,
   setOrganization: KeteJobSecrets.setOrganization,
+  setOrchestration: KeteJobSecrets.setOrchestration,
   validateAudit: (fd) => KeteJobAuditSink.validate(fd, "fifo-or-socket"),
   setCloexec: (fd) => KeteLinuxFfi.setCloexec(fd),
   setAuditSink: KeteJobAuditSink.set,
@@ -84,6 +86,8 @@ const Message = Schema.Struct({
   password: Schema.NonEmptyString,
   gateway_key: Schema.String,
   organization: Schema.String,
+  /** An orchestrated job's `spec.orchestration` and job id (checked by setOrchestration). */
+  orchestration: Schema.optional(Schema.Struct({ job_id: Schema.String, spec: Schema.Unknown })),
 })
 const decodeMessage = Schema.decodeUnknownOption(Schema.fromJsonString(Message))
 
@@ -143,6 +147,13 @@ export const prepare = Effect.fnUntraced(function* (input: Input, overrides: Par
   })
   deps.setGatewayKey(message.value.gateway_key)
   deps.setOrganization(message.value.organization)
+  const orchestration = message.value.orchestration
+  if (orchestration !== undefined)
+    yield* Effect.try({
+      try: () => deps.setOrchestration({ jobID: orchestration.job_id, spec: orchestration.spec }),
+      catch: (error) =>
+        new Error(`Job mode: ${KeteJobSecrets.secretsFdPublicName}: ${error instanceof Error ? error.message : String(error)}.`),
+    })
   deps.setAuditSink(audit.fd)
   return { password: message.value.password, socket: input.socket } satisfies Prepared
 })

@@ -107,6 +107,27 @@ describe("KeteJobServe.prepare in job mode", () => {
     expect(env).toEqual({ OPENCODE_JOB_MODE: "1", KEEP: "yes" })
   })
 
+  test("an orchestrated job's section is handed to setOrchestration; an invalid one refuses (O7)", async () => {
+    const spec = { version: 1, id: "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d", role: "coordinator", turn: 1, final: false, plan: null, titles: "send" }
+    const seen: unknown[] = []
+    const ok = harness({
+      text: message({ orchestration: { job_id: "c3d8f1a2-6b4e-4f7a-9c2d-8e1f0a3b5c7d", spec } }),
+      setOrchestration: (value) => void seen.push(value),
+    })
+    expect(Exit.isSuccess(await run(socketInput, ok.deps))).toBe(true)
+    expect(seen).toEqual([{ jobID: "c3d8f1a2-6b4e-4f7a-9c2d-8e1f0a3b5c7d", spec }])
+    const bad = harness({
+      text: message({ orchestration: { job_id: "x", spec } }),
+      setOrchestration: () => {
+        throw new Error("the job's id is not a valid job id")
+      },
+    })
+    expect(errorOf(await run(socketInput, bad.deps))).toContain("not a valid job id")
+    const absent = harness({ setOrchestration: () => void seen.push("called") })
+    await run(socketInput, absent.deps)
+    expect(seen).toHaveLength(1)
+  })
+
   test("a failing prctl refuses before the descriptor is read (AC3)", async () => {
     const { calls, deps } = harness({
       dumpable: () => {

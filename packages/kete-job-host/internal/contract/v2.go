@@ -62,7 +62,7 @@ const (
 // repository ones). The `destroyed` reasons are v1's (DestroyedReason).
 func FailedReasonV2(r string) bool {
 	return failedReasons[r] || r == ReasonPodUnschedulable || r == ReasonImagePullFailed ||
-		r == ReasonRepositoryUnknown || r == ReasonRepositoryUnavailable
+		r == ReasonRepositoryUnknown || r == ReasonRepositoryUnavailable || r == ReasonRefMismatch
 }
 
 // ValidStartsBlockedV2 reports a known v2 starts-blocked reason.
@@ -152,6 +152,9 @@ type DataBoundary struct {
 	Summary     string `json:"summary"`
 	Denials     string `json:"denials"`
 	PublishRefs string `json:"publish_refs"`
+	// OrchestrationTitles (additive, ADR 0026): whether orchestration node titles may leave; ""
+	// is absent, which counts as "omit".
+	OrchestrationTitles string `json:"orchestration_titles,omitempty"`
 }
 
 func (DataBoundary) strictObject() {}
@@ -161,6 +164,7 @@ var (
 	BoundarySummary     = []string{"none", "redacted", "full"}
 	BoundaryDenials     = []string{"count", "actions", "full"}
 	BoundaryPublishRefs = []string{boundaryOmit, boundarySend}
+	BoundaryTitles      = []string{boundaryOmit, boundarySend}
 )
 
 // DefaultDataBoundary is JOB_DATA_BOUNDARY_DEFAULT.
@@ -168,13 +172,15 @@ var DefaultDataBoundary = DataBoundary{Summary: "none", Denials: "actions", Publ
 
 // Validate applies JobDataBoundary.
 func (b DataBoundary) Validate() error {
-	if !slices.Contains(BoundarySummary, b.Summary) || !slices.Contains(BoundaryDenials, b.Denials) || !slices.Contains(BoundaryPublishRefs, b.PublishRefs) {
+	if !slices.Contains(BoundarySummary, b.Summary) || !slices.Contains(BoundaryDenials, b.Denials) || !slices.Contains(BoundaryPublishRefs, b.PublishRefs) ||
+		b.OrchestrationTitles != "" && !slices.Contains(BoundaryTitles, b.OrchestrationTitles) {
 		return errors.New("boundary: unknown setting")
 	}
 	return nil
 }
 
 // Narrow is narrowJobDataBoundary: the stricter of two boundaries, setting by setting.
+// orchestration_titles appears only when either side sets it (absent counts as omit).
 func (b DataBoundary) Narrow(o DataBoundary) DataBoundary {
 	stricter := func(options []string, x, y string) string {
 		if slices.Index(options, x) <= slices.Index(options, y) {
@@ -182,11 +188,21 @@ func (b DataBoundary) Narrow(o DataBoundary) DataBoundary {
 		}
 		return y
 	}
-	return DataBoundary{
+	out := DataBoundary{
 		Summary:     stricter(BoundarySummary, b.Summary, o.Summary),
 		Denials:     stricter(BoundaryDenials, b.Denials, o.Denials),
 		PublishRefs: stricter(BoundaryPublishRefs, b.PublishRefs, o.PublishRefs),
 	}
+	if b.OrchestrationTitles != "" || o.OrchestrationTitles != "" {
+		orOmit := func(s string) string {
+			if s == "" {
+				return boundaryOmit
+			}
+			return s
+		}
+		out.OrchestrationTitles = stricter(BoundaryTitles, orOmit(b.OrchestrationTitles), orOmit(o.OrchestrationTitles))
+	}
+	return out
 }
 
 // ---------------------------------------------------------------- enrollment
@@ -470,6 +486,10 @@ type ReportV2 struct {
 	Repositories    *[]string           `json:"repositories" shape:"nullable"`
 	Boundary        DataBoundary        `json:"boundary"`
 	Machines        []ObservedMachineV2 `json:"machines"`
+	// Features and Cleanup are the orchestration additions (ADR 0026; v2_orchestration.go): nil is
+	// absent, which is what this agent reports until its publisher handles them (O10).
+	Features []string         `json:"features,omitempty"`
+	Cleanup  []CleanupOutcome `json:"cleanup,omitempty"`
 }
 
 func (ReportV2) strictObject() {}
@@ -544,7 +564,7 @@ func (r ReportV2) Validate() error {
 			}
 		}
 	}
-	return nil
+	return r.validateOrchestration()
 }
 
 // ---------------------------------------------------------------- desired state
@@ -554,6 +574,9 @@ func (r ReportV2) Validate() error {
 type RunRepository struct {
 	Name    string `json:"name"`
 	BaseRef string `json:"base_ref"`
+	// BaseSHA (additive, ADR 0026; orchestrated jobs): the commit BaseRef must resolve to; a
+	// mismatch fails the machine ref_mismatch before anything starts.
+	BaseSHA string `json:"base_sha,omitempty"`
 }
 
 // RunPublish is a run machine's `publish`: the host publishes only once `authorized` is true in a
@@ -562,6 +585,8 @@ type RunPublish struct {
 	Branch     string `json:"branch"`
 	OpenMR     bool   `json:"open_mr"`
 	Authorized bool   `json:"authorized"`
+	// Orchestration (additive, ADR 0026): an orchestrated job's publish kind.
+	Orchestration *PublishOrchestration `json:"orchestration,omitempty"`
 }
 
 // RunMachineV2 is JobHostV2RunMachine (unknown fields ignored).
@@ -604,7 +629,7 @@ func (m RunMachineV2) Validate() error {
 			return errors.New("run machine: publish needs repository")
 		}
 	}
-	return nil
+	return m.validateOrchestration()
 }
 
 // ValidateKubernetes is JobHostV2KubernetesRunMachine, what a kubernetes host accepts (fail
@@ -625,6 +650,9 @@ type DesiredStateV2 struct {
 	Revision int64          `json:"revision"`
 	Run      []RunMachineV2 `json:"run"`
 	Destroy  []string       `json:"destroy"`
+	// Cleanup (additive, ADR 0026): branches to compare-and-delete; each item is checked on its
+	// own (ParseCleanupItem), so one bad item never discards the desired state.
+	Cleanup []CleanupItemRef `json:"cleanup,omitempty"`
 }
 
 // PollResponseV2 is the v2 poll 200 body (unknown fields ignored).
@@ -670,7 +698,7 @@ func (p PollResponseV2) Validate() error {
 			return errors.New("poll response: invalid id in destroy")
 		}
 	}
-	return nil
+	return d.validateCleanup()
 }
 
 // ParsePollResponseV2 decodes (shape rules) and validates a poll response.

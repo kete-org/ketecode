@@ -269,6 +269,9 @@ type DataBoundary struct {
 	Summary     string `json:"summary"`
 	Denials     string `json:"denials"`
 	PublishRefs string `json:"publish_refs"`
+	// OrchestrationTitles (additive, ADR 0026): whether orchestration node titles may leave;
+	// "" is absent, which counts as "omit".
+	OrchestrationTitles string `json:"orchestration_titles,omitempty"`
 }
 
 func (DataBoundary) strictObject() {}
@@ -277,6 +280,7 @@ var (
 	boundarySummary     = []string{"none", "redacted", "full"}
 	boundaryDenials     = []string{"count", "actions", "full"}
 	boundaryPublishRefs = []string{"omit", "send"}
+	boundaryTitles      = []string{"omit", "send"}
 )
 
 // DefaultDataBoundary is JOB_DATA_BOUNDARY_DEFAULT.
@@ -284,13 +288,15 @@ var DefaultDataBoundary = DataBoundary{Summary: "none", Denials: "actions", Publ
 
 // Validate applies JobDataBoundary.
 func (b DataBoundary) Validate() error {
-	if !slices.Contains(boundarySummary, b.Summary) || !slices.Contains(boundaryDenials, b.Denials) || !slices.Contains(boundaryPublishRefs, b.PublishRefs) {
+	if !slices.Contains(boundarySummary, b.Summary) || !slices.Contains(boundaryDenials, b.Denials) || !slices.Contains(boundaryPublishRefs, b.PublishRefs) ||
+		b.OrchestrationTitles != "" && !slices.Contains(boundaryTitles, b.OrchestrationTitles) {
 		return errors.New("boundary: unknown setting")
 	}
 	return nil
 }
 
 // Narrow is narrowJobDataBoundary: the stricter of two boundaries, setting by setting.
+// orchestration_titles appears only when either side sets it (absent counts as omit).
 func (b DataBoundary) Narrow(o DataBoundary) DataBoundary {
 	stricter := func(options []string, x, y string) string {
 		if slices.Index(options, x) <= slices.Index(options, y) {
@@ -298,11 +304,21 @@ func (b DataBoundary) Narrow(o DataBoundary) DataBoundary {
 		}
 		return y
 	}
-	return DataBoundary{
+	out := DataBoundary{
 		Summary:     stricter(boundarySummary, b.Summary, o.Summary),
 		Denials:     stricter(boundaryDenials, b.Denials, o.Denials),
 		PublishRefs: stricter(boundaryPublishRefs, b.PublishRefs, o.PublishRefs),
 	}
+	if b.OrchestrationTitles != "" || o.OrchestrationTitles != "" {
+		orOmit := func(s string) string {
+			if s == "" {
+				return "omit"
+			}
+			return s
+		}
+		out.OrchestrationTitles = stricter(boundaryTitles, orOmit(b.OrchestrationTitles), orOmit(o.OrchestrationTitles))
+	}
+	return out
 }
 
 // RuntimeDenial is JobRuntimeRunDenial: Count is set when denials of one action were aggregated.

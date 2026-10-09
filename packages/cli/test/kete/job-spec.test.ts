@@ -172,3 +172,36 @@ describe("JobSpec.parse", () => {
     expect(parsed.model).toBe("anthropic/claude-sonnet-4-5")
   })
 })
+
+describe("JobSpec.parse: orchestration (jobs-v1 JobSpecOrchestration)", () => {
+  const worker = {
+    version: 1,
+    id: "ab12cd34-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    role: "worker",
+    node: "client-web",
+    attempt: 1,
+    plan: { rev: 1, branch: "kete/job/ab12cd34-plan-1", sha: "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e" },
+    prompt_digest: "e91d014dcd2c5b0f586cefba200a5138b378c7c0b2c34caa529cd704dde8a49a",
+    base_from: "sdk-core",
+  }
+  const spec = (orchestration: unknown, extra: object = {}) =>
+    JSON.stringify({ version: 1, prompt: "do it", policy: validPolicy, branch: "kete/job/ab12cd34-client-web", orchestration, ...extra })
+
+  test("a valid section is kept", async () => {
+    const parsed = await JobSpec.parse(spec(worker), { specDir, deps: deps() })
+    expect(parsed.orchestration).toEqual(worker as never)
+  })
+
+  test("an invalid section is refused, naming the field", async () => {
+    await expect(JobSpec.parse(spec({ ...worker, attempt: 9 }), { specDir, deps: deps() })).rejects.toThrow("orchestration.attempt")
+    await expect(JobSpec.parse(spec({ ...worker, extra: true }), { specDir, deps: deps() })).rejects.toThrow("orchestration.")
+    await expect(
+      JobSpec.parse(JSON.stringify({ version: 1, prompt: "do it", policy: validPolicy, orchestration: worker }), { specDir, deps: deps() }),
+    ).rejects.toThrow("branch: an orchestrated job always names its branch")
+  })
+
+  test("a spec without the section is unchanged", async () => {
+    const parsed = await JobSpec.parse(JSON.stringify({ version: 1, prompt: "do it", policy: validPolicy }), { specDir, deps: deps() })
+    expect("orchestration" in parsed).toBe(false)
+  })
+})

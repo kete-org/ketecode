@@ -143,6 +143,11 @@ function secret(env: Env, name: string): string | undefined {
 }
 
 /** An http(s) URL without credentials, query or fragment; plain http only for this machine (tests, a local proxy). */
+/** jobs-v1 `isReservedJobBranchSuffix`: 8 hex digits alone or followed by `-`, any case. */
+export function isReservedBranchSuffix(suffix: string): boolean {
+  return /^[0-9a-f]{8}(?:-|$)/i.test(suffix)
+}
+
 export function httpURL(name: string, raw: string): string {
   if (!URL.canParse(raw)) return fail(`${name} is not a URL.`)
   const url = new URL(raw)
@@ -327,6 +332,10 @@ export function parse(env: Env): Settings {
       const suffix = pushRaw.toLowerCase() === "true" ? undefined : pushRaw.replace(/^kete\/job\//, "")
       if (suffix !== undefined && !isBranchName(`kete/job/${suffix}`))
         return fail("PLUGIN_PUSH_BRANCH must be true or a branch suffix (cloud jobs push to kete/job/<suffix>).")
+      // jobs-v1 (2026-10-09): 8 hex digits, alone or followed by `-`, in any case, name branches the
+      // platform creates (default suffixes, orchestrations' plan and node branches); refused there too.
+      if (suffix !== undefined && isReservedBranchSuffix(suffix))
+        return fail("PLUGIN_PUSH_BRANCH can't start with 8 hex digits (alone or followed by '-'): Kete reserves those branch names.")
       push = { suffix }
     }
     const openPR = bool(env, "PLUGIN_OPEN_PR")

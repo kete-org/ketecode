@@ -1,10 +1,11 @@
 ---
 module: job-host
 paths: [packages/kete-job-host/**, .github/workflows/kete-job-host.yml, docs/platform/job-host-v1.md]
-verified-at: c377dd3136
+verified-at: eea2edce48
 ---
 
 ## Quick answers
+- What are the orchestration additions to job-host-v2? `internal/contract/v2_orchestration.go` mirrors them (ADR 0012, platform ADR 0026): report `features` (`orchestration_v1`) and `cleanup` outcomes (`CleanupOutcome.Validate` `:95`), desired-state cleanup items checked one by one (`ParseCleanupItem` `:318`), boundary `orchestration_titles` (`v2.go:157`), run machine `repository.base_sha` (`v2.go:579`; mismatch fails the machine `ref_mismatch`), `publish.orchestration` kinds (`PublishOrchestration` `:164`). Types and value rules only: nothing is advertised or reported until O10 and reports are built as before. Vectors: `testdata/job-host-v2/orchestration.json` (read by `internal/vectors/vectors.go`, `v2_vectors_test.go`).
 - Kubernetes? The `kubernetes` driver and `kete-job-host kubernetes` (job-host-v2, Secrets instead of
   `/var/lib`, Lease) are the `kubernetes-runner` card. The agent core is shared: `agent.Options.Store`
   (`state.Store`; `FileStore` here) and `agent.Options.V2` (nil = v1, unchanged wire bytes).

@@ -25,6 +25,7 @@ export * as KeteJobSecrets from "./job-secrets.js"
 
 import { closeSync, fstatSync } from "node:fs"
 import { KeteEnv } from "./env.js"
+import { KeteOrchestrationSpec } from "./orchestration-spec.js"
 import { KeteSyncCache } from "./sync/cache.js"
 
 /** The internal name for KETE_JOB_GATEWAY_KEY_FD (entrypoint → `kete job run`; a contract). */
@@ -159,4 +160,28 @@ export function setOrganization(id: string): void {
 /** The organization id set by `setOrganization`, or `undefined`. */
 export function organization(): string | undefined {
   return organizationOverlay
+}
+
+/** An orchestrated job's section (jobs-v1 `spec.orchestration`) and its own job id, which the
+ * coordinator's `orchestrate` tool names in the platform's coordinator routes. Not secret: it
+ * travels the same parent → child channel as the organization, with the same lifetime. */
+export interface Orchestration {
+  readonly jobID: string
+  readonly spec: KeteOrchestrationSpec.Spec
+}
+
+let orchestrationOverlay: Orchestration | undefined
+
+/** Sets this job's orchestration (validated again here). Write-once: a second call throws. */
+export function setOrchestration(value: { readonly jobID: string; readonly spec: unknown }): void {
+  if (orchestrationOverlay !== undefined) throw new Error("the job's orchestration is already set")
+  if (!KeteOrchestrationSpec.validJobId(value.jobID)) throw new Error("the job's id is not a valid job id")
+  const parsed = KeteOrchestrationSpec.parse(value.spec)
+  if (!parsed.ok) throw new Error(`the job's orchestration is not valid (${parsed.field})`)
+  orchestrationOverlay = { jobID: value.jobID, spec: parsed.spec }
+}
+
+/** The orchestration set by `setOrchestration`, or `undefined` (every job that isn't orchestrated). */
+export function orchestration(): Orchestration | undefined {
+  return orchestrationOverlay
 }

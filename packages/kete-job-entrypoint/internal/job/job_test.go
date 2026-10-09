@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -214,6 +215,20 @@ func (p *fakePlatform) CloneDone(context.Context) error {
 type fakeGit struct {
 	cloneErr, verifyErr, copyErr error
 	username, token              string // the clone's credentials
+
+	// Orchestrated jobs: refs maps a full ref to its commit (ResolveCommit); FetchRefs adds
+	// fetched (refs/kete/<name> → the commit fetchAt names for the branch, else nothing); blobs
+	// maps "<commit>:<path>" to its bytes.
+	refs      map[string]string
+	fetchAt   map[string]string
+	blobs     map[string][]byte
+	pinErr    error
+	fetchErr  error
+	pinned    string
+	fetched   []gitops.RefSpec
+	depth1    bool
+	keteRefs  bool
+	fetchUser string
 }
 
 func (g *fakeGit) CheckBranch(context.Context, string) bool { return true }
@@ -224,6 +239,52 @@ func (g *fakeGit) Clone(_ context.Context, _, _, username, token, _ string) erro
 func (g *fakeGit) Verify(context.Context, string, string, string) error { return g.verifyErr }
 func (g *fakeGit) AgentCopy(context.Context, string, string, string, string) error {
 	return g.copyErr
+}
+func (g *fakeGit) ResolveCommit(_ context.Context, _, ref string) (string, error) {
+	if sha, ok := g.refs[ref]; ok {
+		return sha, nil
+	}
+	return "", errors.New("no such ref")
+}
+func (g *fakeGit) PinBase(_ context.Context, _, ref, _, _, baseSHA, _ string) error {
+	if g.pinErr != nil {
+		return g.pinErr
+	}
+	g.pinned = baseSHA
+	if g.refs == nil {
+		g.refs = map[string]string{}
+	}
+	g.refs["refs/heads/"+ref] = baseSHA
+	return nil
+}
+func (g *fakeGit) FetchRefs(_ context.Context, _, _, username, _ string, refs []gitops.RefSpec, depth1 bool) error {
+	g.fetched, g.depth1, g.fetchUser = refs, depth1, username
+	if g.fetchErr != nil {
+		return g.fetchErr
+	}
+	if g.refs == nil {
+		g.refs = map[string]string{}
+	}
+	for _, s := range refs {
+		if sha, ok := g.fetchAt[s.Branch]; ok {
+			g.refs["refs/kete/"+s.Name] = sha
+		}
+	}
+	return nil
+}
+func (g *fakeGit) CatBlob(_ context.Context, _, object string, max int64) ([]byte, error) {
+	b, ok := g.blobs[object]
+	if !ok {
+		return nil, errors.New("no such object")
+	}
+	if int64(len(b)) > max {
+		return nil, gitops.ErrOutputTooLarge
+	}
+	return b, nil
+}
+func (g *fakeGit) CopyKeteRefs(context.Context, string, string) error {
+	g.keteRefs = true
+	return nil
 }
 
 type fakeHelper struct {
@@ -276,6 +337,11 @@ type fakeMachine struct {
 	// audit is what OpenAudit returns ("audit" when nil); auditErr its error.
 	audit    *string
 	auditErr error
+	// bundleKind is the rule the last BuildBundle was asked for; keteEnv StartKete's environment.
+	bundleRule bundle.Rule
+	keteEnv    KeteEnv
+	// turn is what ReadOrchestrationTurn returns (os.ErrNotExist when nil).
+	turn []byte
 }
 
 func (m *fakeMachine) record(s string) {
@@ -299,7 +365,8 @@ func (m *fakeMachine) WriteSpec(s []byte) error {
 	m.spec = s
 	return nil
 }
-func (m *fakeMachine) StartKete(context.Context, KeteEnv) (Kete, error) {
+func (m *fakeMachine) StartKete(_ context.Context, env KeteEnv) (Kete, error) {
+	m.keteEnv = env
 	if m.keteErr != nil {
 		return nil, m.keteErr
 	}
@@ -350,7 +417,14 @@ func (m *fakeMachine) OpenAudit() (io.ReadCloser, int64, error) {
 func (m *fakeMachine) OpenProxyLog() (io.ReadCloser, int64, error) {
 	return io.NopCloser(strings.NewReader("proxylog")), 8, nil
 }
-func (m *fakeMachine) BuildBundle(context.Context, string) (*bundle.Result, error) {
+func (m *fakeMachine) ReadOrchestrationTurn() ([]byte, error) {
+	if m.turn == nil {
+		return nil, os.ErrNotExist
+	}
+	return m.turn, nil
+}
+func (m *fakeMachine) BuildBundle(_ context.Context, _ string, rule bundle.Rule) (*bundle.Result, error) {
+	m.bundleRule = rule
 	if m.bundleErr != nil {
 		return nil, m.bundleErr
 	}
@@ -683,8 +757,9 @@ func TestCloneWrongCommit(t *testing.T) {
 	if r["outcome"] != "refused" || r["exit_code"].(float64) != 2 {
 		t.Errorf("result = %v", r)
 	}
-	if e.m.keteStarted || len(e.pf.find("revoke")) != 0 {
-		t.Error("kete started or token revoked after a wrong commit")
+	// Every clone-phase failure releases the clone token (here GitHub's revoke), before the result.
+	if e.m.keteStarted || len(e.pf.find("revoke")) != 1 || !strings.HasPrefix(strings.Join(e.pf.ops(), ","), "claim,events,revoke,") {
+		t.Errorf("kete started, or the token wasn't revoked once before the result: %v", e.pf.ops())
 	}
 }
 

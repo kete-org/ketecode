@@ -214,6 +214,14 @@ func (c Config) KeteConfigHome() string { return filepath.Join(c.KeteHome(), ".c
 func (c Config) KeteCacheHome() string  { return filepath.Join(c.KeteHome(), ".cache") }
 func (c Config) KeteStateHome() string  { return filepath.Join(c.KeteHome(), ".local", "state") }
 
+// OrchestrationTurnRel is where, beneath KeteHome, `kete` records an orchestration turn's state
+// (its XDG state directory's kete/orchestration-turn.json; core/src/kete/orchestration/turn-state.ts):
+// kete's home is 0700 kete-owned, so the job's tools can't write it.
+var OrchestrationTurnRel = []string{".local", "state", "kete", "orchestration-turn.json"}
+
+// MaxOrchestrationTurn bounds that file.
+const MaxOrchestrationTurn = 4096
+
 // The audit sink (piece A3, contracts.md §6d): `kete job run` gets the write end of a pipe as this
 // descriptor (KETE_JOB_AUDIT_FD), and `kete` writes its audit log only there; the entrypoint reads
 // the other end into KeteAudit(). `kete` can append, never seek, truncate or rewrite.
