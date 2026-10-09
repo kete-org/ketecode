@@ -1009,3 +1009,20 @@ Fixing the formatter means changing upstream code; left for a separate change.
 **Sync checklist:** if upstream brings back an LSP runtime (its `file-mutation.ts`/`edit.ts` TODOs
 resolved), compare and drop Kete's in favour of upstream's, keeping the sandboxing and the
 project-config restriction. If upstream changes the `lsp` config schema, update `lsp/servers.ts`.
+
+## Config hooks (feature/wave1a-hooks)
+
+`kete.hooks` (shell commands at PreToolUse, PostToolUse, UserPromptSubmit, Stop, SessionStart,
+Notification) is a Kete plugin on the existing plugin hook system (`core/src/kete/hooks.ts`,
+`core/src/kete/hooks/*`, `schema/src/config/kete.ts`, `docs/hooks.md`). Project hooks run only once
+trusted; never in job mode. The config schema change regenerated `protocol/openapi.json` and
+`client/src/promise/generated/types.ts`.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteHooks.Plugin` after `KeteLsp.Plugin` in `pre` | internal plugin registration list |
+| `protocol/openapi.json`, `client/src/promise/generated/types.ts` | Generated: `kete.hooks` in the config schema | generated files |
+
+**Sync checklist:** if upstream adds config-declared hooks, compare semantics and trust handling
+before keeping both. If upstream changes `tool.execute.before/after`, `session.prompt` or the
+session execution/permission/form events, re-check the event mapping in `kete/hooks.ts`.

@@ -47,6 +47,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | audit-log | local append-only audit log for unattended runs (ADR 0008): line format v1, the redactor, storage and cap, fail-closed writes |
 | worktrees-parallel | subagent worktrees, leases, session_move checks, stale writes |
 | workflows | `kete.workflows` and the `workflow` tool |
+| hooks | config shell hooks (`kete.hooks`): events, trust for project hooks, policy, job-mode exclusion |
 | lsp | language server diagnostics after edits: `lsp` config, sandboxed servers, report |
 | todo | the session task list: `todowrite` tool, `kete.todo` RPC, TUI sidebar/footer, web dock |
 | config-kete | the `kete` config section, discovery, adding a key end to end |

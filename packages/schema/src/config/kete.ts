@@ -121,6 +121,47 @@ export class Sandbox extends Schema.Class<Sandbox>("ConfigKete.Sandbox")({
   }),
 }) {}
 
+
+export const HookEvents = ["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "SessionStart", "Notification"] as const
+export type HookEvent = (typeof HookEvents)[number]
+
+export class Hook extends Schema.Class<Hook>("ConfigKete.Hook")({
+  command: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)).annotate({
+    description:
+      "Shell command to run (sh -c on macOS/Linux, a cmd.exe batch line on Windows) in the project directory, inside the OS sandbox. It gets the event as JSON on stdin; see docs/hooks.md for exit codes and output.",
+  }),
+  match: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)).pipe(optional).annotate({
+    description:
+      'PreToolUse/PostToolUse only: the tool names this hook runs for, as a wildcard pattern (`shell`, `edit|write|patch`, `mcp_*`). Every tool when unset.',
+  }),
+  timeout: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(600)).pipe(optional).annotate({
+    description: "Seconds before the command is stopped (1-600, default 60).",
+  }),
+  network: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Give the hook network access inside the OS sandbox (default false). For a project's hook this is part of what you trust.",
+  }),
+  sandbox: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "false runs the hook outside the OS sandbox, with your full access: a sandbox escape. Honoured only in the global config; never when a policy denies sandbox_off.",
+  }),
+}) {}
+
+const hookList = (description: string) => Schema.Array(Hook).pipe(optional).annotate({ description })
+
+export class Hooks extends Schema.Class<Hooks>("ConfigKete.Hooks")({
+  PreToolUse: hookList("Before a tool runs; can block it (exit code 2, or {\"decision\":\"deny\"})."),
+  PostToolUse: hookList("After a tool ran; can add context for the agent."),
+  UserPromptSubmit: hookList("When a prompt is sent; can add context for the agent."),
+  Stop: hookList("When the agent finishes its turn."),
+  SessionStart: hookList("When a session is created; can add context for the agent."),
+  Notification: hookList("When Kete Code needs you (a permission prompt or a question)."),
+  unsandboxed: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Global config only: let trusted project hooks run when the OS sandbox isn't active (turned off, unavailable, Windows). Off by default; a policy denying sandbox_off always wins.",
+  }),
+}) {}
+
 export class Lsp extends Schema.Class<Lsp>("ConfigKete.Lsp")({
   unsandboxed: Schema.Boolean.pipe(optional).annotate({
     description:
@@ -148,6 +189,10 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   }),
   sandbox: Sandbox.pipe(optional).annotate({
     description: "The OS sandbox for shell commands the agent runs (docs/sandbox.md)",
+  }),
+  hooks: Hooks.pipe(optional).annotate({
+    description:
+      "Shell commands run at points of the agent loop (docs/hooks.md). Hooks in a project's config run only after you trust them.",
   }),
   lsp: Lsp.pipe(optional).annotate({
     description: "Kete Code's language server settings; the servers themselves are configured under the top-level `lsp` key (docs/lsp.md)",

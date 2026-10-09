@@ -13318,6 +13318,51 @@
                 },
                 "additionalProperties": false
               },
+              "hooks": {
+                "type": "object",
+                "properties": {
+                  "PreToolUse": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
+                  "PostToolUse": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
+                  "UserPromptSubmit": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
+                  "Stop": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
+                  "SessionStart": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
+                  "Notification": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
+                  "unsandboxed": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
               "lsp": {
                 "type": "object",
                 "properties": {
@@ -13681,6 +13726,35 @@
           }
         },
         "required": ["directory"],
+        "additionalProperties": false
+      },
+      "ConfigKete.HookEncoded": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Shell command to run (sh -c on macOS/Linux, a cmd.exe batch line on Windows) in the project directory, inside the OS sandbox. It gets the event as JSON on stdin; see docs/hooks.md for exit codes and output."
+          },
+          "match": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "network": {
+            "type": "boolean"
+          },
+          "sandbox": {
+            "type": "boolean"
+          }
+        },
+        "required": ["command"],
         "additionalProperties": false
       },
       "ConfigKete.WorkflowEncoded": {
