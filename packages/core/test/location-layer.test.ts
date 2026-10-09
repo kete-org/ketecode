@@ -493,6 +493,7 @@ describe("LocationServiceMap", () => {
             "shell",
             "skill",
             "subagent",
+            "todowrite", // kete_change: the session task list (kete/todo.ts)
             "webfetch",
             "websearch",
             "write",
@@ -512,6 +513,7 @@ describe("LocationServiceMap", () => {
             "shell",
             "skill",
             "subagent",
+            "todowrite", // kete_change: the session task list (kete/todo.ts)
             "webfetch",
             "websearch",
             "write",

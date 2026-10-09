@@ -94,6 +94,9 @@ export function isKeteOwned(file: string): boolean {
     normalized === "docs/local-models.md" ||
     normalized === "docs/permissions.md" ||
     normalized === "docs/sandbox.md" ||
+    normalized === "docs/todo.md" ||
+    normalized === "docs/lsp.md" ||
+    normalized === "docs/hooks.md" ||
     // Kete Code's public-facing files; GitHub prefers .github/ over upstream's root files (ADR 0010).
     normalized === ".github/README.md" ||
     normalized === ".github/SECURITY.md" ||
