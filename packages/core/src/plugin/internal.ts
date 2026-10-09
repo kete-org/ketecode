@@ -116,6 +116,7 @@ import { KeteSessionMove } from "../kete/session-move.js" // kete_change
 import { KeteStaleWrite } from "../kete/stale-write.js" // kete_change
 import { KeteWorkflows } from "../kete/workflows.js" // kete_change
 import { KeteTodo } from "../kete/todo.js" // kete_change
+import { KeteLsp } from "../kete/lsp.js" // kete_change
 import { PermissionSaved } from "../permission/saved.js" // kete_change
 import { Project } from "../project.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
@@ -300,6 +301,8 @@ const pre = [
   KeteWorkflows.Plugin,
   // kete_change: the session task list (`todowrite` tool, `kete.todo` RPC); see kete/todo.ts
   KeteTodo.Plugin,
+  // kete_change: language server diagnostics appended to edit results; see kete/lsp.ts
+  KeteLsp.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 const post = [

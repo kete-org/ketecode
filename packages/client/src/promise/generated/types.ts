@@ -2186,6 +2186,7 @@ export type ConfigEntry =
             denyRead?: Array<string>
             denyWrite?: Array<string>
           }
+          lsp?: { unsandboxed?: boolean }
         }
       }
     }
