@@ -5,7 +5,7 @@
 // session and file, an error already reported is not reported again while it persists: the report
 // lists new errors in full, and says in one line how many earlier ones remain or that they are gone.
 // At most 20 errors per file and 5 files per report; messages are cut at 300 characters and
-// stripped of control characters (server output is external input).
+// stripped of control characters and escaped (server output and file names are external input).
 
 export * as KeteLspDiagnostics from "./diagnostics.js"
 
@@ -50,11 +50,16 @@ export function clean(text: string, max = MAX_MESSAGE) {
   return single.length > max ? single.slice(0, max - 1) + "…" : single
 }
 
+/** Escapes text placed in the report's pseudo-markup, so server output can't close or fake a tag. */
+export function escape(text: string) {
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+}
+
 const key = (item: Diagnostic) => `${item.line}:${item.character}:${clean(item.message)}`
 
 export function pretty(item: Diagnostic) {
   const origin = item.source ? ` (${clean(item.source, 40)}${item.code ? ` ${clean(item.code, 40)}` : ""})` : ""
-  return `ERROR [${item.line + 1}:${item.character + 1}] ${clean(item.message)}${origin}`
+  return escape(`ERROR [${item.line + 1}:${item.character + 1}] ${clean(item.message)}${origin}`)
 }
 
 /** Per-session memory of the errors already reported for each file. */
@@ -100,7 +105,7 @@ export function report(input: {
     const fresh = errors.filter((item) => !before.has(key(item)))
     const remaining = errors.length - fresh.length
     const relative = path.relative(input.workspace, file)
-    const name = relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : file
+    const name = escape(clean(relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : file, 500))
     if (fresh.length === 0) {
       if (before.size > 0 && errors.length === 0) blocks.push(`${name}: the errors reported earlier are fixed.`)
       continue

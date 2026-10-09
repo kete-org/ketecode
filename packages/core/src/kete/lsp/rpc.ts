@@ -48,7 +48,12 @@ export function encode(message: unknown): Uint8Array {
 }
 
 export class Connection {
-  private buffer: Uint8Array = new Uint8Array(0)
+  // Unread bytes as received; joined only when a header or a whole body is available, so a large
+  // frame arriving in many small chunks is copied once, not once per chunk.
+  private chunks: Uint8Array[] = []
+  private size = 0
+  /** The current frame's body length once its header has been read. */
+  private expected: number | undefined
   private nextID = 1
   private closed: string | undefined
   private readonly pending = new Map<
@@ -97,27 +102,29 @@ export class Connection {
 
   /** Feeds bytes read from the server's stdout. */
   feed(chunk: Uint8Array) {
-    if (this.closed !== undefined) return
-    const next = new Uint8Array(this.buffer.byteLength + chunk.byteLength)
-    next.set(this.buffer, 0)
-    next.set(chunk, this.buffer.byteLength)
-    this.buffer = next
+    if (this.closed !== undefined || chunk.byteLength === 0) return
+    this.chunks.push(chunk)
+    this.size += chunk.byteLength
     while (this.closed === undefined) {
-      const end = indexOf(this.buffer, SEPARATOR, 0)
-      if (end === -1) {
-        if (this.buffer.byteLength > MAX_HEADER_BYTES) this.close("header too large")
-        return
+      if (this.expected === undefined) {
+        // Header: look only at the first bytes (bounded), joined once.
+        const head = this.take(Math.min(this.size, MAX_HEADER_BYTES + SEPARATOR.byteLength), false)
+        const end = indexOf(head, SEPARATOR, 0)
+        if (end === -1) {
+          if (this.size > MAX_HEADER_BYTES) this.close("header too large")
+          return
+        }
+        const header = new TextDecoder().decode(head.subarray(0, end))
+        const match = /^content-length:\s*(\d+)\s*$/im.exec(header)
+        if (!match) return this.close("frame without Content-Length")
+        const length = Number(match[1])
+        if (!Number.isSafeInteger(length) || length > MAX_FRAME_BYTES) return this.close("frame too large")
+        this.take(end + SEPARATOR.byteLength, true)
+        this.expected = length
       }
-      if (end > MAX_HEADER_BYTES) return this.close("header too large")
-      const header = new TextDecoder().decode(this.buffer.subarray(0, end))
-      const match = /^content-length:\s*(\d+)\s*$/im.exec(header)
-      if (!match) return this.close("frame without Content-Length")
-      const length = Number(match[1])
-      if (!Number.isSafeInteger(length) || length > MAX_FRAME_BYTES) return this.close("frame too large")
-      const start = end + SEPARATOR.byteLength
-      if (this.buffer.byteLength < start + length) return
-      const body = this.buffer.subarray(start, start + length)
-      this.buffer = this.buffer.slice(start + length)
+      if (this.size < this.expected) return
+      const body = this.take(this.expected, true)
+      this.expected = undefined
       let message: unknown
       try {
         message = JSON.parse(new TextDecoder().decode(body))
@@ -128,10 +135,34 @@ export class Connection {
     }
   }
 
+  /** The first `count` buffered bytes as one array; removed from the buffer when `consume`. */
+  private take(count: number, consume: boolean): Uint8Array {
+    const out = new Uint8Array(count)
+    let offset = 0
+    let index = 0
+    while (offset < count) {
+      const chunk = this.chunks[index]!
+      const part = chunk.subarray(0, Math.min(chunk.byteLength, count - offset))
+      out.set(part, offset)
+      offset += part.byteLength
+      if (part.byteLength < chunk.byteLength) {
+        if (consume) this.chunks[index] = chunk.subarray(part.byteLength)
+        break
+      }
+      index++
+    }
+    if (consume) {
+      this.chunks.splice(0, index)
+      this.size -= count
+    }
+    return out
+  }
+
   close(reason = "closed") {
     if (this.closed !== undefined) return
     this.closed = reason
-    this.buffer = new Uint8Array(0)
+    this.chunks = []
+    this.size = 0
     for (const [id, item] of this.pending) {
       clearTimeout(item.timer)
       item.reject(new RpcError(`connection closed: ${reason}`))

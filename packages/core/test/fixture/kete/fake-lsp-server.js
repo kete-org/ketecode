@@ -1,6 +1,6 @@
 // A fake language server for the LSP tests (core/test/kete/lsp*.test.ts): speaks LSP over stdio and
 // publishes one error per line containing "BAD" in every document it is given. With
-// FAKE_LSP_LOG set it appends each method it receives (and its environment's KETE_* names on
+// FAKE_LSP_LOG set it appends each method it receives (and its environment's variable names on
 // initialize) to that file. FAKE_LSP_MODE=silent never publishes; =crash exits on initialize.
 const fs = require("fs")
 
@@ -47,7 +47,7 @@ const handle = (message) => {
     log(
       "env:" +
         Object.keys(process.env)
-          .filter((name) => name.startsWith("KETE_") || name.startsWith("OPENCODE_"))
+          .filter((name) => !name.startsWith("FAKE_LSP_") && !name.startsWith("__CF") && name !== "PWD" && name !== "SHLVL" && name !== "_")
           .sort()
           .join(","),
     )

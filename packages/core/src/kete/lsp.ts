@@ -11,13 +11,15 @@
 //   Nothing here can fail the edit: a server that doesn't start or answer is logged and skipped.
 // - Servers start lazily, on the first edit of a file they handle, one per server and project root,
 //   at most `MAX_SERVERS` at a time (the least recently used is stopped). Only programs on PATH are
-//   used (servers.ts); a missing one is skipped quietly; one that fails to start isn't retried until
-//   the runtime restarts. All stop when the location closes.
-// - A language server reads the project and may run parts of it, so it runs in the OS sandbox
-//   (sandbox.ts) without network and with nothing writable but a private temp directory and the
-//   toolchain caches — not even the workspace. With the sandbox off (the user's choice) or
-//   unavailable it runs unsandboxed, like formatters and MCP servers; when the sandbox is required
-//   and unavailable, no server starts. Kete's own credentials are removed from its environment.
+//   used, found by lsp/executable.ts (absolute PATH entries only, never inside the workspace); a
+//   missing one is skipped quietly; one that fails to start isn't retried until the runtime
+//   restarts. All stop when the location closes. No memory or CPU limits are set on them.
+// - A language server reads the project and runs parts of it (servers.ts lists what), so it runs in
+//   the OS sandbox (sandbox.ts) without network and with nothing writable but a private temp
+//   directory and the toolchain caches — not even the workspace. Without an active sandbox (turned
+//   off, unavailable, Windows) no server starts unless the global config sets
+//   `kete.lsp.unsandboxed: true`, and never when a policy denies `sandbox_off`. Its environment is
+//   an allowlist (`serverEnvironment`), without credential-looking names.
 // - Off in job mode (cloud and self-hosted jobs, review jobs): no processes beyond the job's tool
 //   runner. Off for locations in a remote workspace. `lsp: false` turns it off.
 
@@ -36,9 +38,11 @@ import { Environment } from "../environment/index.js"
 import { FileAccess } from "../file-access.js"
 import { Location } from "../location.js"
 import { Shell } from "../shell.js"
-import { which } from "../util/which.js"
+import { ManagedPolicy } from "../managed-policy.js"
+import { Wildcard } from "../util/wildcard.js"
 import { KeteLspClient } from "./lsp/client.js"
 import { KeteLspDiagnostics } from "./lsp/diagnostics.js"
+import { KeteLspExecutable } from "./lsp/executable.js"
 import { KeteLspServers } from "./lsp/servers.js"
 import { KeteSandbox } from "./sandbox.js"
 import { KeteSandboxResolve } from "./sandbox/resolve.js"
@@ -87,9 +91,88 @@ export interface Launch {
   readonly release: () => Promise<void>
 }
 
+/** Variables a language server keeps from the runtime's environment (names; `LC_*` too). */
+export const allowedVariables: ReadonlySet<string> = new Set([
+  "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ", "TERM",
+  "TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+  // Windows
+  "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA",
+  "PROGRAMFILES", "PROGRAMFILES(X86)", "HOMEDRIVE", "HOMEPATH", "SYSTEMDRIVE", "NUMBER_OF_PROCESSORS",
+  // Toolchains: where they are installed and cache
+  "GOPATH", "GOROOT", "GOCACHE", "GOMODCACHE", "CARGO_HOME", "RUSTUP_HOME", "NODE_PATH", "NVM_DIR",
+])
+
+/**
+ * A language server's environment: only `allowedVariables` (and `LC_*`) from the runtime's, never a
+ * name that looks like a credential, then the server's own settings. On Windows the current
+ * directory is taken out of program lookup (`NoDefaultCurrentDirectoryInExePath`).
+ */
+export function serverEnvironment(
+  env: Record<string, string | undefined>,
+  server: Readonly<Record<string, string>> | undefined,
+  platform: NodeJS.Platform = process.platform,
+): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) continue
+    const upper = name.toUpperCase()
+    if (!allowedVariables.has(upper) && !upper.startsWith("LC_")) continue
+    if (KeteToolEnv.isCredential(name)) continue
+    result[name] = value
+  }
+  for (const [name, value] of Object.entries(server ?? {})) result[name] = value
+  if (platform === "win32") result.NoDefaultCurrentDirectoryInExePath = "1"
+  return result
+}
+
+/** Whether a policy statement denies leaving the OS sandbox (`sandbox_off`). */
+export function sandboxOffDenied(policies: ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: string }>) {
+  const statement = policies.findLast(
+    (policy) => policy.action === "permission" && Wildcard.match("sandbox_off:language-server", policy.resource),
+  )
+  return statement?.effect === "deny"
+}
+
+/**
+ * Whether a language server may start without the OS sandbox: only when the sandbox isn't required,
+ * the global config opted in (`kete.lsp.unsandboxed`), and no policy denies `sandbox_off`.
+ */
+export function unsandboxedAllowed(input: {
+  readonly mode: string
+  readonly optedIn: boolean
+  readonly policies: ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: string }>
+}) {
+  return input.mode !== "required" && input.optedIn && !sandboxOffDenied(input.policies)
+}
+
+/**
+ * The global config's typescript-language-server: a TypeScript installed next to it (a global
+ * `npm i -g typescript-language-server typescript`), so the project's own `node_modules/typescript`
+ * isn't loaded. Undefined when there is none.
+ */
+export async function siblingTsserver(program: string, workspace: string): Promise<string | undefined> {
+  const real = await fs.realpath(program).catch(() => undefined)
+  if (!real) return undefined
+  const realWorkspace = await fs.realpath(workspace).catch(() => workspace)
+  const dir = path.dirname(real)
+  const candidates = [
+    path.join(dir, "..", "node_modules", "typescript", "lib", "tsserver.js"),
+    path.join(dir, "..", "..", "typescript", "lib", "tsserver.js"),
+    path.join(dir, "..", "lib", "node_modules", "typescript", "lib", "tsserver.js"),
+  ]
+  for (const candidate of candidates) {
+    const resolved = await fs.realpath(candidate).catch(() => undefined)
+    if (!resolved) continue
+    const relative = path.relative(realWorkspace, resolved)
+    if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) continue
+    return resolved
+  }
+  return undefined
+}
+
 export interface Deps {
-  /** Finds a program on PATH. */
-  readonly which?: (command: string) => string | null
+  /** Finds a program (default: lsp/executable.ts over absolute PATH entries, outside the workspace). */
+  readonly find?: (command: string) => Promise<string | undefined>
   /** Overrides the sandbox decision (tests); default: the OS sandbox per `kete.sandbox`. */
   readonly sandbox?: (command: ReadonlyArray<string>, env: Record<string, string>) => Promise<Launch | undefined>
   readonly timeouts?: Partial<KeteLspClient.Timeouts>
@@ -122,24 +205,51 @@ export function make(deps: Deps = {}) {
       const config = yield* Config.Service
       const access = yield* FileAccess.Service
       const global = yield* Global.Service
+      const managed = yield* ManagedPolicy.Service
       const pluginScope = yield* Effect.scope
-      const lookup = deps.which ?? ((command: string) => which(command, env as NodeJS.ProcessEnv))
       const workspace = location.project.directory ?? location.directory
+      const lookup = deps.find ?? ((command: string) => KeteLspExecutable.find(command, { env, workspace }))
+      const userDocument = (file: string | undefined) => {
+        if (file === undefined) return false
+        const relative = path.relative(global.config, file)
+        return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+      }
 
       const running = new Map<string, Promise<Running | undefined>>()
       const broken = new Set<string>()
       const reported = new KeteLspDiagnostics.Reported()
       const warned = new Set<string>()
+      const warnOnce = (key: string, message: string, fields: Record<string, unknown>) =>
+        warned.has(key) ? Effect.void : Effect.sync(() => warned.add(key)).pipe(Effect.andThen(Effect.logWarning(message, fields)))
 
       const sandboxLaunch =
         deps.sandbox ??
         (async (command: ReadonlyArray<string>, launchEnv: Record<string, string>): Promise<Launch | undefined> => {
           const entries = await Effect.runPromise(config.entries())
           const settings = KeteSandbox.settingsFrom(entries, global.config, env)
-          const unsandboxed = { file: command[0]!, args: command.slice(1), env: launchEnv, release: async () => {} }
-          if (settings.mode === "off") return unsandboxed
+          // Without an active sandbox: only when the user's global config opts in, and never when a
+          // policy denies leaving the sandbox (organization statements, or the global config's own).
+          const unsandboxed = async (why: string): Promise<Launch | undefined> => {
+            const user = entries.filter((entry) => entry.type === "document" && userDocument(entry.path))
+            const optedIn = user.some((entry) => entry.type === "document" && entry.info.kete?.lsp?.unsandboxed === true)
+            const policies = [
+              ...user.flatMap((entry) => (entry.type === "document" ? (entry.info.experimental?.policies ?? []) : [])),
+              ...managed.current().statements,
+            ]
+            if (!unsandboxedAllowed({ mode: settings.mode, optedIn, policies })) {
+              await Effect.runPromise(
+                warnOnce(`unsandboxed ${why}`, "language servers not started: the OS sandbox isn't active", {
+                  reason: why,
+                  hint: "set kete.lsp.unsandboxed: true in the global config to run them without it",
+                }),
+              )
+              return undefined
+            }
+            return { file: command[0]!, args: command.slice(1), env: launchEnv, release: async () => {} }
+          }
+          if (settings.mode === "off") return unsandboxed("the sandbox is turned off")
           const available = await Effect.runPromise(KeteSandbox.availability)
-          if (!available.available) return settings.mode === "required" ? undefined : unsandboxed
+          if (!available.available) return unsandboxed(available.reason)
           // Writable: only a private temp directory (passed as the "workspace") and the caches.
           const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "kete-lsp-"))
           const resolved = await KeteSandboxResolve.resolve(
@@ -195,22 +305,29 @@ export function make(deps: Deps = {}) {
         const candidates = [server.command, ...(server.alternatives ?? [])]
         let command: ReadonlyArray<string> | undefined
         for (const candidate of candidates) {
-          const found = candidate[0] ? lookup(candidate[0]) : null
+          const found = candidate[0] ? await lookup(candidate[0]) : undefined
           if (found) {
             command = [found, ...candidate.slice(1)]
             break
           }
         }
         if (!command) return undefined
-        const launchEnv = { ...plain(KeteToolEnv.withoutKeteCredentials(env)), ...server.env }
-        const launch = await sandboxLaunch(command, launchEnv)
-        if (!launch) {
-          broken.add(key)
-          await Effect.runPromise(
-            Effect.logWarning("language server not started: the OS sandbox is required but unavailable", { server: server.id }),
-          )
-          return undefined
+        let initialization = server.initialization
+        if (server.id === "typescript") {
+          // Load the TypeScript installed with the server, not the project's node_modules, unless
+          // the user's config names one; tsserver plugins from probe locations stay off.
+          const configured = initialization?.tsserver as { path?: unknown } | undefined
+          const tsserver = typeof configured?.path === "string" ? undefined : await siblingTsserver(command[0]!, workspace)
+          initialization = {
+            ...initialization,
+            plugins: [],
+            ...(tsserver ? { tsserver: { ...(initialization?.tsserver as object | undefined), path: tsserver } } : {}),
+          }
         }
+        const launchEnv = serverEnvironment(env, server.env)
+        const launch = await sandboxLaunch(command, launchEnv)
+        // Not marked broken: turning the sandbox on, or opting in, takes effect on the next edit.
+        if (!launch) return undefined
         const scope = await Effect.runPromise(Scope.fork(pluginScope))
         const outgoing = await Effect.runPromise(Queue.unbounded<Uint8Array, never>())
         let client: KeteLspClient.Client | undefined
@@ -233,7 +350,7 @@ export function make(deps: Deps = {}) {
           const created = new KeteLspClient.Client({
             serverID: server.id,
             root,
-            initialization: server.initialization,
+            initialization,
             timeouts: deps.timeouts,
             write: (frame) => Queue.offerUnsafe(outgoing, frame),
             onClose: () => {
