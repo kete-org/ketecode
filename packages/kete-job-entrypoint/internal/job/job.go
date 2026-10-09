@@ -599,7 +599,17 @@ func (r *runner) afterClaim(ctx context.Context) int {
 	}
 
 	r.log.Start(pl.StepClone)
-	if err := r.d.Git.Clone(ctx, c.CloneURL, c.Ref, c.CloneUsername, c.CloneToken, r.d.Cfg.Pristine()); err != nil {
+	if rt := r.d.Runtime; rt != nil && rt.Repo.BaseSHA != "" && rt.CloneAt != nil {
+		// kubevm with a pinned base: exactly the commit the runner resolved, or nothing.
+		if err := rt.CloneAt(ctx, c.CloneURL, c.Ref, rt.Repo.BaseSHA, c.CloneUsername, c.CloneToken, r.d.Cfg.Pristine()); err != nil {
+			c.CloneToken, rt.Repo.Token = "", ""
+			if ctx.Err() != nil {
+				return r.interrupted()
+			}
+			r.log.FailErr(pl.StepClone, pl.CodeBase, err)
+			return r.failClone(ctx, final{result: Synth("error", 1, "the base commit the runner resolved can't be fetched")})
+		}
+	} else if err := r.d.Git.Clone(ctx, c.CloneURL, c.Ref, c.CloneUsername, c.CloneToken, r.d.Cfg.Pristine()); err != nil {
 		if ctx.Err() != nil {
 			c.CloneToken = ""
 			return r.interrupted()
@@ -636,6 +646,11 @@ func (r *runner) afterClaim(ctx context.Context) int {
 			}
 			r.log.FailErr(pl.StepVerify, pl.CodeFailed, err)
 			return r.failClone(ctx, final{result: Synth("error", 1, "clone verification failed")})
+		}
+		if b := r.d.Runtime.Repo.BaseSHA; b != "" && head != b {
+			c.CloneToken = ""
+			r.log.Fail(pl.StepVerify, pl.CodeBase)
+			return r.failClone(ctx, final{result: Synth("error", 1, "the clone isn't the base commit the runner resolved")})
 		}
 		c.BaseSHA = head
 	}

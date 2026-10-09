@@ -21,7 +21,7 @@ func kubeVMConfig(t *testing.T) config.Config {
 	  "image_allowlist":[%q],
 	  "kubernetes":{"namespace":%q,"jobs_namespace":%q,"instance":"kete-runner","admission_policies":["kete-runner-jobs"],"enrollment_secret":"kete-runner-enrollment",
 	    "runtime_class_names":["kete-test"],"repositories":["gitlab:payments/api"],
-	    "repository_sources":[{"name":"gitlab:payments/api","clone_url":"https://gitlab.corp.example/payments/api.git","clone_secret":"payments-read"}],
+	    "repository_sources":[{"name":"gitlab:payments/api","clone_url":"https://example.com/payments/api.git","clone_secret":"payments-read"}],
 	    "pod_driver":"kubevm","job_pod":{"cpu":"1","memory":"2Gi","ephemeral_storage":"4Gi","outbox_size":"1Gi"}}}`,
 		authority, imageA, sysNS, jobsNS)
 	c, err := config.Parse([]byte(raw))
@@ -35,8 +35,10 @@ func kubeVMConfig(t *testing.T) config.Config {
 // runner's local section (the test build's shared-kernel mode for kete-test), phase lines from the
 // pod's log, the exit, and the outbox kept after the pod.
 func TestRunnerKubeVMMachine(t *testing.T) {
+	_, hc := fakeGitLab(t)
 	e := newEnv(t)
 	e.o.Config = kubeVMConfig(t)
+	e.o.RepoHTTP = hc
 	e.o.PullGrace = time.Millisecond
 	e.p.AddToken(token)
 	e.kube.Put("secrets", sysNS, map[string]any{"metadata": map[string]any{"name": "kete-runner-enrollment"}, "data": map[string]any{"token": []byte(token)}})

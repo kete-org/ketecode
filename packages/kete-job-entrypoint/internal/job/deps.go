@@ -140,6 +140,8 @@ type Runtime struct {
 	Outbox               Outbox
 	// Head returns the commit refs/heads/<ref> names in the pristine copy.
 	Head func(ctx context.Context, gitDir, ref string) (string, error)
+	// CloneAt makes the pristine copy at exactly Repo.BaseSHA (used when the runner sent one).
+	CloneAt func(ctx context.Context, url, ref, sha, username, token, dest string) error
 }
 
 // RuntimePlatform is the platform client's kubevm calls.

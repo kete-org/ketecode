@@ -30,7 +30,27 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/* The admission policies' names (each binding has its policy's name); also config admission_policies. */}}
 {{- define "kete-runner.policyNames" -}}
 {{- $base := printf "kete-runner-%s" .Values.jobs.namespace -}}
-{{- dict "pods" (printf "%s-pods" $base) "jobSecrets" (printf "%s-secrets" $base) "outboxes" (printf "%s-outboxes" $base) "controllerSecrets" (printf "kete-runner-%s-controller" .Release.Namespace) | toJson -}}
+{{- dict "pods" (printf "%s-pods" $base) "jobSecrets" (printf "%s-secrets" $base) "outboxes" (printf "%s-outboxes" $base) "controllerSecrets" (printf "kete-runner-%s-controller" .Release.Namespace) "publisherSecrets" (printf "%s-publisher-secrets" $base) | toJson -}}
+{{- end -}}
+
+{{/* The writer Secrets (jobs namespace) the repository sources name, as a JSON list. */}}
+{{- define "kete-runner.writers" -}}
+{{- $w := list -}}
+{{- range .Values.repositorySources }}{{ with .writerSecret }}{{ $w = append $w . }}{{ end }}{{ end -}}
+{{- $w | uniq | toJson -}}
+{{- end -}}
+
+{{/* Every Secret in the jobs namespace only publisher pods may mount (writers, publisher CA and proxy credential). */}}
+{{- define "kete-runner.publisherSecrets" -}}
+{{- $s := include "kete-runner.writers" . | fromJsonArray -}}
+{{- with .Values.publisher.caBundleSecret }}{{ $s = append $s . }}{{ end -}}
+{{- with .Values.publisher.proxyAuthSecret }}{{ $s = append $s . }}{{ end -}}
+{{- $s | uniq | toJson -}}
+{{- end -}}
+
+{{/* "true" when some repository publishes (a writer Secret is named). */}}
+{{- define "kete-runner.publishing" -}}
+{{- if include "kete-runner.writers" . | fromJsonArray -}}true{{- end -}}
 {{- end -}}
 
 {{- define "kete-runner.checks" -}}
@@ -55,6 +75,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- range .Values.repositories -}}
 {{- if not (has . $names) -}}{{- fail (printf "repository %q has no repositorySources entry (podDriver kubevm clones only from a configured source)" .) -}}{{- end -}}
 {{- end -}}
+{{- range .Values.repositorySources -}}
+{{- $mode := .cloneMode | default "static" -}}
+{{- if and (eq $mode "static") (not .cloneSecret) -}}{{- fail (printf "repositorySources %q: cloneMode static needs cloneSecret" .name) -}}{{- end -}}
+{{- if and (eq $mode "minted") (or .cloneSecret (not .minterSecret)) -}}{{- fail (printf "repositorySources %q: cloneMode minted needs minterSecret (and no cloneSecret)" .name) -}}{{- end -}}
+{{- if and (eq $mode "static") .minterSecret -}}{{- fail (printf "repositorySources %q: minterSecret is for cloneMode minted" .name) -}}{{- end -}}
+{{- if and (eq $mode "minted") (not $.Values.acceptMinterRisk) -}}{{- fail (printf "repositorySources %q: cloneMode minted puts a Maintainer token (scope api) in the controller, which a compromised controller could use to mint write tokens; set acceptMinterRisk: true to accept that, or use cloneMode static with a deploy token (README \"GitLab\")" .name) -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and (include "kete-runner.publishing" .) (ne .Values.podDriver "kubevm") -}}{{- fail "writerSecret (publishing) needs podDriver kubevm" -}}{{- end -}}
+{{- if and .Values.publisher.proxyAuthSecret (not .Values.proxy.url) -}}{{- fail "publisher.proxyAuthSecret needs proxy.url" -}}{{- end -}}
+{{- range (include "kete-runner.publisherSecrets" . | fromJsonArray) -}}
+{{- if hasPrefix "kete-job-" . -}}{{- fail (printf "publisher Secret %q must not be named kete-job-… (the controller's per-job Secrets)" .) -}}{{- end -}}
 {{- end -}}
 {{- if eq .Values.podDriver "kubevm" -}}
 {{- if not .Values.jobs.outbox.storageClass -}}{{- fail "jobs.outbox.storageClass is required: a StorageClass that enforces capacity and mounts nosuid,nodev,noexec (README \"Outbox storage\")" -}}{{- end -}}

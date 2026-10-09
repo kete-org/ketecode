@@ -119,3 +119,33 @@ type Driver interface {
 	List(ctx context.Context) ([]string, error)
 	Logs(ctx context.Context, machineID string) ([][]byte, error)
 }
+
+// PublishSpec is one machine's publish request (job-host-v2 `publish`, with the platform's go-ahead).
+type PublishSpec struct {
+	MachineID  string
+	JobID      string
+	Repository contract.RunRepository
+	Branch     string
+	OpenMR     bool
+}
+
+// Publisher is implemented by drivers that publish a machine's outputs after its job ended
+// (job-host-v2 state `publishing`; the kubernetes driver's publisher pods, enterprise runtime P3).
+// The agent moves a machine whose run carries `publish` to `publishing` when its job exits, calls
+// EndJob, waits for the platform's authorization, then StartPublish and PublishResult until done.
+// Calls follow Driver's rules (per-machine serial, bounded by the context).
+type Publisher interface {
+	// CanPublish reports whether jobs of a repository can publish (a writer is configured).
+	CanPublish(repository string) bool
+	// EndJob removes what ran the job and keeps its outputs (idempotent).
+	EndJob(ctx context.Context, machineID string) error
+	// StartPublish starts publishing the machine's outputs (idempotent: one already started is kept).
+	StartPublish(ctx context.Context, s PublishSpec) error
+	// PublishResult reports the outcome once publishing ended (done), already checked against the
+	// contract and carrying no boundary-gated field the publisher didn't produce. A publisher that
+	// ended without a valid outcome is `failed`/`publisher_failed`. An error means it couldn't be
+	// read (retried later).
+	PublishResult(ctx context.Context, machineID string) (outcome contract.PublishOutcome, done bool, err error)
+	// DiscardOutputs removes the publisher and, unless keepOutputs, the machine's outputs.
+	DiscardOutputs(ctx context.Context, machineID string, keepOutputs bool) error
+}

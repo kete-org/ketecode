@@ -23,9 +23,17 @@ jobs:
   resources: {cpu: "2", memory: 4Gi, ephemeralStorage: 20Gi}
   outbox: {size: 2Gi, storageClass: fast-ssd, holdHours: 12}
   proxy: {authSecret: {name: kete-jobs-proxy-auth}}
-repositories: ["gitlab:payments/api"]
+repositories: ["gitlab:payments/api", "gitlab:payments/web"]
 repositorySources:
-  - {name: "gitlab:payments/api", url: "https://gitlab.corp.example/payments/api.git", cloneSecret: gitlab-payments-read}
+  - {name: "gitlab:payments/api", url: "https://gitlab.corp.example/payments/api.git", cloneMode: minted, minterSecret: gitlab-kete-minter, writerSecret: gitlab-kete-writer, writerUsername: kete-bot}
+  - {name: "gitlab:payments/web", url: "https://gitlab.corp.example/payments/web.git", cloneSecret: gitlab-web-read}
+acceptMinterRisk: true
+publisher:
+  caBundleSecret: corp-ca-publisher
+  proxyAuthSecret: corp-proxy-auth-publisher
+  egress:
+    cidrs: [10.20.0.10/32]
+    ports: [3128]
 podDriver: kubevm
 networkPolicy:
   apiServer:

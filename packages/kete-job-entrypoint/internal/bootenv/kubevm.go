@@ -55,6 +55,9 @@ type LocalRepository struct {
 	Ref      string `json:"ref"`
 	Username string `json:"username"`
 	Token    string `json:"token"`
+	// BaseSHA is the commit the runner resolved Ref to before starting the pod (P3): the job
+	// works on exactly it ("" from an older runner: the clone's head is the base).
+	BaseSHA string `json:"base_sha,omitempty"`
 }
 
 // LocalBoundary is the runner's effective data boundary (JobDataBoundary).
@@ -165,6 +168,9 @@ func ValidateLocal(l *Local) error {
 	}
 	if !printableASCII(r.Token, 4096) {
 		return errors.New("local.repository.token")
+	}
+	if r.BaseSHA != "" && (len(r.BaseSHA) != 40 || strings.Trim(r.BaseSHA, "0123456789abcdef") != "") {
+		return errors.New("local.repository.base_sha")
 	}
 	b := l.Boundary
 	if !slices.Contains([]string{"none", "redacted", "full"}, b.Summary) || !slices.Contains([]string{"count", "actions", "full"}, b.Denials) || !slices.Contains([]string{"omit", "send"}, b.PublishRefs) {

@@ -38,8 +38,10 @@ type Machine struct {
 	Observed       string
 	ObservedReason string
 	Terminal       bool // recorded destroyed or failed
-	PhaseLines     []contract.PhaseLine
-	Dropped        int64
+	// Publish is the publish outcome a v2 report carried for the machine (job-host-v2).
+	Publish    *contract.PublishOutcome
+	PhaseLines []contract.PhaseLine
+	Dropped    int64
 }
 
 // Host is one host.
@@ -204,6 +206,18 @@ func (p *Platform) SetTamper(f func(*contract.PollResponse)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.TamperPoll = f
+}
+
+// Authorize gives a v2 machine's publish the platform's go-ahead (publish.authorized).
+func (p *Platform) Authorize(hostID, machineID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	h := p.hosts[hostID]
+	if h == nil || h.Machines[machineID] == nil || h.Machines[machineID].RunV2 == nil || h.Machines[machineID].RunV2.Publish == nil {
+		return errors.New("fakeplatform: no such machine with publish")
+	}
+	h.Machines[machineID].RunV2.Publish.Authorized = true
+	return nil
 }
 
 // Withdraw sets a machine's desired state to destroyed.
@@ -627,6 +641,14 @@ func (p *Platform) pollV2(w http.ResponseWriter, r sig.Request) {
 			continue
 		}
 		m.Observed, m.ObservedReason = om.State, om.Reason
+		if om.Publish != nil {
+			if m.RunV2 == nil || m.RunV2.Publish == nil {
+				p.fail(w, r.Path, r.Body, contract.ErrMalformedRequest) // publish only for machines whose run had it
+				return
+			}
+			pub := *om.Publish
+			m.Publish = &pub
+		}
 		m.PhaseLines = append(m.PhaseLines, om.PhaseLines...)
 		m.Dropped += om.PhaseLinesDropped
 		if om.State == contract.StateRunning || contract.Terminal(om.State) {
@@ -650,8 +672,12 @@ func (p *Platform) pollV2(w http.ResponseWriter, r sig.Request) {
 		case m.DesiredRunning:
 			rm := *m.RunV2
 			rm.Config = m.Config
+			if rm.Publish != nil {
+				pub := *rm.Publish
+				rm.Publish = &pub
+			}
 			run = append(run, rm)
-			fmt.Fprintf(&key, "r%s%v;", id, m.Config != nil)
+			fmt.Fprintf(&key, "r%s%v%v;", id, m.Config != nil, rm.Publish != nil && rm.Publish.Authorized)
 		default:
 			destroy = append(destroy, id)
 			fmt.Fprintf(&key, "d%s;", id)

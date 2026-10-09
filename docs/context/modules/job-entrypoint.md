@@ -13,6 +13,11 @@ verified-at: eea2edce48
 - Where are the orchestration vectors? `docs/platform/test-vectors/orchestrations-v1/` (`bundles.json`, `dag.json`, `messages.json`, `naming.json`, `plan-files.json`, `SHA256SUMS`), one copy for Go and TypeScript, read by the Go tests through a relative path; the CI path filter in `.github/workflows/kete-job-entrypoint.yml:18,27` covers it.
 - How does the agent know its job id? `KETE_JOB_ID` is in `KeteEnvList` (`internal/entry/entry_linux.go:487`; `Deps.JobID`, `job/deps.go:90`): a coordinator turn calls its own job's coordinator routes.
 - How does the fake platform serve orchestration? `internal/fakeplatform/orchestration.go`: `makeOrchestrationBranches` (`:87`) adds the plan and node branches to the fake git host, `orchestrationSpec` (`:129`) shapes the claim per `Knobs.Orchestration` (`coordinator`, `integration`, `worker`; plus `OrchestrationBaseMoved`, `OrchestrationBadDigest`, `OrchestrationMovedFetch`, `OrchestrationProposalText`), `orchestrationRoute` (`:201`) serves the coordinator routes and checks the plan bundle; `testdata/jobs-v1/orchestration.json` is the claim vector. Scenarios: `itest/scenarios_test.go` `TestOrchestrationWorker` (`:737`), `Integration`, `PlanBundle`, `PinnedBase`, `Refusals`.
+- Pinned base (P3)? `local.repository.base_sha` (the commit the runner resolved `ref` to): the
+  runtime clones with `gitops.CloneAt` (empty bare repo + shallow fetch of exactly that commit into
+  `refs/heads/<ref>`), and fails `clone` with code `base_unavailable` when the server no longer has
+  it, or `verify` with that code when the head differs (`internal/job/job.go` afterClaim). Without
+  it (an older runner) the clone's head is the base, as in P2.
 - What is the kubevm profile? The Kubernetes runner's job pods (enterprise runtime P2; README
   "kubevm"): `--config-file /run/kete-config/config.json` (`bootenv.ReadConfigFile`,
   `ParseKubeVMConfig`, the `local` section in `internal/bootenv/kubevm.go`); `setup_host` checks the
