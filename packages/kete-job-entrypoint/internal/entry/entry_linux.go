@@ -485,6 +485,7 @@ func KeteEnvList(cfg layout.Config, e job.KeteEnv) []string {
 		"KETE_GATEWAY_URL=" + e.GatewayURL,
 		"KETE_PLATFORM_URL=" + e.PlatformURL,
 		"KETE_JOB_ID=" + e.JobID,
+		"KETE_JOB_ZONE=" + e.Zone,
 		"KETE_JOB_GATEWAY_KEY_FD=3",
 		"KETE_JOB_AUDIT_FD=" + strconv.Itoa(layout.KeteAuditFD),
 		"KETE_DISABLE_MODELS_FETCH=1",

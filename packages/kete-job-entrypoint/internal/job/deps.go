@@ -90,6 +90,10 @@ type KeteEnv struct {
 	// JobID is the job's id (KETE_JOB_ID): an orchestration's coordinator turn calls its own
 	// job's orchestration routes with it. Not a secret.
 	JobID string
+	// Zone is the job's trust zone (KETE_JOB_ZONE): "kete_cloud" for the cloud path,
+	// "enterprise_private" for kubevm. The `orchestrate` tool lets node titles and a decision's
+	// summary leave only from Kete cloud (the runner's boundary is wired in with O10).
+	Zone string
 }
 
 // Machine is the OS side of the run.

@@ -110,6 +110,13 @@ func checks(cwd string) []string {
 			fail("env:" + k)
 		}
 	}
+	// The job's id and zone, for an orchestration's coordinator turn (O6/O7).
+	if z := os.Getenv("KETE_JOB_ZONE"); z != "kete_cloud" && z != "enterprise_private" {
+		fail("env:KETE_JOB_ZONE")
+	}
+	if len(os.Getenv("KETE_JOB_ID")) != 36 {
+		fail("env:KETE_JOB_ID")
+	}
 	// The gateway key arrives on fd 3, never in the environment.
 	if _, ok := os.LookupEnv("KETE_GATEWAY_KEY"); ok {
 		fail("env-leak:KETE_GATEWAY_KEY")

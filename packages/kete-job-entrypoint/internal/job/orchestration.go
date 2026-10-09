@@ -30,6 +30,14 @@ import (
 // RefMismatch is the result message of a pinned ref that isn't at its recorded commit.
 const RefMismatch = "orchestration: a branch is not at the commit the orchestration recorded (ref_mismatch)"
 
+// zone is KeteEnv.Zone: the cloud path is Kete cloud's zone, kubevm an enterprise's.
+func (r *runner) zone() string {
+	if r.d.Runtime != nil {
+		return "enterprise_private"
+	}
+	return "kete_cloud"
+}
+
 // orchestrated is the claim's orchestration, or nil for every other job.
 func (r *runner) orchestrated() *platform.OrchestratedClaim { return r.claim.Orchestrated }
 

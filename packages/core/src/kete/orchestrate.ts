@@ -99,13 +99,14 @@ export const description = [
 ].join("\n")
 
 /** What leaves the zone besides metadata, by the runtime's own boundary (the claim's setting is
- * narrowed by it): Kete cloud lets titles and summaries leave; any other runtime keeps them in-zone
- * until its runner says otherwise (O10). */
+ * narrowed by it): the entrypoint says the job's zone (KETE_JOB_ZONE); Kete cloud lets titles and
+ * summaries leave; any other zone, or none, keeps them in-zone until its runner's boundary is wired
+ * in (O10). */
 export function localBoundary(env: Record<string, string | undefined> = process.env): {
   readonly titles: boolean
   readonly summary: boolean
 } {
-  const cloud = env["OPENCODE_RUNTIME_TYPE"] === "kete_cloud"
+  const cloud = env["OPENCODE_JOB_ZONE"] === "kete_cloud"
   return { titles: cloud, summary: cloud }
 }
 
@@ -119,7 +120,10 @@ export interface Deps {
   readonly spec: KeteOrchestrationSpec.Coordinator
   /** The routes' target, or why there is none (fail closed). */
   readonly target: () => KeteOrchestrationClient.Target | string
-  readonly files: Pick<Environment.Files, "write" | "mkdir" | "remove">
+  /** The working tree's files. In job mode this is the confined driver (kete/job-files.ts:
+   * openat2 beneath the tree, no symlinks), so a `.kete-orchestration` the agent made a symlink is
+   * refused, never followed. */
+  readonly files: Pick<Environment.Files, "write" | "mkdir" | "remove" | "stat">
   /** The working tree's root (the job's repository). */
   readonly directory: string
   readonly boundary: { readonly titles: boolean; readonly summary: boolean }
@@ -185,7 +189,10 @@ export const execute = (deps: Deps, input: Input) =>
           `The plan would be refused:\n${[...checked.errors, ...KeteOrchestrationPlan.describeIssues(checked.issues)].map((e) => `- ${e}`).join("\n")}`,
         )
       const accepted = yield* promise(() => KeteOrchestrationClient.propose(target, checked.proposal))
+      // The platform holds this turn's proposal from here on: the turn edits nothing more.
+      deps.turn.proposed = { rev, digest: checked.proposal.plan_digest }
       // Only now, the plan file: the turn's bundle is exactly it (the entrypoint's plan bundle).
+      // Re-sending the same proposal is a no-op on the platform, so "call plan again" is safe.
       yield* deps.files
         .mkdir(planDir)
         .pipe(
@@ -200,7 +207,6 @@ export const execute = (deps: Deps, input: Input) =>
             fail(`The plan was accepted but the plan file couldn't be written: ${error.message}. Call plan again.`),
           ),
         )
-      deps.turn.proposed = { rev, digest: checked.proposal.plan_digest }
       return {
         output: { action: "plan" as const, status: accepted.status, rev, plan_digest: checked.proposal.plan_digest },
         content: [
@@ -225,8 +231,16 @@ export const execute = (deps: Deps, input: Input) =>
       )
     const decided = yield* promise(() => KeteOrchestrationClient.decide(target, request.data))
     deps.turn.decided = input.decision
-    if (deps.turn.proposed) {
-      // The platform discarded the turn's proposal; its file must not reach the bundle.
+    // The platform discarded any proposal of this turn; no plan file may reach the bundle (a
+    // coordinator's bundle with one is published as a plan bundle), whoever wrote it.
+    const present = yield* deps.files.stat(planDir).pipe(
+      Effect.as(true),
+      Effect.catchTag("Environment.NotFound", () => Effect.succeed(false)),
+      Effect.mapError((error) =>
+        fail(`The decision was recorded but ${ORCHESTRATION_DIR} couldn't be checked: ${error.message}.`),
+      ),
+    )
+    if (present || deps.turn.proposed) {
       yield* deps.files
         .remove(planDir)
         .pipe(

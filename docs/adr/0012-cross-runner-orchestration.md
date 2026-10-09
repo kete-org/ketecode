@@ -169,7 +169,14 @@ What kete-code built against the contract (task `docs/tasks/2026-10-10-orchestra
 - **The tool.** `orchestrate` exists only in job mode for a coordinator turn; it needs no policy
   `allow` of its own (the role is the platform's), but an agent whose rules wholly deny
   `orchestrate` doesn't get it (and the turn then ends `coordinator_no_decision`). Titles and the
-  decision's summary leave only on Kete cloud (`KETE_RUNTIME_TYPE=kete_cloud`) and only where the
-  claim allows; elsewhere they stay in-zone until the runner's boundary is wired in (O10). The job's
-  id reaches `kete` as `KETE_JOB_ID`; the orchestration section travels to `kete serve` on the
-  existing descriptor channel.
+  decision's summary leave only from Kete cloud (the entrypoint sets `KETE_JOB_ZONE=kete_cloud` on the cloud path, `enterprise_private` on kubevm) and only where the
+  claim allows; elsewhere they stay in-zone until the runner's boundary is wired in (O10). Kete cloud
+  has no runner boundary: as with a job's result text, the summary goes to the platform, which
+  redacts it and cuts it to 4 KB (the zone's `summary` is effectively `redacted`). The job's id
+  reaches `kete` as `KETE_JOB_ID`; the orchestration section travels to `kete serve` on the existing
+  descriptor channel.
+- **What enforces a planning turn.** After a proposal the runtime denies the `edit` tools, but a
+  shell command can still change the tree; the enforcement is the bundle: a coordinator's plan
+  bundle is exactly the plan file (nothing else is published), the platform commits it only when it
+  is the proposal's (`plan_digest`), and `finish` removes any `.kete-orchestration` it finds, so a
+  hand-made plan file can't turn an integration into a plan bundle unnoticed.

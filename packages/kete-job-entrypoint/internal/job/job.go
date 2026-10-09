@@ -727,7 +727,7 @@ func (r *runner) afterClaim(ctx context.Context) int {
 		r.log.FailErr(pl.StepAgent, pl.CodeFailed, err)
 		return r.finalize(ctx, final{result: Synth("error", 1, "could not write the job spec")})
 	}
-	kete, err := r.d.Machine.StartKete(ctx, KeteEnv{GatewayURL: c.GatewayURL, PlatformURL: r.d.Boot.PlatformURL, GatewayKey: c.GatewayKey, JobID: r.d.Boot.JobID})
+	kete, err := r.d.Machine.StartKete(ctx, KeteEnv{GatewayURL: c.GatewayURL, PlatformURL: r.d.Boot.PlatformURL, GatewayKey: c.GatewayKey, JobID: r.d.Boot.JobID, Zone: r.zone()})
 	c.GatewayKey = ""
 	if err != nil {
 		r.log.FailErr(pl.StepAgent, pl.CodeFailed, err)

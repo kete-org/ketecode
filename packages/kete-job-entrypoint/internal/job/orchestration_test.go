@@ -101,7 +101,7 @@ func TestCoordinatorTurnOne(t *testing.T) {
 	if e.git.pinned != "" || e.git.fetched != nil || e.git.keteRefs {
 		t.Error("turn 1 pinned or fetched something")
 	}
-	if e.m.bundleKind != bundle.KindCoordinator || e.m.keteEnv.JobID != e.d.Boot.JobID {
+	if e.m.bundleKind != bundle.KindCoordinator || e.m.keteEnv.JobID != e.d.Boot.JobID || e.m.keteEnv.Zone != "kete_cloud" {
 		t.Errorf("bundle kind %v, job id %q", e.m.bundleKind, e.m.keteEnv.JobID)
 	}
 	if got := resultOf(t, e.pf)["outcome"]; got != "completed" {
@@ -258,5 +258,17 @@ func TestPlainJobUnchanged(t *testing.T) {
 	}
 	if e.git.fetched != nil || e.git.keteRefs || e.git.pinned != "" || e.m.bundleKind != bundle.KindOther {
 		t.Error("a plain job did orchestration work")
+	}
+}
+
+// TestKubeVMZone: a kubevm job's kete is told it runs in an enterprise's zone (titles and
+// summaries then stay in-zone).
+func TestKubeVMZone(t *testing.T) {
+	e, _ := newRuntimeEnv(t)
+	if code := e.run(t); code != 0 {
+		t.Fatalf("exit %d; log %s", code, e.out)
+	}
+	if e.m.keteEnv.Zone != "enterprise_private" {
+		t.Errorf("zone %q", e.m.keteEnv.Zone)
 	}
 }

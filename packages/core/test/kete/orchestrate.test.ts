@@ -86,6 +86,10 @@ function files() {
         ops.push(`remove ${path}`)
         for (const key of [...written.keys()]) if (key.startsWith(path)) written.delete(key)
       }),
+    stat: (path) =>
+      [...written.keys()].some((key) => key === path || key.startsWith(`${path}/`))
+        ? Effect.succeed({ type: "directory" } as never)
+        : Effect.fail(new Environment.NotFound({ path })),
   }
   return { written, ops, impl }
 }
@@ -260,6 +264,37 @@ describe("orchestrate: finish and status", () => {
     expect(message(await run(d, { action: "plan", nodes: [node("a")] }))).toContain("already decided")
   })
 
+  test("finish removes a plan file the turn didn't propose (written by hand)", async () => {
+    const p = platform()
+    const { d, fs } = deps({ fetch: p.fetch })
+    fs.written.set("/repo/.kete-orchestration/plan.json", new Uint8Array([1]))
+    expect(Exit.isSuccess(await run(d, { action: "finish", decision: "integrated" }))).toBe(true)
+    expect(fs.ops).toEqual(["remove /repo/.kete-orchestration"])
+    expect(fs.written.size).toBe(0)
+  })
+
+  test("a plan file that can't be written after the platform accepted: edits stay denied, plan again works", async () => {
+    const p = platform()
+    const fs = files()
+    let failures = 1
+    const { d } = deps({
+      fetch: p.fetch,
+      files: {
+        ...fs.impl,
+        write: (path, bytes) =>
+          failures-- > 0
+            ? Effect.fail(new Environment.Failed({ path, cause: new Error("EIO") }))
+            : fs.impl.write(path, bytes),
+      },
+    })
+    const first = await run(d, { action: "plan", nodes: [node("a")] })
+    expect(message(first)).toContain("Call plan again")
+    expect(d.turn.proposed?.rev).toBe(1)
+    expect(Exit.isSuccess(await run(d, { action: "plan", nodes: [node("a")] }))).toBe(true)
+    expect(p.requests.filter((r) => r.method === "PUT").map((r) => r.body.plan_digest)).toHaveLength(2)
+    expect(fs.written.has("/repo/.kete-orchestration/plan.json")).toBe(true)
+  })
+
   test("the summary stays in-zone when the boundary says so, and is never cut", async () => {
     const p = platform()
     const { d } = deps({ fetch: p.fetch, boundary: { titles: false, summary: false } })
@@ -278,6 +313,14 @@ describe("orchestrate: finish and status", () => {
     const { d } = deps({ fetch: p.fetch })
     const exit = await run(d, { action: "status" })
     expect(Exit.isSuccess(exit) && exit.value.content).toContain(`Orchestration ${id}: status coordinating`)
+  })
+})
+
+describe("orchestrate: the zone", () => {
+  test("titles and summaries leave only from Kete cloud, as the entrypoint says", () => {
+    expect(KeteOrchestrate.localBoundary({ OPENCODE_JOB_ZONE: "kete_cloud" })).toEqual({ titles: true, summary: true })
+    for (const env of [{}, { OPENCODE_JOB_ZONE: "enterprise_private" }, { OPENCODE_RUNTIME_TYPE: "kete_cloud" }])
+      expect(KeteOrchestrate.localBoundary(env)).toEqual({ titles: false, summary: false })
   })
 })
 
