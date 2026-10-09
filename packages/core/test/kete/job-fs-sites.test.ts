@@ -72,6 +72,8 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   "packages/core/src/persistent-pty/binary.bun.ts": { category: "off-in-job", reason: "the persistent-PTY daemon binary; off in job mode" },
   "packages/core/src/plugin/module.ts": { category: "off-in-job", reason: "disk plugins; ConfigPluginSource is empty in job mode" },
   "packages/core/src/kete/lsp.ts": { category: "off-in-job", reason: "language server diagnostics; the plugin does nothing in job mode" },
+  "packages/core/src/kete/hooks.ts": { category: "off-in-job", reason: "config hooks (realpath of the repository); the plugin does nothing in job mode" },
+  "packages/core/src/kete/hooks/trust.ts": { category: "data-dir", reason: "the hooks trust store in kete's state directory" },
   "packages/core/src/shell/select.ts": { category: "not-worktree", reason: "checks the shell binary's path" },
   "packages/core/src/kete/sandbox/probe.ts": { category: "off-in-job", reason: "checks for sandbox-exec/bwrap; the local sandbox never runs in job mode" },
   "packages/core/src/kete/sandbox.ts": { category: "off-in-job", reason: "creates a session's private temp directory for the local sandbox; never runs in job mode" },
