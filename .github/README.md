@@ -101,6 +101,8 @@ kete login                        # or sign in to a Kete account to use the gate
   terminal UI, the web UI and the editors ([Task list](../docs/todo.md)).
 - **Checks its edits.** After each edit, errors from your language servers (TypeScript, Python,
   Go, Rust) go back to the agent, with the servers sandboxed and offline ([LSP](../docs/lsp.md)).
+- **Hooks.** Shell commands at points of the agent loop: block a tool call, add context, notify
+  you. A repository's hooks run only after you trust them ([Hooks](../docs/hooks.md)).
 - **Any model.** Your own provider keys, local models through Ollama, vLLM or any
   OpenAI-compatible server, or the Kete gateway with one sign-in and readable per-request usage.
   The gateway and portal are never required for local use.
