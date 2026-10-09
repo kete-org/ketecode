@@ -44,12 +44,12 @@ start=$(date +%s)
 log() { echo "[publish $(($(date +%s) - start))s] $*"; }
 fail() {
   echo "FAIL: $*" >&2
-  echo "--- controller logs" >&2; kubectl -n $SYS logs deploy/kete-runner --tail=200 >&2 || true
-  echo "--- hosts" >&2; curl -s $ADMIN/hosts | jq '.[0] | {Status, StartsBlocked: .LastReport.starts_blocked, Machines: (.Machines | map_values({State, Reason, Publish}))}' >&2 || true
+  echo "--- controller logs" >&2; kubectl -n $SYS logs deploy/kete-runner --tail=200 >&2 2>/dev/null || true
+  echo "--- hosts" >&2; curl -s $ADMIN/hosts | jq '(.[0] // {}) | {Status, StartsBlocked: .LastReport.starts_blocked, Machines: ((.Machines // {}) | map_values({State, Reason, Publish}))}' >&2 2>/dev/null || true
   echo "--- pods" >&2; kubectl get pods -A -o wide >&2 || true
   for p in $(kubectl -n $JOBS get pods -o name 2>/dev/null); do echo "--- $p" >&2; kubectl -n $JOBS logs "$p" --tail=60 >&2 || true; kubectl -n $JOBS get "$p" -o jsonpath='{.status.containerStatuses[0].state}' >&2 || true; echo >&2; done
   echo "--- events ($JOBS)" >&2; kubectl -n $JOBS get events --sort-by=.lastTimestamp >&2 || true
-  echo "--- gitlab" >&2; curl -s $GADMIN/state | jq '{tokens: [.tokens[]? | {name, revoked, clones}], merge_requests, branches, requests: (.requests[-40:])}' >&2 || true
+  echo "--- gitlab" >&2; curl -s $GADMIN/state | jq '{tokens: [(.tokens // [])[] | {name, revoked, clones}], merge_requests, branches, requests: ((.requests // [])[-40:])}' >&2 2>/dev/null || true
   echo "--- docker logs kete-gitlab" >&2; docker logs kete-gitlab 2>&1 | tail -40 >&2 || true
   exit 1
 }
@@ -92,9 +92,11 @@ docker run -d --name kete-fake --network $NET --ip "$FAKE_IP" -v "$STATE/fake:/s
   -job-hosts "https://$JH_IP:8443" -job-hosts-ca /jh-ca.pem -ca-dir /ca -linger >/dev/null
 wait_for 60 "jobs-v1 fake ready" test -s "$STATE/fake/runtime-job.json"
 fake_job() { jq -r ".$1" "$STATE/fake/runtime-job.json"; }
+# (The jobs-v1 fake keeps its repository under <state>/fake/git: $STATE/fake/fake/git here.)
+sudo test -d "$STATE/fake/fake/git/org/repo.git" || { sudo ls -lR "$STATE/fake" | head -40 >&2; echo "FAIL: no seed repository" >&2; exit 1; }
 # The fake GitLab: payments/api mirrors the jobs-v1 fake's repository (the scripted model edits its
 # README), main protected and the writer may not push to it.
-docker run -d --name kete-gitlab --network $NET --ip "$GITLAB_IP" -p 127.0.0.1:18082:8080 -v "$STATE/fake/git:/seed:ro" \
+docker run -d --name kete-gitlab --network $NET --ip "$GITLAB_IP" -p 127.0.0.1:18082:8080 -v "$STATE/fake/fake/git:/seed:ro" \
   --entrypoint /usr/local/libexec/kete-e2e/kete-fake-gitlab "$GITLAB_FAKE_IMAGE" -host gitlab.corp.test -root /tmp/gitlab >/dev/null
 wait_for 30 "fake GitLab" curl -sf $GADMIN/state
 rnd() { head -c 30 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 26; }
