@@ -726,6 +726,13 @@ secret references to MCP config, move the `KeteMcpSecrets.prepare` call with it 
 `environment` must come from it). If upstream adds an
 `mcp add` flag named like a preset flag, or a `presets` subcommand, the spread/registration collides.
 
+### Local build channel (fix/local-build-channel)
+
+| File | Change |
+| --- | --- |
+| `script/package.json` | A `test` script (`bun test test/kete`) for the channel tests; CI runs them (`kete-build.yml`) |
+| `script/src/index.ts` | A build without `OPENCODE_CHANNEL` takes its channel from the git branch through `script/src/kete/channel.ts`'s `branchChannel`, which turns `/` (and anything else the TUI's storage folder names reject) into `-` and falls back to `local` for a detached checkout. Before, a local build from `fix/x` crashed the TUI at startup ("Invalid storage segment"). Upstream's own branches are plain names, so their channels are unchanged |
+
 ### Upstream test edits
 
 55 upstream test files and `core/script/test.ts` were updated so their fixtures
