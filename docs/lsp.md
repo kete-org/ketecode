@@ -55,8 +55,9 @@ for cgo. So:
 - **No sandbox, no servers.** When the sandbox is turned off, unavailable (Linux without `bwrap`) or
   missing (Windows), language servers don't start. To run them anyway, set
   `"kete": { "lsp": { "unsandboxed": true } }` in your **global** config — they then run the
-  project's code with your full access. A policy denying `sandbox_off` (for example from your
-  organization) always wins: no unsandboxed servers. A sandbox that is `required` but unavailable
+  project's code with your full access. A policy denying `sandbox_off` always wins: no unsandboxed
+  servers (either form in [the sandbox docs](sandbox.md#organizations); the start passes the same
+  `sandbox_off` permission check as an unsandboxed shell command). A sandbox that is `required` but unavailable
   never runs them.
 - Programs are found only in **absolute** `PATH` entries: never the current directory (Windows'
   default), never relative entries, and never a file whose real path is inside the workspace — a

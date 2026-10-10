@@ -27,6 +27,9 @@ import { ManagedPolicy } from "@opencode/core/managed-policy"
 import { Project } from "@opencode/core/project"
 import { AbsolutePath } from "@opencode/core/schema"
 import { KeteSandboxProbe } from "@opencode/core/kete/sandbox/probe"
+import { Permission } from "@opencode/core/permission"
+import type { SyncedPolicy } from "@opencode/util/kete/sync/contract"
+import { permissionWith, requireSandbox } from "./org-policy-fixture"
 import { host } from "../plugin/host"
 
 const sandbox = await KeteSandboxProbe.probe()
@@ -267,6 +270,7 @@ describe("the plugin with a fake language server", () => {
       mode?: string
       kete?: unknown
       realSandbox?: boolean
+      orgPolicies?: SyncedPolicy[]
     } = {},
   ) {
     const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "kete-lsp-test-")))
@@ -322,6 +326,7 @@ describe("the plugin with a fake language server", () => {
             resolve: (input: { path: string }) => Effect.succeed({ absolute: path.resolve(workspace, input.path) }),
           } as any),
         ),
+        ...(options.orgPolicies ? [Layer.succeed(Permission.Service, permissionWith(options.orgPolicies))] : []),
         Layer.succeed(ManagedPolicy.Service, ManagedPolicy.Service.of({ current: () => ({ statements: [] }), set: () => Effect.void } as any)),
         Layer.succeed(
           Global.Service,
@@ -345,6 +350,7 @@ describe("the plugin with a fake language server", () => {
       const event: any = {
         tool,
         sessionID,
+        agent: "build",
         status: "completed",
         input: { path: file },
         result: { output: tool === "write" ? { target: absolute } : {}, content: [{ type: "text", text: "Edit applied." }] },
@@ -434,6 +440,15 @@ describe("the plugin with a fake language server", () => {
     expect(await off.log()).toEqual([])
     const optedIn = await setup({ realSandbox: true, kete: { sandbox: { mode: "off" }, lsp: { unsandboxed: true } } })
     expect((await optedIn.edit("a.fk", "BAD\n")).at(-1)!.text).toContain("ERROR [1:1]")
+  }, 30_000)
+
+  test("an organization policy in the documented form ({action: sandbox_off}) stops unsandboxed servers", async () => {
+    const optIn = { kete: { sandbox: { mode: "off" }, lsp: { unsandboxed: true } }, realSandbox: true }
+    const allowed = await setup({ ...optIn, orgPolicies: [] })
+    expect((await allowed.edit("a.fk", "BAD\n")).at(-1)!.text).toContain("ERROR [1:1]")
+    const required = await setup({ ...optIn, orgPolicies: [requireSandbox] })
+    expect(await required.edit("a.fk", "BAD\n")).toEqual([{ type: "text", text: "Edit applied." }])
+    expect(await required.log()).toEqual([])
   }, 30_000)
 
   test("job mode registers nothing", async () => {

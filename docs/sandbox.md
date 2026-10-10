@@ -97,12 +97,22 @@ and a line in `kete sandbox`.
 ### Organizations
 
 Every command that runs outside the sandbox — because it is off, unavailable, or a person approved
-`sandbox: "off"` — passes the `sandbox_off` permission check. An organization policy that denies it
-requires the sandbox:
+`sandbox: "off"` — passes the `sandbox_off` permission check, and so do [language servers](lsp.md)
+and [hooks](hooks.md) that would run outside it. An organization policy that denies it requires the
+sandbox. On the Kete platform it is a rule of an organization policy (synced with `kete sync`):
 
 ```json
 { "action": "sandbox_off", "resource": "*", "effect": "deny" }
 ```
+
+The same requirement as a configuration policy statement (`experimental.policies` in your global
+config, or an OpenCode Console statement) is:
+
+```json
+{ "action": "permission", "resource": "sandbox_off:*", "effect": "deny" }
+```
+
+Both forms are honoured by every check: shell commands, language servers and hooks.
 
 A policy denying `sandbox_network` stops commands from asking for network access.
 

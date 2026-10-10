@@ -25,6 +25,9 @@ import { ManagedPolicy } from "@opencode/core/managed-policy"
 import { Project } from "@opencode/core/project"
 import { AbsolutePath } from "@opencode/core/schema"
 import { KeteSandboxProbe } from "@opencode/core/kete/sandbox/probe"
+import { Permission } from "@opencode/core/permission"
+import type { SyncedPolicy } from "@opencode/util/kete/sync/contract"
+import { permissionWith, requireSandbox } from "./org-policy-fixture"
 import { host } from "../plugin/host"
 
 const posix = process.platform !== "win32"
@@ -99,6 +102,7 @@ describe("settings", () => {
     )
     expect(text).toContain('- Stop [network]: "say \\"done\\""')
     expect(text).toContain('"scripts/hook.sh" (sha256 ffffffffffff)')
+    expect(text).toContain("best effort")
   })
 
   test("repository files a command names are hashed", async () => {
@@ -142,14 +146,18 @@ describe("output", () => {
     expect(KeteHooksRun.interpret(2, "", "not allowed\n")).toEqual({ kind: "deny", reason: "not allowed" })
     expect(KeteHooksRun.interpret(1, "", "boom")).toEqual({ kind: "error", message: "exited with 1: boom" })
     expect(KeteHooksRun.interpret(0, "x".repeat(KeteHooksRun.MAX_TEXT + 10), "").kind).toBe("ok")
-    // Windows: the command is a batch-file line; cmd's command line carries only the file's path.
-    expect(KeteHooksRun.shell('echo "a b" & exit 2', "win32", { ComSpec: "C:\\Windows\\cmd.exe" }, "C:\\Temp\\kete hook-1")).toEqual({
+    // Windows: the command is a batch file's line exactly as configured (an unbalanced ")" is fine);
+    // a second batch file calls it with stdin from the payload; cmd's command line carries only a path.
+    expect(KeteHooksRun.shell('echo "a b" ) & exit 2', "win32", { ComSpec: "C:\\Windows\\cmd.exe" }, "C:\\Temp\\kete hook-1")).toEqual({
       file: "C:\\Windows\\cmd.exe",
-      args: ["/d", "/c", "C:\\Temp\\kete hook-1\\hook.cmd"],
-      script: {
-        path: "C:\\Temp\\kete hook-1\\hook.cmd",
-        content: '@echo off\r\n(\r\necho "a b" & exit 2\r\n) < "%KETE_HOOK_INPUT%"\r\nexit /b %ERRORLEVEL%\r\n',
-      },
+      args: ["/d", "/c", "C:\\Temp\\kete hook-1\\run.cmd"],
+      scripts: [
+        { path: "C:\\Temp\\kete hook-1\\hook.cmd", content: '@echo off\r\necho "a b" ) & exit 2\r\n' },
+        {
+          path: "C:\\Temp\\kete hook-1\\run.cmd",
+          content: '@call "C:\\Temp\\kete hook-1\\hook.cmd" < "%KETE_HOOK_INPUT%"\r\n@exit /b %ERRORLEVEL%\r\n',
+        },
+      ],
     })
     expect(KeteHooksRun.shell("echo hi", "linux")).toEqual({ file: "/bin/sh", args: ["-c", 'exec <"$KETE_HOOK_INPUT"\necho hi'] })
   })
@@ -192,6 +200,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
     kete?: Record<string, unknown>
     sandbox?: "real" | "none"
     files?: Record<string, string>
+    orgPolicies?: SyncedPolicy[]
   }) {
     const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "kete-hooks-test-")))
     const globalDir = path.join(dir, "config")
@@ -248,6 +257,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
         const spawner = yield* ChildProcessSpawner
         return Layer.mergeAll(
           Layer.succeed(Location.Service, location),
+          ...(options.orgPolicies ? [Layer.succeed(Permission.Service, permissionWith(options.orgPolicies))] : []),
           Layer.succeed(Environment.Service, Environment.Service.of({ files: {} as any, spawner })),
           Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.sync(() => current) } as any)),
           Layer.succeed(ManagedPolicy.Service, ManagedPolicy.Service.of({ current: () => ({ statements: [] }), set: () => Effect.void } as any)),
@@ -498,6 +508,34 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
     const writes = await setup({ sandbox: "real", user: { PostToolUse: [{ command: `echo ok > "${"$"}KETE_PROJECT_DIR/out.txt"; cat "${"$"}KETE_PROJECT_DIR/out.txt"` }] } })
     expect(await writes.after("edit")).toContain("ok")
   }, 30_000)
+
+  test("an organization policy in the documented form ({action: sandbox_off}) stops unsandboxed hooks", async () => {
+    // No sandbox here (the test's availability): a user hook would run unsandboxed.
+    const allowed = await setup({ orgPolicies: [], user: { PreToolUse: [{ command: "exit 2" }] } })
+    expect(message(await allowed.before("read"))).toContain("Blocked by a PreToolUse hook")
+    const required = await setup({ orgPolicies: [requireSandbox], user: { PreToolUse: [{ command: "exit 2" }] } })
+    expect(message(await required.before("read"))).toContain("denied by policy (sandbox_off)")
+    // A global escape (sandbox: false) is refused the same way.
+    const escape = await setup({ orgPolicies: [requireSandbox], user: { PostToolUse: [{ command: "echo ran", sandbox: false }] } })
+    expect(await escape.after("edit")).toBe("done")
+  })
+
+  test("project hooks lose credential-looking variables; the user's own keep them", async () => {
+    const h = await setup({
+      kete: { hooks: { unsandboxed: true } },
+      env: { GITHUB_TOKEN: "ghp_secret", AWS_SECRET_ACCESS_KEY: "aws", SOME_SETTING: "kept" },
+      user: { PostToolUse: [{ command: `env > "${"$"}KETE_PROJECT_DIR/user-env.txt"` }] },
+      project: { PostToolUse: [{ command: `env > "${"$"}KETE_PROJECT_DIR/project-env.txt"`, network: true }] },
+    })
+    await h.after("edit")
+    const project = await fs.readFile(h.file("project-env.txt"), "utf8")
+    expect(project).not.toContain("ghp_secret")
+    expect(project).not.toContain("AWS_SECRET_ACCESS_KEY")
+    expect(project).toContain("SOME_SETTING=kept")
+    const user = await fs.readFile(h.file("user-env.txt"), "utf8")
+    expect(user).toContain("GITHUB_TOKEN=ghp_secret")
+    expect(user).not.toContain("secret-key")
+  })
 
   test("a policy denying hooks turns them off", async () => {
     const h = await setup({

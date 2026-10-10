@@ -53,12 +53,14 @@ import { Environment } from "../environment/index.js"
 import { Form } from "../form.js"
 import { Location } from "../location.js"
 import { ManagedPolicy } from "../managed-policy.js"
+import { Permission } from "../permission.js"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
 import { KeteHooksRun } from "./hooks/run.js"
 import { KeteHooksSettings } from "./hooks/settings.js"
 import { KeteHooksTrust } from "./hooks/trust.js"
 import { KeteSandbox } from "./sandbox.js"
+import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteSandboxResolve } from "./sandbox/resolve.js"
 import { KeteBubblewrap } from "./sandbox/bubblewrap.js"
 import { KeteSeatbelt } from "./sandbox/seatbelt.js"
@@ -94,9 +96,9 @@ export function trustDescription(
         `- ${entry.event}${entry.match ? ` (${JSON.stringify(entry.match)})` : ""}${entry.network ? " [network]" : ""}: ${JSON.stringify(entry.command)}`,
     )
   const referenced = files.length
-    ? `\n\nFiles in the repository they run (their current contents are part of what you trust):\n${files.map((file) => `- ${JSON.stringify(file.path)} (sha256 ${file.sha256.slice(0, 12)})`).join("\n")}`
+    ? `\n\nFiles in the repository they name (their current contents are part of what you trust):\n${files.map((file) => `- ${JSON.stringify(file.path)} (sha256 ${file.sha256.slice(0, 12)})`).join("\n")}`
     : ""
-  return `This repository's configuration (${JSON.stringify(repository)}) runs these commands during sessions — in the OS sandbox, with network only where marked, unless your global config lets project hooks run without it:\n\n${lines.join("\n")}${referenced}\n\nRun them? You'll be asked again if they or those files change.`
+  return `This repository's configuration (${JSON.stringify(repository)}) runs these commands during sessions — in the OS sandbox, with network only where marked, unless your global config lets project hooks run without it:\n\n${lines.join("\n")}${referenced}\n\nRun them? You'll be asked again if they or the files they name change. That is best effort: files reached any other way (a script's own scripts, npm run targets, paths in variables) aren't tracked — see docs/hooks.md.`
 }
 
 /** Escapes hook output placed in the `<hook>` pseudo-markup. */
@@ -178,13 +180,16 @@ export function make(deps: Deps = {}) {
       const managed = yield* ManagedPolicy.Service
       const forms = Option.getOrUndefined(yield* Effect.serviceOption(Form.Service))
       const sessions = Option.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      const permission = Option.getOrUndefined(yield* Effect.serviceOption(Permission.Service))
       const trust = KeteHooksTrust.make(global.state)
       const cwd = location.directory
       const repository = location.project.directory ?? location.directory
       const repositoryKey = yield* Effect.promise(() => fs.realpath(repository).catch(() => path.resolve(repository)))
-      const hookEnv = (event: Event): Record<string, string> => {
+      // Project hooks lose every credential-looking variable, as commands in an unattended run do;
+      // the user's own hooks keep everything but Kete's credentials.
+      const hookEnv = (event: Event, source: Entry["source"]): Record<string, string> => {
         const result: Record<string, string> = {}
-        for (const [name, value] of Object.entries(KeteToolEnv.withoutKeteCredentials(env)))
+        for (const [name, value] of Object.entries(KeteToolEnv.filter(env, { unattended: source === "project" })))
           if (value !== undefined) result[name] = value
         result.KETE_HOOK_EVENT = event
         result.KETE_PROJECT_DIR = cwd
@@ -256,8 +261,24 @@ export function make(deps: Deps = {}) {
       })
       const availability = deps.availability ?? (() => Effect.runPromise(KeteSandbox.availability))
 
+      const offAllowed = (sessionID: string, resource: string, reason: "disabled" | "unavailable") =>
+        permission
+          ? permission
+              .assert({
+                action: KeteSandboxActions.off,
+                resources: [resource],
+                save: [],
+                metadata: { command: resource, reason, kind: "hook" },
+                sessionID: sessionID as SessionSchema.ID,
+              })
+              .pipe(
+                Effect.as(true),
+                Effect.catchCause(() => Effect.succeed(false)),
+              )
+          : Effect.succeed(true)
+
       /** Where each hook runs, and the sandbox wrapper for those that run sandboxed. */
-      const place = Effect.fnUntraced(function* (entries: ReadonlyArray<ConfigEntry>, entry: Entry) {
+      const place = Effect.fnUntraced(function* (entries: ReadonlyArray<ConfigEntry>, entry: Entry, sessionID: string) {
         const settings = KeteSandbox.settingsFrom(entries, global.config, env)
         const available = yield* Effect.promise(() => availability())
         const documents = entries.flatMap((item) => (item.type === "document" ? [{ path: item.path, hooks: item.info.kete?.hooks }] : []))
@@ -272,6 +293,19 @@ export function make(deps: Deps = {}) {
           projectOptIn: KeteHooksSettings.unsandboxedOptIn(documents, global.config),
           policyDeniesSandboxOff: KeteHooksSettings.sandboxOffDenied(yield* policies(entries)),
         })
+        if (placement.kind === "unsandboxed") {
+          // Every unsandboxed run passes the `sandbox_off` permission check, like an unsandboxed shell
+          // command: organization policies (synced rules `{"action":"sandbox_off",…}` and
+          // `{"action":"permission","resource":"sandbox_off:*"}` statements) and agent rules can refuse it.
+          // The reason makes it a check that never asks a person.
+          const reason = settings.mode === "off" || available.available ? "disabled" : "unavailable"
+          const allowed = yield* offAllowed(sessionID, `hook: ${entry.command}`, reason)
+          if (!allowed)
+            return {
+              placement: { kind: "refused", reason: "running it outside the OS sandbox is denied by policy (sandbox_off)" } as KeteHooksSettings.Placement,
+              sandbox: undefined,
+            }
+        }
         if (placement.kind !== "sandboxed" || !available.available) return { placement, sandbox: undefined }
         const network = placement.network
         const sandbox: KeteHooksRun.Sandbox = async (input) => {
@@ -317,7 +351,7 @@ export function make(deps: Deps = {}) {
         // anyone is asked to trust them.
         const project: Entry[] = []
         for (const entry of relevant.filter((item) => item.source === "project")) {
-          const where = yield* place(entries, entry)
+          const where = yield* place(entries, entry, sessionID)
           if (where.placement.kind !== "refused") project.push(entry)
           else
             yield* warnOnce(`project refused ${where.placement.reason}`, "project hooks skipped", {
@@ -369,7 +403,7 @@ export function make(deps: Deps = {}) {
         const { entries, selected } = yield* select(event, sessionID, tool)
         const outcomes: Array<{ entry: Entry; outcome: KeteHooksRun.Outcome }> = []
         for (const entry of selected) {
-          const where = yield* place(entries, entry)
+          const where = yield* place(entries, entry, sessionID)
           const outcome: KeteHooksRun.Outcome =
             where.placement.kind === "refused"
               ? { kind: "error", message: `not run: ${where.placement.reason}` }
@@ -377,7 +411,7 @@ export function make(deps: Deps = {}) {
                   spawner: environment.spawner,
                   command: entry.command,
                   cwd,
-                  env: hookEnv(event),
+                  env: hookEnv(event, entry.source),
                   payload: { event, session_id: sessionID, cwd, ...payload },
                   timeout: entry.timeout,
                   ...(where.sandbox ? { sandbox: where.sandbox } : {}),
