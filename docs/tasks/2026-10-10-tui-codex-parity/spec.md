@@ -2,6 +2,8 @@
 
 - Task: `docs/tasks/2026-10-10-tui-codex-parity` · Size: large · Created: 2026-10-10
 - Status: approved (maintainer, 2026-10-10: all six phases; D1 (a), D2 (a), D3 (a))
+- Part of `docs/parity-plan.md` (P1 = A1, which is also Wave 1b's status line: build once; P2 = A6,
+  P3 = A7, P4 = C1, P5 = C2, P6 = C3).
 - Depends on: PR #33 (`fix/tui-brand`: brand violet, wordmark, animated logo, prompt at the bottom of
   home, outlined prompt). Build after it merges.
 
