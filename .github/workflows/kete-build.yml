@@ -118,6 +118,7 @@ jobs:
           suite server test/kete "bun test test/kete"
           suite tui test/kete "bun test test/kete"
           suite cli test/kete "bun test test/kete"
+          suite script test/kete "bun test test/kete"
           suite kete-tools test "bun test"
           suite kete-vscode test "bun test"
           # Run mode drives kete from source here; kete-harness-plugin.yml uses the built binary.
