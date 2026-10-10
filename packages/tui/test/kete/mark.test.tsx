@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import { MARK_PIXELS, markCells, markLines } from "../../src/kete/mark"
+import { MARK_PIXELS, WORDMARK, WORDMARK_WIDTH, markCells, markLines, wordmarkCells } from "../../src/kete/mark"
 
 test("the mark keeps the brand mark's half-turn symmetry", () => {
   const rotated = [...MARK_PIXELS].reverse().map((row) => Array.from(row).reverse().join(""))
@@ -31,5 +31,23 @@ test("the mark is five lines tall and draws exactly these glyphs", () => {
     "▄ ██▄▀▀▄▄",
     "▀ ██▀▀▀▀▀",
     "  ▀▀ ▀▀  ",
+  ])
+})
+
+test("the wordmark reads Kete Code: two words of equal width in four lines", () => {
+  expect(WORDMARK.kete).toHaveLength(4)
+  expect(WORDMARK.code).toHaveLength(4)
+  for (const line of [...WORDMARK.kete, ...WORDMARK.code]) {
+    expect(Array.from(line)).toHaveLength(19)
+    expect(line).toMatch(/^[ █▀▄_^]+$/)
+  }
+  expect(WORDMARK_WIDTH).toBe(40)
+})
+
+test("wordmark shade codes become shaded cells", () => {
+  expect(wordmarkCells("█_^")).toEqual([
+    { char: "█", shaded: false },
+    { char: " ", shaded: true },
+    { char: "▀", shaded: true },
   ])
 })

@@ -1,8 +1,9 @@
-import { RGBA } from "@opentui/core"
+import { RGBA, TextAttributes } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { For, Show, type JSX } from "solid-js"
 import { Logo } from "../component/logo"
 import { useTheme } from "../context/theme"
+import { tint } from "../theme/color"
 
 /**
  * The Kete mark (assets/brand/kete-logo-512.png, packages/app/src/kete/mark.tsx) as terminal pixel
@@ -70,15 +71,83 @@ export function KeteMark(): JSX.Element {
   )
 }
 
-/** Upstream's wordmark with the mark beside it when the terminal is wide and tall enough. */
-export function KeteLogo(): JSX.Element {
-  const dimensions = useTerminalDimensions()
+/**
+ * "Kete Code" in block letters, in the style of upstream's wordmark (tui/src/logo.ts) and with two
+ * of its cell codes: "_" a shaded space, "^" an upper half block on shade. As in the web UI's wordmark (app/src/kete/wordmark.tsx), "Kete" is in the
+ * text colour and "Code" a step fainter.
+ */
+export const WORDMARK = {
+  kete: ["▄  ▄               ", "█ ▄▀ █▀▀█ ▄█▄▄ █▀▀█", "█▀▄  █^^^  █   █^^^", "▀  ▀ ▀▀▀▀  ▀▀▀ ▀▀▀▀"],
+  code: ["▄▄▄▄         ▄     ", "█    █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
+} as const
+
+/** Columns the wordmark needs: both words and the two-column space between them. */
+export const WORDMARK_WIDTH = WORDMARK.kete[0].length + 2 + WORDMARK.code[0].length
+
+export type WordmarkCell = { char: string; shaded: boolean }
+
+/** One wordmark line as cells: the glyph to draw and where the shade colour goes. */
+export function wordmarkCells(line: string): WordmarkCell[] {
+  return Array.from(line).map((char) => {
+    if (char === "_") return { char: " ", shaded: true }
+    if (char === "^") return { char: "▀", shaded: true }
+    return { char, shaded: false }
+  })
+}
+
+export type WordmarkColors = { text: RGBA; muted: RGBA; background: RGBA }
+
+export function KeteWordmark(props: WordmarkColors): JSX.Element {
+  const word = (line: string, fg: RGBA, bold: boolean) => {
+    const shadow = tint(props.background, fg, 0.25)
+    const attributes = bold ? TextAttributes.BOLD : undefined
+    return (
+      <box flexDirection="row">
+        <For each={wordmarkCells(line)}>
+          {(cell) => (
+            <text fg={fg} bg={cell.shaded ? shadow : undefined} attributes={attributes} selectable={false}>
+              {cell.char}
+            </text>
+          )}
+        </For>
+      </box>
+    )
+  }
   return (
-    <box flexDirection="row" gap={3} alignItems="flex-end">
-      <Show when={dimensions().width >= 56 && dimensions().height >= 12}>
-        <KeteMark />
-      </Show>
-      <Logo />
+    <box>
+      <For each={WORDMARK.kete}>
+        {(line, index) => (
+          <box flexDirection="row" gap={2}>
+            {word(line, props.text, true)}
+            {word(WORDMARK.code[index()]!, props.muted, false)}
+          </box>
+        )}
+      </For>
     </box>
+  )
+}
+
+/**
+ * What the home screen's logo shows at a terminal size: the mark beside the "Kete Code" wordmark
+ * when both fit, the wordmark alone when it fits, and upstream's compact logos otherwise.
+ */
+export function logoLayout(width: number, height: number): "mark" | "wordmark" | "compact" {
+  if (height < 12 || width < WORDMARK_WIDTH + 4) return "compact"
+  return width >= WORDMARK_WIDTH + 16 ? "mark" : "wordmark"
+}
+
+export function KeteLogo(): JSX.Element {
+  const theme = useTheme()
+  const dimensions = useTerminalDimensions()
+  const layout = () => logoLayout(dimensions().width, dimensions().height)
+  return (
+    <Show when={layout() !== "compact"} fallback={<Logo />}>
+      <box flexDirection="row" gap={3} alignItems="flex-end">
+        <Show when={layout() === "mark"}>
+          <KeteMark />
+        </Show>
+        <KeteWordmark text={theme.text.base} muted={theme.text.muted} background={theme.background.base} />
+      </box>
+    </Show>
   )
 }

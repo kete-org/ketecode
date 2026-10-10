@@ -3,9 +3,10 @@
 // "opencode" stays an alias so existing configs and saved settings keep working.
 //
 // Its colours come from ./theme.json, not upstream's assets/v2/opencode.json: the same document with
-// Kete Code's brand colour, violet #7C3AED, as the primary. It adds a violet hue scale and makes it
-// the interactive hue in both modes; dark mode's accent moves from purple to blue so the two stay
-// apart. Regenerate it from upstream's asset after an upstream sync changes that file.
+// Kete Code's brand colour as the primary: violet #6E47F5 on light backgrounds and its lighter tint
+// #A38CFA on dark ones (step 200 of each mode's violet scale), as in the web UI's theme
+// (ui/src/theme/kete/theme.ts). It adds a violet hue scale and makes it the interactive hue in both
+// modes; dark mode's accent moves from purple to blue so the two stay apart. Regenerate it from upstream's asset after an upstream sync changes that file.
 
 export const defaultTheme = "kete"
 export const legacyDefault = "opencode"

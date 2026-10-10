@@ -306,16 +306,16 @@ only the server's own origin and origins passed with `--cors`; run the web UI's 
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `util/src/kete/brand.ts`               | `urls.website` (undefined until Kete Code has a site) and `attribution` (the values sent to providers)    |
 | `util/src/kete/wordmark.ts`            | The Kete Code logo (the mark beside the name) as a self-contained SVG; its bars equal `app/src/kete/mark.tsx`'s `MARK_RECTS` (`core/test/kete/oauth-page.test.ts`) |
-| `tui/src/kete/mark.tsx`                | The mark as half-block pixel art (`KeteMark`) and `KeteLogo`: the mark beside upstream's wordmark when the terminal is at least 56×12 |
+| `tui/src/kete/mark.tsx`                | The mark as half-block pixel art (`KeteMark`), the "Kete Code" block wordmark (`KeteWordmark`) and `KeteLogo`: mark and wordmark at ≥ 56×12, the wordmark alone at ≥ 44 columns, upstream's compact `Logo` below that |
 | `core/src/kete/attribution.ts`         | Replaces upstream's OpenCode attribution header values with Kete Code's (below)                           |
-| `tui/src/kete/theme.ts`, `theme.json`  | The default theme is `kete`; `opencode` is an alias. `theme.json` is upstream's `assets/v2/opencode.json` with violet #7C3AED as the interactive hue; regenerate it when an upstream sync changes that asset |
+| `tui/src/kete/theme.ts`, `theme.json`  | The default theme is `kete`; `opencode` is an alias. `theme.json` is upstream's `assets/v2/opencode.json` with the brand violet as the interactive hue (#6E47F5 light, #A38CFA dark); regenerate it when an upstream sync changes that asset |
 
 **Upstream source edits**
 
 | File                                                        | Change                                                                                                 |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `core/src/oauth/page.ts`                                    | Renders the Kete logo; OpenCode's unused SVG wordmark removed. The card's top edge uses `--oc-brand`, Kete Code's violet (#6E47F5 light, #A38CFA dark); the logo's name and ink bars use the strong text colour |
-| `tui/src/routes/home.tsx`                                   | One import line: the home screen's `Logo` is `KeteLogo` (`tui/src/kete/mark.tsx`), which wraps upstream's `Logo` |
+| `tui/src/routes/home.tsx`                                   | One import line: the home screen's `Logo` is `KeteLogo` (`tui/src/kete/mark.tsx`), which falls back to upstream's `Logo` on narrow terminals |
 | `core/src/plugin/internal.ts`                               | Registers `KeteAttribution.Plugin` after the provider plugins (next to `KeteGateway`)                 |
 | `tui/src/theme/index.ts`                                    | Registers the default theme under `kete` as well as `opencode`, loading its colours from `kete/theme.json` |
 | `tui/src/context/theme.tsx`, `tui/src/mini/theme.ts`, `tui/src/component/dialog-config.tsx` | Default and fallback `kete`; a configured or saved `opencode` maps to `kete` (unless a custom theme is named `opencode`) |
