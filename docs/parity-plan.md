@@ -48,6 +48,7 @@ Goal: nobody moving from Claude Code or Codex misses a basic.
 | A6 | **Prompt history search** (Ctrl+R; rename moves to `<leader>r`) | Codex | approved (spec P2) | S | prompt |
 | A7 | **New-session notices and tips**, sharing one notice list with the VS Code panel | Codex + panel | approved (spec P3) | S | none (slot) |
 | A8 | **Terminal setup helper** (Shift+Enter newline per terminal) *new* | Claude Code | *new* | S | none |
+| A9 | **`kete skill` commands**: `add <source>` (git repo, optionally a subfolder or tag; local path; org marketplace skill), `list`, `remove`, `update`; project `.kete/skills/` by default, `--global`. Shows the skill's files and scripts and asks before installing; pins the exact commit in a lockfile so `update` shows what changed; reuses the sync writer's hash checks and executable-bit stripping; runs nothing at install; org policy can limit sources; synced org skills can't be overwritten | Claude Code + Codex | *new* (approved 2026-10-10) | S–M | none |
 
 ### Milestone B — Context and trust (*new*, "Wave 1c")
 Goal: lead on context efficiency and safe autonomy, the any-model advantage.
@@ -85,7 +86,7 @@ Goal: lead on context efficiency and safe autonomy, the any-model advantage.
 | E1 | SSO/SCIM | Claude Code | deferred by maintainer (2026-10-10) | L |
 | E2 | Proxy and custom CA verified end to end | Claude Code | planned (3) | S |
 | E3 | **Local managed-settings file** that users can't override, for offline and self-hosted machines; most restrictive wins with platform policy | Claude Code | *new* | M |
-| E4 | **Plugin bundles and marketplace install** in the CLI (commands, agents, skills, hooks, MCP), installing from the platform's marketplace and MCP registry | Claude Code | *new* | L |
+| E4 | **Plugin bundles and marketplace browsing** in the CLI (commands, agents, hooks, MCP together), installing from the platform's marketplace and MCP registry; single skills install earlier through A9 | Claude Code | *new* | L |
 
 ### Milestone F — Reach (Wave 4)
 | # | Item | Source | Status | Size |
