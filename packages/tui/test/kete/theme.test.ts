@@ -43,4 +43,11 @@ describe("the kete theme uses the current brand violet", () => {
     expect(theme.dark.hue.violet["200"]).toBe("#a38cfa")
     expect(JSON.stringify(theme)).not.toMatch(/7c3aed/i)
   })
+
+  test("the first agent's colour, and the prompt's bar, is the brand violet in both modes", async () => {
+    const theme = (await import("../../src/kete/theme.json")).default
+    expect(theme.base.categorical[0]).toBe("violet")
+    expect(theme.light.categorical[0]).toBe("violet")
+    expect(theme.dark.hue.accent).not.toBe("$hue.blue")
+  })
 })

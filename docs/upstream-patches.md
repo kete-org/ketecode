@@ -308,7 +308,7 @@ only the server's own origin and origins passed with `--cors`; run the web UI's 
 | `util/src/kete/wordmark.ts`            | The Kete Code logo (the mark beside the name) as a self-contained SVG; its bars equal `app/src/kete/mark.tsx`'s `MARK_RECTS` (`core/test/kete/oauth-page.test.ts`) |
 | `tui/src/kete/mark.tsx`                | The mark as half-block pixel art (`KeteMark`), the "Kete Code" block wordmark (`KeteWordmark`) and `KeteLogo`: mark and wordmark at ≥ 56×12, the wordmark alone at ≥ 44 columns, upstream's compact `Logo` below that |
 | `core/src/kete/attribution.ts`         | Replaces upstream's OpenCode attribution header values with Kete Code's (below)                           |
-| `tui/src/kete/theme.ts`, `theme.json`  | The default theme is `kete`; `opencode` is an alias. `theme.json` is upstream's `assets/v2/opencode.json` with the brand violet as the interactive hue (#6E47F5 light, #A38CFA dark); regenerate it when an upstream sync changes that asset |
+| `tui/src/kete/theme.ts`, `theme.json`  | The default theme is `kete`; `opencode` is an alias. `theme.json` is upstream's `assets/v2/opencode.json` with the brand violet as the interactive hue and first categorical hue (#6E47F5 light, #A38CFA dark; dark accent purple, not blue); regenerate it when an upstream sync changes that asset |
 
 **Upstream source edits**
 

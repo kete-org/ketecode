@@ -2,8 +2,8 @@
   "$schema": "https://opencode.ai/theme.json",
   "base": {
     "categorical": [
+      "violet",
       "blue",
-      "purple",
       "green",
       "orange",
       "red"
@@ -253,7 +253,7 @@
       }
     },
     "categorical": [
-      "purple",
+      "violet",
       "orange",
       "green",
       "blue",
@@ -392,7 +392,7 @@
         "800": "#271640",
         "900": "#17072b"
       },
-      "accent": "$hue.blue",
+      "accent": "$hue.purple",
       "interactive": "$hue.violet",
       "neutral": "$hue.gray",
       "violet": {
