@@ -207,8 +207,8 @@ function page(status: number, title: string, body: string) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escape(title)} · ${escape(Brand.displayName)}</title>
 <style>
-:root { color-scheme: light dark; --bg: #f7f5f2; --fg: #1c1a17; --muted: #6b655c; --card: #fff; --line: #e4dfd7; --brand: #7c3aed; }
-@media (prefers-color-scheme: dark) { :root { --bg: #141311; --fg: #f1ede6; --muted: #a39c91; --card: #1d1b18; --line: #2e2b27; --brand: #a78bfa; } }
+:root { color-scheme: light dark; --bg: #f7f5f2; --fg: #1c1a17; --muted: #6b655c; --card: #fff; --line: #e4dfd7; --brand: #6e47f5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #141311; --fg: #f1ede6; --muted: #a39c91; --card: #1d1b18; --line: #2e2b27; --brand: #a38cfa; } }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 26rem; margin: 1rem; padding: 2rem; background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--brand); border-radius: 12px; }

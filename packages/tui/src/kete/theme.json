@@ -2,8 +2,8 @@
   "$schema": "https://opencode.ai/theme.json",
   "base": {
     "categorical": [
+      "violet",
       "blue",
-      "purple",
       "green",
       "orange",
       "red"
@@ -241,19 +241,19 @@
       "interactive": "$hue.violet",
       "neutral": "$hue.gray",
       "violet": {
-        "100": "#6d28d9",
-        "200": "#7c3aed",
-        "300": "#8b5cf6",
-        "400": "#a78bfa",
-        "500": "#c4b5fd",
-        "600": "#ddd6fe",
-        "700": "#ede9fe",
+        "100": "#5a35d6",
+        "200": "#6e47f5",
+        "300": "#8466f7",
+        "400": "#a38cfa",
+        "500": "#c2b3fc",
+        "600": "#dbd1fd",
+        "700": "#ebe5fe",
         "800": "#f3f0ff",
         "900": "#faf8ff"
       }
     },
     "categorical": [
-      "purple",
+      "violet",
       "orange",
       "green",
       "blue",
@@ -392,19 +392,19 @@
         "800": "#271640",
         "900": "#17072b"
       },
-      "accent": "$hue.blue",
+      "accent": "$hue.purple",
       "interactive": "$hue.violet",
       "neutral": "$hue.gray",
       "violet": {
-        "100": "#c4b5fd",
-        "200": "#a78bfa",
-        "300": "#8b5cf6",
-        "400": "#7c3aed",
-        "500": "#6d28d9",
-        "600": "#5b21b6",
-        "700": "#4c1d95",
-        "800": "#2e1065",
-        "900": "#1a0840"
+        "100": "#c2b3fc",
+        "200": "#a38cfa",
+        "300": "#8466f7",
+        "400": "#6e47f5",
+        "500": "#5a35d6",
+        "600": "#4a2bb3",
+        "700": "#3a2290",
+        "800": "#23145a",
+        "900": "#150b38"
       }
     }
   }

@@ -222,9 +222,9 @@ describe("loopback callback", () => {
     expect(real.status).toBe(200)
     const page = await real.text()
     expect(page).toContain("Kete Code")
-    // Kete Code's violet: #7C3AED on light backgrounds, its tint on dark ones.
-    expect(page).toContain("--brand: #7c3aed;")
-    expect(page).toContain("--brand: #a78bfa;")
+    // Kete Code's violet: #6E47F5 on light backgrounds, its tint #A38CFA on dark ones.
+    expect(page).toContain("--brand: #6e47f5;")
+    expect(page).toContain("--brand: #a38cfa;")
     expect(real.headers.get("referrer-policy")).toBe("no-referrer")
     expect(await callback.code).toBe("good")
   })
