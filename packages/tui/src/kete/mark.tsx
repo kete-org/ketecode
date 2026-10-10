@@ -1,7 +1,8 @@
 import { RGBA, TextAttributes } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
-import { For, Show, type JSX } from "solid-js"
+import { createEffect, createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { Logo } from "../component/logo"
+import { useConfig } from "../config"
 import { useTheme } from "../context/theme"
 import { tint } from "../theme/color"
 
@@ -49,17 +50,27 @@ export function markLines(): MarkCell[][] {
   return lines
 }
 
-export function KeteMark(): JSX.Element {
+export function KeteMark(props: { glow?: Glow }): JSX.Element {
   const theme = useTheme()
-  const color = (pixel: "K" | "P" | undefined) => (pixel === "K" ? theme.text.base : pixel === "P" ? BRAND : undefined)
+  // Ink bars light up in the brand colour as the sweep passes; brand bars in the text colour.
+  const color = (pixel: "K" | "P" | undefined, column: number, row: number) => {
+    if (!pixel) return undefined
+    const base = pixel === "K" ? theme.text.base : BRAND
+    const level = props.glow?.(column, row) ?? 0
+    return level > 0 ? tint(base, pixel === "K" ? BRAND : theme.text.base, level) : base
+  }
   return (
     <box>
       <For each={markLines()}>
-        {(line) => (
+        {(line, row) => (
           <box flexDirection="row">
             <For each={line}>
-              {(cell) => (
-                <text fg={color(cell.fg)} bg={color(cell.bg)} selectable={false}>
+              {(cell, column) => (
+                <text
+                  fg={color(cell.fg, column(), row())}
+                  bg={color(cell.bg, column(), row())}
+                  selectable={false}
+                >
                   {cell.char}
                 </text>
               )}
@@ -95,17 +106,24 @@ export function wordmarkCells(line: string): WordmarkCell[] {
   })
 }
 
-export type WordmarkColors = { text: RGBA; muted: RGBA; background: RGBA }
+export type WordmarkColors = { text: RGBA; muted: RGBA; background: RGBA; highlight?: RGBA }
 
-export function KeteWordmark(props: WordmarkColors): JSX.Element {
-  const word = (line: string, fg: RGBA, bold: boolean) => {
+/** How lit a cell is (0 to 1) at a column and line of the wordmark. */
+export type Glow = (column: number, row: number) => number
+
+export function KeteWordmark(props: WordmarkColors & { glow?: Glow }): JSX.Element {
+  const word = (line: string, row: number, offset: number, fg: RGBA, bold: boolean) => {
     const shadow = tint(props.background, fg, 0.25)
     const attributes = bold ? TextAttributes.BOLD : undefined
+    const lit = (column: number) => {
+      const level = props.glow?.(offset + column, row) ?? 0
+      return level > 0 && props.highlight ? tint(fg, props.highlight, level) : fg
+    }
     return (
       <box flexDirection="row">
         <For each={wordmarkCells(line)}>
-          {(cell) => (
-            <text fg={fg} bg={cell.shaded ? shadow : undefined} attributes={attributes} selectable={false}>
+          {(cell, column) => (
+            <text fg={lit(column())} bg={cell.shaded ? shadow : undefined} attributes={attributes} selectable={false}>
               {cell.char}
             </text>
           )}
@@ -113,18 +131,61 @@ export function KeteWordmark(props: WordmarkColors): JSX.Element {
       </box>
     )
   }
+  const code = WORDMARK.kete[0].length + 2
   return (
     <box>
       <For each={WORDMARK.kete}>
         {(line, index) => (
           <box flexDirection="row" gap={2}>
-            {word(line, props.text, true)}
-            {word(WORDMARK.code[index()]!, props.muted, false)}
+            {word(line, index(), 0, props.text, true)}
+            {word(WORDMARK.code[index()]!, index(), code, props.muted, false)}
           </box>
         )}
       </For>
     </box>
   )
+}
+
+/**
+ * The logo's animation: a soft diagonal band of light sweeps across the mark and the wordmark, a
+ * moment after the home screen opens and then every few seconds. Between sweeps nothing runs.
+ */
+export const SWEEP = { delay: 400, duration: 1400, pause: 6000, frame: 33, width: 7 } as const
+
+/** How lit the cell at a column and line of the whole logo is while the sweep is at `progress` (0 to 1). */
+export function sweepLevel(column: number, row: number, progress: number, span: number): number {
+  const center = -SWEEP.width + progress * (span + 2 * SWEEP.width)
+  const distance = Math.abs(column + row - center)
+  if (distance >= SWEEP.width) return 0
+  const x = 1 - distance / SWEEP.width
+  return x * x * (3 - 2 * x)
+}
+
+/** The sweep's progress (0 to 1) while it runs, undefined between sweeps and when animations are off. */
+export function createSweep(enabled: Accessor<boolean>): Accessor<number | undefined> {
+  const [progress, setProgress] = createSignal<number | undefined>()
+  createEffect(() => {
+    if (!enabled()) return setProgress(undefined)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let start = 0
+    const tick = () => {
+      const elapsed = (performance.now() - start) / SWEEP.duration
+      if (elapsed >= 1) {
+        setProgress(undefined)
+        timer = setTimeout(begin, SWEEP.pause)
+        return
+      }
+      setProgress(elapsed)
+      timer = setTimeout(tick, SWEEP.frame)
+    }
+    const begin = () => {
+      start = performance.now()
+      tick()
+    }
+    timer = setTimeout(begin, SWEEP.delay)
+    onCleanup(() => clearTimeout(timer))
+  })
+  return progress
 }
 
 /**
@@ -138,15 +199,32 @@ export function logoLayout(width: number, height: number): "mark" | "wordmark" |
 
 export function KeteLogo(): JSX.Element {
   const theme = useTheme()
+  const config = useConfig().data
   const dimensions = useTerminalDimensions()
   const layout = () => logoLayout(dimensions().width, dimensions().height)
+  const progress = createSweep(() => (config.animations ?? true) && layout() !== "compact")
+  // Columns before the wordmark: the mark (9) and the gap (3) when the mark is shown.
+  const offset = () => (layout() === "mark" ? 12 : 0)
+  const span = () => offset() + WORDMARK_WIDTH + 5
+  const glow =
+    (shift: () => number, line: number): Glow =>
+    (column, row) => {
+      const value = progress()
+      return value === undefined ? 0 : sweepLevel(shift() + column, line + row, value, span())
+    }
   return (
     <Show when={layout() !== "compact"} fallback={<Logo />}>
       <box flexDirection="row" gap={3} alignItems="flex-end">
         <Show when={layout() === "mark"}>
-          <KeteMark />
+          <KeteMark glow={glow(() => 0, 0)} />
         </Show>
-        <KeteWordmark text={theme.text.base} muted={theme.text.muted} background={theme.background.base} />
+        <KeteWordmark
+          text={theme.text.base}
+          muted={theme.text.muted}
+          background={theme.background.base}
+          highlight={theme.text.action.primary.selected}
+          glow={glow(offset, 1)}
+        />
       </box>
     </Show>
   )

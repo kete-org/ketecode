@@ -306,7 +306,7 @@ only the server's own origin and origins passed with `--cors`; run the web UI's 
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `util/src/kete/brand.ts`               | `urls.website` (undefined until Kete Code has a site) and `attribution` (the values sent to providers)    |
 | `util/src/kete/wordmark.ts`            | The Kete Code logo (the mark beside the name) as a self-contained SVG; its bars equal `app/src/kete/mark.tsx`'s `MARK_RECTS` (`core/test/kete/oauth-page.test.ts`) |
-| `tui/src/kete/mark.tsx`                | The mark as half-block pixel art (`KeteMark`), the "Kete Code" block wordmark (`KeteWordmark`) and `KeteLogo`: mark and wordmark at ≥ 56×12, the wordmark alone at ≥ 44 columns, upstream's compact `Logo` below that |
+| `tui/src/kete/mark.tsx`                | The mark as half-block pixel art (`KeteMark`), the "Kete Code" block wordmark (`KeteWordmark`), the logo's light sweep (`createSweep`, `sweepLevel`; off when `animations` is false) and `KeteLogo`: mark and wordmark at ≥ 56×12, the wordmark alone at ≥ 44 columns, upstream's compact `Logo` below that |
 | `core/src/kete/attribution.ts`         | Replaces upstream's OpenCode attribution header values with Kete Code's (below)                           |
 | `tui/src/kete/theme.ts`, `theme.json`  | The default theme is `kete`; `opencode` is an alias. `theme.json` is upstream's `assets/v2/opencode.json` with the brand violet as the interactive hue and first categorical hue (#6E47F5 light, #A38CFA dark; dark accent purple, not blue); regenerate it when an upstream sync changes that asset |
 
@@ -315,7 +315,7 @@ only the server's own origin and origins passed with `--cors`; run the web UI's 
 | File                                                        | Change                                                                                                 |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `core/src/oauth/page.ts`                                    | Renders the Kete logo; OpenCode's unused SVG wordmark removed. The card's top edge uses `--oc-brand`, Kete Code's violet (#6E47F5 light, #A38CFA dark); the logo's name and ink bars use the strong text colour |
-| `tui/src/routes/home.tsx`                                   | One import line: the home screen's `Logo` is `KeteLogo` (`tui/src/kete/mark.tsx`), which falls back to upstream's `Logo` on narrow terminals |
+| `tui/src/routes/home.tsx`                                   | The home screen's `Logo` is `KeteLogo` (`tui/src/kete/mark.tsx`), which falls back to upstream's `Logo` on narrow terminals (one import line); the flexible spacer below the prompt moves above it, so the prompt sits at the bottom as on the session screen |
 | `core/src/plugin/internal.ts`                               | Registers `KeteAttribution.Plugin` after the provider plugins (next to `KeteGateway`)                 |
 | `tui/src/theme/index.ts`                                    | Registers the default theme under `kete` as well as `opencode`, loading its colours from `kete/theme.json` |
 | `tui/src/context/theme.tsx`, `tui/src/mini/theme.ts`, `tui/src/component/dialog-config.tsx` | Default and fallback `kete`; a configured or saved `opencode` maps to `kete` (unless a custom theme is named `opencode`) |
@@ -449,7 +449,7 @@ unattended families keep their own policy. User guide: `docs/permissions.md`.
 | `tui/src/context/args.tsx`                   | `Args.permissionMode`                                                                                                    |
 | `tui/src/app.tsx`                            | Calls `useKetePermissionModeCommands()` (cycle command, `/mode`, resumed-session mode)                                  |
 | `tui/src/config/keybind.ts`                  | `permission.mode.cycle` bound to `<leader>p`                                                                             |
-| `tui/src/component/prompt/index.tsx`         | New sessions are created with the mode's metadata; the status row gets the mode                                         |
+| `tui/src/component/prompt/index.tsx`         | New sessions are created with the mode's metadata; the status row gets the mode. The prompt has a full rounded outline in the agent's colour instead of upstream's left bar and half-block cap (the placeholder is one column narrower for the right edge)                                         |
 | `tui/src/component/prompt/metadata.tsx`      | Shows the session's permission mode (not for Default); the client-side bypass's label is now `auto-accept`              |
 | `core/src/tool/plugin/shell.ts`              | Passes the whole command line as `metadata.command` (the defaults' `cd` check); `save` is empty — no "Always allow" — when a command is high-risk or runs anything (`KeteShellRisk.saveable`) |
 | `core/src/tool/plugin/webfetch.ts`           | `save` is the URL's origin (`kete/web-host.ts`) instead of `*`, so "Always allow" covers one site; fetches with `redirect: "manual"` and follows redirects in `kete/web-redirect.ts`, asking before a hop to another origin |

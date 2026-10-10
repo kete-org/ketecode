@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import { KeteWordmark, logoLayout } from "../../src/kete/mark"
+import { KeteWordmark, SWEEP, createSweep, logoLayout, sweepLevel } from "../../src/kete/mark"
 
 test("the logo shows the mark and wordmark, then the wordmark alone, then upstream's compact logo", () => {
   expect(logoLayout(80, 20)).toBe("mark")
@@ -27,4 +27,26 @@ test("the wordmark renders Kete and Code side by side", async () => {
   } finally {
     app.renderer.destroy()
   }
+})
+
+test("the sweep lights a soft band that crosses the whole logo", () => {
+  const span = 57
+  expect(sweepLevel(0, 0, 0, span)).toBe(0)
+  expect(sweepLevel(span, 0, 1, span)).toBe(0)
+  const middle = span / 2
+  expect(sweepLevel(Math.round(middle), 0, 0.5, span)).toBeCloseTo(1, 1)
+  expect(sweepLevel(Math.round(middle) + SWEEP.width, 0, 0.5, span)).toBe(0)
+  const near = sweepLevel(Math.round(middle) + 2, 0, 0.5, span)
+  expect(near).toBeGreaterThan(0)
+  expect(near).toBeLessThan(1)
+})
+
+test("the sweep does not run when animations are off", async () => {
+  const { createRoot } = await import("solid-js")
+  const progress = createRoot((dispose) => {
+    const value = createSweep(() => false)
+    dispose()
+    return value
+  })
+  expect(progress()).toBeUndefined()
 })

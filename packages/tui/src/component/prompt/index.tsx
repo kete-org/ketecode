@@ -1594,7 +1594,7 @@ export function Prompt(props: PromptProps) {
       return `Ask anything… "${list()[store.placeholder % list().length]}"`
     })()
     if (!value) return undefined
-    const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
+    const width = dimensions().width < 44 ? dimensions().width - 6 : Math.min(75, dimensions().width - 4) - 6 // kete_change: right border
     return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
   })
   const footerLocation = createMemo(() => {
@@ -1650,15 +1650,9 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <box
-          width="100%"
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
-          }}
-        >
+        {/* kete_change start: a full rounded outline in the agent's colour instead of a left bar */}
+        <box width="100%" border borderStyle="rounded" borderColor={borderHighlight()}>
+          {/* kete_change end */}
           <box
             paddingLeft={dimensions().width < 44 ? 1 : 2}
             paddingRight={dimensions().width < 44 ? 1 : 2}
@@ -1847,32 +1841,7 @@ export function Prompt(props: PromptProps) {
             </box>
           </box>
         </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: promptBg().a !== 0 ? "╹" : " ",
-          }}
-        >
-          <box
-            height={1}
-            border={["bottom"]}
-            borderColor={promptBg()}
-            customBorderChars={
-              promptBg().a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
+        {/* kete_change: upstream's half-block cap under the prompt is gone; the outline closes it */}
         <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
           <Slot path="prompt.footer" input={footerInput()}>
             <Slot path="prompt.footer.status" input={footerInput()}>
