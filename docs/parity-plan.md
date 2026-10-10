@@ -49,6 +49,13 @@ Goal: nobody moving from Claude Code or Codex misses a basic.
 | A7 | **New-session notices and tips**, sharing one notice list with the VS Code panel | Codex + panel | approved (spec P3) | S | none (slot) |
 | A8 | **Terminal setup helper** (Shift+Enter newline per terminal) *new* | Claude Code | *new* | S | none |
 | A9 | **`kete skill` commands**: `add <source>` (git repo, optionally a subfolder or tag; local path; org marketplace skill), `list`, `remove`, `update`; project `.kete/skills/` by default, `--global`. Shows the skill's files and scripts and asks before installing; pins the exact commit in a lockfile so `update` shows what changed; reuses the sync writer's hash checks and executable-bit stripping; runs nothing at install; org policy can limit sources; synced org skills can't be overwritten | Claude Code + Codex | *new* (approved 2026-10-10) | S–M | none |
+| A10 | **Folder trust on first run**: the first time `kete` opens in a folder, ask before loading that project's config, hooks, MCP servers, agents and skills (today only project hooks have a trust prompt) | Claude Code | *new* (approved 2026-10-10) | S–M | config loader |
+| A11 | **`/feedback` and `kete bug`**: an issue report with version, OS, config summary and recent logs, all secret-redacted and previewed before sending | Claude Code + Codex | *new* (approved 2026-10-10) | S | none |
+| A12 | **Shell completions**: `kete completion zsh/bash/fish/powershell` | Codex | *new* (approved 2026-10-10) | S | none |
+| A13 | **Extra working directories**: `--add-dir` and `/add-dir` grant a second folder explicitly under the same permission rules; security tests for path traversal and workspace escape | Claude Code | *new* (approved 2026-10-10) | M | permissions |
+| A14 | **What's new after an update**: release notes shown once after an upgrade, and `/release-notes` | Claude Code | *new* (approved 2026-10-10) | S | none |
+| A15 | **One first-run setup flow**: sign in to the Kete gateway, add your own API key, or pick a detected local model, in one screen. Starts with a review of today's pieces (local-model offer, sidebar getting started, `kete auth`, `kete login`) | Claude Code + Codex | *new* (approved 2026-10-10) | S–M | small |
+| A16 | **Fix the local-build crash**: a git branch with `/` in its name becomes the release channel, which the TUI rejects as a storage folder name; replace `/` with `-` in `packages/script/src/index.ts` | — (bug) | *new* (approved 2026-10-10) | S | 1 (build script) |
 
 ### Milestone B — Context and trust (*new*, "Wave 1c")
 Goal: lead on context efficiency and safe autonomy, the any-model advantage.
@@ -101,7 +108,9 @@ One TypeScript agent at a time in the main checkout, so the milestones run in se
 work (A5, D2, E4's marketplace side) runs alongside.
 
 1. Finish in-flight work: Wave 1a follow-ups, PR #33, release 0.2.7.
-2. **Milestone A**, with A1 (status line) first, because A4, B2 and the mode label build on it.
+2. **Milestone A**: A16 (local-build crash) first, since it blocks testing local builds; then A1 (status
+   line), because A4, B2 and the mode label build on it; then A10 (folder trust), a security gap; then
+   the rest.
 3. **B3 and B1** next. Prompt caching is cheap and cuts cost at once; lazy MCP tools is the largest
    context win. Then B2, B4, and the small B items.
 4. **Milestone C**, then **D4/D5**, then Wave 2's larger items (D1–D3).
