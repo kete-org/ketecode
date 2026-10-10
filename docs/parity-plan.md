@@ -3,7 +3,8 @@
 One plan for every known gap against Claude Code and OpenAI's Codex CLI, merged and ordered.
 It extends the competitive program approved on 2026-10-07 (Waves 0–4) with the gaps found on
 2026-10-10: the Codex terminal comparison (`docs/tasks/2026-10-10-tui-codex-parity/spec.md`) and a
-second Claude Code pass. Items marked *new* are not in the original waves.
+second Claude Code pass. Items marked *new* are not in the original waves. Approved by the
+maintainer on 2026-10-10.
 
 Direction: parity on the daily basics; lead on any model, local and self-hosted, context efficiency
 and organization control. Build on OpenCode (CLAUDE.md §4); never copy Claude Code or Codex code or
@@ -105,9 +106,9 @@ work (A5, D2, E4's marketplace side) runs alongside.
 4. **Milestone C**, then **D4/D5**, then Wave 2's larger items (D1–D3).
 5. **E3, E4**, then Wave 4.
 
-Each item gets a task folder under `docs/tasks/` before it is built. Specs that follow the
-recommended options are pre-approved under the 2026-10-07 approval; items marked *new* need the
-maintainer's approval of this plan first.
+Each item gets a task folder under `docs/tasks/` before it is built. The maintainer approved this
+plan, including every item marked *new*, on 2026-10-10. Specs that follow the recommended options
+are pre-approved; ask only on real trade-offs.
 
 ## Not planned
 Voice mode (Codex F8), Codex's agent Command Center (session tabs cover it), browsing Codex cloud
