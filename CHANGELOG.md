@@ -6,6 +6,8 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+## 0.2.7
+
 - **Security:** agent, command and skill markdown files only accept YAML front matter. Front matter in
   another language (such as `---js`) is no longer evaluated, so a repository's `.kete/` files can't run
   code when a folder opens (GHSA-m7hc-g593-r9wg). Update if you open repositories you don't trust.
