@@ -10,7 +10,8 @@
 import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { Effect, Layer } from "effect"
+import { Context, Effect, Layer, Queue, Schema, Stream } from "effect"
+import { Document, Info } from "@opencode/schema/config"
 import { Agent } from "@opencode/core/agent"
 import { Bus } from "@opencode/core/bus"
 import { Config } from "@opencode/core/config"
@@ -22,6 +23,8 @@ import { Watcher } from "@opencode/core/filesystem/watcher"
 import { Form } from "@opencode/core/form"
 import { KeteFolderTrust } from "@opencode/core/kete/folder-trust"
 import { KeteFolderTrustForm } from "@opencode/core/kete/folder-trust/form"
+import { KeteFolderTrustRpcPlugin } from "@opencode/core/kete/folder-trust/rpc"
+import { KeteOffline } from "@opencode/core/kete/offline"
 import { KeteHooksSettings } from "@opencode/core/kete/hooks/settings"
 import { Location } from "@opencode/core/location"
 import { PluginSourceDirectory } from "@opencode/core/plugin/source-directory"
@@ -48,7 +51,7 @@ interface Fixture {
   readonly home: string
 }
 
-function graph(fixture: Fixture, directory = fixture.repo) {
+function graph(fixture: Fixture, directory = fixture.repo, trust = KeteFolderTrust.configured({ env: {}, ppid: 0 })) {
   const locationLayer = Layer.succeed(
     Location.Service,
     Location.Service.of(
@@ -63,7 +66,7 @@ function graph(fixture: Fixture, directory = fixture.repo) {
       Credential.node.replace(emptyCredentialNode),
       WellKnown.node.replace(emptyWellknownNode),
       Watcher.node.replace(Watcher.testLayer),
-      KeteFolderTrust.node.replace(KeteFolderTrust.configured({ env: {}, ppid: 0 })),
+      KeteFolderTrust.node.replace(trust),
     ],
   )
   return Layer.mergeAll(built, Watcher.testLayer)
@@ -167,11 +170,13 @@ describe("folder trust", () => {
         expect(description).toContain(JSON.stringify(MCP))
         expect(description).toContain('plugin code in ".kete/plugins"')
         expect(description).toContain("https://provider.example/v1")
-        expect(description).toContain("kete.hooks")
+        expect(description).toContain(`hook "PreToolUse": runs "echo hook"`)
         // Another load of the same location (a concurrent request, a reload) doesn't ask again.
         const service = yield* KeteFolderTrust.Service
-        const before = yield* entries
-        yield* service.gate(before, { documents: new Set([path.join(fixture.repo, "kete.json")]), directories: new Set() }, new Map())
+        const file = path.join(fixture.repo, "kete.json")
+        const text = yield* Effect.promise(() => fs.readFile(file, "utf8"))
+        const raw = new Document({ type: "document", path: AbsolutePath.make(file), info: Schema.decodeUnknownSync(Info)(JSON.parse(text)) })
+        yield* service.gate(() => Effect.succeed([raw]), { documents: new Set([file]), directories: new Set([path.join(fixture.repo, ".kete")]) }, new Map([[file, text]]))
         yield* Effect.sleep("50 millis")
         expect(yield* trustForms).toHaveLength(1)
       }).pipe(Effect.provide(graph(fixture))),
@@ -322,7 +327,7 @@ describe("folder trust", () => {
         expect(description).toContain("worktree directory:")
         expect(description).toContain('"shell" "*" → allow')
         expect(description).toContain('"edit" "*" → ask')
-        expect(description).toContain('permission rules in agent file ".kete/agents/b.md"')
+        expect(description).toContain('permission (agent file ".kete/agents/b.md"): "shell" "*" → allow')
       }).pipe(
         Effect.provide(graph(fixture)),
         (effect) =>
@@ -401,5 +406,298 @@ describe("folder trust", () => {
 
   it.live("plugin directory names match the runtime's", () =>
     Effect.sync(() => expect([...KeteFolderTrustRules.PLUGIN_DIRECTORIES]).toEqual([...PluginSourceDirectory.names])),
+  )
+
+  // ---------------------------------------------------------------------------------------------
+  // Security review fixes (2026-10-11): one regression test per finding.
+
+  const setup = <A, E, R>(prepare: (fixture: Fixture) => Promise<void>, body: (fixture: Fixture) => Effect.Effect<A, E, R>, trust?: Parameters<typeof graph>[2]) =>
+    withFixture((fixture) =>
+      Effect.promise(() => prepare(fixture)).pipe(
+        Effect.andThen(body(fixture).pipe(Effect.provide(graph(fixture, fixture.repo, trust)))),
+      ),
+    )
+  const formText = Effect.gen(function* () {
+    const [form] = yield* until(trustForms, (forms) => forms.length > 0, "the trust form")
+    const field = form!.fields[0]
+    return {
+      form: form!,
+      description: field?.description ?? "",
+      options: field?.type === "string" ? (field.options ?? []).map((option) => option.value) : [],
+    }
+  })
+  const answer = (form: Effect.Success<typeof formText>["form"], value: "trust" | "later") =>
+    Effect.gen(function* () {
+      yield* (yield* Form.Service).reply({ id: form.id, answer: { [KeteFolderTrustForm.FIELD]: value } })
+    })
+  const withoutFolderTrust = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.updateContext((context: Context.Context<R>) => Context.omit(KeteFolderTrust.Service)(context) as Context.Context<R>))
+  const clean = async (fixture: Fixture) => {
+    await fs.rm(path.join(fixture.repo, ".kete", "plugins"), { recursive: true })
+  }
+
+  it.live("M2: untrusted, {env:}/{file:} stay literal and remote skills and git references are held back; trust substitutes", () => {
+    const variable = "KETE_FOLDER_TRUST_TEST_SECRET"
+    return setup(
+      async (fixture) => {
+        process.env[variable] = "s3cret-value"
+        await clean(fixture)
+        await write(path.join(fixture.repo, "agent.txt"), "from-a-file")
+        await write(path.join(fixture.repo, "kete.json"), {
+          username: `{env:${variable}}`,
+          default_agent: "{file:./agent.txt}",
+          skills: ["https://skills.example/pack", "./local-skills"],
+          references: { remote: "https://git.example/r.git", docs: "./docs" },
+        })
+      },
+      (fixture) =>
+        Effect.gen(function* () {
+          const all = yield* entries
+          expect(Config.latest(all, "username")).toBe(`{env:${variable}}`)
+          expect(Config.latest(all, "default_agent")).toBe("{file:./agent.txt}")
+          expect(Config.latest(all, "skills")).toEqual(["./local-skills"])
+          expect(Object.keys(Config.latest(all, "references") ?? {})).toEqual(["docs"])
+          const { form, description } = yield* formText
+          expect(description).toContain(`reads environment variable "${variable}"`)
+          expect(description).toContain('reads file "./agent.txt"')
+          expect(description).toContain('skills from "https://skills.example/pack"')
+          expect(description).toContain('reference "remote": git "https://git.example/r.git"')
+          expect(description).not.toContain("s3cret-value")
+          yield* answer(form, "trust")
+          const trusted = yield* until(entries, (value) => Config.latest(value, "username") === "s3cret-value", "the reload")
+          expect(Config.latest(trusted, "default_agent")).toBe("from-a-file")
+          expect(Config.latest(trusted, "skills")).toEqual(["https://skills.example/pack", "./local-skills"])
+          expect(Object.keys(Config.latest(trusted, "references") ?? {}).sort()).toEqual(["docs", "remote"])
+        }).pipe(Effect.ensuring(Effect.sync(() => delete process.env[variable]))),
+    )
+  })
+
+  it.live("M1a: the fingerprint covers what a guarded value's {file:} target holds", () =>
+    withFixture((fixture) =>
+      Effect.gen(function* () {
+        const { form } = yield* formText
+        yield* answer(form, "trust")
+        yield* until(entries, (value) => Config.latest(value, "shell") === "/bin/from-file", "the reload")
+      }).pipe(
+        Effect.provide(graph(fixture)),
+        (effect) =>
+          Effect.promise(async () => {
+            await clean(fixture)
+            await write(path.join(fixture.repo, "shell.txt"), "/bin/from-file")
+            await write(path.join(fixture.repo, "kete.json"), { shell: "{file:./shell.txt}" })
+          }).pipe(Effect.andThen(effect)),
+        Effect.andThen(Effect.promise(() => write(path.join(fixture.repo, "shell.txt"), "/bin/other"))),
+        Effect.andThen(
+          Effect.gen(function* () {
+            expect(Config.latest(yield* entries, "shell")).toBeUndefined()
+            yield* until(trustForms, (forms) => forms.length === 1, "a new trust form")
+          }).pipe(Effect.provide(graph(fixture))),
+        ),
+      ),
+    ),
+  )
+
+  it.live("M1b: a document that only parses after substitution can't be trusted, and the question says why", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), '{ "shell": "/bin/sh", "count": {env:KETE_FOLDER_TRUST_TEST_NUMBER} }')
+      },
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "shell")).toBeUndefined()
+          const { description, options } = yield* formText
+          expect(options).toEqual(["later"])
+          expect(description).toContain("can't be read before {env:…}/{file:…} substitution")
+          const status = yield* (yield* KeteFolderTrust.Service).status()
+          expect(status.kind === "untrusted" ? status.refusal : undefined).toContain("substitution")
+        }),
+    ),
+  )
+
+  it.live("M1c: an agent file's rules are decided on the decoded YAML (an escaped allow is held back)", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(
+          path.join(fixture.repo, ".kete", "agents", "e.md"),
+          '---\ndescription: Agent e\npermissions:\n  - action: shell\n    resource: "*"\n    effect: "\\x61llow"\n---\nAgent e.',
+        )
+      },
+      () =>
+        Effect.gen(function* () {
+          const { description } = yield* formText
+          expect(description).toContain('permission (agent file ".kete/agents/e.md"): "shell" "*" → allow')
+          const agents = yield* Agent.Service
+          yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) }))
+          expect((yield* agents.get(Agent.ID.make("e")))?.permissions ?? []).not.toContainEqual({ action: "shell", resource: "*", effect: "allow" })
+        }),
+    ),
+  )
+
+  it.live("M3: the question lists legacy MCP servers next to mcp.servers, a server named timeout, provider package and env", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), {
+          mcp: {
+            servers: { native: { type: "local", command: ["native-server"] } },
+            legacy: { type: "local", command: ["legacy-server"] },
+            timeout: { type: "remote", url: "https://timeout.example/mcp" },
+          },
+          providers: { p: { package: "evil-provider-package", env: ["P_API_KEY"], settings: { baseURL: "https://p.example" } } },
+        })
+      },
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "mcp")).toBeUndefined()
+          const { description } = yield* formText
+          expect(description).toContain('MCP server "native": runs ["native-server"]')
+          expect(description).toContain('MCP server "legacy": runs ["legacy-server"]')
+          expect(description).toContain('MCP server "timeout": connects to "https://timeout.example/mcp"')
+          expect(description).toContain('package "evil-provider-package"')
+          expect(description).toContain('env "P_API_KEY"')
+        }),
+    ),
+  )
+
+  it.live("M4: a project kete object can't mask the machine-level offline or platform settings", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.global, "kete.json"), { kete: { offline: true, platform: { url: "https://platform.example" } } })
+        await write(path.join(fixture.repo, "kete.json"), { kete: { offline: false, budget: { session: 5 } } })
+      },
+      () =>
+        Effect.gen(function* () {
+          const kete = Config.latest(yield* entries, "kete")
+          expect(kete?.budget?.session).toBe(5)
+          expect(kete?.offline).toBe(true)
+          expect(kete?.platform?.url).toBe("https://platform.example")
+          expect(KeteOffline.enabled({}, kete)).toBe(true)
+        }),
+    ),
+  )
+
+  it.live("minor2: job mode trusts only when no project config loaded", () =>
+    setup(
+      async () => {},
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "mcp")).toBeUndefined()
+          expect((yield* (yield* KeteFolderTrust.Service).status()).kind).toBe("untrusted")
+        }),
+      KeteFolderTrust.configured({ env: { OPENCODE_JOB_MODE: "1" }, ppid: 0 }),
+    ),
+  )
+
+  it.live("minor3: without the folder-trust service, project agent files still lose their allow rules", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), { username: "plain" })
+        const rules = '---\ndescription: X\npermissions:\n  - action: shell\n    resource: "*"\n    effect: allow\n  - action: read\n    resource: "*.secret"\n    effect: deny\n---\nX.'
+        await write(path.join(fixture.repo, ".kete", "agents", "p.md"), rules)
+        await write(path.join(fixture.global, "agents", "g.md"), rules)
+      },
+      () =>
+        Effect.gen(function* () {
+          const agents = yield* Agent.Service
+          yield* withoutFolderTrust(ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })))
+          const project = yield* agents.get(Agent.ID.make("p"))
+          expect(project!.permissions).not.toContainEqual({ action: "shell", resource: "*", effect: "allow" })
+          expect(project!.permissions).toContainEqual({ action: "read", resource: "*.secret", effect: "deny" })
+          expect((yield* agents.get(Agent.ID.make("g")))!.permissions).toContainEqual({ action: "shell", resource: "*", effect: "allow" })
+        }),
+    ),
+  )
+
+  it.live("minor4: a project policy allow is held back; its deny applies", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), {
+          experimental: {
+            policies: [
+              { action: "permission", resource: "shell:*", effect: "allow" },
+              { action: "permission", resource: "edit:*", effect: "deny" },
+            ],
+          },
+        })
+      },
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "experimental")?.policies).toEqual([{ action: "permission", resource: "edit:*", effect: "deny" }])
+          expect((yield* formText).description).toContain('policy: "permission" "shell:*" → allow')
+        }),
+    ),
+  )
+
+  it.live("minor5: deny rules in global agent files count as machine-level denies", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.global, "agents", "g.md"), '---\ndescription: G\npermissions:\n  - action: edit\n    resource: "secret/*"\n    effect: deny\n---\nG.')
+        await write(path.join(fixture.repo, "kete.json"), { permissions: [{ action: "edit", resource: "*", effect: "ask" }, { action: "webfetch", resource: "*", effect: "ask" }] })
+      },
+      (fixture) =>
+        Effect.gen(function* () {
+          const project = (yield* entries).flatMap((entry) =>
+            entry.type === "document" && entry.path?.startsWith(fixture.repo) ? (entry.info.permissions ?? []) : [],
+          )
+          expect(project).toEqual([{ action: "webfetch", resource: "*", effect: "ask" }])
+          expect((yield* formText).description).toContain('"edit" "*" → ask')
+        }),
+    ),
+  )
+
+  it.live("minor1: the question escapes control and format characters, and an item cut short can't be trusted", () =>
+    Effect.sync(() => {
+      const sneaky = 'MCP server "x": runs ["a\u202Eb\u200Bc\u009B31m"]'
+      const text = KeteFolderTrustForm.description({ root: "/r\u2066oot", items: [sneaky] })
+      expect(text).not.toMatch(/[\u202E\u200B\u009B\u2066]/)
+      expect(text).toContain("\\u{202E}")
+      expect(text).toContain("\\u{9B}")
+      const options = (input: KeteFolderTrustForm.Input) => {
+        const field = KeteFolderTrustForm.create(input).fields[0]
+        return field?.type === "string" ? field.options?.map((option) => option.value) : undefined
+      }
+      expect(options({ root: "/r", items: [sneaky] })).toEqual(["trust", "later"])
+      expect(options({ root: "/r", items: ["x".repeat(KeteFolderTrustForm.MAX_ITEM + 1)] })).toEqual(["later"])
+      expect(options({ root: "/r", items: Array.from({ length: KeteFolderTrustForm.MAX_ITEMS + 1 }, (_, i) => `item ${i}`) })).toEqual(["later"])
+      expect(KeteFolderTrustForm.trustable({ root: "/r", items: ["x".repeat(KeteFolderTrustForm.MAX_ITEM + 1)] })).toBe(false)
+    }),
+  )
+
+  it.live("C2: the kete.folder.trust RPC says trusted only once the folder is trusted, and announces it", () =>
+    setup(
+      async () => {},
+      () =>
+        Effect.gen(function* () {
+          let handlers: Record<string, (input: unknown) => Effect.Effect<{ trusted: boolean }>> = {}
+          const emitted: unknown[] = []
+          const events = yield* Queue.unbounded<{ type: string; data: unknown }>()
+          yield* KeteFolderTrustRpcPlugin.Plugin.effect(
+            host({
+              rpc: Object.assign(() => Effect.die("unused"), {
+                register: (_definition: unknown, given: typeof handlers) =>
+                  Effect.sync(() => {
+                    handlers = given
+                    return { dispose: Effect.void, events: { emit: (_name: string, data: unknown) => Effect.sync(() => void emitted.push(data)) } }
+                  }),
+              }) as never,
+              event: { subscribe: () => Stream.fromQueue(events) as never },
+            }),
+          )
+          expect(yield* handlers.status!({})).toEqual({ trusted: false })
+          const { form } = yield* formText
+          yield* answer(form, "trust")
+          yield* until(entries, (value) => Config.latest(value, "mcp") !== undefined, "the reload")
+          expect(yield* handlers.status!({})).toEqual({ trusted: true })
+          yield* Queue.offer(events, { type: "config.updated", data: {} })
+          yield* until(Effect.sync(() => emitted), (value) => value.length > 0, "the changed event")
+          expect(emitted).toContainEqual({ trusted: true })
+        }).pipe(Effect.scoped),
+    ),
   )
 })

@@ -109,36 +109,56 @@ export async function discover(directory: string, paths: Paths, fs: KeteFolderTr
 
 export async function inspect(directory: string, paths: Paths, fs: KeteFolderTrustRules.Fs = KeteFolderTrustRules.nodeFs): Promise<Inspection> {
   const found = await discover(directory, paths, fs)
-  const documents: Array<{ path: string; document: unknown }> = []
+  const root = await KeteFolderTrustRules.trustRoot(directory, fs)
+  const top = root.kind === "ok" ? root.top : path.resolve(directory)
+  const shownPath = (file: string) => KeteFolderTrustRules.display(file, top)
+  const documents: KeteFolderTrustRules.DocumentInput[] = []
   const held: string[] = []
+  let unparsed: string | undefined
   for (const file of found.files) {
-    const text = await fs.readFile(file)
-    if (text === undefined) continue
+    const read = await KeteFolderTrustRules.readBounded(file, fs)
+    if (read.kind === "large") {
+      unparsed ??= `${KeteFolderTrustRules.shown(shownPath(file))} is too large to check`
+      held.push(`${KeteFolderTrustRules.shown(shownPath(file))} (too large to check)`)
+      continue
+    }
+    if (read.kind !== "ok") continue
+    const text = read.text
+    const tokens = KeteFolderTrustRules.substitutionTokens(text)
     const errors: ParseError[] = []
     const document: unknown = parse(text, errors, { allowTrailingComma: true })
-    // The runtime doesn't load a file it can't parse either.
-    if (errors.length > 0) continue
-    documents.push({ path: file, document })
+    if (errors.length > 0) {
+      // A file that parses neither raw nor substituted never loads; one that only parses substituted
+      // can't be checked (the runtime refuses to trust the folder too).
+      documents.push({ path: file, document: undefined, text, unparsed: true })
+      if (tokens.env.length > 0 || tokens.files.length > 0) {
+        unparsed ??= KeteFolderTrustRules.unparsedReason(file, top)
+        held.push(`${KeteFolderTrustRules.shown(shownPath(file))} (it can't be read before substitution)`)
+      }
+      continue
+    }
+    documents.push({ path: file, document, text })
+    held.push(...KeteFolderTrustRules.describeTokens(tokens, shownPath(file)))
     if (KeteFolderTrustRules.runtimeGuarded(document).length === 0) continue
     held.push(...KeteFolderTrustRules.describe(document), ...allowRules(document))
   }
   const plugins: string[] = []
   const agents: string[] = []
+  const loosening: string[] = []
   for (const project of found.directories) {
     plugins.push(...(await KeteFolderTrustRules.pluginDirectories(project, fs)))
-    agents.push(...(await KeteFolderTrustRules.agentPermissionFiles(project, fs)))
+    agents.push(...(await KeteFolderTrustRules.agentFiles(project, fs)))
+    loosening.push(...(await KeteFolderTrustRules.agentPermissionFiles(project, fs)))
   }
-  const root = await KeteFolderTrustRules.trustRoot(directory, fs)
-  const top = root.kind === "ok" ? root.top : path.resolve(directory)
-  held.push(...plugins.map((item) => `plugin code in ${JSON.stringify(KeteFolderTrustRules.display(item, top))}`))
-  held.push(...agents.map((item) => `permission rules in agent file ${JSON.stringify(KeteFolderTrustRules.display(item, top))}`))
+  held.push(...plugins.map((item) => `plugin code in ${KeteFolderTrustRules.shown(shownPath(item))}`))
+  held.push(...loosening.map((item) => `permission rules in agent file ${KeteFolderTrustRules.shown(shownPath(item))}`))
   const fingerprint = await KeteFolderTrustRules.fingerprint({ top, documents, plugins, agents }, fs)
   if (root.kind !== "ok")
     return { directory, root, held, fingerprint, refusal: root.reason, trusted: false }
   const key = KeteFolderTrustRules.storeKey(root.root)
   const home = await realOr(fs, paths.home)
   const refusal =
-    KeteFolderTrustRules.neverTrusted(key, home) ?? (fingerprint.kind === "unavailable" ? fingerprint.reason : undefined)
+    KeteFolderTrustRules.neverTrusted(key, home) ?? unparsed ?? (fingerprint.kind === "unavailable" ? fingerprint.reason : undefined)
   const trusted =
     refusal === undefined && fingerprint.kind === "ok"
       ? await KeteFolderTrustStore.make(paths.state).trusted(key, fingerprint.value)
@@ -152,7 +172,8 @@ const MAX_WARNING_ITEMS = 200
 export function warning(inspection: Pick<Inspection, "held">): string {
   let names = ""
   let shown = 0
-  for (const item of inspection.held) {
+  for (const raw of inspection.held) {
+    const item = KeteFolderTrustRules.safe(raw)
     const next = names ? `${names}; ${item}` : item
     if (next.length > MAX_WARNING_ITEMS && shown > 0) break
     names = next.length > MAX_WARNING_ITEMS ? `${next.slice(0, MAX_WARNING_ITEMS)}…` : next

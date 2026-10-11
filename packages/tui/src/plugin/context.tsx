@@ -30,6 +30,7 @@ import { errorMessage } from "../util/error"
 import { createPluginContext, usePluginHost, type Dispose, type RegisteredSlot, type SlotRender } from "./api"
 import { createSourceWatcher } from "./watch"
 import { discoverPluginTargets, localSource, mergePluginTargets } from "./discovery"
+import * as KeteTuiFolderTrust from "../kete/folder-trust" // kete_change
 import { createPluginSources } from "./source"
 import { isMissingPath } from "../util/config-directories"
 import { createMarkdownRenderer } from "./markdown"
@@ -291,7 +292,8 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
       [
         ...(
           await trace("discover", { reconciliation: id, directories: props.directories }, () =>
-            discoverPluginTargets(props.directories),
+            // kete_change: a project's .kete/plugins load only once the server trusts the folder (kete/folder-trust.ts)
+            KeteTuiFolderTrust.allowed(props.directories, () => KeteTuiFolderTrust.trusted(client.api, data.location.default())).then(discoverPluginTargets), // kete_change
           )
         ).map((entry) => ({
           entry,
@@ -567,6 +569,13 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
     ),
   )
   onCleanup(client.event.on("plugin.updated", syncServerPlugins))
+  // kete_change start: reload once the folder is trusted (its project plugins may load now)
+  onCleanup(
+    client.event.listen((event) => {
+      if (KeteTuiFolderTrust.becameTrusted(event.details)) void enqueue(reconcile).catch(() => undefined)
+    }),
+  )
+  // kete_change end
   onCleanup(client.event.on("server.connected", syncServerPlugins))
   onMount(() => {
     let disposing: Promise<void> | undefined

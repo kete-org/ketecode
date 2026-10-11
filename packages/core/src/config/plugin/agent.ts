@@ -38,7 +38,7 @@ export const Plugin = define({
     const config = yield* Config.Service
     const fs = yield* FSUtil.Service
     const global = yield* Global.Service
-    const folderTrust = yield* Effect.serviceOption(KeteFolderTrust.Service) // kete_change: always present in a runtime location (plugin/internal.ts)
+    const folderTrust = yield* Effect.serviceOption(KeteFolderTrust.Service) // kete_change: always present in a runtime location (plugin/internal.ts); absent fails closed
     const loadEntry = Effect.fnUntraced(function* (entry: Entry) {
       if (entry.type === "document") return [entry]
       if (entry.type !== "directory") return []
@@ -52,7 +52,14 @@ export const Plugin = define({
       ).pipe(
         Effect.map((documents) => documents.filter((document): document is Document => document !== undefined)),
         Effect.flatMap((documents) =>
-          Option.match(folderTrust, { onNone: () => Effect.succeed(documents), onSome: (trust) => trust.agentDocuments(entry.path, documents) }),
+          Option.match(folderTrust, {
+            // No folder-trust service: fail closed, every directory but the global one loses its loosening rules.
+            onNone: () =>
+              Effect.succeed(
+                path.resolve(entry.path) === path.resolve(global.config) ? documents : KeteFolderTrust.stripAgentDocuments(documents),
+              ),
+            onSome: (trust) => trust.agentDocuments(entry.path, documents),
+          }),
         ),
       )
       // kete_change end

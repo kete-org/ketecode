@@ -1086,3 +1086,26 @@ gate (project vs machine). If upstream renames `PluginSourceDirectory.names`, th
 directories or the permission key names, update `util/src/kete/folder-trust.ts` (a core test
 compares the plugin names). If upstream gives MCP elicitations real session owners, the web dock
 still serves the folder-trust form.
+
+### Folder trust: security-review fixes (feature/folder-trust)
+
+Project documents now load raw first (no `{env:…}`/`{file:…}` substitution) and are substituted only
+once the folder is trusted; remote `skills` URLs, git `references` and `experimental.policies` allows
+join the guarded set; a project `kete` object can't mask the machine-level `offline`, `integrations`,
+`platform` and `unattended`; the TUI loads a project's `.kete/plugins/` only when the new
+`kete.folder.trust` RPC (`schema/src/kete/folder-trust.ts`, `core/src/kete/folder-trust/rpc.ts`, served
+by the existing `/api/rpc` route, nothing regenerated) says the folder is trusted
+(`tui/src/kete/folder-trust.ts`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config.ts` | `loadFile` and `loadDirectory` take a mode (`"raw"`: no substitution; `"cached"`: substitute the text the raw pass read, never a new read); `load` builds the project part with a `loadProject(mode)` helper and hands `folderTrust.gate` an `assemble(substitute)` loader instead of the finished list (the non-project parts, wellknown included, load once) | substitution happens inside `loadFile`, before any hook could see the text |
+| `core/src/config/plugin/agent.ts` | With no `KeteFolderTrust.Service` the seam strips loosening rules from every directory but the global config (`KeteFolderTrust.stripAgentDocuments`) instead of passing them | fail closed |
+| `core/src/plugin/internal.ts` | Import; `KeteFolderTrustRpcPlugin.Plugin` after `KeteHooks.Plugin` | internal plugin registration list |
+| `tui/src/plugin/context.tsx` | Import; the reconcile's discover step filters `props.directories` through `KeteTuiFolderTrust.allowed`; a `client.event.listen` that re-reconciles on `rpc.kete.folder.trust.changed` (trusted) | TUI plugin directories are discovered here, in the TUI process |
+
+**Sync checklist:** if upstream changes `loadFile`/`loadDirectory`'s signatures or how `load` orders
+its sources, keep the raw pass and the cached substituted pass in the same order. If upstream changes
+`ConfigVariable.substitute`'s token syntax, update `substitutionTokens` and `fileTarget` in
+`util/src/kete/folder-trust.ts`. If upstream changes how the TUI discovers `.kete/plugins`, keep the
+trust filter on project directories.

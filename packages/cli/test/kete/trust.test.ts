@@ -88,3 +88,44 @@ describe("kete trust", () => {
     expect(out.join("")).toContain("wasn't trusted")
   })
 })
+
+// Security review fixes (2026-10-11).
+describe("kete trust: security review fixes", () => {
+  test("M1b: a config that only parses after substitution is refused, with the reason", async () => {
+    await writeFile(path.join(tmp, "repo", "kete.json"), '{ "shell": "/bin/sh", "n": {env:KETE_TRUST_TEST_NUMBER} }')
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(2)
+    expect(err.join("")).toContain("can't be read before {env:…}/{file:…} substitution")
+    expect(await KeteFolderTrustStore.make(deps.paths.state).list()).toEqual({})
+  })
+
+  test("M2/M3: substitution tokens and every hook command are listed; minor1: output is escaped", async () => {
+    await writeFile(
+      path.join(tmp, "repo", "kete.json"),
+      JSON.stringify({
+        username: "{env:KETE_TRUST_TEST_SECRET}",
+        kete: { hooks: { Stop: [{ command: "./notify\u202E.sh" }] } },
+        skills: ["https://skills.example/pack"],
+      }),
+    )
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(0)
+    const text = out.join("")
+    expect(text).toContain('reads environment variable "KETE_TRUST_TEST_SECRET" (in "kete.json")')
+    expect(text).toContain('hook "Stop": runs "./notify\\u{202E}.sh"')
+    expect(text).toContain('skills from "https://skills.example/pack"')
+    expect(text).not.toMatch(/\u202E/)
+  })
+
+  test("M1c: every agent file is part of the fingerprint", async () => {
+    await mkdir(path.join(tmp, "repo", ".kete", "agents"), { recursive: true })
+    const agent = path.join(tmp, "repo", ".kete", "agents", "a.md")
+    await writeFile(agent, '---\npermissions:\n  - action: shell\n    resource: "*"\n    effect: "\\x61llow"\n---\n')
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(0)
+    expect(out.join("")).toContain('permission rules in agent file ".kete/agents/a.md"')
+    const before = (await KeteFolderTrustStore.make(deps.paths.state).list())[path.join(tmp, "repo")]?.fingerprint
+    await writeFile(agent, '---\npermissions:\n  - action: edit\n    resource: "*"\n    effect: "\\x61llow"\n---\n')
+    out.length = 0
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(0)
+    expect((await KeteFolderTrustStore.make(deps.paths.state).list())[path.join(tmp, "repo")]?.fingerprint).not.toBe(before)
+  })
+})
+

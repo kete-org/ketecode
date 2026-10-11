@@ -169,3 +169,70 @@ Checks (2026-10-11):
   `list`, `list --format json`, `remove` work; after `add`, `kete run` prints no warning. The TUI and
   web prompts weren't exercised by hand (no model configured in the isolated env); covered by tests.
 - Not run: the reviewer/upstream-guard security review (separate step).
+
+## 2026-10-11 implementer (security-review fixes)
+Done: every finding from the security review fixed on `feature/folder-trust`, one regression test each
+(core `test/kete/folder-trust.test.ts` "Security review fixes" block, util `test/kete/folder-trust.test.ts`
+"security review fixes", cli `test/kete/trust.test.ts`, new tui `test/kete/folder-trust.test.ts`).
+
+- **C2 (TUI project plugins):** new `kete.folder.trust` plugin RPC (`schema/src/kete/folder-trust.ts`,
+  `core/src/kete/folder-trust/rpc.ts`, registered in `plugin/internal.ts`; served by the existing
+  `/api/rpc` route, so no endpoint/protocol change and nothing regenerated). `status` reads the config
+  first, then answers `{ trusted }` (true only for store/run/job trust); `changed` is emitted after every
+  `config.updated`. The TUI (`tui/src/kete/folder-trust.ts`, marked seam in `plugin/context.tsx`) passes
+  project `.kete/plugins` directories to discovery only when the RPC says trusted; error, timeout,
+  malformed answer or an older runtime = untrusted. It asks only when a project plugin directory has
+  entries (an unreadable one counts), and re-reconciles on a `changed` event that says trusted.
+- **M1a:** the fingerprint (v2) hashes the contents of every `{file:…}` target used by a guarded value
+  (`guardedFileTokens`: decided on the JSON-decoded token, hashing the raw path substitution actually
+  reads, so an escape can't hide one); a non-regular target, or a path built from `{env:}`, has no
+  fingerprint. It also covers each document's token list.
+- **M1b:** a project document whose raw text doesn't parse but has substitution tokens makes the
+  fingerprint unavailable; core and the CLI refuse to trust, and the question offers "Not now" with the
+  reason. A document that parses neither way never loads, so it is ignored (as before).
+- **M1c:** `agentFiles` returns every agent markdown file; all are hashed whole. Core decides which
+  rules loosen on the YAML-decoded front matter (`ConfigMarkdown.parseOption` + `frontMatterRules`), so
+  `"\x61llow"` is listed and held. The CLI (no YAML parser) keeps a broadened text test only for what it
+  shows. Consequence: editing any agent file in a trusted folder that holds something back asks again.
+- **M2:** `Config.load` now loads project files raw (tokens left literal) and hands `gate` a loader;
+  only when the folder is trusted (store/run/job) are project files substituted, from the text the raw
+  pass read (no second read, no TOCTOU). `{env:}`/`{file:}` use is itself a held item ("reads
+  environment variable …", "reads file …"), so a folder that uses them asks; remote `skills` URLs and git
+  `references` are held back (local ones load).
+- **M3:** the question is built from the normalized config: core describes what `strip` removed
+  (normalized MCP servers, so legacy top-level servers next to `mcp.servers` and a server named
+  `timeout` both show), provider `package`/`env`/model packages, MCP environment variable names, each
+  project hook command (match, network). The CLI's raw `describe` reads MCP the way the normalizer does.
+- **M4 (choice):** overlay at the gate rather than changing every reader. `shield` rewrites each project
+  document's `kete` object after gating, in every trust state: `offline` is true when the machine-level
+  `kete` (last non-project document with one) says true; `integrations`, `platform`, `unattended` come
+  from the machine level when the project doesn't set them (or they were held back). Why: it's one
+  Kete-owned function at the one point every reader goes through (Config.latest in offline, run-checks,
+  local-models, unattended, gateway, sync, shell…), so no reader can be missed and no upstream file
+  changes; `hooks`, `sandbox` and `lsp` aren't overlaid because their readers already read every
+  document by path (overlaying would make global hooks look like project hooks). Not covered (unchanged
+  documented behaviour): `budget`, `subagents`, `workflows`, `runtime` are still masked by a project
+  `kete` object.
+- **minor1:** `safe` escapes `\p{Cc}\p{Cf}\p{Zl}\p{Zp}` (C0/C1 incl. U+009B, bidi, zero-width, BOM) in
+  every item, the root path and the refusal; values are shown in full by `describe`. The form cuts long
+  items/lists, and then (`trustable` false) offers "Not now" only and points to `kete trust add`, which
+  prints everything (CLI output escaped too).
+- **minor2:** job mode trusts only when no project document or directory loaded; otherwise normal check.
+- **minor3:** with no service the agent seam strips loosening rules (deny-all machine denies) from every
+  directory but the global config. Before the first gate, `machineDeny` is deny-all too.
+- **minor4:** project `experimental.policies` allow statements are held back (deny statements kept),
+  shown and fingerprinted.
+- **minor5:** deny rules from the machine-level agent markdown files (global config directory) are
+  machine denies.
+- **minor6:** `readBounded` and `hashFile` stat (following symlinks) before reading; a non-regular file
+  or one over the remaining byte cap is never read.
+
+Files changed: util `src/kete/folder-trust.ts` + test; core `src/kete/folder-trust.ts`,
+`src/kete/folder-trust/{form,rpc}.ts` (rpc new), `src/config.ts`, `src/config/plugin/agent.ts`,
+`src/plugin/internal.ts` + test; schema `src/kete/folder-trust.ts` (new); cli `src/kete/{folder-trust,trust}.ts`
++ test; tui `src/kete/folder-trust.ts` (new), `src/plugin/context.tsx`, `test/kete/folder-trust.test.ts`
+(new); `docs/folder-trust.md`, `docs/upstream-patches.md` (appended).
+
+Open: CLI's agent-file list is still a text heuristic (display only; fingerprints agree with core).
+`budget`/`subagents`/`workflows`/`runtime` masking by a project `kete` object is unchanged (documented
+pitfall). A `{file:}` token used only by non-guarded values is fingerprinted by path, not content.

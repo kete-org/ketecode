@@ -49,8 +49,8 @@ export async function list(deps: Deps, format: "default" | "json"): Promise<numb
     return EXIT.ok
   }
   for (const [folder, entry] of folders) {
-    deps.out(`${folder}\n  trusted ${new Date(entry.trusted).toISOString()}\n`)
-    for (const item of entry.held) deps.out(`  - ${item}\n`)
+    deps.out(`${KeteFolderTrustRules.safe(folder)}\n  trusted ${new Date(entry.trusted).toISOString()}\n`)
+    for (const item of entry.held) deps.out(`  - ${KeteFolderTrustRules.safe(item)}\n`)
   }
   return EXIT.ok
 }
@@ -59,17 +59,17 @@ export async function add(deps: Deps, target: string | undefined): Promise<numbe
   const directory = path.resolve(deps.cwd, target ?? ".")
   const inspection = await KeteFolderTrustCli.inspect(directory, deps.paths, deps.fs)
   if (inspection.root.kind !== "ok" || inspection.key === undefined) {
-    deps.err(`Can't trust ${JSON.stringify(directory)}: ${inspection.refusal ?? "its path can't be resolved"}.\n`)
+    deps.err(`Can't trust ${KeteFolderTrustRules.shown(directory)}: ${KeteFolderTrustRules.safe(inspection.refusal ?? "its path can't be resolved")}.\n`)
     return EXIT.refused
   }
   if (inspection.refusal !== undefined || inspection.fingerprint.kind !== "ok") {
-    deps.err(`Can't trust ${JSON.stringify(inspection.root.root)}: ${inspection.refusal ?? "it can't be fingerprinted"}.\n`)
+    deps.err(`Can't trust ${KeteFolderTrustRules.shown(inspection.root.root)}: ${KeteFolderTrustRules.safe(inspection.refusal ?? "it can't be fingerprinted")}.\n`)
     return EXIT.refused
   }
   await KeteFolderTrustStore.make(deps.paths.state).trust(inspection.key, inspection.fingerprint.value, inspection.held)
-  deps.out(`Trusted ${JSON.stringify(inspection.root.root)}.\n`)
+  deps.out(`Trusted ${KeteFolderTrustRules.shown(inspection.root.root)}.\n`)
   if (inspection.held.length === 0) deps.out("Its project config has nothing that was held back right now.\n")
-  else for (const item of inspection.held) deps.out(`  - ${item}\n`)
+  else for (const item of inspection.held) deps.out(`  - ${KeteFolderTrustRules.safe(item)}\n`)
   deps.out(`You'll be asked again if these settings change. ${applies}\n`)
   return EXIT.ok
 }
@@ -79,7 +79,7 @@ export async function remove(deps: Deps, target: string | undefined): Promise<nu
   const fs = deps.fs ?? KeteFolderTrustRules.nodeFs
   const root = await KeteFolderTrustRules.trustRoot(directory, fs)
   if (root.kind !== "ok") {
-    deps.err(`Can't resolve ${JSON.stringify(directory)}: ${root.reason}.\n`)
+    deps.err(`Can't resolve ${KeteFolderTrustRules.shown(directory)}: ${KeteFolderTrustRules.safe(root.reason)}.\n`)
     return EXIT.refused
   }
   const key = KeteFolderTrustRules.storeKey(root.root)
@@ -91,8 +91,8 @@ export async function remove(deps: Deps, target: string | undefined): Promise<nu
   for (const repository of new Set([root.root, root.top])) await hooks.remove(repository)
   deps.out(
     known
-      ? `${JSON.stringify(root.root)} is no longer trusted. ${applies}\n`
-      : `${JSON.stringify(root.root)} wasn't trusted; its project hooks aren't either now.\n`,
+      ? `${KeteFolderTrustRules.shown(root.root)} is no longer trusted. ${applies}\n`
+      : `${KeteFolderTrustRules.shown(root.root)} wasn't trusted; its project hooks aren't either now.\n`,
   )
   return EXIT.ok
 }

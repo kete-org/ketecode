@@ -350,3 +350,143 @@ describe("security", () => {
     })
   })
 })
+
+// Security review fixes (2026-10-11).
+describe("security review fixes", () => {
+  test("minor1: safe escapes control, format, bidi and zero-width characters", () => {
+    const text = Rules.safe("a\u202Eb\u200Bc\u009Bd\u0007e\u2028f\uFEFFg")
+    expect(text).not.toMatch(/[\u202E\u200B\u009B\u0007\u2028\uFEFF]/)
+    expect(text).toBe("a\\u{202E}b\\u{200B}c\\u{9B}d\\u{7}e\\u{2028}f\\u{FEFF}g")
+    expect(Rules.safe(Rules.safe("x\u202E"))).toBe(Rules.safe("x\u202E"))
+    expect(Rules.describe({ shell: "/bin/sh\u202E" }).join("")).not.toContain("\u202E")
+    // Values are shown in full: whoever shows them decides what to do with a long one.
+    expect(Rules.describe({ shell: "x".repeat(1000) })[0]!.length).toBeGreaterThan(1000)
+  })
+
+  test("M3: legacy MCP servers next to mcp.servers, servers named like fields, provider package and env, hook commands", () => {
+    const text = Rules.describe({
+      mcp: {
+        servers: { native: { type: "local", command: ["n"] } },
+        legacy: { type: "local", command: ["l"], environment: { TOKEN: "secret-value" } },
+        timeout: { type: "remote", url: "https://t.example" },
+        servers2: { enabled: false },
+      },
+      providers: { p: { package: "evil-pkg", env: ["P_KEY"], models: { m: { package: "model-pkg" } } } },
+      kete: { hooks: { PreToolUse: [{ command: "./hook.sh", match: "shell", network: true }] } },
+    }).join("\n")
+    expect(text).toContain('MCP server "native": runs ["n"]')
+    expect(text).toContain('MCP server "legacy": runs ["l"]; environment "TOKEN"')
+    expect(text).toContain('MCP server "timeout": connects to "https://t.example"')
+    expect(text).not.toContain("servers2")
+    expect(text).not.toContain("secret-value")
+    expect(text).toContain('package "evil-pkg"')
+    expect(text).toContain('env "P_KEY"')
+    expect(text).toContain('models.m.package "model-pkg"')
+    expect(text).toContain('hook "PreToolUse" (match "shell"): runs "./hook.sh", with network access')
+  })
+
+  test("M2/minor4: remote skills, git references and policy allows are guarded, shown and fingerprinted", () => {
+    const document = {
+      skills: ["https://skills.example/x", "./local"],
+      references: { r: "https://git.example/r.git", g: { repository: "git@x:y.git", branch: "main" }, l: "./docs", o: { path: "../o" } },
+      experimental: { policies: [{ action: "permission", resource: "shell:*", effect: "allow" }, { action: "permission", resource: "x", effect: "deny" }] },
+    }
+    expect(Rules.runtimeGuarded(document)).toEqual(["skills", "references", "experimental.policies"])
+    expect(Rules.runtimeGuarded({ skills: ["./a"], references: { l: "./b" }, experimental: { policies: [{ action: "permission", resource: "x", effect: "deny" }] } })).toEqual([])
+    expect(Rules.runtimeGuarded({ skills: { urls: ["https://a.example"] } })).toEqual(["skills"])
+    const text = Rules.describe(document).join("\n")
+    expect(text).toContain('skills from "https://skills.example/x"')
+    expect(text).not.toContain('"./local"')
+    expect(text).toContain('reference "r": git "https://git.example/r.git"')
+    expect(text).toContain('reference "g": git "git@x:y.git" (branch "main")')
+    expect(text).not.toContain('reference "l"')
+    expect(text).not.toContain('reference "o"')
+    expect(text).toContain('policy: "permission" "shell:*" → allow')
+    expect(Object.keys(Rules.guardedValues(document)).sort()).toEqual(["experimental.policies", "references", "skills"])
+  })
+
+  test("M2: substitution tokens are found as ConfigVariable finds them, and shown", () => {
+    const tokens = Rules.substitutionTokens('{\n  "a": "{env:A}{env:A}",\n  // "{file:./commented}"\n  "b": "{file:~/.ssh/id_rsa}"\n}')
+    expect(tokens).toEqual({ env: ["A"], files: ["{file:~/.ssh/id_rsa}"] })
+    expect(Rules.describeTokens(tokens, "kete.json")).toEqual([
+      'reads environment variable "A" (in "kete.json")',
+      'reads file "~/.ssh/id_rsa" (in "kete.json")',
+    ])
+  })
+
+  test("M1a: the fingerprint covers what a guarded value's {file:} target holds, not other targets", async () => {
+    const file = path.join(tmp, "kete.json")
+    await write("cmd.txt", "one")
+    await write("prompt.txt", "one")
+    const text = JSON.stringify({ mcp: { x: { type: "local", command: ["{file:./cmd.txt}"] } }, username: "{file:./prompt.txt}" })
+    const run = () => Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(text), text }], plugins: [], agents: [] })
+    const base = await run()
+    expect(base.kind).toBe("ok")
+    await write("prompt.txt", "two")
+    expect(await run()).toEqual(base)
+    await write("cmd.txt", "two")
+    expect(await run()).not.toEqual(base)
+    // A JSON escape in the raw text can't hide which file a guarded value reads.
+    await write("a\\u0062", "hidden")
+    const escaped = '{ "shell": "{file:./a\\u0062}" }'
+    const fp = () => Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(escaped), text: escaped }], plugins: [], agents: [] })
+    const before = await fp()
+    await write("a\\u0062", "changed")
+    expect(await fp()).not.toEqual(before)
+    // A token that builds its path from {env:} can't be checked.
+    const nested = '{ "shell": "{file:{env:HOME}/x}" }'
+    expect((await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(nested), text: nested }], plugins: [], agents: [] })).kind).toBe("unavailable")
+  })
+
+  test("M1b: a document that only parses after substitution has no fingerprint", async () => {
+    const file = path.join(tmp, "kete.json")
+    const result = await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: undefined, text: '{ "n": {env:N}, "mcp": {} }', unparsed: true }], plugins: [], agents: [] })
+    expect(result).toEqual({ kind: "unavailable", reason: Rules.unparsedReason(file, tmp) })
+    // One that parses neither way never loads, so it doesn't stop the folder being trusted.
+    expect((await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: undefined, text: "{ broken", unparsed: true }], plugins: [], agents: [] })).kind).toBe("ok")
+  })
+
+  test("M1c: every agent file is hashed, whatever its front matter says", async () => {
+    const escaped = await write(".kete/agents/e.md", '---\npermissions:\n  - action: shell\n    resource: "*"\n    effect: "\\x61llow"\n---\n')
+    const plain = await write(".kete/agents/sub/p.md", "---\ndescription: x\n---\nbody")
+    await write(".kete/modes/m.md", "---\ndescription: m\n---\n")
+    const agents = await Rules.agentFiles(path.join(tmp, ".kete"))
+    expect(agents).toEqual([escaped, plain, path.join(tmp, ".kete", "modes", "m.md")])
+    expect(Rules.agentTextLoosens('---\nx: "\\x61llow"\n---\n')).toBe(true)
+    expect(Rules.agentTextLoosens('---\n"perm\\u0069ssions": []\n---\n')).toBe(true)
+    const base = await Rules.fingerprint({ top: tmp, documents: [], plugins: [], agents })
+    await write(".kete/agents/sub/p.md", "---\ndescription: y\n---\nbody")
+    expect(await Rules.fingerprint({ top: tmp, documents: [], plugins: [], agents })).not.toEqual(base)
+    expect(Rules.frontMatterRules({ permission: { bash: "allow" }, tools: { x: false } })).toEqual([
+      { action: "bash", resource: "*", effect: "allow" },
+      { action: "x", resource: "*", effect: "deny" },
+    ])
+  })
+
+  test("minor6: sizes are checked before anything is read", async () => {
+    const reads: string[] = []
+    const fs: Rules.Fs = {
+      ...Rules.nodeFs,
+      realpath: async (file: string) => file,
+      readDir: async () => [],
+      stat: async () => ({ kind: "file", size: Rules.MAX_BYTES + 1 }),
+      readBytes: async (file: string) => {
+        reads.push(file)
+        return new Uint8Array()
+      },
+      readFile: async (file: string) => {
+        reads.push(file)
+        return ""
+      },
+    }
+    const result = await Rules.fingerprint({ top: "/r", documents: [], plugins: [], agents: ["/r/.kete/agents/huge.md"] }, fs)
+    expect(result.kind).toBe("unavailable")
+    expect(await Rules.readBounded("/r/.kete/agents/huge.md", fs)).toEqual({ kind: "large" })
+    expect(reads).toEqual([])
+    // A symlink to a device is never read either.
+    const device: Rules.Fs = { ...fs, stat: async () => ({ kind: "other", size: 0 }) }
+    expect(await Rules.readBounded("/r/x", device)).toEqual({ kind: "other" })
+    expect(reads).toEqual([])
+  })
+})
+

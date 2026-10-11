@@ -121,6 +121,7 @@ import { KeteHooks } from "../kete/hooks.js" // kete_change
 import { PermissionSaved } from "../permission/saved.js" // kete_change
 import { Project } from "../project.js" // kete_change
 import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
+import { KeteFolderTrustRpcPlugin } from "../kete/folder-trust/rpc.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
@@ -309,6 +310,8 @@ const pre = [
   KeteLsp.Plugin,
   // kete_change: shell commands configured under kete.hooks (project hooks only once trusted); see kete/hooks.ts
   KeteHooks.Plugin,
+  // kete_change: the `kete.folder.trust` RPC (the TUI loads project plugins only once trusted); see kete/folder-trust/rpc.ts
+  KeteFolderTrustRpcPlugin.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 const post = [

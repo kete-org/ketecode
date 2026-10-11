@@ -19,6 +19,9 @@ Until the folder is trusted, these settings from its project configuration don't
 | `formatter` (unless `false`) | formatters run programs, and the built-in ones run tools installed in the project |
 | `shell` | the shell every command runs in |
 | `worktree` | where worktrees, and their setup script, are created |
+| `skills` URLs and git `references` | they are fetched when they load (local paths still load) |
+| `{env:…}` and `{file:…}` in any value | they read your environment and files; until you trust the folder they are left as written |
+| `experimental.policies` statements that allow | a repository's allow would outrank a deny set for you; its deny statements still apply |
 | permission rules that loosen | see below |
 
 **Permission rules.** In the project's `permissions` (and the older `permission` and `tools` keys),
@@ -31,12 +34,22 @@ in each agent's `permissions` in its config, and in the front matter of its agen
   otherwise turn your `deny` into a question;
 - every other `deny` and `ask` rule still applies, so a repository can always make things stricter.
 
-**Still loaded, trusted or not:** `AGENTS.md` and other instructions, agents, commands, skills, the
-model, LSP settings that turn things off, sandbox settings that tighten it, and every other
-setting. Your global configuration (`~/.config/kete/`), `KETE_CONFIG`, `KETE_CONFIG_CONTENT` and
+**Still loaded, trusted or not:** `AGENTS.md` and other instructions, agents, commands, local skills
+and references, the model, LSP settings that turn things off, sandbox settings that tighten it, and
+every other setting. Your global configuration (`~/.config/kete/`), `KETE_CONFIG`, `KETE_CONFIG_CONTENT` and
 your organization's settings are yours and are never held back.
 
 A folder whose project configuration sets none of the above never asks.
+
+**Your own `kete` settings stay in force.** Kete Code reads the last `kete` object it loads as a
+whole, so a project's `kete` object would otherwise replace yours. Whether the folder is trusted or
+not, `kete.offline: true` in your configuration stays on even if the project says `false`, and your
+`kete.integrations`, `kete.platform` and `kete.unattended` apply whenever the project doesn't set its
+own (or it is held back).
+
+**The terminal UI's own plugins.** TUI plugins in a project's `.kete/plugins/` run inside the
+terminal UI, so it loads them only when the runtime says the folder is trusted, and loads them as
+soon as you trust it.
 
 ## The question
 
@@ -45,9 +58,15 @@ The first time Kete Code loads a folder that has something held back, it asks on
 > **Trust this folder?** The project configuration in "/path/to/repo" can run code on this machine
 > or send data elsewhere. Until you trust this folder, Kete Code holds back: …
 
-The list names each setting: local MCP server commands, remote MCP URLs, provider endpoints and the
-names of their headers (never a key or header value), plugin specs and plugin directories, formatter
-commands, the shell, the worktree directory, and each held-back permission rule.
+The list names each setting as it would load: local MCP server commands and the names of their
+environment variables, remote MCP URLs, provider packages, endpoints, environment variable names and
+the names of their headers (never a key or header value), plugin specs and plugin directories, each
+project hook command, formatter commands, the shell, the worktree directory, skills URLs, git
+references, policy allow statements, each environment variable and file a `{env:…}` or `{file:…}`
+would read, and each held-back permission rule. Control, bidi and zero-width characters are shown
+escaped (`\u{202E}`), so the text can't hide or reorder anything. If something is too long to show
+in full, the question offers only "Not now": review the configuration and trust the folder with
+`kete trust add`, which prints everything.
 
 - **Trust this folder** remembers your answer and reloads the folder's configuration with
   everything, straight away: MCP servers start and plugins load. It also trusts the folder's current
@@ -60,11 +79,16 @@ share one question.
 
 **What you trust is what you reviewed.** Trust is stored for the folder's *trust root* (below)
 together with a fingerprint of everything held back: the values of those settings in every project
-configuration file that applies, the contents of the plugin directories, and the agent files that
-carry permission rules. If any of that changes (a different MCP command, a new plugin file, an edited
-plugin), you're asked again. Changing anything else (instructions, the model, a theme) doesn't ask.
-Values are fingerprinted before `{env:…}` substitution, so rotating a secret in your environment
-doesn't ask again, and no secret is ever stored.
+configuration file that applies, the `{env:…}` and `{file:…}` each file uses, the contents of any
+file a held-back setting reads through `{file:…}`, the contents of the plugin directories, and every
+agent file. If any of that changes (a different MCP command, a new plugin file, an edited plugin or
+agent file, a changed script an MCP command reads), you're asked again. Changing anything else
+(instructions, the model, a theme) doesn't ask. Values are fingerprinted before `{env:…}`
+substitution, so rotating a secret in your environment doesn't ask again, and no secret is ever
+stored.
+
+A configuration file that can only be read after substitution (for example `"port": {env:PORT}`,
+unquoted) can't be checked, so a folder that has one can't be trusted.
 
 ## Trust roots
 
@@ -119,7 +143,8 @@ sense trusts nothing.
   integration settings unless you pass `--trust-project-config`, which now also runs it on a
   private server that trusts the folder for that run. With `--server`, the server you connect to
   applies its own folder trust. Cloud, self-hosted and review jobs load no project configuration at
-  all.
+  all; if a job's runtime finds project configuration anyway, it holds it back like any other
+  untrusted folder.
 - **ACP** (editors that talk to `kete acp`) doesn't show the question: settings stay held back and a
   warning naming them goes to the log. Trust the folder with `kete trust add` first.
 

@@ -1,17 +1,22 @@
 // The folder-trust question (kete/folder-trust.ts): a session-less form (`"global"` owner, kind
-// `kete.folder.trust`) listing exactly what is held back. The description is plain text: every value
-// in it was JSON-escaped by util/src/kete/folder-trust.ts `describe`/`describeRule`, so nothing can
-// hide or reorder text, and it is bounded in length. A folder that can't be trusted (home, the
-// filesystem root, too many files to check) gets "Not now" only, with the reason.
+// `kete.folder.trust`) listing exactly what is held back. The description is plain text: every item
+// and the folder's path pass through util/src/kete/folder-trust.ts `safe` (control, format, bidi and
+// zero-width characters escaped), so nothing can hide or reorder text. It is bounded in length; when an
+// item, the list or the whole text had to be cut short, the person hasn't seen everything, so the form
+// offers "Not now" only and says how to review it all (`trustable`). A folder that can't be trusted
+// (home, the filesystem root, too many files to check) gets "Not now" only too, with the reason.
 
 export * as KeteFolderTrustForm from "./form.js"
 
+import { Brand } from "@opencode/util/kete/brand"
 import { KeteFolderTrustRules } from "@opencode/util/kete/folder-trust"
 import type { Form } from "../../form.js"
 
 export const SESSION = "global"
 export const FIELD = "decision"
 export const MAX_ITEMS = 40
+/** Characters of one item shown. */
+export const MAX_ITEM = 600
 export const MAX_DESCRIPTION = 8_000
 
 export type Decision = "trust" | "later"
@@ -23,21 +28,35 @@ export interface Input {
   readonly refusal?: string
 }
 
+const HEAD = (root: string) =>
+  `The project configuration in ${KeteFolderTrustRules.shown(root)} can run code on this machine or send data elsewhere. Until you trust this folder, ${Brand.displayName} holds back:`
+
+/** Whether everything held back fits in the question as shown (nothing cut short). */
+export function trustable(input: Input): boolean {
+  if (input.items.length > MAX_ITEMS) return false
+  const items = input.items.map(KeteFolderTrustRules.safe)
+  if (items.some((item) => item.length > MAX_ITEM)) return false
+  return `${HEAD(input.root)}\n\n${items.map((item) => `- ${item}`).join("\n")}`.length <= MAX_DESCRIPTION - 600
+}
+
 export function description(input: Input): string {
-  const shown = input.items.slice(0, MAX_ITEMS).map((item) => `- ${item}`)
-  const more = input.items.length > MAX_ITEMS ? [`- …and ${input.items.length - MAX_ITEMS} more`] : []
-  const head = `The project configuration in ${JSON.stringify(input.root)} can run code on this machine or send data elsewhere. Until you trust this folder, Kete Code holds back:`
+  const items = input.items.map(KeteFolderTrustRules.safe)
+  const shown = items.slice(0, MAX_ITEMS).map((item) => `- ${item.length > MAX_ITEM ? `${item.slice(0, MAX_ITEM)}…` : item}`)
+  const more = items.length > MAX_ITEMS ? [`- …and ${items.length - MAX_ITEMS} more`] : []
   const tail = input.refusal
-    ? `This folder can't be trusted: ${input.refusal}.`
-    : "Trust it only if you trust whoever wrote this repository. You'll be asked again if these settings change. Its other settings (instructions, agents, commands, skills) load either way."
-  const text = `${head}\n\n${[...shown, ...more].join("\n")}\n\n${tail}`
-  return text.length > MAX_DESCRIPTION ? `${text.slice(0, MAX_DESCRIPTION)}…` : text
+    ? `This folder can't be trusted: ${KeteFolderTrustRules.safe(input.refusal)}.`
+    : !trustable(input)
+      ? `Some of it is too long to show here in full, so it can't be trusted from this question. Review the project configuration, then trust the folder with \`${Brand.cliName} trust add\` in a terminal, which shows everything.`
+      : "Trust it only if you trust whoever wrote this repository. You'll be asked again if these settings change. Its other settings (instructions, agents, commands, local skills) load either way."
+  const body = `${HEAD(input.root)}\n\n${[...shown, ...more].join("\n")}`
+  const room = MAX_DESCRIPTION - tail.length - 3
+  return `${body.length > room ? `${body.slice(0, room)}…` : body}\n\n${tail}`
 }
 
 export function create(input: Input): Form.CreateInput {
   return {
     sessionID: SESSION,
-    title: input.refusal ? "This folder's settings are held back" : "Trust this folder?",
+    title: input.refusal || !trustable(input) ? "This folder's settings are held back" : "Trust this folder?",
     metadata: { kind: KeteFolderTrustRules.FORM_KIND, root: input.root },
     fields: [
       {
@@ -47,7 +66,7 @@ export function create(input: Input): Form.CreateInput {
         description: description(input),
         required: true,
         options: [
-          ...(input.refusal ? [] : [{ value: "trust", label: "Trust this folder" }]),
+          ...(input.refusal || !trustable(input) ? [] : [{ value: "trust", label: "Trust this folder" }]),
           { value: "later", label: "Not now", description: "Keep holding these back until Kete Code restarts" },
         ],
       },
