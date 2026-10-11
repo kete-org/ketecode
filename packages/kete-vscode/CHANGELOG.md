@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Security: `kete.cliPath`, `kete.gateway.url` and `kete.platform.url` are machine settings. A
+  workspace's `.vscode/settings.json` can no longer choose the program the extension runs or where
+  your sign-in and gateway traffic go; set them in your user settings (GHSA-43vv-qhh9-p4cv).
+
 ## 0.2.6
 
 - Safer defaults: Kete Code now asks before shell commands that can change things, and always

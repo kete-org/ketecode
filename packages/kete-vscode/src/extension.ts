@@ -57,7 +57,7 @@ import { authorized, handle as handleMcp, SERVER_NAME, type Diagnostic } from ".
 import { ago, isSessionID, parseSessions, sessionFromLink, sessionLink, type SessionItem } from "./sessions"
 import { fileReference } from "./reference"
 import { Server } from "./server"
-import { applySettings, configDirectory, httpUrl, type KeteSettings } from "./settings"
+import { applySettings, configDirectory, httpUrl, machineSetting, type KeteSettings } from "./settings"
 import { insideWorkspace, statusBar, type AccountState, type PermissionMode } from "./status"
 
 const run = promisify(execFile)
@@ -339,7 +339,7 @@ export function deactivate() {
 async function binary(context: ExtensionContext) {
   const resolved = await resolve({
     extensionPath: context.extensionPath,
-    setting: workspace.getConfiguration("kete").get<string>("cliPath"),
+    setting: machineSetting<string>(workspace.getConfiguration("kete"), "cliPath"),
   })
   if (!resolved.ok) throw new Error(resolved.error)
   return resolved.path
@@ -918,8 +918,8 @@ function lastLine(text: string) {
 /** Writes the extension's settings into Kete Code's configuration. Returns whether anything changed. */
 async function syncSettings(state: State) {
   const config = workspace.getConfiguration("kete")
-  const gateway = config.get<string>("gateway.url")
-  const platform = config.get<string>("platform.url")
+  const gateway = machineSetting<string>(config, "gateway.url")
+  const platform = machineSetting<string>(config, "platform.url")
   const budget = config.get<number | null>("budget.session")
   const invalid = [
     ["kete.gateway.url", gateway],

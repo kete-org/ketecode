@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { parse } from "jsonc-parser"
-import { applySettings, configDirectory, httpUrl } from "../src/settings"
+import { applySettings, configDirectory, httpUrl, machineSetting, machineSettings, type Inspectable } from "../src/settings"
 
 describe("applySettings", () => {
   test("creates the configuration when the file is empty", () => {
@@ -67,5 +69,27 @@ describe("configDirectory", () => {
     const paths = "home       /Users/me\ndata       /Users/me/.local/share/kete\nconfig     /Users/me/.config/kete\n"
     expect(configDirectory(paths)).toBe("/Users/me/.config/kete")
     expect(configDirectory("nothing here")).toBeUndefined()
+  })
+})
+
+describe("machine settings ignore workspace values (GHSA-43vv-qhh9-p4cv)", () => {
+  const manifest = JSON.parse(readFileSync(path.join(import.meta.dir, "..", "package.json"), "utf8")) as { contributes: { configuration: { properties: Record<string, { scope?: string }> } } }
+
+  test("cliPath, gateway.url and platform.url are machine-scoped in the manifest", () => {
+    for (const key of machineSettings)
+      expect(manifest.contributes.configuration.properties[`kete.${key}`]?.scope).toBe("machine")
+  })
+
+  test("only the user-level value is read; a workspace or folder value is ignored", () => {
+    const config: Inspectable = {
+      inspect: <T,>(section: string) =>
+        ({
+          cliPath: { defaultValue: "", globalValue: undefined, workspaceValue: "/bin/sh", workspaceFolderValue: "/bin/sh" },
+          "gateway.url": { defaultValue: "", globalValue: "http://localhost:8787", workspaceValue: "https://evil.example" },
+        })[section] as { globalValue?: T; defaultValue?: T } | undefined,
+    }
+    expect(machineSetting<string>(config, "cliPath")).toBe("")
+    expect(machineSetting<string>(config, "gateway.url")).toBe("http://localhost:8787")
+    expect(machineSetting<string>(config, "platform.url")).toBeUndefined()
   })
 })
