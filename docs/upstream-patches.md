@@ -755,6 +755,30 @@ claims (upstream's side-question indicator, `feature-plugins/prompt/btw.tsx`) st
 **Sync checklist:** re-check the prompt's idle and running `Match` blocks and the footer `Slot`s, and
 `Info` for the new key. If upstream adds its own configurable status line, compare and drop one.
 
+### Prompt history search (feature/history-search)
+
+Ctrl+R in the focused prompt opens an inline search over prompt history (`tui/src/kete/history-search.ts`,
+the pure search and key rule; `tui/src/kete/history-search-bar.tsx`, the controller and bar;
+`docs/history-search.md`). The textarea isn't changed while searching, so Esc leaves the draft as it was.
+`session.rename`'s default moves from `ctrl+r` to `<leader>shift+r` (maintainer decision, task
+`2026-10-10-tui-codex-parity` Q1); `session.redo` keeps `<leader>r`.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/config/keybind.ts` | Import `RENAME_DEFAULT`/`SEARCH_DEFAULT`; `session.rename`'s default is `RENAME_DEFAULT`; new `prompt.history.search` after `prompt.history.next` | keybind defaults exist only in `Definitions` |
+| `tui/src/config/index.tsx` | Import; one line in `resolve` after the `terminal.suspend` block: `keteHistorySearchKeys` drops from search's default any key the user gave rename (unless they set search too) | the rule must run where overrides are merged |
+| `tui/src/prompt/history.tsx` | `entries()` on the provider: the history array, read-only | entries are private to the provider's store |
+| `tui/src/component/prompt/index.tsx` | Import; a `kete_change start/end` block after the history ↑/↓ layers (controller + a layer targeted at the textarea binding `prompt.history.search`); one condition in the focus effect (the open bar takes focus like a dialog); the bar in a `<Show>` above the textarea | the search must be a prompt-focused layer rendered inside the prompt box; a slot claim can't target the textarea or take focus, and the plugin API has no prompt-history access |
+
+A v1 `tui.json` migration (`cli/src/config/migrate.ts`) copies only keys the user wrote, so migrated
+configs don't pin rename to v1's `ctrl+r` default (`cli/test/kete/history-search-migrate.test.ts`).
+Upstream's keybind docs (`packages/web/src/content/docs/*/keybinds.mdx`, `services/www/.../keybinds.mdx`)
+still say rename is `ctrl+r`; they are upstream's site and are left unchanged.
+
+**Sync checklist:** re-check the prompt's history ↑/↓ layers (the search layer mirrors their `enabled`
+condition), the focus effect, `resolve`'s keybind block, and `Definitions` (rename's default and the new
+key). If upstream adds its own history search or binds Ctrl+R in the prompt, compare and drop one.
+
 ### Upstream test edits
 
 55 upstream test files and `core/script/test.ts` were updated so their fixtures
