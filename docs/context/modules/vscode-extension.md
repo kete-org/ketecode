@@ -1,11 +1,12 @@
 ---
 module: vscode-extension
 paths: [packages/kete-vscode/**, packages/app/src/kete/vscode-*.ts, packages/app/src/kete/vscode-*.tsx]
-verified-at: f85913ed4a
+verified-at: f3d1b962ee
 ---
 
 ## Quick answers
 
+- What do the extension's docs say about the sandbox and the task list? `packages/kete-vscode/CHANGELOG.md` 0.2.6 (the previous "Unreleased"; `package.json` stays `0.0.0`, the release workflow stamps the version) describes the OS sandbox for agent shell commands (macOS `sandbox-exec`, Linux bubblewrap, `kete sandbox` for status, `sandbox: off` always asks); `README.md` describes the task list shown above the message box (the web UI's todo dock, `todo` card). Both are documentation only: the extension has no sandbox or todo code; it frames the web UI, so the runtime and web UI do the work. Forms (questions the runtime asks) are rendered by the web UI too (`server-sdk` card).
 - **How does the extension talk to the agent?** It spawns its own `kete serve --stdio` (never the
   workspace's or PATH's `kete`) and frames the runtime's own web UI (`packages/app`) in a webview
   iframe; there is no separate agent logic in the extension (CLAUDE.md §3, §6).

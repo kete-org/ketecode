@@ -1,28 +1,29 @@
 ---
 module: hooks
 paths: [packages/core/src/kete/hooks.ts, packages/core/src/kete/hooks/*, packages/schema/src/config/kete.ts]
-verified-at: 3ccf873486
+verified-at: f3d1b962ee
 ---
 ## Quick answers
 - Which `sandbox_off` policy forms count? Both: an unsandboxed hook passes `permission.assert(sandbox_off, reason disabled|unavailable)` (no prompt), so synced Kete rules `{action: sandbox_off}` (sync plugin) and `{action: permission, resource: sandbox_off:*}` statements (ConfigPolicyPlugin) refuse it; `settings.sandboxOffDenied` also checks the latter form from global config/ManagedPolicy. Project hooks get `KeteToolEnv.filter(env, {unattended: true})`.
 - Where are hooks configured? `kete.hooks` (`ConfigKete.Hooks`/`Hook`/`HookEvents` in `schema/src/config/kete.ts`): six events, each a list of `{command, match?, timeout?}`. Read from **every** config document (not `Config.latest`), user (under the global config dir) vs project, like the sandbox settings (`hooks/settings.ts`).
-- How are they wired? One internal plugin (`kete.hooks`, `core/src/kete/hooks.ts:168`, registered after `KeteLsp` in `pre`, `core/src/plugin/internal.ts:308`): PreToolUse = `tool.execute.before` (`:405`, the only hook that may fail → `Tool.Error`), PostToolUse = `tool.execute.after` (`:431`), UserPromptSubmit = `session.prompt` (`:456`, appends to the prompt text; can't block — session hooks can't fail), SessionStart = `session.created` event → `ctx.session.synthetic`, Stop = `session.execution.*` events, Notification = `permission.asked` and `form.created` (not the trust form).
+- How are they wired? One internal plugin (`kete.hooks`, `core/src/kete/hooks.ts:173`, registered after `KeteLsp` in `pre`, `core/src/plugin/internal.ts:308`): PreToolUse = `tool.execute.before` (`:439`, the only hook that may fail → `Tool.Error`), PostToolUse = `tool.execute.after` (`:465`), UserPromptSubmit = `session.prompt` (`:490`, appends to the prompt text; can't block — session hooks can't fail), SessionStart = `session.created` event → `ctx.session.synthetic`, Stop = `session.execution.*` events, Notification = `permission.asked` and `form.created` (not the trust form).
 - Trust? Project hooks need the user's trust: fingerprint = sha256 of every project hook's event/match/timeout/command (`hooks/settings.ts` `fingerprint`); store `hooks-trust.json` in `Global.state` keyed by the repository's real path (`hooks/trust.ts`, atomic, 500 entries, 0600). Asked through a `Form` (metadata `kind: kete.hooks.trust`) at the first PreToolUse/PostToolUse/UserPromptSubmit/SessionStart; one shared question per fingerprint; "no" is remembered in memory. Stop/Notification and unattended sessions (`KeteUnattendedPolicy.resolve`) never ask.
 - Off switches: job mode (plugin returns at once); a policy `{"action":"permission","resource":"hooks:<event>|hooks:*","effect":"deny"}` from the global config's `experimental.policies` or `ManagedPolicy`; `kete job run` refuses a repository's `kete.hooks` without `--trust-project-config` (`cli/src/kete/job-project-config.ts`), and even then untrusted project hooks are skipped (unattended).
 - Sandbox? Yes (security review): every hook is wrapped like a shell command (`KeteSandboxResolve.resolve` with the repository as workspace, the hook's private temp dir, `network` from the entry) via `KeteHooksRun.Sandbox`. `hooks/settings.ts` `placement` decides: sandboxed by default; `sandbox: false` only from the global config and not against a `sandbox_off` policy; without an active sandbox user hooks run unsandboxed (unless that policy), project hooks only with global `kete.hooks.unsandboxed` (else skipped before the trust question). Kete credentials stripped. Spawned through `Environment.spawner` (`hooks/run.ts`, classified `seam`); stdin from a temp file (`KETE_HOOK_INPUT`); on Windows a batch file run by `cmd /d /c` plus `NoDefaultCurrentDirectoryInExePath=1`.
 - Fingerprint? Project hooks' event/match/timeout/network/sandbox/command plus sha256 of repository files the commands name (`referencedFiles`). Commands with control/bidi characters refuse the whole project set.
+- Is there a session-less prompt/form path for questions asked before any session exists? Yes, the `"global"` form owner sentinel: `Form.Info.sessionID` is a plain string only so MCP elicitation can use it (`schema/src/form.ts:125-127`; set in `core/src/mcp/index.ts:82,237,264`; the server's form-location middleware resolves it, `server/src/middleware/form-location.ts:27`). Only the TUI renders it, on the home route (`tui/src/routes/home.tsx:38,116`, `FormPrompt`); the non-interactive `kete run` knows it too (`cli/src/run/noninteractive.ts:68`). Hooks do not use it: the trust form needs a real session id, so a project hook trust question appears only after a session exists.
 - Policies? `hooks:*` statements count only from the global config and `ManagedPolicy`; project ones are ignored with a warning.
 
 ## Purpose
 User-configured shell commands around the agent loop (block, add context, notify), without writing a plugin.
 
 ## Entry points
-- `KeteHooks.Plugin` / `make(deps)` (`core/src/kete/hooks.ts:168`).
+- `KeteHooks.Plugin` / `make(deps)` (`core/src/kete/hooks.ts:173`).
 
 ## Key files
 | File | Role |
 | --- | --- |
-| `packages/core/src/kete/hooks.ts` | plugin: selection with trust and policy (`select`, `:306`), running, event wiring |
+| `packages/core/src/kete/hooks.ts` | plugin: selection with trust and policy (`select`, `:340`), running, event wiring |
 | `packages/core/src/kete/hooks/settings.ts` | collect per document, fingerprint, `match`, policy check |
 | `packages/core/src/kete/hooks/run.ts` | shell spawn, stdin JSON, bounded output, timeout, `interpret` (exit 0/2/other, JSON) |
 | `packages/core/src/kete/hooks/trust.ts` | trust store |

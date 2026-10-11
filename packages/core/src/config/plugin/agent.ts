@@ -17,6 +17,7 @@ import type { FileAccess } from "../../file-access.js"
 import type { ReadTool } from "../../tool/plugin/read.js"
 import type { EditTool } from "../../tool/plugin/edit.js"
 import { AbsolutePath } from "../../schema.js"
+import { KeteFolderTrust } from "../../kete/folder-trust.js" // kete_change
 
 const legacySources = [
   { pattern: "{agent,agents}/**/*.md", primary: false },
@@ -37,6 +38,7 @@ export const Plugin = define({
     const config = yield* Config.Service
     const fs = yield* FSUtil.Service
     const global = yield* Global.Service
+    const folderTrust = yield* Effect.serviceOption(KeteFolderTrust.Service) // kete_change: always present in a runtime location (plugin/internal.ts)
     const loadEntry = Effect.fnUntraced(function* (entry: Entry) {
       if (entry.type === "document") return [entry]
       if (entry.type !== "directory") return []
@@ -46,7 +48,14 @@ export const Plugin = define({
           Effect.map((content) => (content ? decode(file, content) : undefined)),
           Effect.orElseSucceed(() => undefined),
         ),
-      ).pipe(Effect.map((documents) => documents.filter((document): document is Document => document !== undefined)))
+      // kete_change start: an untrusted folder's agent files lose their loosening rules (kete/folder-trust.ts)
+      ).pipe(
+        Effect.map((documents) => documents.filter((document): document is Document => document !== undefined)),
+        Effect.flatMap((documents) =>
+          Option.match(folderTrust, { onNone: () => Effect.succeed(documents), onSome: (trust) => trust.agentDocuments(entry.path, documents) }),
+        ),
+      )
+      // kete_change end
     })
     const load = Effect.fn("ConfigAgentPlugin.load")(function* () {
       return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))

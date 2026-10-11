@@ -3,6 +3,8 @@ import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { ServerConnection } from "../../services/server-connection"
 import * as KetePermissionMode from "../../kete/permission-mode" // kete_change
+import { KeteFolderTrustCli } from "../../kete/folder-trust" // kete_change
+import { KeteJobProjectConfig } from "../../kete/job-project-config" // kete_change
 
 export default Runtime.handler(Commands.commands.run, (input) =>
   Effect.gen(function* () {
@@ -10,9 +12,18 @@ export default Runtime.handler(Commands.commands.run, (input) =>
     // kete_change: --auto is the "auto" permission mode; --dangerously-skip-permissions is the bypass
     const permissionMode = yield* Effect.try({ try: () => KetePermissionMode.fromFlags(input), catch: (error) => (error instanceof Error ? error : new Error(String(error))) })
     const separator = process.argv.indexOf("--", 2)
+    // kete_change start: --trust-project-config trusts the folder for this run, on a private server (kete/folder-trust.ts)
+    const trustProjectConfig = KeteJobProjectConfig.trusted(input.trustProjectConfig, process.env)
+    const trust = KeteFolderTrustCli.connection(
+      { server: Option.getOrUndefined(input.server), standalone: input.standalone },
+      trustProjectConfig,
+      "run",
+    )
+    if (!trust.ok) return yield* Effect.fail(new Error(trust.message))
+    // kete_change end
     const server = yield* ServerConnection.resolve({
-      server: Option.getOrUndefined(input.server),
-      standalone: input.standalone,
+      server: trust.args.server, // kete_change
+      standalone: trust.args.standalone, // kete_change
     })
     yield* Effect.promise(() =>
       runNonInteractive({
@@ -29,6 +40,7 @@ export default Runtime.handler(Commands.commands.run, (input) =>
         thinking: input.thinking,
         auto: KetePermissionMode.skipsPermissions(input), // kete_change
         permissionMode, // kete_change
+        trustProjectConfig, // kete_change
       }),
     )
   }),

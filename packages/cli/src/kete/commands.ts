@@ -39,6 +39,17 @@ export const modelsPull = Spec.make("pull", {
   },
 })
 
+/** `--trust-project-config` on upstream's `kete run` (commands/commands.ts): trusts the folder's project
+ * config for that run only (./folder-trust.ts). Same text as `kete job run`'s flag below. */
+export const trustParams = {
+  trustProjectConfig: Flag.boolean("trust-project-config").pipe(
+    Flag.withDescription(
+      "Let the repository's own config set providers, MCP servers, plugins and Kete integration settings (also KETE_TRUST_PROJECT_CONFIG=1)",
+    ),
+    Flag.withDefault(false),
+  ),
+}
+
 /** Flags for the built-in presets on upstream's `kete mcp add` (commands/commands.ts); see ./mcp-preset.ts. */
 export const mcpPresetParams = {
   write: Flag.boolean("write").pipe(
@@ -127,6 +138,32 @@ export const specs = [
         Flag.withDefault("default"),
       ),
     },
+  }),
+  Spec.make("trust", {
+    description: `List the folders whose project config you trust (docs/folder-trust.md)`,
+    params: {
+      format: Flag.choice("format", ["default", "json"]).pipe(Flag.withDescription("Output format"), Flag.withDefault("default")),
+    },
+    commands: [
+      Spec.make("list", {
+        description: "List the folders whose project config you trust",
+        params: {
+          format: Flag.choice("format", ["default", "json"]).pipe(Flag.withDescription("Output format"), Flag.withDefault("default")),
+        },
+      }),
+      Spec.make("add", {
+        description: "Trust a folder's project config: MCP servers, plugins, providers and the other settings held back until you do",
+        params: {
+          path: Argument.string("path").pipe(Argument.withDescription("Folder to trust (default: the current directory)"), Argument.optional),
+        },
+      }),
+      Spec.make("remove", {
+        description: "Stop trusting a folder's project config (and its project hooks)",
+        params: {
+          path: Argument.string("path").pipe(Argument.withDescription("Folder to stop trusting (default: the current directory)"), Argument.optional),
+        },
+      }),
+    ],
   }),
   Spec.make("job", {
     description: "Run unattended jobs (ADR 0005/0008)",

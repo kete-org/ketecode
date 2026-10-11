@@ -377,6 +377,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       description: `Run ${Brand.displayName} with a message`, // kete_change
       params: {
         ...ServerParams,
+        ...KeteCommands.trustParams, // kete_change: trust the folder's project config for this run (kete/folder-trust.ts)
         message: Argument.string("message").pipe(
           Argument.withDescription("Message to send"),
           Argument.variadic({ min: 0 }),

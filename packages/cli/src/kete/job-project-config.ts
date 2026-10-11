@@ -12,8 +12,10 @@
 //   directory outside a repository — the directories above belong to the machine's owner, not the
 //   repository): `kete.json`, `kete.jsonc`, `.kete/kete.json`, `.kete/kete.jsonc`, and code in
 //   `.kete/plugin/` or `.kete/plugins/` (core/src/plugin/source-directory.ts loads those);
-// - the guarded keys are `guardedKeys` below. A file that can't be read or parsed is reported too:
-//   the check fails closed rather than guessing what the runtime would make of it.
+// - the guarded keys are `guardedKeys`, the job list in util/src/kete/folder-trust.ts (shared with the
+//   runtime's folder trust, which holds back a larger list; this one is unchanged). A file that can't
+//   be read or parsed is reported too: the check fails closed rather than guessing what the runtime
+//   would make of it.
 //
 // `job.ts` skips the check for `--trust-project-config` / `KETE_TRUST_PROJECT_CONFIG=1`, and job mode
 // never runs it (its server doesn't load project config at all). Global config, `KETE_CONFIG` and
@@ -26,6 +28,7 @@ import { readFile, readdir } from "node:fs/promises"
 import { parse, type ParseError } from "jsonc-parser"
 import { Brand } from "@opencode/util/kete/brand"
 import { KeteEnv } from "@opencode/util/kete/env"
+import { KeteFolderTrustRules } from "@opencode/util/kete/folder-trust"
 
 /** The internal name of KETE_TRUST_PROJECT_CONFIG (bridged by util/src/kete/env.ts). */
 export const trustVariable = "OPENCODE_TRUST_PROJECT_CONFIG"
@@ -60,28 +63,9 @@ export function trusted(flag: boolean, env: Record<string, string | undefined>):
   return flag || env[trustVariable] === "1"
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function entries(value: unknown, prefix: string): string[] {
-  if (!isRecord(value)) return [prefix]
-  const names = Object.keys(value)
-  return names.length === 0 ? [prefix] : names.map((name) => `${prefix}.${name}`)
-}
-
-/** The settings in one parsed config document a repository may not control in an unattended run. */
-export function guardedKeys(document: unknown): string[] {
-  if (!isRecord(document)) return []
-  const found: string[] = []
-  for (const key of ["providers", "provider", "mcp"]) if (key in document) found.push(...entries(document[key], key))
-  for (const key of ["plugins", "plugin", "enterprise"]) if (key in document) found.push(key)
-  if ("share" in document && document.share !== "disabled") found.push("share")
-  if ("autoshare" in document && document.autoshare !== false) found.push("autoshare")
-  const kete = document.kete
-  if (isRecord(kete)) for (const key of ["integrations", "platform", "unattended", "hooks"]) if (key in kete) found.push(`kete.${key}`)
-  return found
-}
+/** The settings in one parsed config document a repository may not control in an unattended run
+ * (the job list, util/src/kete/folder-trust.ts). */
+export const guardedKeys = KeteFolderTrustRules.guardedKeys
 
 /** The directories the runtime's project config walk would visit that the repository controls:
  * `directory` up to and including `stop` (only `directory` when `stop` isn't an ancestor). */
@@ -135,8 +119,7 @@ export async function inspect(directory: string, stop: string, fs: Fs = nodeFs):
     const checks = [
       ...Brand.configFiles.map((name) => inspectFile(fs, path.join(current, name))),
       ...Brand.configFiles.map((name) => inspectFile(fs, path.join(project, name))),
-      inspectPlugins(fs, path.join(project, "plugin")),
-      inspectPlugins(fs, path.join(project, "plugins")),
+      ...KeteFolderTrustRules.PLUGIN_DIRECTORIES.map((name) => inspectPlugins(fs, path.join(project, name))),
     ]
     for (const finding of await Promise.all(checks)) if (finding !== undefined) findings.push(finding)
   }

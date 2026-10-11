@@ -180,6 +180,10 @@ commands or for commands that run anything or write files their arguments don't 
 `bundle exec`, `tmux`, `vim`, `tar`, `unzip`, `patch`, `git apply`, `npm pkg`, …), and a saved approval never covers a high-risk command — only a configured rule can.
 For a web fetch it covers that site (scheme, host and port), not every URL.
 
+**Rules from a repository.** A project's own configuration can always tighten, but its `allow`
+rules (and an `ask` that would override one of your own `deny` rules) only apply once you trust the
+folder; see [Folder trust](folder-trust.md).
+
 Tightening always wins: a `deny` rule is decided before any mode runs, and your organization's
 policies (synced from the Kete platform) and `experimental.policies` in config are applied after
 the mode, so they can deny what a mode or rule would allow. No mode turns `ask` or `deny` into

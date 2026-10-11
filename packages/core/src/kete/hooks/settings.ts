@@ -16,6 +16,7 @@ import fs from "fs/promises"
 import path from "path"
 import { ConfigKete } from "@opencode/schema/config/kete"
 import type { ConfigPolicy } from "@opencode/schema/config/policy"
+import type { Entry as ConfigEntry } from "@opencode/schema/config"
 import { Wildcard } from "../../util/wildcard.js"
 
 export type Event = ConfigKete.HookEvent
@@ -189,4 +190,51 @@ export function placement(
   if (entry.source === "project" && !input.projectOptIn)
     return { kind: "refused", reason: `${why}; project hooks then run only with kete.hooks.unsandboxed in the global config` }
   return { kind: "unsandboxed" }
+}
+
+export type ProjectHooksTrust =
+  | { readonly kind: "none" }
+  | { readonly kind: "refused"; readonly reason: string }
+  | {
+      readonly kind: "ok"
+      readonly fingerprint: string
+      readonly commands: ReadonlyArray<string>
+      readonly all: ReadonlyArray<Entry>
+      readonly files: ReadonlyArray<Referenced>
+    }
+
+/**
+ * What trusting this repository's project hooks means: the fingerprint the hooks trust store keeps
+ * (settings.ts: every project hook and the repository files the commands name), or why they can't be
+ * trusted. kete/hooks.ts `select` uses it; folder trust (kete/folder-trust.ts) calls it too, so trusting a
+ * folder also trusts its current project hooks (one question, not two).
+ */
+export async function projectHooksTrust(
+  entries: ReadonlyArray<ConfigEntry>,
+  input: { readonly globalConfig: string; readonly repositoryKey: string; readonly cwd: string },
+): Promise<ProjectHooksTrust> {
+  const all = collect(
+    entries.flatMap((entry) => (entry.type === "document" ? [{ path: entry.path, hooks: entry.info.kete?.hooks }] : [])),
+    input.globalConfig,
+  )
+  const project = all.filter((entry) => entry.source === "project")
+  if (project.length === 0) return { kind: "none" }
+  const unsafe = project.map((entry) => unsafeCommand(entry.command)).find((reason) => reason !== undefined)
+  if (unsafe) return { kind: "refused", reason: unsafe }
+  const files = (
+    await Promise.all(project.map((entry) => referencedFiles(entry.command, input.repositoryKey, input.cwd)))
+  ).flat()
+  return {
+    kind: "ok",
+    fingerprint: fingerprint(all, files),
+    commands: project.map((entry) => entry.command),
+    all,
+    files,
+  }
+}
+
+/** The key the hooks trust store uses for a location: the real path of its project directory. */
+export function repositoryKeyOf(location: { readonly directory: string; readonly project: { readonly directory?: string } }) {
+  const repository = location.project.directory ?? location.directory
+  return fs.realpath(repository).catch(() => path.resolve(repository))
 }

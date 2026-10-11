@@ -120,6 +120,7 @@ import { KeteLsp } from "../kete/lsp.js" // kete_change
 import { KeteHooks } from "../kete/hooks.js" // kete_change
 import { PermissionSaved } from "../permission/saved.js" // kete_change
 import { Project } from "../project.js" // kete_change
+import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
@@ -159,6 +160,7 @@ const services = [
   Permission.Service,
   PermissionSaved.Service, // kete_change: KetePermissionCeiling
   Project.Service, // kete_change: KeteWorktrees (the worktree setup script)
+  KeteFolderTrust.Service, // kete_change: ConfigAgentPlugin (an untrusted folder's agent permission rules)
   Form.Service,
   ReadToolFileSystem.Service,
   Reference.Service,
@@ -214,6 +216,7 @@ export const requirements = LayerNode.group([
   Permission.node,
   PermissionSaved.node, // kete_change: KetePermissionCeiling
   Project.node, // kete_change: KeteWorktrees (the worktree setup script)
+  KeteFolderTrust.node, // kete_change: ConfigAgentPlugin (an untrusted folder's agent permission rules)
   Form.node,
   ReadToolFileSystem.node,
   Reference.node,

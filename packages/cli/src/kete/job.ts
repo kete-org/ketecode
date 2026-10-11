@@ -24,6 +24,7 @@ import { ServerConnection } from "../services/server-connection"
 import { JobConnection } from "./job-connection"
 import { JobGit } from "./job-git"
 import { KeteJobProjectConfig } from "./job-project-config"
+import { KeteFolderTrustCli } from "./folder-trust"
 import { KeteJobPreflight } from "./job-preflight"
 import { JobRun } from "./job-run"
 import { JobSpec } from "./job-spec"
@@ -150,6 +151,13 @@ export default Runtime.handler(
       process.exitCode = result.exit_code
       return
     }
+    // Folder trust (folder-trust.ts): outside job mode, --trust-project-config also trusts the folder on
+    // a private server for this run; with --server, that server applies its own folder trust.
+    const folderTrust = jobMode
+      ? ({ ok: true, args: connection.args } as const)
+      : KeteFolderTrustCli.connection(connection.args, KeteJobProjectConfig.trusted(input.trustProjectConfig, process.env), "job")
+    if (!folderTrust.ok) return report(refusedResult(folderTrust.message), input.json)
+    if ("note" in folderTrust && folderTrust.note) process.stderr.write(`${folderTrust.note}\n`)
     // Job mode: the first sync with the job's key, before any server exists (job-sync.ts).
     const synced =
       preflight?.kind === "ok"
@@ -184,7 +192,7 @@ export default Runtime.handler(
     // Job mode only ever talks to its own socket server; never fall back to TCP or the service.
     if (jobMode && started?.ok !== true)
       return report(errorResult("Job mode: the job's own server was not started; refusing any other connection."), input.json)
-    const resolved = started?.ok ? { endpoint: started.value.endpoint, service: undefined } : yield* ServerConnection.resolve(connection.args)
+    const resolved = started?.ok ? { endpoint: started.value.endpoint, service: undefined } : yield* ServerConnection.resolve(folderTrust.args)
 
     const client = OpenCode.make({
       baseUrl: resolved.endpoint.url,

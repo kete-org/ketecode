@@ -1,11 +1,12 @@
 ---
 module: jetbrains-plugin
 paths: [packages/kete-jetbrains/**, packages/app/src/kete/ide-host.ts, packages/app/src/kete/ide-host.test.ts, .github/workflows/kete-jetbrains.yml, .github/workflows/kete-jetbrains-publish.yml]
-verified-at: 370606839e
+verified-at: f3d1b962ee
 ---
 
 ## Quick answers
 
+- Does the plugin show the agent's task list? Yes, but not by plugin code: the README's "Task list" bullet (`packages/kete-jetbrains/README.md:30`) describes the web UI's todo dock above the message box, which the JCEF tool window frames, same as VS Code. The plugin has no todo or form code; forms render through the web UI (`server-sdk` card).
 - **What is it?** Kete Code for IntelliJ-platform IDEs (plugin ID `ai.ketecode.kete-code`, vendor Kete
   Code, `sinceBuild` 243, no `untilBuild`): a thin client of its own `kete serve`, the JetBrains
   twin of the VS Code extension (see the `vscode-extension` card). Kotlin, IntelliJ Platform Gradle

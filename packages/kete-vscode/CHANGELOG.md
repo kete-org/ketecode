@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Folder trust:** a repository's own configuration can no longer start MCP servers, load plugins,
+  point providers elsewhere, change the shell or formatters, or loosen permissions until you trust
+  the folder. The chat panel shows the question above the message box ("Trust this folder?" / "Not
+  now"); instructions, agents, commands and skills load either way. After this update every folder
+  with such settings asks once, including folders you used before. Details: `docs/folder-trust.md`.
+
 ## 0.2.6
 
 - Safer defaults: Kete Code now asks before shell commands that can change things, and always

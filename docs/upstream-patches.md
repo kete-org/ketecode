@@ -1055,3 +1055,34 @@ trusted; never in job mode. The config schema change regenerated `protocol/opena
 **Sync checklist:** if upstream adds config-declared hooks, compare semantics and trust handling
 before keeping both. If upstream changes `tool.execute.before/after`, `session.prompt` or the
 session execution/permission/form events, re-check the event mapping in `kete/hooks.ts`.
+
+## Folder trust (feature/folder-trust)
+
+An untrusted folder's guarded project settings (MCP, providers, plugins, sharing, `kete.*`
+integrations and hooks, formatter, shell, worktree, loosening permission rules) and `.kete/plugin(s)/`
+code are held back until the person trusts the folder (`core/src/kete/folder-trust.ts`,
+`core/src/kete/folder-trust/*`, `util/src/kete/folder-trust.ts`, `util/src/kete/trust-store.ts`,
+`util/src/kete/folder-trust-store.ts`, `cli/src/kete/folder-trust.ts`, `cli/src/kete/trust.ts`,
+`app/src/kete/global-forms.ts`, `app/src/kete/global-form-dock.tsx`, `docs/folder-trust.md`). No
+server endpoint, protocol or schema type changed, so nothing was regenerated.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config.ts` | Import; `KeteFolderTrust.Service` in `layer`; a map of the raw text `loadFile` read (cleared at the start of `load`); `load` passes its entries through `folderTrust.gate` with the project document paths (`sources.direct`, `<.kete>/kete.json(c)`) and `.kete` directories; reload on `folderTrust.changes()`; `KeteFolderTrust.node` in `configured()` deps | config loading is the only point every reader (MCP, providers, plugins, formatter, shell, permissions, `kete.*`, hooks) goes through, and it has no hook |
+| `core/src/config/plugin/source.ts` | Import; service in `layer`; `scan` takes it and skips `Directory` entries `pluginsAllowed` refuses; `KeteFolderTrust.node` in `node` deps | `.kete/plugin(s)/` discovery happens here, not in config documents |
+| `core/src/config/plugin/agent.ts` | Import; `Effect.serviceOption(KeteFolderTrust.Service)`; `loadEntry` passes a directory's decoded agent documents through `agentDocuments` | agent markdown permissions are decoded here, after config loading |
+| `core/src/plugin/internal.ts` | Import; `KeteFolderTrust.Service` in `services` and its node in `requirements` | internal plugins see only the listed services |
+| `core/script/test.ts` | `OPENCODE_TRUST_RUN_PARENT` = the script's pid for the test child (run trust, as `kete run --trust-project-config` gives its private server) | the suite's fixtures put guarded settings in temporary project folders; `test/kete/folder-trust.test.ts` builds the service without run trust |
+| `cli/src/commands/commands.ts` | `...KeteCommands.trustParams` on `run` | flag list |
+| `cli/src/commands/handlers/run.ts` | Imports; `KeteFolderTrustCli.connection` before `ServerConnection.resolve`; passes `trustProjectConfig` | where `kete run` picks its server |
+| `cli/src/index.ts` | `trust: { $, list, add, remove }` handlers | handler table |
+| `cli/src/run/run.ts` | Import; `trustProjectConfig` on the input; `warnIfHeld` once the session exists | `kete run`'s execution |
+| `cli/src/run/noninteractive.ts` | Import; both `"global"` form cancel paths skip `kete.folder.trust` forms | the form stays pending (held back), not cancelled |
+| `app/src/composer/composer.tsx` | Import; `<KeteGlobalFormDock />` above `KeteTodoDock` | composer layout |
+
+**Sync checklist:** if upstream adds a trust or "workspace trust" concept, compare and prefer
+extending it. If upstream changes `Config.load`'s sources or adds a config source, classify it in the
+gate (project vs machine). If upstream renames `PluginSourceDirectory.names`, the agent source
+directories or the permission key names, update `util/src/kete/folder-trust.ts` (a core test
+compares the plugin names). If upstream gives MCP elicitations real session owners, the web dock
+still serves the folder-trust form.

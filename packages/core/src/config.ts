@@ -19,6 +19,7 @@ import { ConfigDiscovery } from "./config/discovery.js"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { ConfigWatch } from "./config/watch.js"
 import { WellKnown } from "./wellknown.js"
+import { KeteFolderTrust } from "./kete/folder-trust.js" // kete_change
 
 export function latest<K extends keyof Info>(entries: readonly Entry[], key: K): Info[K] | undefined {
   return entries.findLast((entry): entry is Document => entry.type === "document" && entry.info[key] !== undefined)
@@ -98,7 +99,9 @@ export const layer = (options?: Options) =>
       const credentials = yield* Credential.Service
       const globalService = yield* Global.Service
       const wellknown = yield* WellKnown.Service
+      const folderTrust = yield* KeteFolderTrust.Service // kete_change
       const reloadLock = Semaphore.makeUnsafe(1)
+      const configTexts = new Map<string, string>() // kete_change: raw text of the files `load` read, for folder trust
       const updateLock = Semaphore.makeUnsafe(1)
       const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
       const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
@@ -137,6 +140,7 @@ export const layer = (options?: Options) =>
       const loadFile = Effect.fnUntraced(function* (filepath: string) {
         const text = yield* fs.readFileStringSafe(filepath)
         if (text === undefined) return
+        configTexts.set(filepath, text) // kete_change
         const substituted = yield* ConfigVariable.substitute({ type: "path", path: filepath, text })
         const info = yield* parseInfo(substituted, filepath)
         if (!info) return
@@ -193,6 +197,7 @@ export const layer = (options?: Options) =>
       })
 
       const load = Effect.fn("Config.load")(function* (sources: ConfigDiscovery.Sources) {
+        configTexts.clear() // kete_change
         const direct = yield* Effect.forEach(sources.direct, (filepath) => loadFile(filepath)).pipe(
           Effect.orDie,
           Effect.map((entries) => entries.filter((entry): entry is Document => entry !== undefined)),
@@ -228,7 +233,7 @@ export const layer = (options?: Options) =>
           Effect.orDie,
           Effect.map((entries) => entries.flat()),
         )
-        return [
+        const loaded = [ // kete_change
           ...(yield* loadWellknown().pipe(Effect.orDie)),
           ...globalSupplementary,
           ...explicit,
@@ -236,6 +241,20 @@ export const layer = (options?: Options) =>
           ...projectSupplementary,
           ...content,
         ]
+        // kete_change start: folder trust holds back guarded project settings (kete/folder-trust.ts)
+        const projectRoots = sources.project.filter((root) => root.present).map((root) => root.path)
+        return yield* folderTrust.gate(
+          loaded,
+          {
+            documents: new Set([
+              ...sources.direct,
+              ...projectRoots.flatMap((root) => ConfigDiscovery.names.map((file) => path.join(root, file))),
+            ]),
+            directories: new Set(projectRoots),
+          },
+          configTexts,
+        )
+        // kete_change end
       })
 
       const initial = yield* ConfigDiscovery.discover(options)
@@ -326,6 +345,12 @@ export const layer = (options?: Options) =>
         Effect.forkScoped({ startImmediately: true }),
       )
       yield* reloadLock.withPermit(reconcile(initial))
+      // kete_change start: reload once this folder is trusted (kete/folder-trust.ts)
+      yield* folderTrust.changes().pipe(
+        Stream.runForEach(() => requestReload),
+        Effect.forkScoped({ startImmediately: true }),
+      )
+      // kete_change end
 
       const update = Effect.fn("Config.update")(
         function* (patch: Patch) {
@@ -368,7 +393,7 @@ export function configured(options?: Options) {
   return makeLocationNode({
     service: Service,
     layer: layer(options),
-    deps: [Watcher.node, Bus.node, FSUtil.node, Global.node, Location.node, Credential.node, WellKnown.node],
+    deps: [Watcher.node, Bus.node, FSUtil.node, Global.node, Location.node, Credential.node, WellKnown.node, KeteFolderTrust.node], // kete_change
   })
 }
 
