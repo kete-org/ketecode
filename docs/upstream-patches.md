@@ -755,6 +755,12 @@ claims (upstream's side-question indicator, `feature-plugins/prompt/btw.tsx`) st
 **Sync checklist:** re-check the prompt's idle and running `Match` blocks and the footer `Slot`s, and
 `Info` for the new key. If upstream adds its own configurable status line, compare and drop one.
 
+### YAML-only front matter (GHSA-m7hc-g593-r9wg)
+
+| File | Change |
+| --- | --- |
+| `core/src/config/markdown.ts` | `parse` refuses front matter in any language other than YAML and passes gray-matter engines that throw for JavaScript/CoffeeScript, so a `---js` block in agent, command or skill markdown is never evaluated. Upstream calls `matter(content)` with defaults, which include an `eval`-based engine. Re-check on every sync, and report it upstream once the advisory is public |
+
 ### Upstream test edits
 
 55 upstream test files and `core/script/test.ts` were updated so their fixtures
