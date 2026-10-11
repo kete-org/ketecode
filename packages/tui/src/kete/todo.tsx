@@ -1,6 +1,6 @@
 // The session task list in the TUI (core/src/kete/todo.ts): the full list in the session sidebar
-// and a one-line progress label ("Todo 1/3 · Fix the type errors") on the prompt footer while work
-// is open. The list comes from the `kete.todo` RPC when a session is shown and from the
+// and a one-line progress label ("Todo 1/3 · Fix the type errors") as the opt-in `todo` status line
+// item (statusline.tsx) while work is open. The list comes from the `kete.todo` RPC when a session is shown and from the
 // `rpc.kete.todo.updated` event as the agent changes it; both are decoded against the shared schema.
 
 import type { LocationRef, OpenCodeClient } from "@opencode/client"
@@ -43,7 +43,7 @@ export function footerLabel(todos: ReadonlyArray<KeteTodoRpc.Item>): string | un
 export const mark = (status: KeteTodoRpc.Status) => (status === "completed" ? "✓" : status === "in_progress" ? "▶" : "○")
 
 /** A session's list, kept current from the RPC and its events. */
-export function useTodos(context: Plugin.Context, sessionID: Accessor<string | undefined>) {
+export function useTodos(context: Pick<Plugin.Context, "client" | "data" | "location">, sessionID: Accessor<string | undefined>) {
   const [todos, setTodos] = createSignal<ReadonlyArray<KeteTodoRpc.Item>>([])
   const load = (id: string) => {
     const location = context.data.session.get(id)?.location ?? context.location
@@ -130,10 +130,6 @@ export default Plugin.define({
     context.ui.slot({
       append: "sidebar.content",
       render: (props) => <TodoSidebar context={context} todos={useTodos(context, () => props.sessionID)} />,
-    })
-    context.ui.slot({
-      append: "prompt.footer.status",
-      render: (props) => <TodoFooter context={context} todos={useTodos(context, () => props.sessionID)} />,
     })
   },
 })

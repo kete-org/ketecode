@@ -1,10 +1,11 @@
 ---
 module: web-app
 paths: [packages/app/src/kete/panel.tsx, packages/app/src/kete/panel.css, packages/app/src/kete/panel-layout.tsx, packages/app/src/kete/panel-state.ts, packages/app/src/kete/mode.ts, packages/app/src/kete/composer-controls.tsx, packages/app/src/new-session/view.tsx, packages/app/src/composer/composer.tsx, packages/app/src/composer/editor/editor.tsx, packages/app/src/new-session/composer-adapter.ts]
-verified-at: f85913ed4a
+verified-at: 006573bd58
 ---
 
 ## Quick answers
+- Where is the session task list (todo) in the web app? `KeteTodoDock` (`app/src/kete/todo-dock.tsx:14`) renders above the composer (`composer/composer.tsx:29`, `kete_change`): the agent's `todowrite` list with a progress count, read via the `kete.todo` RPC and kept current from the `rpc.kete.todo.updated` event; hidden when empty or on the new-session screen. Styled by `panel.css`'s `data-kete="todo-*"` rules.
 - Where are the Offline indicator, the first-run local models offer and the no-tools notice? `KeteOfflineIndicator` in the panel header and `KeteLocalOffer` in the empty state (`app/src/kete/panel.tsx:33,43`); the once-per-session no-tools notice via `useKeteNoToolsNotice` in `composer-controls.tsx:51` (the `KeteModeToggle` file). All in `app/src/kete/local-ui.tsx`; see the `local-models` card.
 
 - What is the "Kete panel"? The redesigned empty state + composer of the web app's new-session/
@@ -17,7 +18,7 @@ verified-at: f85913ed4a
   and add two layout attributes (`data-kete="panel-stack"`/`"panel-footer"`) at `view.tsx:62-69`
   (`kete_change`, ~5 marked lines). The composer toolbar has no extension point either —
   `composer/editor/editor.tsx:75` adds an optional `kete?: { start?, end? }` prop rendered before/after
-  the `+` menu and submit button (`:292`, `:357`); `composer/composer.tsx:14,38` passes
+  the `+` menu and submit button (`:292`, `:357`); `composer/composer.tsx:14,40` passes
   `KeteCommandsButton`/`KeteModeToggle` into it. Don't restructure or reformat the rest of either
   upstream file — CSS overrides key only on `data-component`/`data-action`/`data-slot`/`data-kete`
   attributes, never on upstream's own classes (they can rename on sync).
@@ -96,8 +97,7 @@ evaluation time.
   (`panel-layout.tsx`) wrapping `<KeteEmptyState/>` (replacing `<NewSessionWordmark/>`) and
   `<KeteCliHint/>` as scroll-area children, with the composer/project row as its `footer` prop
   (`kete_change`).
-- `packages/app/src/composer/composer.tsx:38` — passes `kete={{ start, end }}` into `ComposerEditor`
-  (`kete_change`).
+- `packages/app/src/composer/composer.tsx:15,29,40` — imports and renders `<KeteTodoDock/>` above the editor (`:29`) and passes `kete={{ start, end }}` into `ComposerEditor` (`:40`) (`kete_change`).
 - `packages/app/src/composer/editor/editor.tsx:75,292,357` — the `kete` slot itself (`kete_change`).
 - `packages/app/src/new-session/composer-adapter.ts:97,99` — `KeteModeDraft.metadata(draftID)` on
   `session.create`, cleared after (`kete_change`).
@@ -107,7 +107,7 @@ evaluation time.
 | File | Lines | Role |
 | --- | --- | --- |
 | `packages/app/src/kete/panel.tsx` | 117 | `KetePanelHeader`, `KeteEmptyState`, `KeteCliHint`; renders notice/hint text via `segments()`, never `innerHTML`; every icon button has an `aria-label` |
-| `packages/app/src/kete/panel.css` | ~318 | Header/empty-state/CLI-hint/notice styling, the weave-in keyframes, composer border/ring/send-button overrides on `[data-component="composer"]`, the 300px/379px responsive rules, `prefers-reduced-motion` disabling the weave, and the `panel-column`/`panel-scroll`/`panel-footer` layout split (below) |
+| `packages/app/src/kete/panel.css` | ~464 | Header/empty-state/CLI-hint/notice styling, the weave-in keyframes, composer border/ring/send-button overrides on `[data-component="composer"]`, the 300px/379px responsive rules, `prefers-reduced-motion` disabling the weave, the `panel-column`/`panel-scroll`/`panel-footer` layout split (below), and the task-list dock's `[data-kete="todo-*"]` styles (`:387` on) |
 | `packages/app/src/kete/panel-layout.tsx` | 17 | `KeteNewSessionLayout({children, footer})` — the scroll-area-above-pinned-footer wrapper `new-session/view.tsx` renders in place of nesting the footer inside the hero's own wrapper; no `vscode` import, styled entirely by `panel.css`'s `data-kete` attributes |
 | `packages/app/src/kete/panel-state.ts` | 81 | `PanelState` signal (`host`, `platform`, `notices`, `cliHint`, `defaultMode`), `tipKeys()`, `segments()`, `tipVisible()`, `updatePanelState()`, local optimistic `dismiss*Locally()` |
 | `packages/app/src/kete/mode.ts` | 117 | `derive`/`next`/`withMode` (pure), `KeteModeDraft` (new-session mode staging), `apply()` (GET-merge-PATCH metadata, or select the `plan` agent), `ApplyAgent`/`ModeSDK` types |

@@ -1,5 +1,5 @@
 // The local OS sandbox in the TUI footers (ADR 0013, docs/sandbox.md): an "Unsandboxed" warning on
-// the home and prompt footers when the runtime reports that agent commands run without the OS
+// the home footer (the prompt's is a pinned status line item, statusline.tsx) when the runtime reports that agent commands run without the OS
 // sandbox (turned off, or not available on this machine). Nothing is shown while it is on. Asked once
 // per location through the `kete.sandbox` status RPC; the answer is decoded against the shared schema.
 
@@ -53,6 +53,5 @@ export default Plugin.define({
   id: "kete.sandbox-status",
   setup(context) {
     context.ui.slot({ append: "home.footer.status", render: () => <Indicator context={context} /> })
-    context.ui.slot({ append: "prompt.footer.status", render: () => <Indicator context={context} /> })
   },
 })

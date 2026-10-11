@@ -27,6 +27,12 @@ Mistakes to avoid, grouped. Each item cites where the rule lives or where it bit
   strings; `upstream:check`'s "leaks" step only catches what it already knows to look
   for.
 
+- **A `kete_change` JSX comment on the same line as an element breaks the TUI.** `<box …> {/* kete_change */}`
+  or `<Foo /> {/* kete_change */}` leaves a space text node inside an opentui box: the screen never goes
+  idle and every whole-app TUI test times out ("Timed out waiting for predicate", `hasScheduledRender:
+  true`). Put the comment on its own line (`{/* kete_change */}` above the element), as
+  `tui/src/routes/home.tsx` and `component/prompt/index.tsx` do.
+
 ## Branding
 
 - **Never hard-code "opencode"/"kete" names** — import from
