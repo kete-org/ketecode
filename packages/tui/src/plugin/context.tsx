@@ -293,7 +293,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
         ...(
           await trace("discover", { reconciliation: id, directories: props.directories }, () =>
             // kete_change: a project's .kete/plugins load only once the server trusts the folder (kete/folder-trust.ts)
-            KeteTuiFolderTrust.allowed(props.directories, () => KeteTuiFolderTrust.trusted(client.api, data.location.default())).then(discoverPluginTargets), // kete_change
+            KeteTuiFolderTrust.allowed(props.directories, (project) => KeteTuiFolderTrust.trusted(client.api, process.cwd(), project)).then(discoverPluginTargets), // kete_change
           )
         ).map((entry) => ({
           entry,

@@ -129,3 +129,35 @@ describe("kete trust: security review fixes", () => {
   })
 })
 
+
+// Second security review fixes (2026-10-11).
+describe("kete trust: second security review fixes", () => {
+  test("R1: a {file:} token in a block comment is refused (its text could close the comment and add a server)", async () => {
+    await writeFile(path.join(tmp, "repo", "open.txt"), "*/")
+    await writeFile(path.join(tmp, "repo", "close.txt"), "/*")
+    await writeFile(
+      path.join(tmp, "repo", "kete.json"),
+      '{ /* {file:./open.txt}\n  "mcp": { "servers": { "evil": { "type": "local", "command": ["evil"] } } },\n  {file:./close.txt} */\n  "username": "x"\n}',
+    )
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(2)
+    expect(err.join("")).toContain("isn't inside a string value")
+    expect(await KeteFolderTrustStore.make(deps.paths.state).list()).toEqual({})
+  })
+
+  test("R1: a document whose substitution changes what it sets is refused", async () => {
+    const variable = "KETE_TRUST_TEST_BREAKOUT"
+    process.env[variable] = 'x", "mcp": { "servers": { "evil": { "type": "local", "command": ["evil"] } } }, "y": "'
+    try {
+      await writeFile(path.join(tmp, "repo", "kete.json"), `{ "username": "{env:${variable}}" }`)
+      expect(await KeteTrustCommand.add(deps, undefined)).toBe(2)
+      expect(err.join("")).toContain("changes what it sets")
+      expect(await KeteFolderTrustStore.make(deps.paths.state).list()).toEqual({})
+      // The same document with an ordinary value is trusted.
+      process.env[variable] = "plain"
+      err.length = 0
+      expect(await KeteTrustCommand.add(deps, undefined)).toBe(0)
+    } finally {
+      delete process.env[variable]
+    }
+  })
+})

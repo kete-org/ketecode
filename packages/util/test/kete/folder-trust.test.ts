@@ -419,9 +419,10 @@ describe("security review fixes", () => {
     await write("cmd.txt", "one")
     await write("prompt.txt", "one")
     const text = JSON.stringify({ mcp: { x: { type: "local", command: ["{file:./cmd.txt}"] } }, username: "{file:./prompt.txt}" })
-    const run = () => Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(text), text }], plugins: [], agents: [] })
+    const value = (result: Rules.Fingerprint) => (result.kind === "ok" ? result.value : result)
+    const run = async () => value(await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(text), text }], plugins: [], agents: [] }))
     const base = await run()
-    expect(base.kind).toBe("ok")
+    expect(base).toMatch(/^[0-9a-f]{64}$/)
     await write("prompt.txt", "two")
     expect(await run()).toEqual(base)
     await write("cmd.txt", "two")
@@ -429,7 +430,7 @@ describe("security review fixes", () => {
     // A JSON escape in the raw text can't hide which file a guarded value reads.
     await write("a\\u0062", "hidden")
     const escaped = '{ "shell": "{file:./a\\u0062}" }'
-    const fp = () => Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(escaped), text: escaped }], plugins: [], agents: [] })
+    const fp = async () => value(await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(escaped), text: escaped }], plugins: [], agents: [] }))
     const before = await fp()
     await write("a\\u0062", "changed")
     expect(await fp()).not.toEqual(before)
@@ -490,3 +491,73 @@ describe("security review fixes", () => {
   })
 })
 
+
+describe("second security review fixes", () => {
+  test("R1: tokens must sit inside a string value; comments, property names and bare positions are refused", () => {
+    const misplaced = (text: string) => Rules.misplacedToken(text, path.join(tmp, "kete.json"), tmp)
+    expect(misplaced('{ "a": "{env:A}", "b": "x {file:./b} y" }')).toBeUndefined()
+    expect(misplaced('{ "a": 1 /* {file:./open} */ }')).toContain("isn't inside a string value")
+    expect(misplaced('{ "a": 1, /* {env:A} */ "b": 2 }')).toContain("isn't inside a string value")
+    expect(misplaced('{ "{file:./k}": {} }')).toContain("isn't inside a string value")
+    expect(misplaced('{ "a": 1 } // {env:A}')).toContain("isn't inside a string value")
+    // A {file:} token on a line that starts with // is never substituted (ConfigVariable), so it's fine.
+    expect(misplaced('{\n  // "b": "{file:./x}"\n  "a": 1\n}')).toBeUndefined()
+    expect(misplaced('{ "a": "1" , "b": 2, // {file:./x}\n "c": 3 }')).toContain("isn't inside a string value")
+    expect(misplaced('{ "a": "x{env:A", "b": "}" }')).toContain("isn't inside a string value")
+    // An escaped quote doesn't end the string.
+    expect(misplaced('{ "a": "\\"{env:A}\\"" }')).toBeUndefined()
+  })
+
+  test("R1: the fingerprint refuses a misplaced token", async () => {
+    const file = path.join(tmp, "kete.json")
+    const text = '{ /* {file:./open.txt}\n "mcp": {},\n {file:./close.txt} */ "username": "x" }'
+    const result = await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: { username: "x" }, text }], plugins: [], agents: [] })
+    expect(result.kind === "unavailable" ? result.reason : "").toContain("isn't inside a string value")
+  })
+
+  test("R1: substitutionMismatch accepts substituted strings and refuses any change of shape", () => {
+    const file = (token: string) => (token === "{file:./a}" ? "  from-a\n" : undefined)
+    const raw = { a: "{env:X}-{file:./a}", n: 1, list: ["{env:Y}"], nested: { b: "plain" } }
+    expect(Rules.substitutionMismatch(raw, { a: "anything at all-from-a", n: 1, list: [""], nested: { b: "plain" } }, file)).toBeUndefined()
+    expect(Rules.substitutionMismatch(raw, { a: "v-other", n: 1, list: [""], nested: { b: "plain" } }, file)).toBe("$.a")
+    expect(Rules.substitutionMismatch(raw, { a: "v-from-a", n: 1, list: [""], nested: { b: "plain" }, mcp: {} }, file)).toBe("$")
+    expect(Rules.substitutionMismatch(raw, { a: "v-from-a", n: 2, list: [""], nested: { b: "plain" } }, file)).toBe("$.n")
+    expect(Rules.substitutionMismatch(raw, { a: "v-from-a", n: 1, list: ["", ""], nested: { b: "plain" } }, file)).toBe("$.list")
+    expect(Rules.substitutionMismatch({ a: "{file:./unknown}" }, { a: "x" }, file)).toBe("$.a")
+  })
+
+  test("R4: the fingerprint hands back the very bytes it hashed, and substitution uses only those", async () => {
+    const file = path.join(tmp, "kete.json")
+    await write("cmd.txt", "first")
+    const text = '{ "shell": "{file:./cmd.txt}", "username": "{file:./missing.txt}" }'
+    const result = await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: JSON.parse(text), text }], plugins: [], agents: [] })
+    if (result.kind !== "ok") throw new Error(result.reason)
+    expect([...result.files]).toEqual([[path.join(tmp, "cmd.txt"), "first"]])
+    await write("cmd.txt", "second")
+    // A target the fingerprint couldn't read isn't read now either.
+    expect(Rules.substitute(text, file, result.files, {})).toBeUndefined()
+    const ok = '{ "shell": "{file:./cmd.txt}" }'
+    expect(Rules.substitute(ok, file, result.files, {})).toBe('{ "shell": "first" }')
+  })
+
+  test("R2: plugin digests cover node_modules; configured local plugins are fingerprinted by content", async () => {
+    await write(".kete/plugins/p/index.ts", "export default {}")
+    await write(".kete/plugins/p/node_modules/dep/index.js", "1")
+    const plugins = path.join(tmp, ".kete", "plugins")
+    const before = await Rules.pluginDigest(plugins)
+    await write(".kete/plugins/p/node_modules/dep/index.js", "2")
+    expect(await Rules.pluginDigest(plugins)).not.toBe(before)
+    const file = path.join(tmp, "kete.json")
+    await write("local/index.ts", "one")
+    const document = { plugins: ["./local", "npm-package", { package: "file://" + path.join(tmp, "other") }, "-./removed"] }
+    expect(Rules.localPluginTargets(document, file)).toEqual([path.join(tmp, "local"), path.join(tmp, "other")])
+    const run = async () => {
+      const result = await Rules.fingerprint({ top: tmp, documents: [{ path: file, document }], plugins: [], agents: [] })
+      return result.kind === "ok" ? result.value : result.reason
+    }
+    const first = await run()
+    await write("local/index.ts", "two")
+    expect(await run()).not.toBe(first)
+    expect(await Rules.targetDigest(path.join(tmp, "other"))).toBeNull()
+  })
+})

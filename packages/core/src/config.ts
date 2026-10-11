@@ -138,12 +138,14 @@ export const layer = (options?: Options) =>
       })
 
       // kete_change start: folder trust loads project files raw first, then substituted from the same text
-      const loadFile = Effect.fnUntraced(function* (filepath: string, kete?: "raw" | "cached") {
-        if (kete === "cached" && !configTexts.has(filepath)) return
-        const text = kete === "cached" ? configTexts.get(filepath) : yield* fs.readFileStringSafe(filepath)
+      const loadFile = Effect.fnUntraced(function* (filepath: string, kete?: "raw" | Map<string, string>) {
+        const cached = kete instanceof Map
+        if (cached && !configTexts.has(filepath)) return
+        const text = cached ? configTexts.get(filepath) : yield* fs.readFileStringSafe(filepath)
         if (text === undefined) return
         configTexts.set(filepath, text)
         const substituted = kete === "raw" ? text : yield* ConfigVariable.substitute({ type: "path", path: filepath, text })
+        if (cached) kete.set(filepath, substituted)
         // kete_change end
         const info = yield* parseInfo(substituted, filepath)
         if (!info) return
@@ -190,7 +192,7 @@ export const layer = (options?: Options) =>
         return yield* Effect.forEach(entries, loadWellknownEntry).pipe(Effect.map((documents) => documents.flat()))
       })
 
-      const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath, kete?: "raw" | "cached") { // kete_change
+      const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath, kete?: "raw" | Map<string, string>) { // kete_change
         return [
           ...(yield* Effect.forEach(ConfigDiscovery.names, (file) => loadFile(path.join(directory, file), kete)).pipe( // kete_change
             Effect.map((configs) => configs.filter((config): config is Document => config !== undefined)),
@@ -201,8 +203,9 @@ export const layer = (options?: Options) =>
 
       const load = Effect.fn("Config.load")(function* (sources: ConfigDiscovery.Sources) {
         configTexts.clear() // kete_change
-        // kete_change start: project files load raw, then substituted only once folder trust allows it (kete/folder-trust.ts)
-        const loadProject = (kete: "raw" | "cached") =>
+        // kete_change start: project files load raw, then substituted only once folder trust allows it (kete/folder-trust.ts);
+        // a `{file:…}` target is then served from the bytes folder trust fingerprinted (`files`), never read again
+        const loadProject = (kete: "raw" | Map<string, string>, files?: ReadonlyMap<string, string>) =>
           Effect.all([
             Effect.forEach(sources.direct, (filepath) => loadFile(filepath, kete)).pipe(
               Effect.map((entries) => entries.filter((entry): entry is Document => entry !== undefined)),
@@ -211,7 +214,7 @@ export const layer = (options?: Options) =>
               sources.project.filter((root) => root.present),
               (root) => loadDirectory(root.path, kete),
             ).pipe(Effect.map((entries) => entries.flat())),
-          ]).pipe(Effect.orDie, Effect.provideService(FSUtil.Service, fs))
+          ]).pipe(Effect.orDie, Effect.provideService(FSUtil.Service, files ? KeteFolderTrust.checkedFiles(fs, files) : fs))
         // kete_change end
 
         const explicit = sources.explicit
@@ -239,17 +242,22 @@ export const layer = (options?: Options) =>
         const globalSupplementary = sources.global ? yield* loadDirectory(sources.global).pipe(Effect.orDie) : []
         // kete_change start: folder trust holds back guarded project settings (kete/folder-trust.ts)
         const wellknownEntries = yield* loadWellknown().pipe(Effect.orDie)
-        const assemble = (substitute: boolean) =>
-          loadProject(substitute ? "cached" : "raw").pipe(
-            Effect.map(([direct, projectSupplementary]) => [
-              ...wellknownEntries,
-              ...globalSupplementary,
-              ...explicit,
-              ...direct,
-              ...projectSupplementary,
-              ...content,
-            ]),
+        const assemble: KeteFolderTrust.Load = (substitute) => {
+          const substituted = new Map<string, string>()
+          return loadProject(substitute === false ? "raw" : substituted, substitute === false ? undefined : substitute.files).pipe(
+            Effect.map(([direct, projectSupplementary]) => ({
+              entries: [
+                ...wellknownEntries,
+                ...globalSupplementary,
+                ...explicit,
+                ...direct,
+                ...projectSupplementary,
+                ...content,
+              ],
+              substituted,
+            })),
           )
+        }
         const projectRoots = sources.project.filter((root) => root.present).map((root) => root.path)
         return yield* folderTrust.gate(
           assemble,

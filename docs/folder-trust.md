@@ -48,8 +48,9 @@ not, `kete.offline: true` in your configuration stays on even if the project say
 own (or it is held back).
 
 **The terminal UI's own plugins.** TUI plugins in a project's `.kete/plugins/` run inside the
-terminal UI, so it loads them only when the runtime says the folder is trusted, and loads them as
-soon as you trust it.
+terminal UI, so it loads them only when the runtime, asked about the terminal UI's own folder, says
+the folder is trusted and its plugin files are the ones that were trusted (the terminal UI checks the
+files itself just before loading them). It loads them as soon as you trust the folder.
 
 ## The question
 
@@ -80,15 +81,25 @@ share one question.
 **What you trust is what you reviewed.** Trust is stored for the folder's *trust root* (below)
 together with a fingerprint of everything held back: the values of those settings in every project
 configuration file that applies, the `{env:…}` and `{file:…}` each file uses, the contents of any
-file a held-back setting reads through `{file:…}`, the contents of the plugin directories, and every
-agent file. If any of that changes (a different MCP command, a new plugin file, an edited plugin or
+file a held-back setting reads through `{file:…}`, the contents of the plugin directories and of
+any local plugin a project file configures, and every agent file. If any of that changes (a different MCP command, a new plugin file, an edited plugin or
 agent file, a changed script an MCP command reads), you're asked again. Changing anything else
 (instructions, the model, a theme) doesn't ask. Values are fingerprinted before `{env:…}`
 substitution, so rotating a secret in your environment doesn't ask again, and no secret is ever
 stored.
 
 A configuration file that can only be read after substitution (for example `"port": {env:PORT}`,
-unquoted) can't be checked, so a folder that has one can't be trusted.
+unquoted) can't be checked, so a folder that has one can't be trusted. Nor can one with a `{env:…}`
+or `{file:…}` anywhere but inside a string value (in a comment, a property name or between values),
+or a `{file:…}` whose path comes from `{env:…}`: substituting those could change what the file sets.
+
+**What loads is what you reviewed.** A `{file:…}` is filled in from the very contents Kete Code
+checked, never read a second time, and each configuration file is checked once filled in: if
+substitution changed anything but the values the tokens sit in (say an environment variable holding
+a `"` that adds a setting), the folder isn't trusted and the question says why. Plugin code (a
+`.kete/plugin(s)/` directory, its `node_modules` included, or a local plugin a project file
+configures) and agent files are checked again just before they load: if they changed since the folder
+was trusted, they don't load and you're asked again.
 
 ## Trust roots
 

@@ -236,3 +236,62 @@ Files changed: util `src/kete/folder-trust.ts` + test; core `src/kete/folder-tru
 Open: CLI's agent-file list is still a text heuristic (display only; fingerprints agree with core).
 `budget`/`subagents`/`workflows`/`runtime` masking by a project `kete` object is unchanged (documented
 pitfall). A `{file:}` token used only by non-guarded values is fingerprinted by path, not content.
+
+## 2026-10-11 implementer (second security-review fixes)
+Done: every finding from the second security review fixed on `feature/folder-trust`, one regression
+test each (core `test/kete/folder-trust.test.ts` "Second security review fixes" block and the updated
+C2 test; util `test/kete/folder-trust.test.ts` "second security review fixes"; cli
+`test/kete/trust.test.ts` "second security review fixes"; tui `test/kete/folder-trust.test.ts`). Each
+was mutation-checked (the fix disabled, its test fails; restored, it passes).
+
+- **1 (critical, structure via substitution):** `misplacedToken` (util; own small JSONC string scanner,
+  so util still needs no jsonc-parser) refuses a document with an `{env:}` token anywhere outside a
+  JSON string *value* (comments, property names, between values) or a substituted `{file:}` token
+  outside one; the fingerprint is then unavailable, so core and `kete trust add` refuse with the
+  reason. Every `{file:}` path built from `{env:}` is refused too (not only guarded ones). After the
+  substitution, each project document is parsed again and must match its raw parse
+  (`substitutionMismatch`: same shape, property names, array lengths and non-string values; each
+  string = the raw string with `{file:}` replaced by the hashed text and `{env:}` by anything, as env
+  values stay outside the fingerprint by design). Core checks what Config actually loaded (the loader
+  now returns each project file's substituted text) before the question is asked and on every
+  trusted load; any difference = refusal ("changes what it sets"), the question offers Not now only.
+  The CLI runs the same check with `KeteFolderTrustRules.substitute` (mirror of ConfigVariable; a core
+  test asserts they produce identical text). Choice: instead of adding substituted guarded values to
+  the fingerprint, the shape check plus hashing the guarded `{file:}` contents is equivalent (only
+  env values can differ, and those can't change shape).
+- **2 (plugin/agent code on a stale decision):** a store-trusted folder's plugin directories (every
+  file, `node_modules` included), agent files and configured local plugins (new: a project document's
+  `plugins: ["./x"]` contents were never fingerprinted, and their own watcher rescans them) are bound
+  to digests taken from the fingerprint's own read (`bound`). `pluginsAllowed`, the new
+  `configuredPluginAllowed` (marked one-liner in `config/plugin/source.ts`), `agentDocuments` and the
+  RPC re-digest before answering; a mismatch refuses/strips and publishes on a stale PubSub merged into
+  `changes()`, so Config reloads and asks again (covers node_modules changes the watcher ignores). The
+  RPC now takes `{ directories }` and returns `{ trusted, plugins: [{ directory, digest }] }` only for
+  requested directories that are this location's project plugin directories and still match; the TUI
+  computes `pluginDigest` itself just before loading and imports only on equality.
+- **3:** the TUI asks about `process.cwd()` (its own directory, the one it loads plugins from), not
+  `data.location.default()`; a server answering about another folder lists none of the TUI's
+  directories, so nothing loads.
+- **4:** the fingerprint reads every `{file:}` target once (bounded, stat first) and returns the
+  texts; Config substitutes trusted project documents with `KeteFolderTrust.checkedFiles` as its
+  `FSUtil.Service`, which serves those texts and fails any other path (no edit to
+  `config/variable.ts`). Run trust still reads normally.
+- **5:** earlier minor fixes 2–6 re-verified: each test still exists and fails when its fix is
+  disabled (job mode, agent seam without the service, policy allows, global agent-markdown denies,
+  stat-before-read).
+- Behaviour kept from upstream: with run trust, or a store-trusted folder whose substitution fails
+  (a bad `{file:}` reference), the error surfaces from `Config.load` as before (the upstream
+  location-layer tests caught a first version that swallowed it). An untrusted folder with a bad
+  reference gets the refusal in the question instead.
+- `status` and `bound` are assigned together with no yield between.
+
+Files changed: util `src/kete/folder-trust.ts` + test; core `src/kete/folder-trust.ts`,
+`src/kete/folder-trust/rpc.ts`, `src/config.ts`, `src/config/plugin/source.ts` + test; schema
+`src/kete/folder-trust.ts`; cli `src/kete/folder-trust.ts` + test; tui `src/kete/folder-trust.ts`,
+`src/plugin/context.tsx` + test; `docs/folder-trust.md`, `docs/upstream-patches.md` (appended).
+
+Open: bare imports from a project plugin resolve up the tree (`.kete/node_modules`, the repository's
+`node_modules`); only `.kete/plugin(s)/**` is covered. The re-check before loading leaves a small
+window between digest and import (same for the TUI). An `{env:}` token in a `//` comment line is
+refused as instructed, so a folder with a commented-out `"key": "{env:X}"` line can't be trusted
+until the comment is removed.

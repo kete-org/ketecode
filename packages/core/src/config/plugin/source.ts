@@ -157,6 +157,7 @@ const scan = Effect.fn("ConfigPluginSource.scan")(function* (
   const resolved = yield* Effect.forEach(configured, (operation) =>
     Effect.gen(function* () {
       if (operation.type === "remove" || !path.isAbsolute(operation.target)) return Option.some(operation)
+      if (!(yield* folderTrust.configuredPluginAllowed(operation.target))) return Option.none<Operation>() // kete_change: a project's local plugin code loads only while it is what was trusted (kete/folder-trust.ts)
       if (yield* fs.isFile(operation.target)) {
         yield* Effect.logWarning("configured plugin path must be a directory", { target: operation.target })
         return Option.none<Operation>()

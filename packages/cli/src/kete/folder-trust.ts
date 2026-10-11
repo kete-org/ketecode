@@ -14,6 +14,7 @@
 
 export * as KeteFolderTrustCli from "./folder-trust"
 
+import os from "node:os"
 import path from "node:path"
 import { parse, type ParseError } from "jsonc-parser"
 import { Global } from "@opencode/util/global"
@@ -107,7 +108,42 @@ export async function discover(directory: string, paths: Paths, fs: KeteFolderTr
   }
 }
 
-export async function inspect(directory: string, paths: Paths, fs: KeteFolderTrustRules.Fs = KeteFolderTrustRules.nodeFs): Promise<Inspection> {
+/**
+ * Why the documents can't be trusted once substituted, if they can't: each is substituted as the
+ * runtime would (`KeteFolderTrustRules.substitute`, from the bytes the fingerprint read) and must set
+ * exactly what its raw text showed (`substitutionMismatch`; the runtime checks the same on what it
+ * actually loads).
+ */
+export function substitutionRefusal(
+  documents: ReadonlyArray<KeteFolderTrustRules.DocumentInput>,
+  files: ReadonlyMap<string, string>,
+  top: string,
+  env: Record<string, string | undefined>,
+  home: string = os.homedir(),
+): string | undefined {
+  for (const document of documents) {
+    if (document.unparsed || document.text === undefined) continue
+    const text = KeteFolderTrustRules.substitute(document.text, document.path, files, env, home)
+    if (text === undefined)
+      return `substituting {env:…}/{file:…} in ${KeteFolderTrustRules.shown(KeteFolderTrustRules.display(document.path, top))} reads a file that wasn't checked`
+    const errors: ParseError[] = []
+    const substituted: unknown = parse(text, errors, { allowTrailingComma: true })
+    // One that doesn't parse once substituted never loads.
+    if (errors.length > 0) continue
+    const at = KeteFolderTrustRules.substitutionMismatch(document.document, substituted, (token) =>
+      files.get(KeteFolderTrustRules.fileTarget(token, document.path, home)),
+    )
+    if (at !== undefined) return KeteFolderTrustRules.mismatchReason(document.path, top, at)
+  }
+  return undefined
+}
+
+export async function inspect(
+  directory: string,
+  paths: Paths,
+  fs: KeteFolderTrustRules.Fs = KeteFolderTrustRules.nodeFs,
+  env: Record<string, string | undefined> = process.env,
+): Promise<Inspection> {
   const found = await discover(directory, paths, fs)
   const root = await KeteFolderTrustRules.trustRoot(directory, fs)
   const top = root.kind === "ok" ? root.top : path.resolve(directory)
@@ -158,7 +194,9 @@ export async function inspect(directory: string, paths: Paths, fs: KeteFolderTru
   const key = KeteFolderTrustRules.storeKey(root.root)
   const home = await realOr(fs, paths.home)
   const refusal =
-    KeteFolderTrustRules.neverTrusted(key, home) ?? unparsed ?? (fingerprint.kind === "unavailable" ? fingerprint.reason : undefined)
+    KeteFolderTrustRules.neverTrusted(key, home) ??
+    unparsed ??
+    (fingerprint.kind === "unavailable" ? fingerprint.reason : substitutionRefusal(documents, fingerprint.files, top, env))
   const trusted =
     refusal === undefined && fingerprint.kind === "ok"
       ? await KeteFolderTrustStore.make(paths.state).trusted(key, fingerprint.value)

@@ -1109,3 +1109,27 @@ its sources, keep the raw pass and the cached substituted pass in the same order
 `ConfigVariable.substitute`'s token syntax, update `substitutionTokens` and `fileTarget` in
 `util/src/kete/folder-trust.ts`. If upstream changes how the TUI discovers `.kete/plugins`, keep the
 trust filter on project directories.
+
+### Folder trust: second security-review fixes (feature/folder-trust)
+
+What is loaded is now bound to what was fingerprinted: a `{env:…}`/`{file:…}` token outside a JSON
+string value can't be trusted; trusted project documents are substituted from the bytes the
+fingerprint hashed and checked against their raw text (any change of shape fails closed); plugin code,
+configured local plugins and agent rules of a store-trusted folder load only while their files still
+match the trusted fingerprint (else Config reloads and asks again); the TUI asks the RPC about its own
+directory and imports a project plugin directory only when its own digest equals the runtime's. The
+`kete.folder.trust` RPC's `status` now takes `{ directories }` and returns `{ trusted, plugins }`
+(served by the existing `/api/rpc` route; nothing regenerated).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config.ts` | `loadFile`/`loadDirectory` take `"raw"` or a map that receives each project file's substituted text (instead of `"cached"`); `loadProject` takes the fingerprinted `files` and provides `KeteFolderTrust.checkedFiles(fs, files)` as `FSUtil.Service`, so `ConfigVariable.substitute` reads `{file:…}` targets from those bytes; `assemble` returns `{ entries, substituted }` | substitution reads files through the provided `FSUtil` inside `loadFile`; serving it there leaves `config/variable.ts` untouched |
+| `core/src/config/plugin/source.ts` | `scan` drops a configured absolute plugin target `folderTrust.configuredPluginAllowed` refuses | configured local plugins are resolved here, and their own watcher rescans here without a config reload |
+| `tui/src/plugin/context.tsx` | The discover step passes `process.cwd()` and the project directories to `KeteTuiFolderTrust.trusted` (was `data.location.default()`) | same seam as before |
+
+**Sync checklist:** if upstream changes `ConfigVariable.substitute` (token syntax, the `//` line rule,
+how a `{file:…}` path resolves or is inserted), update `substitute`, `misplacedToken` and `fileTarget`
+in `util/src/kete/folder-trust.ts` (core test "the CLI's substitution is the runtime's" compares them),
+and keep reading files through `FSUtil.Service.readFileString`. If upstream changes how
+`ConfigPluginSource.scan` resolves configured plugin paths, update `configuredTargets`
+(core) and `localPluginTargets` (util).

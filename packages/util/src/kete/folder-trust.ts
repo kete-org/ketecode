@@ -23,9 +23,15 @@
 // The fingerprint covers the raw (pre-substitution) values of every guarded key in every project
 // document, the substitution tokens each document uses, the contents of every `{file:…}` target a
 // guarded value names, the contents of the `.kete/plugin(s)/` directories and every project agent
-// markdown file (`agentFiles`; hashed whole, so no YAML is read here). Rotating an `{env:…}` secret
-// doesn't change it, and no secret is ever stored. A document that only parses after substitution
-// can't be fingerprinted. The caps (`MAX_FILES`, `MAX_BYTES`) bound the work, and sizes are checked
+// markdown file (`agentFiles`; hashed whole, so no YAML is read here) and every local plugin a project
+// document configures (`localPluginTargets`). Rotating an `{env:…}` secret doesn't change it, and no
+// secret is ever stored. A document that only parses after substitution, has a token outside a JSON
+// string value (`misplacedToken`) or a `{file:…}` path built from `{env:…}` can't be fingerprinted.
+// The fingerprint hands back the `{file:…}` texts it hashed (substitution uses those, never a second
+// read) and per-plugin-directory, per-agent-file and per-configured-plugin digests, so the runtime and
+// the TUI can check that what is about to load is still what was trusted (`pluginDigest`,
+// `agentDigest`, `targetDigest`). A substituted document must set exactly what its raw text showed
+// (`substitutionMismatch`). The caps (`MAX_FILES`, `MAX_BYTES`) bound the work, and sizes are checked
 // before anything is read; over a cap there is no fingerprint and the folder can't be trusted (fail
 // closed).
 //
@@ -41,6 +47,7 @@ import { createHash } from "node:crypto"
 import os from "node:os"
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 /** The form kind the runtime raises for an untrusted folder (`"global"` owner). */
 export const FORM_KIND = "kete.folder.trust"
@@ -469,6 +476,178 @@ function strings(value: unknown, into: string[] = []): string[] {
   return into
 }
 
+const ENV_TOKEN = /\{env:[^}]+\}/g
+const FILE_TOKEN = /\{file:[^}]+\}/g
+
+/** The string literals in a JSONC text that parses: where each value string and each property name
+ * sits (offsets of the quotes). Comments are skipped; `undefined` when a string or block comment
+ * doesn't end (such a text doesn't parse). */
+export function stringLiterals(text: string): { values: Array<[number, number]>; names: Array<[number, number]> } | undefined {
+  const values: Array<[number, number]> = []
+  const names: Array<[number, number]> = []
+  const blank = (at: number) => {
+    // Skip whitespace and comments; returns the next significant offset.
+    for (;;) {
+      while (at < text.length && /\s/.test(text[at]!)) at++
+      if (text.startsWith("//", at)) {
+        const end = text.indexOf("\n", at)
+        at = end === -1 ? text.length : end + 1
+      } else if (text.startsWith("/*", at)) {
+        const end = text.indexOf("*/", at + 2)
+        if (end === -1) return -1
+        at = end + 2
+      } else return at
+    }
+  }
+  let at = 0
+  while (at < text.length) {
+    const next = blank(at)
+    if (next === -1) return undefined
+    at = next
+    if (at >= text.length) break
+    if (text[at] !== '"') {
+      at++
+      continue
+    }
+    let end = at + 1
+    while (end < text.length && text[end] !== '"' && text[end] !== "\n") end += text[end] === "\\" ? 2 : 1
+    if (end >= text.length || text[end] !== '"') return undefined
+    const after = blank(end + 1)
+    ;(after !== -1 && text[after] === ":" ? names : values).push([at, end])
+    at = end + 1
+  }
+  return { values, names }
+}
+
+/**
+ * Why a document's substitution tokens can't be checked, if they can't: every `{env:…}` token and
+ * every `{file:…}` token ConfigVariable substitutes must sit inside one JSON string *value*. One in a
+ * comment, a property name or between values can change the document's structure once substituted
+ * (a file's text closing a block comment and adding an MCP server), which the raw text never showed.
+ */
+export function misplacedToken(text: string, file: string, top: string): string | undefined {
+  const tokens = [
+    ...[...text.matchAll(ENV_TOKEN)].map((match) => ({ token: match[0], index: match.index })),
+    ...[...text.matchAll(FILE_TOKEN)]
+      .filter((match) => !text.slice(text.lastIndexOf("\n", match.index - 1) + 1, match.index).trimStart().startsWith("//"))
+      .map((match) => ({ token: match[0], index: match.index })),
+  ]
+  if (tokens.length === 0) return undefined
+  const literals = stringLiterals(text)
+  const where = shown(display(file, top))
+  if (!literals) return `${where} can't be checked for where its {env:…}/{file:…} tokens sit`
+  for (const { token, index } of tokens)
+    if (!literals.values.some(([start, end]) => index > start && index + token.length <= end))
+      return `${shown(token)} in ${where} isn't inside a string value, so substituting it could change what the file sets`
+  return undefined
+}
+
+/** ConfigVariable.substitute (core/src/config/variable.ts) on the CLI side, where the runtime isn't
+ * loaded: `{env:…}` from `env`, then `{file:…}` (not on a `//` line) from `files` (target → text, as
+ * the fingerprint read it). `undefined` when a file token's target isn't in `files`. */
+export function substitute(
+  text: string,
+  documentPath: string,
+  files: ReadonlyMap<string, string>,
+  env: Record<string, string | undefined>,
+  home: string = os.homedir(),
+): string | undefined {
+  const replaced = text.replace(ENV_TOKEN, (token) => env[token.slice("{env:".length, -1)] || "")
+  let out = ""
+  let cursor = 0
+  for (const match of replaced.matchAll(FILE_TOKEN)) {
+    out += replaced.slice(cursor, match.index)
+    cursor = match.index + match[0].length
+    const lineStart = replaced.lastIndexOf("\n", match.index - 1) + 1
+    if (replaced.slice(lineStart, match.index).trimStart().startsWith("//")) {
+      out += match[0]
+      continue
+    }
+    const content = files.get(fileTarget(match[0], documentPath, home))
+    if (content === undefined) return undefined
+    out += JSON.stringify(content.trim()).slice(1, -1)
+  }
+  return out + replaced.slice(cursor)
+}
+
+/** Whether `value` is `pattern`'s pieces in order, any text standing in for each `null` piece. */
+function globMatches(value: string, pieces: ReadonlyArray<string | null>): boolean {
+  const literals: string[] = [""]
+  for (const piece of pieces) {
+    if (piece === null) literals.push("")
+    else literals[literals.length - 1] += piece
+  }
+  if (literals.length === 1) return value === literals[0]
+  const first = literals[0]!
+  const last = literals[literals.length - 1]!
+  if (!value.startsWith(first) || value.length < first.length + last.length || !value.endsWith(last)) return false
+  let at = first.length
+  const end = value.length - last.length
+  for (const middle of literals.slice(1, -1)) {
+    const found = value.indexOf(middle, at)
+    if (found === -1 || found + middle.length > end) return false
+    at = found + middle.length
+  }
+  return true
+}
+
+/**
+ * Where a substituted document differs from what its raw text showed, if anywhere (`$.a.b`): the
+ * same shape (types, property names and their order, array lengths, every non-string value), and each
+ * string the raw string with its `{file:…}` tokens replaced by the text the fingerprint read
+ * (`file`) and its `{env:…}` tokens by anything (the environment is the person's own and isn't
+ * fingerprinted). Anything else means substitution changed what the document sets: fail closed.
+ */
+export function substitutionMismatch(
+  raw: unknown,
+  substituted: unknown,
+  file: (token: string) => string | undefined,
+  where = "$",
+): string | undefined {
+  if (typeof raw === "string") {
+    if (typeof substituted !== "string") return where
+    const pieces: Array<string | null> = []
+    let cursor = 0
+    for (const match of raw.matchAll(/\{env:[^}]+\}|\{file:[^}]+\}/g)) {
+      pieces.push(raw.slice(cursor, match.index))
+      cursor = match.index + match[0].length
+      if (match[0].startsWith("{env:")) pieces.push(null)
+      else {
+        const content = file(match[0])
+        if (content === undefined) return where
+        pieces.push(content.trim())
+      }
+    }
+    pieces.push(raw.slice(cursor))
+    return globMatches(substituted, pieces) ? undefined : where
+  }
+  if (Array.isArray(raw)) {
+    if (!Array.isArray(substituted) || substituted.length !== raw.length) return where
+    for (let index = 0; index < raw.length; index++) {
+      const found = substitutionMismatch(raw[index], substituted[index], file, `${where}[${index}]`)
+      if (found) return found
+    }
+    return undefined
+  }
+  if (isRecord(raw)) {
+    if (!isRecord(substituted)) return where
+    const keys = Object.keys(raw)
+    const other = Object.keys(substituted)
+    if (keys.length !== other.length || keys.some((key, index) => key !== other[index])) return where
+    for (const key of keys) {
+      const found = substitutionMismatch(raw[key], substituted[key], file, `${where}.${key}`)
+      if (found) return found
+    }
+    return undefined
+  }
+  return raw === substituted ? undefined : where
+}
+
+/** The reason a substituted document can't be trusted (`substitutionMismatch`), for a person to read. */
+export function mismatchReason(file: string, top: string, at: string): string {
+  return `substituting {env:…}/{file:…} in ${shown(display(file, top))} changes what it sets (at ${shown(at)}), so it can't be checked`
+}
+
 /** The raw `{file:…}` tokens of a document that a guarded value uses (decided on the decoded token,
  * so a JSON escape in the raw text can't hide one; an undecodable token counts). */
 export function guardedFileTokens(tokens: Tokens, document: unknown): string[] {
@@ -707,7 +886,21 @@ export interface FingerprintInput {
   readonly home?: string
 }
 
-export type Fingerprint = { readonly kind: "ok"; readonly value: string } | { readonly kind: "unavailable"; readonly reason: string }
+export type Fingerprint =
+  | {
+      readonly kind: "ok"
+      readonly value: string
+      /** Every `{file:…}` target a project document reads (resolved path → its text), from the very
+       * bytes that were hashed: substitution reads these, never the file again. */
+      readonly files: ReadonlyMap<string, string>
+      /** Each plugin directory (as given) → `digest` of its files, from the same read. */
+      readonly plugins: ReadonlyMap<string, string>
+      /** Each agent file (as given) → sha256 of its bytes, from the same read. */
+      readonly agents: ReadonlyMap<string, string>
+      /** Each local plugin a project document configures (`localPluginTargets`) → `targetDigest`. */
+      readonly configured: ReadonlyMap<string, string | null>
+    }
+  | { readonly kind: "unavailable"; readonly reason: string }
 
 const sha256 = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex")
 
@@ -736,16 +929,18 @@ export function unparsedReason(file: string, top: string): string {
 
 class OverCap extends Error {}
 
-/** sha256 over the guarded values, substitution tokens and the files they read, plugin files and
- * agent files (see the header). */
-export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Promise<Fingerprint> {
+type Hashed = { path: string; sha256: string }
+
+/** Bounded reading shared by `fingerprint` and the digests: sizes are checked before anything is
+ * read (a symlink to a huge file or a device can't stall it), and over `MAX_FILES`/`MAX_BYTES` it
+ * throws `OverCap`. */
+function reader(top: string, fs: Fs) {
   let files = 0
   let bytes = 0
-  // Sizes are checked before anything is read: a symlink to a huge file or a device can't stall it.
-  const hashFile = async (file: string): Promise<string | undefined> => {
+  const read = async (file: string): Promise<Uint8Array | undefined> => {
     const info = await fs.stat(file)
     if (info === undefined) return undefined
-    if (info.kind !== "file") throw new OverCap(`${shown(display(file, input.top))} isn't a regular file`)
+    if (info.kind !== "file") throw new OverCap(`${shown(display(file, top))} isn't a regular file`)
     files++
     if (files > MAX_FILES) throw new OverCap(`more than ${MAX_FILES} files to check`)
     if (bytes + info.size > MAX_BYTES) throw new OverCap(`more than ${MAX_BYTES / 1024 / 1024} MiB to check`)
@@ -753,25 +948,120 @@ export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Pro
     if (data === undefined) return undefined
     bytes += data.byteLength
     if (bytes > MAX_BYTES) throw new OverCap(`more than ${MAX_BYTES / 1024 / 1024} MiB to check`)
-    return sha256(data)
+    return data
   }
-  const walk = async (directory: string, base: string, seen: Set<string>): Promise<Array<{ path: string; sha256: string }>> => {
+  const hash = async (file: string) => {
+    const data = await read(file)
+    return data === undefined ? undefined : sha256(data)
+  }
+  const walk = async (directory: string, base: string, seen: Set<string>): Promise<Hashed[]> => {
     const real = await fs.realpath(directory)
     if (seen.has(real)) return []
     seen.add(real)
     const names = (await fs.readDir(directory)) ?? []
-    const found: Array<{ path: string; sha256: string }> = []
+    const found: Hashed[] = []
     for (const name of [...names].sort()) {
       const file = path.join(directory, name)
       const info = await fs.stat(file)
       if (info?.kind === "directory") found.push(...(await walk(file, base, seen)))
       else if (info?.kind === "file") {
-        const hash = await hashFile(file)
-        if (hash !== undefined) found.push({ path: display(file, base), sha256: hash })
+        const sum = await hash(file)
+        if (sum !== undefined) found.push({ path: display(file, base), sha256: sum })
       }
     }
     return found
   }
+  const target = async (file: string): Promise<string | null> => {
+    const info = await fs.stat(file)
+    if (info === undefined) return null
+    if (info.kind === "directory") return digestOf(await walk(file, file, new Set()))
+    return (await hash(file)) ?? null
+  }
+  return { read, hash, walk, target }
+}
+
+/** One digest over a list of hashed files (paths relative to whatever they were listed from). */
+export function digestOf(files: ReadonlyArray<Hashed>): string {
+  return sha256(canonical([...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))))
+}
+
+/** A plugin directory's digest now: every file under it (its `node_modules` included), paths relative
+ * to it. `undefined` when it can't be read within the caps. The runtime compares it with the digest
+ * taken when the folder's trust was decided before plugin code loads; the TUI compares its own with
+ * the runtime's before it imports a project plugin. */
+export async function pluginDigest(directory: string, fs: Fs = nodeFs): Promise<string | undefined> {
+  try {
+    return digestOf(await reader(directory, fs).walk(directory, directory, new Set()))
+  } catch {
+    return undefined
+  }
+}
+
+/** The local plugin paths a raw document's `plugins`/`plugin` configure, resolved the way
+ * core/src/config/plugin/source.ts resolves them (`file://` URLs, `./`/`../` relative to the document,
+ * absolute paths); package names aren't local. */
+export function localPluginTargets(document: unknown, documentPath: string): string[] {
+  if (!isRecord(document)) return []
+  const found: string[] = []
+  for (const key of ["plugins", "plugin"]) {
+    const value = document[key]
+    if (value === undefined) continue
+    for (const spec of Array.isArray(value) ? value : [value]) {
+      const target = isRecord(spec) ? spec.package : Array.isArray(spec) ? spec[0] : spec
+      if (typeof target !== "string" || target.startsWith("-")) continue
+      let resolved: string | undefined = target
+      if (target.startsWith("file://"))
+        try {
+          resolved = fileURLToPath(target)
+        } catch {
+          resolved = undefined
+        }
+      else if (target.startsWith("./") || target.startsWith("../")) resolved = path.resolve(path.dirname(documentPath), target)
+      if (resolved !== undefined && path.isAbsolute(resolved) && !found.includes(resolved)) found.push(resolved)
+    }
+  }
+  return found
+}
+
+/** A configured local plugin's digest now: a directory's `pluginDigest`, a file's sha256, `null` when
+ * it doesn't exist, `undefined` when it can't be read within the caps (or isn't a file or directory). */
+export async function targetDigest(target: string, fs: Fs = nodeFs): Promise<string | null | undefined> {
+  try {
+    return await reader(target, fs).target(target)
+  } catch {
+    return undefined
+  }
+}
+
+/** The digest of a `.kete/` directory's agent files, from their hashes (`hashes`: file → sha256). */
+export function agentDigestOf(directory: string, files: ReadonlyArray<string>, hashes: ReadonlyMap<string, string>): string {
+  return digestOf(files.flatMap((file) => {
+    const sum = hashes.get(file)
+    return sum === undefined ? [] : [{ path: display(file, directory), sha256: sum }]
+  }))
+}
+
+/** A `.kete/` directory's agent files' digest now (`agentDigestOf` over `agentFiles`). */
+export async function agentDigest(directory: string, fs: Fs = nodeFs): Promise<string | undefined> {
+  try {
+    const files = await agentFiles(directory, fs)
+    const read = reader(directory, fs)
+    const hashes = new Map<string, string>()
+    for (const file of files) {
+      const sum = await read.hash(file)
+      if (sum !== undefined) hashes.set(file, sum)
+    }
+    return agentDigestOf(directory, files, hashes)
+  } catch {
+    return undefined
+  }
+}
+
+/** sha256 over the guarded values, substitution tokens and the files they read, plugin files and
+ * agent files (see the header). A document whose tokens sit outside string values (`misplacedToken`)
+ * or build a file path from `{env:…}` has none. */
+export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Promise<Fingerprint> {
+  const read = reader(input.top, fs)
   // Paths are shown from their real location, so a symlinked or differently spelled path (macOS's
   // /var vs /private/var) gives the same fingerprint wherever it is computed.
   const real = (file: string) => fs.realpath(file).catch(() => file)
@@ -782,7 +1072,11 @@ export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Pro
       guarded: Record<string, unknown>
       tokens?: Tokens
       targets?: Array<{ path: string; sha256: string | null }>
+      plugins?: Array<{ path: string; digest: string | null }>
     }> = []
+    const contents = new Map<string, string>()
+    const sums = new Map<string, string | null>()
+    const configured = new Map<string, string | null>()
     for (const item of input.documents) {
       const tokens = item.text === undefined ? { env: [], files: [] } : substitutionTokens(item.text)
       const substitutes = tokens.env.length > 0 || tokens.files.length > 0
@@ -792,32 +1086,65 @@ export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Pro
         if (substitutes) return { kind: "unavailable", reason: unparsedReason(item.path, input.top) }
         continue
       }
+      if (item.text !== undefined) {
+        const misplaced = misplacedToken(item.text, item.path, input.top)
+        if (misplaced) return { kind: "unavailable", reason: misplaced }
+      }
+      // Every target is read once, here; substitution uses these bytes (`files`), never a second read.
+      for (const token of tokens.files) {
+        if (token.includes("{env:")) return { kind: "unavailable", reason: `${shown(token)} builds a file path from {env:…}` }
+        const target = fileTarget(token, item.path, home)
+        if (sums.has(target)) continue
+        const data = await read.read(target)
+        sums.set(target, data === undefined ? null : sha256(data))
+        if (data !== undefined) contents.set(target, Buffer.from(data).toString("utf8"))
+      }
       const guarded = guardedValues(item.document)
       if (Object.keys(guarded).length === 0 && !substitutes) continue
       const targets: Array<{ path: string; sha256: string | null }> = []
       for (const token of guardedFileTokens(tokens, item.document)) {
-        if (token.includes("{env:")) return { kind: "unavailable", reason: `${shown(token)} builds a file path from {env:…}` }
         const target = fileTarget(token, item.path, home)
-        targets.push({ path: display(await real(target), input.top), sha256: (await hashFile(target)) ?? null })
+        targets.push({ path: display(await real(target), input.top), sha256: sums.get(target) ?? null })
+      }
+      // Configured local plugin code is covered by its contents, not just its path.
+      const local: Array<{ path: string; digest: string | null }> = []
+      for (const target of localPluginTargets(item.document, item.path)) {
+        if (!configured.has(target)) configured.set(target, await read.target(target))
+        local.push({ path: display(await real(target), input.top), digest: configured.get(target) ?? null })
       }
       documents.push({
         path: display(await real(item.path), input.top),
         guarded,
         ...(substitutes ? { tokens: { env: [...tokens.env].sort(), files: [...tokens.files].sort() }, targets } : {}),
+        ...(local.length > 0 ? { plugins: local } : {}),
       })
     }
     documents.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-    const plugins: Array<{ path: string; files: Array<{ path: string; sha256: string }> }> = []
-    for (const directory of [...input.plugins].sort())
-      plugins.push({ path: display(await real(directory), input.top), files: await walk(directory, directory, new Set()) })
-    const agents: Array<{ path: string; sha256: string }> = []
+    const plugins: Array<{ path: string; files: Hashed[] }> = []
+    const pluginDigests = new Map<string, string>()
+    for (const directory of [...input.plugins].sort()) {
+      const files = await read.walk(directory, directory, new Set())
+      plugins.push({ path: display(await real(directory), input.top), files })
+      pluginDigests.set(directory, digestOf(files))
+    }
+    const agents: Hashed[] = []
+    const agentHashes = new Map<string, string>()
     for (const file of [...input.agents].sort()) {
-      const hash = await hashFile(file)
-      if (hash !== undefined) agents.push({ path: display(await real(file), input.top), sha256: hash })
+      const sum = await read.hash(file)
+      if (sum === undefined) continue
+      agents.push({ path: display(await real(file), input.top), sha256: sum })
+      agentHashes.set(file, sum)
     }
     plugins.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
     agents.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-    return { kind: "ok", value: sha256(canonical({ v: 2, documents, plugins, agents })) }
+    return {
+      kind: "ok",
+      value: sha256(canonical({ v: 2, documents, plugins, agents })),
+      files: contents,
+      plugins: pluginDigests,
+      agents: agentHashes,
+      configured,
+    }
   } catch (error) {
     if (error instanceof OverCap) return { kind: "unavailable", reason: error.message }
     return { kind: "unavailable", reason: `couldn't read the folder's files (${(error as NodeJS.ErrnoException).code ?? "error"})` }
