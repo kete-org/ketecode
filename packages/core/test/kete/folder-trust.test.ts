@@ -942,6 +942,37 @@ describe("folder trust", () => {
     ),
   )
 
+  it.live("T3: a plugin configured as a file is vouched for at its own directory (machine always, project only when trusted)", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "filed", "index.ts"), "export default {}")
+        await write(path.join(fixture.repo, "filed", "tui.ts"), "export default {}")
+        await write(path.join(fixture.repo, "kete.json"), { plugins: ["./filed/index.ts"] })
+        await write(path.join(fixture.root, "minefile", "index.ts"), "export default {}")
+        await write(path.join(fixture.root, "minefile", "tui.ts"), "export default {}")
+        await write(path.join(fixture.global, "kete.json"), { plugins: [path.join(fixture.root, "minefile", "index.ts")] })
+      },
+      (fixture) =>
+        Effect.gen(function* () {
+          yield* entries
+          const service = yield* KeteFolderTrust.Service
+          const filed = path.join(fixture.repo, "filed")
+          const minefile = path.join(fixture.root, "minefile")
+          // Not a parent of the file's directory: only the exact directory counts.
+          const parent = fixture.root
+          const digest = (target: string) => Effect.promise(async () => (await KeteFolderTrustRules.targetDigest(target)) as string)
+          expect(yield* service.pluginDigests([filed, minefile, parent])).toEqual([{ directory: minefile, digest: yield* digest(minefile) }])
+          yield* trustNow
+          yield* until(entries.pipe(Effect.andThen(service.status())), (status) => status.kind === "trusted", "the reload")
+          expect(yield* service.pluginDigests([filed, minefile, parent])).toEqual([
+            { directory: filed, digest: yield* digest(filed) },
+            { directory: minefile, digest: yield* digest(minefile) },
+          ])
+        }),
+    ),
+  )
+
   it.live("T2: enabled_providers added to a store-trusted folder (provider.use allows) asks again, and is shown", () =>
     withFixture((fixture) =>
       Effect.gen(function* () {

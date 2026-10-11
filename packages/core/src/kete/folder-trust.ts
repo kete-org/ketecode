@@ -744,9 +744,15 @@ export const layerWith = (options: Options = {}) =>
         }
         // Where project code lives: each project plugin directory and each project-configured target,
         // lexically and resolved, so a path reaching one through a symlink is still project code.
+        // A target configured as a file (`plugin: ["/x/p/index.ts"]`) also covers its own directory, exactly: the
+        // TUI loads a plugin from the directory of its entrypoint.
         const roots = async (paths: Iterable<string>) =>
           Promise.all(
-            [...paths].map(async (item) => ({ item, forms: [path.resolve(item), await fs.realpath(item).catch(() => undefined)] })),
+            [...paths].map(async (item) => ({
+              item,
+              forms: [path.resolve(item), await fs.realpath(item).catch(() => undefined)],
+              file: await fs.stat(item).then((info) => info?.kind === "file").catch(() => false),
+            })),
           )
         const pluginRoots = yield* Effect.promise(() =>
           roots([...projectDirectories].flatMap((directory) => KeteFolderTrustRules.PLUGIN_DIRECTORIES.map((name) => path.join(directory, name)))),
@@ -771,8 +777,14 @@ export const layerWith = (options: Options = {}) =>
           }
           // A local plugin inside one (the directory of its entrypoint, as the TUI loads it).
           const forms = [path.resolve(directory), yield* real(directory)]
-          const inside = (root: { readonly forms: ReadonlyArray<string | undefined> }) =>
-            forms.some((form) => form !== undefined && root.forms.some((parent) => parent !== undefined && contains(parent, form)))
+          const inside = (root: { readonly forms: ReadonlyArray<string | undefined>; readonly file: boolean }) =>
+            forms.some(
+              (form) =>
+                form !== undefined &&
+                root.forms.some(
+                  (parent) => parent !== undefined && (contains(parent, form) || (root.file && path.dirname(parent) === form)),
+                ),
+            )
           const plugin = pluginRoots.find(inside)
           const target = targetRoots.find(inside)
           if (plugin !== undefined || target !== undefined) {
