@@ -76,3 +76,59 @@ P2 Q1: rename's new default is `<leader>shift+r` (option a); redo keeps `<leader
 - Not checked in a real terminal: rename via `<leader>shift+r` in a session and in the session list (this channel has no sessions; creating one means submitting a prompt) — covered by the app-fixture test; the `cli.json` `"session.rename": "ctrl+r"` override (would mean editing `~/.config/kete/cli.json`) — covered by unit and app-fixture tests; `<leader>r` redo after undo (unchanged binding); iTerm2, macOS Terminal and Windows Terminal specifically (pty emulation only).
 - Open: upstream's keybind docs (`packages/web/src/content/docs/*/keybinds.mdx`, `services/www/src/docs/content/cli/keybinds.mdx`) still list rename as `ctrl+r`; left unchanged as upstream's site (noted in upstream-patches).
 - Docs enough: no — missing: `@opentui/keymap` allows the same command name in several layers (chains; first active layer wins), `node_modules/.bun/@opentui+keymap@*/src/index.js` `collectActiveCommands`; the prompt draft stash is module-global per session ID, so app-fixture tests sharing a session ID leak drafts.
+
+## 2026-10-11 planner (P3, blocked on a stale card)
+- Done: read INDEX, spec and handoff. Ran `node scripts/agent/stale-cards.mjs ui-branding config-kete web-app vscode-extension sync`. ui-branding, config-kete, web-app and sync are current. **`vscode-extension` is STALE** (verified-at `f85913ed4a`): `packages/kete-vscode/CHANGELOG.md` and `packages/kete-vscode/README.md` changed in `525f2ddbde` (0.2.6 changelog) and `1c8aa676b9` (task list docs). No source file under `packages/kete-vscode/src` changed since the card was verified.
+- plan.md has NOT been revised for P3 (it still holds the P2 plan).
+- Blocked: **the librarian must refresh `vscode-extension` first.** P3 needs it: the shared notice list moves out of (or is checked against) `packages/kete-vscode/src/panel.ts` `NOTICES`, so the card's account of the panel notices, dismissal storage (`kete.panel.dismissedNotices`) and how the extension bundles its sources is load-bearing. The change looks docs-only, so the refresh is likely a review plus a `verified-at` bump. While refreshing, please add to the card: how `panel.ts` decides each notice's condition (portal-synced agents, AGENTS.md present), and whether the extension's bundler (`packages/kete-vscode` build) can import a module from another workspace package (e.g. `@opencode/util` or a `packages/kete-*` package), which decides whether P3 shares one module or asserts equality in a test.
+- Next: librarian refreshes `vscode-extension`, then re-run `/task-plan` for P3.
+
+## 2026-10-11 planner (P3 plan written)
+- Done: re-ran `stale-cards.mjs`. vscode-extension, ui-branding, config-kete, web-app and sync are current. `account-login` is stale (`cli-login.ts`, `commands.ts`); P3 doesn't rely on it, because "signed in" comes from the sync cache. `todo`, `local-models` and `gateway` are stale only because of P1's TUI edits (card updates owed); P3 doesn't rely on them. Rewrote `plan.md` for P3 only (A7; AC6, AC7, the P3 part of AC13). P1 and P2 are kept as Done notes.
+- Decisions (plan.md "Design"):
+  - The shared `packages/util/src/kete/notices.ts` (`KeteNotices.list`, `dismiss`, `segments`) is imported by `kete-vscode/src/panel.ts` (still unconditional) and the TUI.
+  - portal-agents: a new `kete.sync` `status` RPC, registered in the sync plugin, returns `managedAgents` and `offline`.
+  - agents-md: the existing `fs.list` endpoint at the location root.
+  - Dismissals are in TUI storage `kete-notices`.
+  - Tip: from `tui/src/kete/home-tips.ts`, picked once per launch, shown only when no notice is visible. Off with `tips: false` in `cli.json`; hidden under 12 rows (notices too).
+  - Upstream edits: `routes/home.tsx` (there is no slot under the logo), `config/index.tsx` (`tips`), and the test fixture `tui-client.ts` (it throws on unknown requests).
+- **Open question Q2 (blocks merge, not build):** the panel text says "Pick one with `/agent`" (web slash `app/src/kete/composer/commands.tsx:86`), but the TUI command is `/agents` (`tui/src/app.tsx:909`).
+  - Plan builds with (a): one shared template, the agent command as its only parameter.
+  - Alternatives: (b) show `/agent` in the TUI anyway; (c) reword the shared text.
+  - The maintainer must confirm before merge.
+- Docs enough: no — missing:
+  - There is no slot under the home logo; `SlotMap` is at `plugin/src/tui/context.ts:191-202`, and `home.tsx` places `UpdateNotification` after the logo.
+  - How a client could tell managed agents apart: nothing marks them on `Agent.Info` except the description suffix "Managed by <org>" (`core/src/kete/sync/plugin.ts` `apply`, ~`:480`), and no RPC exposed the sync cache.
+  - Whether the runtime exposes AGENTS.md presence: only through `InstructionDiscovery` (`core/src/instruction-discovery.ts`, `config/plugin/instruction.ts`), not over HTTP. `fs.list` (`protocol/src/groups/fs.ts:47`) is the client-side route.
+  - The TUI test fixture throws on unexpected requests (`tui/test/fixture/tui-client.ts:170`).
+  - Plugin RPC registration pattern: `core/src/kete/sandbox.ts:327-330`.
+  - Component-level keymap layers: `Keymap.createLayer` (`tui/src/context/keymap.tsx:402`).
+  - TUI slash names differ from the web's: `/agents` vs `/agent`.
+- Open: after `kete logout` the running server's sync cache may still report managed agents until the next sync or a restart; the builder checks this and adds `signedIn` if needed (plan Risks).
+
+## 2026-10-11 main session
+P3 Q2 resolved by checking the code: the web UI's agent command is `/agent` (`app/src/composer/commands.tsx:86`), the TUI's is `/agents` (`tui/src/app.tsx:909`). The shared template with the command as its one parameter is right; each surface passes its own.
+
+## 2026-10-11 implementer (P3 built and checked)
+- Done: P3 (A7) per plan.md, with Q2 (a) as resolved (panel `/agent`, TUI `/agents`).
+  - Created: `util/src/kete/notices.ts` (`KeteNotices.list/IDS/dismiss/segments`) + `util/test/kete/notices.test.ts`; `schema/src/kete/sync.ts` (`KeteSyncRpc`); `tui/src/kete/home-notices.tsx` (`KeteHomeNotices`, `visibleNotices`, `fetchNoticeConditions`, `fitSegments`, `fitCount`); `tui/src/kete/home-tips.ts` (`TIPS`, `pickTip`); `tui/test/kete/home-notices.test.tsx`; `cli/test/kete/home-tips-config.test.ts`; `docs/home-notices.md`.
+  - Changed (Kete): `kete-vscode/src/panel.ts` (`NOTICES = KeteNotices.list({ agentCommand: "/agent" })`, `Notice` re-exported, `dismiss = KeteNotices.dismiss`; panel still unconditional) + `test/panel.test.ts`; `core/src/kete/sync/plugin.ts` (registers `kete.sync` `status`); `core/test/kete/sync-fixture.ts` (new `rpc()` stub) and the four sync plugin tests that build a host (`agent-sync`, `agent-errors`, `policy-sync`, `skill-mcp-sync`: they now pass `rpc: rpc().host`, since the plugin registers an RPC and the default test host dies on `rpc.register`); `kete-tools/src/lib.ts` + `test/lib.test.ts` (`docs/home-notices.md`); `docs/upstream-patches.md` (new "Home notices and tips" section after "Prompt history search").
+  - Changed (upstream, marked): `tui/src/routes/home.tsx` (import + `kete_change start/end` block on their own lines), `tui/src/config/index.tsx` (`tips`), `tui/test/fixture/tui-client.ts` (one line).
+- **Logout question (plan Risks): the cache does survive a sign-out.** `KeteSync.sync` returns `signed-out` without touching anything, and the plugin's tick only calls `refresh` on `updated`/skills changes, so `state.cached` stays loaded in a running server after `kete logout` (until restart); `state.account` only updates on the next tick, which offline mode skips. So `status` also returns `signedIn`, read fresh from the account file on every call (`readAccount`; a file read, no OS key store), and the TUI requires `signedIn && !offline && managedAgents > 0`. Core test: deleting the account file flips `signedIn` to false at once while `managedAgents` stays 2. (Managed agents themselves also keep applying after logout until restart; that's existing sync behaviour, not changed here; worth a separate look.)
+- Departures from the plan:
+  - The fixture already answered `/api/fs/list` (upstream line ~108), so only the `kete.sync/status` line was added.
+  - `KeteHomeNotices` takes no `width` prop: notices are truncated to `min(100, terminal width - 4)`, not the logo width. At the logo width (~57) the portal body (90 chars) lost its `/agents`; the block is one centered column with ✕ right after the title.
+  - Short terminals: the column has `flexShrink` and measures its own height (`onSizeChange`); each notice has a fixed slot and only whole notices render (`fitCount`: 2 rows for the first, 3 after). Without this, a 20-row terminal showed a title with no body, and at exactly 12 rows notices pushed the prompt down. The first notice has no blank line above it (the home's 1-row gap is there already). Tip: 1 row.
+  - `Status` has a third field, `signedIn` (above).
+  - The palette command is enabled only while a notice is on screen, and dismisses exactly the notices on screen.
+- Checks (all run): util typecheck PASS, `bun test ./test/kete` 291 pass; schema typecheck PASS; core typecheck PASS, `bun run test ./test/kete` 1438 pass / 12 skip / 0 fail; cli typecheck PASS, `bun test ./test/kete` 308 pass / 1 skip; tui typecheck PASS, full `bun run test` 1472 pass / 2 skip / 0 fail (no `dialog-shell-output` timeouts this run); home-notices 15 pass; regression set 73 pass; kete-vscode typecheck PASS, `bun run test` 114 pass, `bun run build` OK (bundle contains the shared text); app typecheck PASS, `test:unit` 1010 pass; kete-tools typecheck PASS, test 59 pass; root lint 0/0; `upstream:check` passed; `verify --base main` PASS, 0 new failures (core 30 known machine-dependent failures, same as main).
+- Real terminal (built `dist/cli-darwin-arm64/bin/kete`, pty + pyte, xterm-256color; every run used a scratch `XDG_STATE_HOME`, so the user's real TUI storage was never written; the user's real config/account was used except where noted):
+  - folder with `AGENTS.md`, 110x30: both notices showed (this account is signed in with synced agents, so the portal notice was checked live);
+  - ✕ click (SGR mouse) dismissed the AGENTS.md notice; Ctrl+P "Dismiss home notices" dismissed the portal one; a tip appeared; `kete-notices.json` = `{"dismissed":["agents-md","portal-agents"]}`; after a restart on the same state, neither showed and a (different) tip did;
+  - folder without `AGENTS.md`, fresh state: only the portal notice; with `KETE_OFFLINE=1`: no portal notice, a tip;
+  - 110x11: nothing; 110x12: neither notice fits, so none shows and the prompt is unaffected (upstream's home already clips the prompt's bottom row at 12 rows, with or without this change);
+  - temporary `XDG_CONFIG_HOME` (no account) via `kete --standalone`: a tip by default; none with `{"tips": false}` in its `cli.json`; with `AGENTS.md`, only the AGENTS.md notice (no account, no portal notice).
+- Not checked live: `kete logout` while running (would sign the user out; covered by the core test). VS Code panel in VS Code (bundle and panel tests only).
+- Note: SIGKILLing the TUI during server start left extra `kete serve --service` processes; cleaned up with the pkill and `rm ~/.config/kete/service-feature-home-notices.json` as instructed.
+- Cards to update (librarian): as listed in plan.md, plus `sync`: `status` includes `signedIn` (fresh account read) and the cache-survives-logout finding; `ui-branding`: the whole-notice fitting rule.
+- Docs enough: no — missing: the TUI test fixture already answers `/api/fs/list` (`tui/test/fixture/tui-client.ts` ~108); every test that builds the sync plugin through `test/plugin/host.ts` needs an `rpc` override now (`sync-fixture.ts` `rpc()`); `kete --standalone` runs the server in-process (no background service file), useful for pty checks with a temporary `XDG_CONFIG_HOME`.

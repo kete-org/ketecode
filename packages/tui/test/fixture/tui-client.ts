@@ -167,6 +167,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/rpc/kete.local-models/status") return json({ output: { offline: false, providers: [] } }) // kete_change: the model dialog's local server status
     if (url.pathname === "/api/rpc/kete.sandbox/status") return json({ output: { state: "on", platform: "linux", mechanism: "bubblewrap", mode: "auto", network: "approved", ignored: [] } }) // kete_change: the footer's sandbox status
     if (url.pathname === "/api/rpc/kete.todo/get") return json({ output: { sessionID: "ses_fixture", todos: [] } }) // kete_change: the session task list
+    if (url.pathname === "/api/rpc/kete.sync/status") return json({ output: { signedIn: false, managedAgents: 0, offline: false } }) // kete_change: the home portal notice
     throw new Error(`unexpected request: ${url.pathname}`)
   }
   fetch.preconnect = () => {}

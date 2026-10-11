@@ -72,6 +72,28 @@ export function registries(initial: { skills?: Skill.Info[]; servers?: Record<st
   }
 }
 
+type Handler = (input: unknown) => Effect.Effect<unknown, unknown>
+
+/** An RPC domain that records registered handlers by RPC id (the sync plugin registers `kete.sync`). */
+export function rpc() {
+  const handlers = new Map<string, Record<string, Handler>>()
+  return {
+    handlers,
+    host: Object.assign(
+      () => {
+        throw new Error("unused rpc.client")
+      },
+      {
+        register: (definition: { readonly id: string }, registered: Record<string, Handler>) =>
+          Effect.sync(() => {
+            handlers.set(definition.id, registered)
+            return { dispose: Effect.void, events: { emit: () => Effect.void } }
+          }),
+      },
+    ) as unknown as Plugin.Context["rpc"],
+  }
+}
+
 type Evaluation = Parameters<Parameters<Plugin.Context["permission"]["hook"]>[1]>[0]
 
 /** A permission domain that records `evaluate` hooks, and runs them like the permission service. */

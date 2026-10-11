@@ -15,6 +15,7 @@ import { useTheme } from "../context/theme"
 import { useUpdateNotification } from "../context/update-notification"
 import { useExit } from "../context/exit"
 import { FadeInText } from "../component/fade-in-text"
+import { KeteHomeNotices } from "../kete/home-notices" // kete_change: home notices and tip
 
 let once = false
 const placeholder = {
@@ -97,6 +98,9 @@ export function Home() {
         </box>
         <box height={1} flexShrink={0} />
         <UpdateNotification width={logoWidth()} />
+        {/* kete_change start: notices and a tip under the logo (docs/home-notices.md) */}
+        <KeteHomeNotices />
+        {/* kete_change end */}
         {/* kete_change start: the prompt sits at the bottom, below the logo */}
         <box flexGrow={1} minHeight={0} />
         {/* kete_change end */}
