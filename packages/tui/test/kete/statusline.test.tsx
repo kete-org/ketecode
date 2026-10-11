@@ -2,12 +2,14 @@
 import { describe, expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
+import { KeteSandboxRpc } from "@opencode/schema/kete/sandbox"
 import { contextUsage } from "../../src/util/session"
 import {
   contextEntry,
   DIRECTORY_MIN,
   fit,
   modeEntry,
+  sandboxText,
   StatusLineView,
   unknownMessage,
   type Entry,
@@ -161,6 +163,28 @@ describe("the directory shortens before other items drop", () => {
   test("once the directory is at its minimum, items drop from the end", () => {
     const kept = fit(long, 34)
     expect(kept.map((entry) => entry.id)).toEqual(["directory", "branch"])
+  })
+})
+
+describe("the sandbox warning is never silently hidden", () => {
+  test("a failed status call shows that the status is unknown", () => {
+    expect(sandboxText({ kind: "unknown" })).toBe("Sandbox status unknown")
+  })
+
+  test("a sandboxed runtime shows nothing; an unsandboxed one warns", () => {
+    const status = (state: KeteSandboxRpc.State): KeteSandboxRpc.Status => ({
+      state,
+      platform: "darwin",
+      mode: "auto",
+      network: "approved",
+      ignored: [],
+    })
+    expect(sandboxText({ kind: "status", status: status("on") })).toBeUndefined()
+    expect(sandboxText({ kind: "status", status: status("off") })).toBe("Unsandboxed (sandbox off)")
+  })
+
+  test("before the first answer there is nothing to show", () => {
+    expect(sandboxText(undefined)).toBeUndefined()
   })
 })
 

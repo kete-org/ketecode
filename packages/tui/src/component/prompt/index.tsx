@@ -1604,7 +1604,12 @@ export function Prompt(props: PromptProps) {
     if (status() !== "idle") return
     return data.session.get(props.sessionID)?.location
   })
-  // kete_change: locationLabel / locationLabelDisplay moved into the status line (kete/statusline.tsx)
+  // kete_change start: locationLabel / locationLabelDisplay moved into the status line (kete/statusline.tsx)
+  const keteStatusLocation = createMemo(() => {
+    const pending = pendingDirectory()
+    return pending ? { directory: pending } : footerLocation()
+  })
+  // kete_change end
   const locationActions = useWorkingDirectoryActions({
     directory: () => footerLocation()?.directory,
     onMove: () => void move.open(),
@@ -1875,7 +1880,7 @@ export function Prompt(props: PromptProps) {
                     <Show when={!props.hint} fallback={props.hint ?? <text />}>
                       <KeteStatusLineRow
                         sessionID={props.sessionID}
-                        location={pendingDirectory() ? { directory: pendingDirectory()! } : footerLocation()}
+                        location={keteStatusLocation()}
                         actions={locationActions}
                       />
                     </Show>

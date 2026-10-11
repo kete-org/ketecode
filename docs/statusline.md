@@ -39,7 +39,8 @@ the shortcut hints, so it has less room than in a session.
 ## Sandbox warning
 
 The `Unsandboxed` warning always shows when it applies, even if `sandbox` is not in the list (then it goes last).
-It is the last thing dropped for width. Hiding a security signal by default would be unsafe.
+It is never dropped for width. Hiding a security signal by default would be unsafe. If the runtime can't report
+the sandbox status (the call fails or times out), the row shows `Sandbox status unknown` rather than nothing.
 
 ## Colours
 

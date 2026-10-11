@@ -749,7 +749,8 @@ prompt-local pending-directory / move / idle state. Hence one small marked edit 
 | `tui/src/plugin/builtins.ts` | Import and list `KeteStatusLine` | builtin plugin list |
 
 The `sandbox-status`, `local-status` and `todo` plugins no longer claim `prompt.footer.status` (their
-`home.footer.status` claim is unchanged); those are status line items now.
+`home.footer.status` claim is unchanged); those are status line items now. Other `prompt.footer.status`
+claims (upstream's side-question indicator, `feature-plugins/prompt/btw.tsx`) still render beside the row.
 
 **Sync checklist:** re-check the prompt's idle and running `Match` blocks and the footer `Slot`s, and
 `Info` for the new key. If upstream adds its own configurable status line, compare and drop one.

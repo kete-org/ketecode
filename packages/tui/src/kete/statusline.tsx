@@ -12,12 +12,14 @@ import type { LocationRef } from "@opencode/client"
 import { Plugin } from "@opencode/plugin/tui"
 import { KetePermissionModes } from "@opencode/util/kete/permission-mode"
 import { KeteOffline } from "@opencode/util/kete/offline"
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js"
+import { KeteSandboxRpc } from "@opencode/schema/kete/sandbox"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type Accessor } from "solid-js"
 import { useConfig } from "../config"
 import { useClient } from "../context/client"
-import { useData } from "../context/data"
+import { locationKey, useData } from "../context/data"
 import { useLocal } from "../context/local"
 import { useLocation } from "../context/location"
+import { useLog } from "../context/log"
 import { useTuiPaths } from "../context/runtime"
 import { useTheme } from "../context/theme"
 import { abbreviateHome } from "../runtime"
@@ -69,10 +71,6 @@ const widthOf = (entry: Entry) => stringWidth(entry.text) + (entry.glyph ? strin
 const totalWidth = (entries: ReadonlyArray<Entry>) =>
   entries.reduce((sum, entry, index) => sum + widthOf(entry) + (index > 0 ? stringWidth(SEPARATOR) : 0), 0)
 
-/**
- * The entries that fit in `width` columns: items drop from the end, the pinned sandbox warning last.
- * A lone item that is still too wide stays; the row truncates it.
- */
 /** The narrowest the directory gets before other items are dropped. */
 export const DIRECTORY_MIN = 12
 
@@ -163,6 +161,15 @@ export function contextEntry(left: number | undefined): Entry | undefined {
   }
 }
 
+export type SandboxState = { kind: "status"; status: KeteSandboxRpc.Status } | { kind: "unknown" }
+
+/** The sandbox warning: the status label, or "Sandbox status unknown" when the status call failed. */
+export function sandboxText(state: SandboxState | undefined): string | undefined {
+  if (!state) return undefined
+  if (state.kind === "unknown") return "Sandbox status unknown"
+  return sandboxLabel(state.status)
+}
+
 export function modeEntry(mode: KetePermissionModes.Mode | undefined): Entry {
   const current = mode ?? "default"
   return {
@@ -187,7 +194,9 @@ export function KeteStatusLineRow(props: {
   const paths = useTuiPaths()
   const mode = useKetePermissionMode()
   const dimensions = useTerminalDimensions()
-  const [width, setWidth] = createSignal(dimensions().width)
+  const log = useLog({ component: "kete.statusline" })
+  // Half the terminal until the row measures itself, so the first frame can't overflow.
+  const [width, setWidth] = createSignal(Math.floor(dimensions().width / 2))
 
   const parsed = createMemo(() => parse(config.data.statusline))
   const sessionLocation = createMemo(
@@ -207,15 +216,24 @@ export function KeteStatusLineRow(props: {
     () => (parsed().items.includes("todo") ? props.sessionID : undefined),
   )
   // A signal, not a resource: reading a pending resource would suspend the prompt (and the screen around it)
-  // until the RPC answers. Fetched once per location; a stale answer for an earlier location is dropped.
-  const [sandbox, setSandbox] = createSignal<Awaited<ReturnType<typeof fetchSandboxStatus>> | undefined>()
+  // until the RPC answers. Fetched once per location (keyed by locationKey, not object identity); a stale
+  // answer for an earlier location is dropped. A failed call is shown as "unknown", never as sandboxed.
+  const [sandbox, setSandbox] = createSignal<SandboxState>()
+  const sandboxKey = createMemo(() => {
+    const location = sessionLocation()
+    return location ? locationKey(location) : ""
+  })
   createEffect(
-    on(sessionLocation, (location) => {
+    on(sandboxKey, () => {
       let current = true
       onCleanup(() => (current = false))
-      fetchSandboxStatus(client.api, location)
-        .then((status) => current && setSandbox(status))
-        .catch(() => current && setSandbox(undefined))
+      fetchSandboxStatus(client.api, untrack(sessionLocation))
+        .then((status) => current && setSandbox({ kind: "status", status }))
+        .catch((error: unknown) => {
+          if (!current) return
+          log.warn("sandbox status unavailable", { error: error instanceof Error ? error.message : String(error) })
+          setSandbox({ kind: "unknown" })
+        })
     }),
   )
 
@@ -250,7 +268,7 @@ export function KeteStatusLineRow(props: {
       return { id: "model", text: variant ? `${name} ${variant}` : name, tone: "muted" }
     }),
     sandbox: memo(() => {
-      const text = sandboxLabel(sandbox())
+      const text = sandboxText(sandbox())
       return text ? { id: "sandbox", text, tone: "warning", glyph: "⚠" } : undefined
     }),
     balance: memo(() => {
