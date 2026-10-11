@@ -12,6 +12,7 @@ import { UI } from "./ui"
 import { Env } from "../env"
 import { errorMessage } from "../util/error"
 import * as KetePermissionMode from "../kete/permission-mode" // kete_change
+import { KeteFolderTrustCli } from "../kete/folder-trust" // kete_change
 
 export type RunCommandInput = {
   server: ServerConnection.Resolved
@@ -27,6 +28,7 @@ export type RunCommandInput = {
   thinking?: boolean
   auto?: boolean
   permissionMode?: KetePermissionMode.Mode // kete_change
+  trustProjectConfig?: boolean // kete_change: run-trusted (kete/folder-trust.ts)
 }
 
 type FilePart = {
@@ -138,6 +140,9 @@ async function execute(input: RunCommandInput, prepared: Prepared, endpoint: End
     )
     if (!applied) return
   }
+  // kete_change end
+  // kete_change start: say what an untrusted folder's project config held back (kete/folder-trust.ts)
+  if (!input.trustProjectConfig && prepared.directory) await KeteFolderTrustCli.warnIfHeld(prepared.directory)
   // kete_change end
   const model = target.model ? { providerID: target.model.providerID, modelID: target.model.id } : undefined
   const variant = target.model?.variant

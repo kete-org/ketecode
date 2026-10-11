@@ -23,7 +23,7 @@ Built-in MCP presets for Harness and Slack (docs/tasks/2026-10-05-mcp-presets): 
 
 ## Entry points
 - `kete mcp add <name>` — upstream handler `cli/src/commands/handlers/mcp/add.ts:27-42` (marked) calls `KeteMcpPreset.route` (`cli/src/kete/mcp-preset.ts:90`) and, for a preset, `KeteMcpPreset.add` (`:111`) with `KeteMcpPresetIO.make` (`mcp-preset-io.ts:101`).
-- `kete mcp presets` — `cli/src/kete/mcp-presets-command.ts` → `KeteMcpPreset.list` (`mcp-preset.ts:317`); spec `KeteCommands.mcpPresets` (`cli/src/kete/commands.ts:61`), flags `mcpPresetParams` (`:43`), spread into upstream's `mcp` spec (`cli/src/commands/commands.ts:229,232`), handler `cli/src/index.ts:56`.
+- `kete mcp presets` — `cli/src/kete/mcp-presets-command.ts` → `KeteMcpPreset.list` (`mcp-preset.ts:317`); spec `KeteCommands.mcpPresets` (`cli/src/kete/commands.ts:77`), flags `mcpPresetParams` (`:55`), spread into upstream's `mcp` spec (`cli/src/commands/commands.ts:246,249`), handler `cli/src/index.ts:59`.
 - Runtime: `core/src/mcp/client.ts:200-210` (spawn-time secret release and cwd), `core/src/kete/offline.ts:94` (skip).
 
 ## Key files

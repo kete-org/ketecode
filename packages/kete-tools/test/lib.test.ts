@@ -34,6 +34,7 @@ describe("ownership", () => {
     expect(isKeteOwned("docs/upstream-patches.md")).toBe(true)
     expect(isKeteOwned("docs/parity-plan.md")).toBe(true)
     expect(isKeteOwned("docs/statusline.md")).toBe(true)
+    expect(isKeteOwned("docs/folder-trust.md")).toBe(true)
     expect(isKeteOwned("docs/history-search.md")).toBe(true)
     expect(isKeteOwned("docs/home-notices.md")).toBe(true)
     expect(isKeteOwned("CHANGELOG.md")).toBe(true)

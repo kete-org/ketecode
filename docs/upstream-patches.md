@@ -1104,6 +1104,104 @@ trusted; never in job mode. The config schema change regenerated `protocol/opena
 before keeping both. If upstream changes `tool.execute.before/after`, `session.prompt` or the
 session execution/permission/form events, re-check the event mapping in `kete/hooks.ts`.
 
+## Folder trust (feature/folder-trust)
+
+An untrusted folder's guarded project settings (MCP, providers, plugins, sharing, `kete.*`
+integrations and hooks, formatter, shell, worktree, loosening permission rules) and `.kete/plugin(s)/`
+code are held back until the person trusts the folder (`core/src/kete/folder-trust.ts`,
+`core/src/kete/folder-trust/*`, `util/src/kete/folder-trust.ts`, `util/src/kete/trust-store.ts`,
+`util/src/kete/folder-trust-store.ts`, `cli/src/kete/folder-trust.ts`, `cli/src/kete/trust.ts`,
+`app/src/kete/global-forms.ts`, `app/src/kete/global-form-dock.tsx`, `docs/folder-trust.md`). No
+server endpoint, protocol or schema type changed, so nothing was regenerated.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config.ts` | Import; `KeteFolderTrust.Service` in `layer`; a map of the raw text `loadFile` read (cleared at the start of `load`); `load` passes its entries through `folderTrust.gate` with the project document paths (`sources.direct`, `<.kete>/kete.json(c)`) and `.kete` directories; reload on `folderTrust.changes()`; `KeteFolderTrust.node` in `configured()` deps | config loading is the only point every reader (MCP, providers, plugins, formatter, shell, permissions, `kete.*`, hooks) goes through, and it has no hook |
+| `core/src/config/plugin/source.ts` | Import; service in `layer`; `scan` takes it and skips `Directory` entries `pluginsAllowed` refuses; `KeteFolderTrust.node` in `node` deps | `.kete/plugin(s)/` discovery happens here, not in config documents |
+| `core/src/config/plugin/agent.ts` | Import; `Effect.serviceOption(KeteFolderTrust.Service)`; `loadEntry` passes a directory's decoded agent documents through `agentDocuments` | agent markdown permissions are decoded here, after config loading |
+| `core/src/plugin/internal.ts` | Import; `KeteFolderTrust.Service` in `services` and its node in `requirements` | internal plugins see only the listed services |
+| `core/script/test.ts` | `OPENCODE_TRUST_RUN_PARENT` = the script's pid for the test child (run trust, as `kete run --trust-project-config` gives its private server) | the suite's fixtures put guarded settings in temporary project folders; `test/kete/folder-trust.test.ts` builds the service without run trust |
+| `cli/src/commands/commands.ts` | `...KeteCommands.trustParams` on `run` | flag list |
+| `cli/src/commands/handlers/run.ts` | Imports; `KeteFolderTrustCli.connection` before `ServerConnection.resolve`; passes `trustProjectConfig` | where `kete run` picks its server |
+| `cli/src/index.ts` | `trust: { $, list, add, remove }` handlers | handler table |
+| `cli/src/run/run.ts` | Import; `trustProjectConfig` on the input; `warnIfHeld` once the session exists | `kete run`'s execution |
+| `cli/src/run/noninteractive.ts` | Import; both `"global"` form cancel paths skip `kete.folder.trust` forms | the form stays pending (held back), not cancelled |
+| `app/src/composer/composer.tsx` | Import; `<KeteGlobalFormDock />` above `KeteTodoDock` | composer layout |
+
+**Sync checklist:** if upstream adds a trust or "workspace trust" concept, compare and prefer
+extending it. If upstream changes `Config.load`'s sources or adds a config source, classify it in the
+gate (project vs machine). If upstream renames `PluginSourceDirectory.names`, the agent source
+directories or the permission key names, update `util/src/kete/folder-trust.ts` (a core test
+compares the plugin names). If upstream gives MCP elicitations real session owners, the web dock
+still serves the folder-trust form.
+
+### Folder trust: security-review fixes (feature/folder-trust)
+
+Project documents now load raw first (no `{env:…}`/`{file:…}` substitution) and are substituted only
+once the folder is trusted; remote `skills` URLs, git `references` and `experimental.policies` allows
+join the guarded set; a project `kete` object can't mask the machine-level `offline`, `integrations`,
+`platform` and `unattended`; the TUI loads a project's `.kete/plugins/` only when the new
+`kete.folder.trust` RPC (`schema/src/kete/folder-trust.ts`, `core/src/kete/folder-trust/rpc.ts`, served
+by the existing `/api/rpc` route, nothing regenerated) says the folder is trusted
+(`tui/src/kete/folder-trust.ts`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config.ts` | `loadFile` and `loadDirectory` take a mode (`"raw"`: no substitution; `"cached"`: substitute the text the raw pass read, never a new read); `load` builds the project part with a `loadProject(mode)` helper and hands `folderTrust.gate` an `assemble(substitute)` loader instead of the finished list (the non-project parts, wellknown included, load once) | substitution happens inside `loadFile`, before any hook could see the text |
+| `core/src/config/plugin/agent.ts` | With no `KeteFolderTrust.Service` the seam strips loosening rules from every directory but the global config (`KeteFolderTrust.stripAgentDocuments`) instead of passing them | fail closed |
+| `core/src/plugin/internal.ts` | Import; `KeteFolderTrustRpcPlugin.Plugin` after `KeteHooks.Plugin` | internal plugin registration list |
+| `tui/src/plugin/context.tsx` | Import; the reconcile's discover step filters `props.directories` through `KeteTuiFolderTrust.allowed`; a `client.event.listen` that re-reconciles on `rpc.kete.folder.trust.changed` (trusted) | TUI plugin directories are discovered here, in the TUI process |
+
+**Sync checklist:** if upstream changes `loadFile`/`loadDirectory`'s signatures or how `load` orders
+its sources, keep the raw pass and the cached substituted pass in the same order. If upstream changes
+`ConfigVariable.substitute`'s token syntax, update `substitutionTokens` and `fileTarget` in
+`util/src/kete/folder-trust.ts`. If upstream changes how the TUI discovers `.kete/plugins`, keep the
+trust filter on project directories.
+
+### Folder trust: second security-review fixes (feature/folder-trust)
+
+What is loaded is now bound to what was fingerprinted: a `{env:…}`/`{file:…}` token outside a JSON
+string value can't be trusted; trusted project documents are substituted from the bytes the
+fingerprint hashed and checked against their raw text (any change of shape fails closed); plugin code,
+configured local plugins and agent rules of a store-trusted folder load only while their files still
+match the trusted fingerprint (else Config reloads and asks again); the TUI asks the RPC about its own
+directory and imports a project plugin directory only when its own digest equals the runtime's. The
+`kete.folder.trust` RPC's `status` now takes `{ directories }` and returns `{ trusted, plugins }`
+(served by the existing `/api/rpc` route; nothing regenerated).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config.ts` | `loadFile`/`loadDirectory` take `"raw"` or a map that receives each project file's substituted text (instead of `"cached"`); `loadProject` takes the fingerprinted `files` and provides `KeteFolderTrust.checkedFiles(fs, files)` as `FSUtil.Service`, so `ConfigVariable.substitute` reads `{file:…}` targets from those bytes; `assemble` returns `{ entries, substituted }` | substitution reads files through the provided `FSUtil` inside `loadFile`; serving it there leaves `config/variable.ts` untouched |
+| `core/src/config/plugin/source.ts` | `scan` drops a configured absolute plugin target `folderTrust.configuredPluginAllowed` refuses | configured local plugins are resolved here, and their own watcher rescans here without a config reload |
+| `tui/src/plugin/context.tsx` | The discover step passes `process.cwd()` and the project directories to `KeteTuiFolderTrust.trusted` (was `data.location.default()`) | same seam as before |
+
+**Sync checklist:** if upstream changes `ConfigVariable.substitute` (token syntax, the `//` line rule,
+how a `{file:…}` path resolves or is inserted), update `substitute`, `misplacedToken` and `fileTarget`
+in `util/src/kete/folder-trust.ts` (core test "the CLI's substitution is the runtime's" compares them),
+and keep reading files through `FSUtil.Service.readFileString`. If upstream changes how
+`ConfigPluginSource.scan` resolves configured plugin paths, update `configuredTargets`
+(core) and `localPluginTargets` (util).
+
+### Folder trust: third security-review fixes (feature/folder-trust)
+
+The TUI's server-reported plugin list goes through the same check as discovery: a local plugin it
+reports outside the global plugin directory is imported only when the `kete.folder.trust` RPC lists
+its directory (the directory of its server entrypoint) with a digest equal to the TUI's own
+(`KeteTuiFolderTrust.serverTargets`); otherwise it's dropped. The RPC now answers for a local plugin
+inside a project plugin directory or a project-configured local plugin (only while the folder is
+trusted and, store trust, those files still match the trusted fingerprint) and for one inside a
+machine-configured local plugin (always). No new endpoint or schema shape; nothing regenerated.
+`enabled_providers`/`disabled_providers` (which config/normalize.ts turns into `provider.use` policy
+statements) are fingerprinted, and `enabled_providers` is guarded and shown (util only, no upstream edit).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/plugin/context.tsx` | The server-plugins entries in `reconcile` come from `KeteTuiFolderTrust.serverTargets(serverTuiPlugins(), props.directories, …listed(client.api, process.cwd(), …))` instead of mapping every server plugin to its directory | the server list is merged into the reconcile's entries here; no hook between the list and the import |
+
+**Sync checklist:** if upstream changes how the TUI turns a server plugin into an entry (today
+`path.dirname(source.path)` for a local one), keep `serverTargets` in step, and if
+`config/normalize.ts` grows other keys that generate allow rules, add them to the util guarded values.
+
 ## Shell completions (feature/shell-completions)
 
 `kete completion [bash|zsh|fish|powershell]` (`cli/src/kete/completion*.ts`, `.github/README.md`

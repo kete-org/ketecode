@@ -31,6 +31,11 @@ const environment = {
   OPENCODE_CONFIG_DIR: path.join(home, ".config", Brand.appDirectory), // kete_change
   OPENCODE_CONFIG: undefined,
   OPENCODE_CONFIG_CONTENT: undefined,
+  // kete_change start: the suite is this script's child, run-trusted the way `kete run --trust-project-config`
+  // trusts its private server (kete/folder-trust.ts), so fixtures' project config loads; the folder
+  // trust tests build the service without it.
+  OPENCODE_TRUST_RUN_PARENT: String(process.pid),
+  // kete_change end
   TMPDIR: temporary,
   ...(process.platform === "win32" ? { USERPROFILE: home, TMP: temporary, TEMP: temporary } : {}),
 }

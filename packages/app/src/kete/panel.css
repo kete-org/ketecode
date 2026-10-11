@@ -462,3 +462,62 @@
   border-color: var(--kete-text-3);
   background: var(--kete-text-3);
 }
+
+/* ---------- Session-less questions (global-form-dock.tsx): folder trust, MCP elicitations ---------- */
+
+[data-kete="global-form"] {
+  border: 1px solid var(--kete-border);
+  border-radius: var(--kete-r-container);
+  background: var(--kete-surface);
+  font-family: var(--kete-ui-font);
+  font-size: 13px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+[data-kete="global-form"][data-trust="true"] {
+  border-color: var(--kete-brand-soft);
+}
+
+[data-kete="global-form-title"] {
+  font-weight: 600;
+  color: var(--kete-text-1);
+}
+
+[data-kete="global-form-description"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--kete-text-2);
+}
+
+[data-kete="global-form-actions"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+[data-kete="global-form-choice"] {
+  padding: 4px 10px;
+  border: 1px solid var(--kete-border);
+  border-radius: var(--kete-r-container);
+  background: none;
+  color: var(--kete-text-1);
+  cursor: pointer;
+}
+
+[data-kete="global-form-choice"][data-value="trust"] {
+  border-color: var(--kete-brand-soft);
+}
+
+[data-kete="global-form-choice"]:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+[data-kete="global-form-error"] {
+  color: var(--kete-text-1);
+}

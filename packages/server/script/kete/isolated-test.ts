@@ -27,6 +27,9 @@ const environment = {
   XDG_CACHE_HOME: path.join(home, ".cache"),
   XDG_STATE_HOME: path.join(home, ".local", "state"),
   OPENCODE_CONFIG_DIR: path.join(home, ".config", Brand.appDirectory),
+  // The suite is this script's child, run-trusted the way `kete run --trust-project-config` trusts its
+  // private server (core/src/kete/folder-trust.ts), so fixtures' project config loads.
+  OPENCODE_TRUST_RUN_PARENT: String(process.pid),
   TMPDIR: temporary,
   ...(process.platform === "win32" ? { USERPROFILE: home, TMP: temporary, TEMP: temporary } : {}),
 }

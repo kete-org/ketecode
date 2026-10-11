@@ -25,7 +25,7 @@ Make local model servers first class without the gateway: remote hosts through e
 ## Entry points
 - `packages/core/src/plugin/internal.ts:319-321` registers `KeteLocalModels.Plugin` (after `ConfigProviderPlugin`, so configured `capabilities.tools` is applied) and `KeteOffline.Plugin`; `:337` puts the offline plugin in `guarded`.
 - `core/src/kete/local-models.ts:260` `Plugin` = `make()`; `core/src/kete/offline.ts:66` `Plugin`.
-- `cli/src/index.ts:5` imports `./kete/offline-startup`; `index.ts:67` maps `models: { $, pull }`.
+- `cli/src/index.ts:5` imports `./kete/offline-startup`; `index.ts:79` maps `models: { $, pull }`.
 - `tui/src/app.tsx:497` `useKeteLocalModels()`; `tui/src/plugin/builtins.ts:26` footer plugin.
 - `app/src/kete/panel.tsx:33,43` (`KeteOfflineIndicator`, `KeteLocalOffer`); `app/src/kete/composer-controls.tsx:51` (no-tools notice).
 

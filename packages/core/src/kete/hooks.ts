@@ -41,7 +41,6 @@
 export * as KeteHooks from "./hooks.js"
 
 import path from "path"
-import fs from "fs/promises"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import { Tool } from "@opencode/schema/tool"
 import { Global } from "@opencode/util/global"
@@ -183,8 +182,7 @@ export function make(deps: Deps = {}) {
       const permission = Option.getOrUndefined(yield* Effect.serviceOption(Permission.Service))
       const trust = KeteHooksTrust.make(global.state)
       const cwd = location.directory
-      const repository = location.project.directory ?? location.directory
-      const repositoryKey = yield* Effect.promise(() => fs.realpath(repository).catch(() => path.resolve(repository)))
+      const repositoryKey = yield* Effect.promise(() => KeteHooksSettings.repositoryKeyOf(location))
       // Project hooks lose every credential-looking variable, as commands in an unattended run do;
       // the user's own hooks keep everything but Kete's credentials.
       const hookEnv = (event: Event, source: Entry["source"]): Record<string, string> => {
@@ -360,18 +358,15 @@ export function make(deps: Deps = {}) {
             })
         }
         if (project.length === 0) return result(user)
-        const allProject = all.filter((entry) => entry.source === "project")
-        const unsafe = allProject.map((entry) => KeteHooksSettings.unsafeCommand(entry.command)).find((reason) => reason !== undefined)
-        if (unsafe) {
-          yield* warnOnce(`unsafe ${repositoryKey}`, `project hooks refused: a command can't be shown faithfully (${unsafe})`, {
+        const trustInput = yield* Effect.promise(() => KeteHooksSettings.projectHooksTrust(entries, { globalConfig: global.config, repositoryKey, cwd }))
+        if (trustInput.kind === "refused") {
+          yield* warnOnce(`unsafe ${repositoryKey}`, `project hooks refused: a command can't be shown faithfully (${trustInput.reason})`, {
             repository: repositoryKey,
           })
           return result(user)
         }
-        const files = (yield* Effect.promise(() =>
-          Promise.all(allProject.map((entry) => KeteHooksSettings.referencedFiles(entry.command, repositoryKey, cwd))),
-        )).flat()
-        const fingerprint = KeteHooksSettings.fingerprint(all, files)
+        if (trustInput.kind === "none") return result(user)
+        const { fingerprint, files } = trustInput
         if (yield* Effect.promise(() => trust.trusted(repositoryKey, fingerprint).catch(() => false))) return result([...user, ...project])
         if (declined.has(fingerprint) || !asking.has(event)) return result(user)
         if (yield* unattended(sessionID)) {

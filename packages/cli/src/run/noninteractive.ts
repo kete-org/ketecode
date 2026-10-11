@@ -12,6 +12,7 @@ import { EOL } from "node:os"
 import { readFile } from "node:fs/promises"
 import { nonEmptyToolContent, toolOutputText, type MiniToolPart } from "@opencode/tui/mini/tool"
 import { UI } from "./ui"
+import { KeteFolderTrustCli } from "../kete/folder-trust" // kete_change
 
 type Model = {
   providerID: string
@@ -184,6 +185,7 @@ export async function runNonInteractivePrompt(input: Input) {
       if (
         event.type === "form.created" &&
         submitted &&
+        !KeteFolderTrustCli.isTrustForm(event.data.form) && // kete_change: the folder-trust question stays pending (held back)
         (event.data.form.sessionID === input.sessionID ||
           (!input.attached &&
             event.data.form.sessionID === GLOBAL_FORM_SESSION_ID &&
@@ -708,7 +710,7 @@ export async function runNonInteractivePrompt(input: Input) {
       ...(permissions ?? []).map(replyPermission),
       ...(forms ?? []).map(cancelForm),
       ...(globals && sameLocation(globals.location, input.location)
-        ? globals.data.filter((form) => form.sessionID === GLOBAL_FORM_SESSION_ID).map(cancelForm)
+        ? globals.data.filter((form) => form.sessionID === GLOBAL_FORM_SESSION_ID && !KeteFolderTrustCli.isTrustForm(form)).map(cancelForm) // kete_change
         : []),
     ])
     if (input.compatibility === "v1") {

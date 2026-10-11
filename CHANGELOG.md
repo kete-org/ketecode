@@ -6,6 +6,13 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Folder trust:** a repository's own configuration can no longer start MCP servers, load plugins,
+  point providers elsewhere, change the shell or formatters, or loosen permissions until you trust
+  the folder. Kete Code asks once ("Trust this folder?"); instructions, agents, commands and skills
+  load either way. `kete trust` lists, adds and removes trusted folders, and `kete run` holds the
+  settings back unless you pass `--trust-project-config`. After this update every folder with such
+  settings asks once, including folders you used before. Details: `docs/folder-trust.md`.
+
 ## 0.2.7
 
 - **Security:** agent, command and skill markdown files only accept YAML front matter. Front matter in

@@ -133,6 +133,9 @@ hidden; which ones get network) and the repository files they run, and asks.
   contains it. Trust only hooks whose whole effect you're willing to accept.
 - Trusted repositories are recorded in `hooks-trust.json` in Kete Code's state directory (delete an
   entry to be asked again).
+- `kete.hooks` is also one of the settings [folder trust](folder-trust.md) holds back: until you
+  trust the folder, its project hooks aren't loaded at all. Trusting the folder trusts its current
+  project hooks too, so you're asked once, not twice; `kete trust remove` forgets both.
 - A project command with control characters (other than tab) or text-reordering (bidi) characters
   is refused outright; you aren't asked.
 - `sandbox: false` in a project's config is ignored (logged); its hooks stay sandboxed.

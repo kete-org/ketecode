@@ -12,6 +12,7 @@ import { Config } from "../../config.js"
 import { Watcher } from "../../filesystem/watcher.js"
 import { Location } from "../../location.js"
 import { PluginSourceDirectory } from "../../plugin/source-directory.js"
+import { KeteFolderTrust } from "../../kete/folder-trust.js" // kete_change
 
 export type Operation =
   | {
@@ -39,6 +40,7 @@ export const layer = Layer.effect(
     const watcher = yield* Watcher.Service
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
+    const folderTrust = yield* KeteFolderTrust.Service // kete_change
     const configuredChanges = yield* PubSub.unbounded<void>()
     const watched = new Set<string>()
 
@@ -74,7 +76,7 @@ export const layer = Layer.effect(
     return Service.of({
       operations: Effect.fn("ConfigPluginSource.operations")(function* () {
         const entries = yield* config.entries()
-        const operations = yield* scan(fs, location, entries)
+        const operations = yield* scan(fs, location, entries, folderTrust) // kete_change
         yield* watchConfiguredSources(entries, operations)
         return operations
       }),
@@ -95,7 +97,7 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Config.node, FSUtil.node, Watcher.node, Location.node],
+  deps: [Config.node, FSUtil.node, Watcher.node, Location.node, KeteFolderTrust.node], // kete_change
 })
 
 export const empty = makeLocationNode({
@@ -123,9 +125,16 @@ const scan = Effect.fn("ConfigPluginSource.scan")(function* (
   fs: FSUtil.Interface,
   location: Location.Interface,
   entries: readonly Entry[],
+  folderTrust: KeteFolderTrust.Interface, // kete_change
 ) {
-  const discovered = yield* Effect.forEach(
+  // kete_change start: an untrusted folder's .kete/plugin(s)/ code is held back (kete/folder-trust.ts)
+  const directories = yield* Effect.filter(
     entries.filter((entry): entry is Directory => entry.type === "directory"),
+    (entry) => folderTrust.pluginsAllowed(entry.path),
+  )
+  const discovered = yield* Effect.forEach(
+    directories,
+  // kete_change end
     (entry) =>
       PluginSourceDirectory.discover(fs, entry.path).pipe(
         Effect.map((targets) => targets.map((target): Operation => ({ type: "add", target, options: {} }))),
@@ -148,6 +157,7 @@ const scan = Effect.fn("ConfigPluginSource.scan")(function* (
   const resolved = yield* Effect.forEach(configured, (operation) =>
     Effect.gen(function* () {
       if (operation.type === "remove" || !path.isAbsolute(operation.target)) return Option.some(operation)
+      if (!(yield* folderTrust.configuredPluginAllowed(operation.target))) return Option.none<Operation>() // kete_change: a project's local plugin code loads only while it is what was trusted (kete/folder-trust.ts)
       if (yield* fs.isFile(operation.target)) {
         yield* Effect.logWarning("configured plugin path must be a directory", { target: operation.target })
         return Option.none<Operation>()
