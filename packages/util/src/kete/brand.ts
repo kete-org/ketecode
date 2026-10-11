@@ -42,15 +42,16 @@ export const updatesAvailable = true
 /** Why a build can't update itself: it has no pinned update signing key, so nothing it downloads could be verified. */
 export const updatesUnavailableMessage = "Updates are not available for this build of Kete Code: it has no pinned update signing key."
 
-// Product URLs. Kete Code has no public domain yet, so these are deliberately
+// Product URLs. Kete Code has no public domain yet, so the ones without an address are deliberately
 // undefined rather than guessed: callers omit the link (or the `$schema` key)
 // instead of pointing users at an address nobody controls.
 export const urls: {
   readonly configSchema: string | undefined
   readonly docs: string | undefined
-  readonly issues: string | undefined
+  readonly issues: string
   readonly platform: string | undefined
   readonly releases: string
+  readonly securityReport: string
   readonly upstream: string
   readonly website: string | undefined
 } = {
@@ -58,8 +59,8 @@ export const urls: {
   configSchema: undefined,
   // TODO(kete): set the Kete Code documentation URL once it exists.
   docs: undefined,
-  // TODO(kete): set the Kete Code issue tracker URL once it is public.
-  issues: undefined,
+  // The public issue tracker: `kete bug`, `/feedback` and the crash screen open its bug-report form.
+  issues: "https://github.com/kete-org/ketecode/issues",
   // TODO(kete): set the production Kete Code platform URL, the default for `kete login`. Until then
   // `kete login` needs --platform-url, KETE_PLATFORM_URL or `kete.platform.url`.
   platform: undefined,
@@ -67,6 +68,8 @@ export const urls: {
   // what `kete upgrade` verifies) and SHA256SUMS.sigstore.json (cosign keyless, what the install
   // scripts verify). The source repository stays private; this one holds only release files.
   releases: "https://github.com/kete-org/kete-releases",
+  // Private vulnerability reporting (.github/SECURITY.md): security problems never go in a public issue.
+  securityReport: "https://github.com/kete-org/ketecode/security/advisories/new",
   upstream: "https://github.com/anomalyco/opencode",
   // TODO(kete): set the Kete Code website once it exists. It is also the `HTTP-Referer` that
   // credits Kete Code to model providers (see `attribution`); until then no referer is sent.

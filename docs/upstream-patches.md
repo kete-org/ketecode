@@ -1135,3 +1135,23 @@ fails a stable tag without its section (`kete-release.yml`). Runbook: `docs/rele
 **Sync checklist:** if upstream changes how `build.ts` builds (several `Bun.build` calls, a different
 `define`), keep `KETE_RELEASE_NOTES` in every one that bundles the TUI. If upstream adds its own
 changelog or "what's new" view, compare and drop one.
+
+## Problem reports (feature/bug-report)
+
+`kete bug [description]` (`cli/src/kete/bug.ts`, `bug-flow.ts`) and `/feedback` (alias `/bug`, builtin TUI
+plugin `tui/src/kete/feedback.tsx`, side effects in `feedback-deps.ts`) build the same privacy-safe report
+with `@opencode/util/kete/bug-report` (scrubbing, log field allowlist, issue link) and
+`bug-report-file` (log tail, 0600 save). `Brand.urls.issues` is now Kete's public tracker and
+`Brand.urls.securityReport` the private advisory form. The browser opens the pre-filled bug-report
+form only on the person's yes / Open issue; opening it sends the report to GitHub in the link, and it
+becomes public only when the person submits the issue (`KeteBugReport.LINK_NOTICE`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/src/index.ts` | `bug` handler → `kete/bug.ts` (one marked line) | the handler map is the only place a command's handler is registered |
+| `tui/src/plugin/builtins.ts` | Import; `KeteFeedback` in `builtins` | builtin plugin registration list |
+| `tui/src/component/error-component.tsx` | Imports (`open`, `Global`, `KeteBugReport`, `KeteBugReportFile`); message and stack scrubbed (home → `~`, secrets) before the report is built, and the message cut to one line of at most 200 bytes with paths and payloads masked (`scrubLine`, `MAX_MESSAGE`); an "Open issue" action (key `o`) that opens the form; `buildIssueURL`'s base is `Brand.urls.issues` instead of OpenCode's tracker; footer text (`KeteBugReport.LINK_NOTICE`) | the crash screen is the error boundary's fallback, rendered outside the plugin tree, so a plugin can't add an action to it |
+
+**Sync checklist:** if upstream changes the crash screen's actions, key handler or `buildIssueURL`, keep the
+scrubbing, the Kete tracker base and the Open issue action. If upstream adds its own `bug`/`feedback`
+command or a `/feedback` slash command, compare and drop one.

@@ -138,6 +138,20 @@ export const specs = [
       ),
     },
   }),
+  Spec.make("bug", {
+    description: `Report a problem: shows a privacy-safe report to review, saves it to a file, and offers to open a GitHub issue with it`,
+    params: {
+      description: Argument.string("description").pipe(
+        Argument.withDescription("What went wrong (optional; it becomes the issue title)"),
+        Argument.variadic({ min: 0 }),
+      ),
+      print: Flag.boolean("print").pipe(
+        Flag.withDescription("Only print the report and save it to a file: never ask, never open a browser"),
+        Flag.withDefault(false),
+      ),
+      ...ServerParams,
+    },
+  }),
   Spec.make("job", {
     description: "Run unattended jobs (ADR 0005/0008)",
     commands: [

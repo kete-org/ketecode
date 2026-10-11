@@ -204,6 +204,27 @@ Changes to upstream files are marked `kete_change` and listed in
 [`docs/upstream-patches.md`](../docs/upstream-patches.md). OpenCode's own README is
 [`README.md`](../README.md) at the repository root.
 
+## Reporting a problem
+
+Run `kete bug "what went wrong"`, or `/feedback` (also `/bug`) in the terminal UI. Both build a
+report for you to review: version and channel, OS, terminal, shell, install method, whether you're
+signed in (yes or no), the model providers and MCP servers in use (names and states only), the
+permission mode, the sandbox and offline state, and the last 200 lines of the log with only
+diagnostic fields kept. Keys, tokens, emails, IDs, URL query strings, environment values, prompts,
+file contents and session messages are left out or masked, and your home directory shows as `~`. Log
+messages and errors keep only their first line (no stack traces), cut short, with other absolute paths
+shown as `<path>` and JSON payloads as `<data>`.
+
+`kete bug` prints the report, saves it to a file only you can read, and asks before opening a
+pre-filled [GitHub issue](https://github.com/kete-org/ketecode/issues) form in your browser;
+`kete bug --print` (or no terminal) only prints and saves. Opening the form sends this report to
+GitHub in the link; it becomes public only when you submit the issue. The `/feedback` dialog offers
+Open issue, Copy, Save and Cancel. If Kete Code crashes, the crash screen can copy the report or open
+the issue too.
+
+**Security problem?** Don't open a public issue; report it privately:
+[GitHub security advisories](https://github.com/kete-org/ketecode/security/advisories/new) ([SECURITY.md](SECURITY.md)).
+
 ## Contributing, security, license
 
 - [Contributing](CONTRIBUTING.md): issues and pull requests are welcome; please read it first.
