@@ -797,6 +797,12 @@ plugin RPC (`schema/src/kete/sync.ts`, registered in `core/src/kete/sync/plugin.
 prompt): the notices measure their own height and render only whole notices, so the prompt keeps its rows.
 If upstream adds a slot under the logo or its own home tips, move to it and drop the `home.tsx` edit.
 
+### YAML-only front matter (GHSA-m7hc-g593-r9wg)
+
+| File | Change |
+| --- | --- |
+| `core/src/config/markdown.ts` | `parse` refuses front matter in any language other than YAML and passes gray-matter engines that throw for JavaScript/CoffeeScript, so a `---js` block in agent, command or skill markdown is never evaluated. Upstream calls `matter(content)` with defaults, which include an `eval`-based engine. Re-check on every sync, and report it upstream once the advisory is public |
+
 ### Upstream test edits
 
 55 upstream test files and `core/script/test.ts` were updated so their fixtures

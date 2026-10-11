@@ -1,11 +1,35 @@
 export * as ConfigMarkdown from "./markdown.js"
 
 import matter from "gray-matter"
+// kete_change start: YAML front matter only. gray-matter's defaults include a JavaScript engine that evaluates
+// a `---js` (or `---javascript`) block, so a repository's agent, command or skill markdown could run code when
+// the folder loads (GHSA-m7hc-g593-r9wg). Any other front-matter language is refused, and the code-evaluating
+// engines are replaced as a second guard.
+const SAFE_LANGUAGES = new Set(["", "yaml", "yml"])
+const refuse = {
+  parse: () => {
+    throw new Error("front matter must be YAML")
+  },
+}
+const OPTIONS = { engines: { javascript: refuse, js: refuse, coffee: refuse, coffeescript: refuse, cson: refuse } }
+
+/** The language named after the opening `---`, lower-cased ("" when none). */
+export function frontMatterLanguage(content: string) {
+  const match = content.match(/^\uFEFF?---([^\r\n]*)\r?\n/)
+  return match ? match[1]!.trim().toLowerCase() : ""
+}
+
+function load(content: string) {
+  const language = frontMatterLanguage(content)
+  if (!SAFE_LANGUAGES.has(language)) throw new Error(`front matter must be YAML, not "${language}"`)
+  return matter(content, OPTIONS)
+}
+// kete_change end
 export function parse(content: string) {
   try {
-    return matter(content)
+    return load(content) // kete_change
   } catch {
-    return matter(sanitize(content))
+    return load(sanitize(content)) // kete_change
   }
 }
 

@@ -6,6 +6,11 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Security:** agent, command and skill markdown files only accept YAML front matter. Front matter in
+  another language (such as `---js`) is no longer evaluated, so a repository's `.kete/` files can't run
+  code when a folder opens (GHSA-m7hc-g593-r9wg). Update if you open repositories you don't trust.
+- **Security (VS Code extension):** `kete.cliPath`, `kete.gateway.url` and `kete.platform.url` are
+  machine settings; a repository's `.vscode/settings.json` can no longer set them (GHSA-43vv-qhh9-p4cv).
 - **Status line:** the row under the prompt shows the directory, git branch, permission mode and
   how much context is left. Choose and order its items (model, cost, sandbox, credit balance, task
   progress, …) with `/statusline`, or `statusline` in `cli.json`. Details: `docs/statusline.md`.
