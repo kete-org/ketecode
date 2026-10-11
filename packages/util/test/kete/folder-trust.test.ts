@@ -561,3 +561,27 @@ describe("second security review fixes", () => {
     expect(await Rules.targetDigest(path.join(tmp, "other"))).toBeNull()
   })
 })
+
+describe("third security review fixes", () => {
+  test("T2: enabled_providers and disabled_providers (provider.use policy) are fingerprinted; enabled_providers is guarded and shown", async () => {
+    const document = { enabled_providers: ["evil", "ok"], disabled_providers: ["other"] }
+    expect(Rules.guardedValues(document)).toEqual(document)
+    expect(Rules.runtimeGuarded(document)).toEqual(["enabled_providers"])
+    expect(Rules.runtimeGuarded({ disabled_providers: ["other"] })).toEqual([])
+    expect(Rules.runtimeGuarded({ enabled_providers: [] })).toEqual([])
+    expect(Rules.describe(document).join("\n")).toContain('enabled_providers: allows provider "evil", "ok"')
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "kete-ft-providers-"))
+    try {
+      const file = path.join(tmp, "kete.json")
+      const run = async (value: Record<string, unknown>) => {
+        const result = await Rules.fingerprint({ top: tmp, documents: [{ path: file, document: { shell: "/bin/sh", ...value } }], plugins: [], agents: [] })
+        return result.kind === "ok" ? result.value : result.reason
+      }
+      const base = await run({ disabled_providers: ["other"] })
+      expect(await run({ disabled_providers: ["other"], enabled_providers: ["evil"] })).not.toBe(base)
+      expect(await run({})).not.toBe(base)
+    } finally {
+      await rm(tmp, { recursive: true, force: true })
+    }
+  })
+})

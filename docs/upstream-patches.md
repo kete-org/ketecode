@@ -1133,3 +1133,23 @@ in `util/src/kete/folder-trust.ts` (core test "the CLI's substitution is the run
 and keep reading files through `FSUtil.Service.readFileString`. If upstream changes how
 `ConfigPluginSource.scan` resolves configured plugin paths, update `configuredTargets`
 (core) and `localPluginTargets` (util).
+
+### Folder trust: third security-review fixes (feature/folder-trust)
+
+The TUI's server-reported plugin list goes through the same check as discovery: a local plugin it
+reports outside the global plugin directory is imported only when the `kete.folder.trust` RPC lists
+its directory (the directory of its server entrypoint) with a digest equal to the TUI's own
+(`KeteTuiFolderTrust.serverTargets`); otherwise it's dropped. The RPC now answers for a local plugin
+inside a project plugin directory or a project-configured local plugin (only while the folder is
+trusted and, store trust, those files still match the trusted fingerprint) and for one inside a
+machine-configured local plugin (always). No new endpoint or schema shape; nothing regenerated.
+`enabled_providers`/`disabled_providers` (which config/normalize.ts turns into `provider.use` policy
+statements) are fingerprinted, and `enabled_providers` is guarded and shown (util only, no upstream edit).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/plugin/context.tsx` | The server-plugins entries in `reconcile` come from `KeteTuiFolderTrust.serverTargets(serverTuiPlugins(), props.directories, …listed(client.api, process.cwd(), …))` instead of mapping every server plugin to its directory | the server list is merged into the reconcile's entries here; no hook between the list and the import |
+
+**Sync checklist:** if upstream changes how the TUI turns a server plugin into an entry (today
+`path.dirname(source.path)` for a local one), keep `serverTargets` in step, and if
+`config/normalize.ts` grows other keys that generate allow rules, add them to the util guarded values.

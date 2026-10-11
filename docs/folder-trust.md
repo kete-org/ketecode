@@ -22,6 +22,7 @@ Until the folder is trusted, these settings from its project configuration don't
 | `skills` URLs and git `references` | they are fetched when they load (local paths still load) |
 | `{env:…}` and `{file:…}` in any value | they read your environment and files; until you trust the folder they are left as written |
 | `experimental.policies` statements that allow | a repository's allow would outrank a deny set for you; its deny statements still apply |
+| `enabled_providers` (older key) | it becomes an allow for each provider it lists; `disabled_providers` still applies, and both are part of what you trust, so changing either asks again |
 | permission rules that loosen | see below |
 
 **Permission rules.** In the project's `permissions` (and the older `permission` and `tools` keys),
@@ -50,7 +51,11 @@ own (or it is held back).
 **The terminal UI's own plugins.** TUI plugins in a project's `.kete/plugins/` run inside the
 terminal UI, so it loads them only when the runtime, asked about the terminal UI's own folder, says
 the folder is trusted and its plugin files are the ones that were trusted (the terminal UI checks the
-files itself just before loading them). It loads them as soon as you trust the folder.
+files itself just before loading them). It loads them as soon as you trust the folder. A local
+plugin the runtime reports in its own plugin list (a project's `.kete/plugins/` or a project-configured
+local plugin with a TUI part) is checked the same way: the terminal UI loads it only when the runtime
+vouches for its files as they are now; plugins in your global plugin directory, local plugins your
+global configuration names and npm packages aren't affected.
 
 ## The question
 

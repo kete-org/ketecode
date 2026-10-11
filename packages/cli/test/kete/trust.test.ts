@@ -161,3 +161,22 @@ describe("kete trust: second security review fixes", () => {
     }
   })
 })
+
+describe("kete trust: third security review fixes", () => {
+  test("T2: enabled_providers is listed with what it allows; both provider lists are part of the fingerprint", async () => {
+    const file = path.join(tmp, "repo", "kete.json")
+    const fingerprint = async () => (await KeteFolderTrustStore.make(deps.paths.state).list())[path.join(tmp, "repo")]?.fingerprint
+    await writeFile(file, JSON.stringify({ shell: "/bin/sh", disabled_providers: ["other"] }))
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(0)
+    const first = await fingerprint()
+    await writeFile(file, JSON.stringify({ shell: "/bin/sh" }))
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(0)
+    const second = await fingerprint()
+    expect(second).not.toBe(first)
+    await writeFile(file, JSON.stringify({ shell: "/bin/sh", enabled_providers: ["evil"] }))
+    expect(await KeteTrustCommand.add(deps, undefined)).toBe(0)
+    expect(await fingerprint()).not.toBe(second)
+    const held = (await KeteFolderTrustStore.make(deps.paths.state).list())[path.join(tmp, "repo")]?.held.join("\n")
+    expect(held).toContain('enabled_providers: allows provider "evil"')
+  })
+})

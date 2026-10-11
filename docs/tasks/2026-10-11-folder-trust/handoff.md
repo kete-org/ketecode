@@ -295,3 +295,52 @@ Open: bare imports from a project plugin resolve up the tree (`.kete/node_module
 window between digest and import (same for the TUI). An `{env:}` token in a `//` comment line is
 refused as instructed, so a folder with a commented-out `"key": "{env:X}"` line can't be trusted
 until the comment is removed.
+
+## 2026-10-11 implementer (third security-review fixes)
+Done: both findings from the third security review fixed on `feature/folder-trust`, each with a
+regression test that was mutation-checked (fix disabled → test fails; restored → passes).
+
+- **1 (major, TUI imported server-reported local plugins unchecked):** the server's plugin list no
+  longer bypasses the digest check. `KeteTuiFolderTrust.serverTargets` (tui `src/kete/folder-trust.ts`)
+  keeps packages and local plugins in the global plugin directory (a non-project directory in
+  `props.directories`, `plugin/` or `plugins/`) as before; every other local plugin's directory (the
+  directory of its server entrypoint, which is what the TUI imports from) is sent to the
+  `kete.folder.trust` RPC (`listed`) in the same reconcile and loads only when the server lists it with
+  a digest equal to the TUI's own `targetDigest`; an error, no answer or a different digest drops it.
+  Core's `pluginDigests` (what the RPC answers) now also answers for a path inside a project plugin
+  directory (trusted and `pluginCurrent` of that directory) or inside a project-configured local plugin
+  (trusted and `configuredPluginAllowed`, i.e. `bound.configured`), lexically or through a symlink; and
+  for a path inside a machine-configured local plugin (not project code) in any folder, so the user's
+  own global-config local TUI plugins still load in untrusted folders. Project matches are checked
+  first, so a project path never falls through to the machine rule. The RPC now calls `pluginDigests`
+  whatever the trust state (it lists project code only while trusted); `trusted` keeps requiring
+  `trusted: true` for the discovery path. Wired into `plugin/context.tsx` (marked lines).
+  Tests: tui "a server-reported local plugin the discovery check refused isn't imported…" (discovery
+  refuses the dir while the server list still has it → not in the merged entries; stale digest, error →
+  dropped; current digest → loaded; global and package untouched; configured local plugin checked) and
+  "listed: …"; core "T1: the RPC vouches for a server-reported local plugin only while it is what was
+  trusted" (untrusted: only the machine-configured one; trusted: all three; tui.ts changed in the plugin
+  dir and in the configured dir: only the machine one). Mutations: tui (treat every local as unchecked),
+  core (drop the trusted check, the `pluginCurrent` check, the `configuredPluginAllowed` check, the
+  machine rule) each fail their test.
+- **2 (minor, enabled/disabled_providers):** util `PROVIDER_LIST_KEYS`; `guardedValues` includes both
+  (so the fingerprint covers them), `runtimeGuarded` lists `enabled_providers` when it names a provider,
+  `describe` shows `enabled_providers: allows provider "x", … (provider.use)`. Core already held back and
+  described the generated `provider.use` allows through `experimental.policies`; only the fingerprint
+  was missing. `disabled_providers` is deny-only, so it's fingerprinted (dropping a denied provider asks
+  again) but not shown as held back (it isn't). Tests: util "T2", core "T2" (store-trusted folder adds
+  `enabled_providers` → untrusted, asks again, question shows the provider.use allow, no allow loaded),
+  cli "T2" (listed; both lists change the stored fingerprint). Mutations: removing the guardedValues,
+  runtimeGuarded or describe line each fail.
+
+Files changed: tui `src/kete/folder-trust.ts`, `src/plugin/context.tsx` (upstream, marked),
+`test/kete/folder-trust.test.ts`; core `src/kete/folder-trust.ts`, `src/kete/folder-trust/rpc.ts`,
+`test/kete/folder-trust.test.ts`; schema `src/kete/folder-trust.ts` (doc only); util
+`src/kete/folder-trust.ts` + test; cli `test/kete/trust.test.ts`; `docs/folder-trust.md`,
+`docs/upstream-patches.md` (appended).
+
+Open: the TUI context wiring itself (context.tsx calling `serverTargets`) is covered by review, not
+by a test (no harness for PluginProvider reconcile); the unit tests cover `serverTargets` and the
+merge. Machine-level documents without a path (e.g. `KETE_CONFIG_CONTENT`) with a relative local
+plugin aren't resolved by `configuredTargets`, so such a plugin's TUI part is dropped (fail closed).
+Window between the server's digest and the TUI's import remains, as before.

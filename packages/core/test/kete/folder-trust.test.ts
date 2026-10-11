@@ -897,4 +897,80 @@ describe("folder trust", () => {
         }),
     ),
   )
+
+  // ---------------------------------------------------------------------------------------------
+  // Third security review fixes (2026-10-11): one regression test per finding.
+
+  it.live("T1: the RPC vouches for a server-reported local plugin only while it is what was trusted (machine-configured ones always)", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        // A .kete/plugins/<dir> with server.ts + tui.ts, and a project-configured local plugin directory.
+        await write(path.join(fixture.repo, ".kete", "plugins", "both", "server.ts"), "export default {}")
+        await write(path.join(fixture.repo, ".kete", "plugins", "both", "tui.ts"), "export default {}")
+        await write(path.join(fixture.repo, "local", "server.ts"), "export default {}")
+        await write(path.join(fixture.repo, "local", "tui.ts"), "export default {}")
+        await write(path.join(fixture.repo, "kete.json"), { plugins: ["./local"] })
+        // A local plugin the machine-level configuration names.
+        await write(path.join(fixture.root, "mine", "tui.ts"), "export default {}")
+        await write(path.join(fixture.global, "kete.json"), { plugins: [path.join(fixture.root, "mine")] })
+      },
+      (fixture) =>
+        Effect.gen(function* () {
+          yield* entries
+          const service = yield* KeteFolderTrust.Service
+          const both = path.join(fixture.repo, ".kete", "plugins", "both")
+          const local = path.join(fixture.repo, "local")
+          const mine = path.join(fixture.root, "mine")
+          const other = path.join(fixture.root, "other")
+          const requested = [both, local, mine, other]
+          const digest = (target: string) => Effect.promise(async () => (await KeteFolderTrustRules.targetDigest(target)) as string)
+          // Untrusted: project code isn't vouched for; the machine-configured plugin is.
+          expect(yield* service.pluginDigests(requested)).toEqual([{ directory: mine, digest: yield* digest(mine) }])
+          yield* trustNow
+          yield* until(entries.pipe(Effect.andThen(service.status())), (status) => status.kind === "trusted", "the reload")
+          expect(yield* service.pluginDigests(requested)).toEqual([
+            { directory: both, digest: yield* digest(both) },
+            { directory: local, digest: yield* digest(local) },
+            { directory: mine, digest: yield* digest(mine) },
+          ])
+          // A tui.ts changed after trust: neither is vouched for any more (the TUI then drops it).
+          yield* Effect.promise(() => write(path.join(both, "tui.ts"), "export default { changed: true }"))
+          yield* Effect.promise(() => write(path.join(local, "tui.ts"), "export default { changed: true }"))
+          expect(yield* service.pluginDigests(requested)).toEqual([{ directory: mine, digest: yield* digest(mine) }])
+        }),
+    ),
+  )
+
+  it.live("T2: enabled_providers added to a store-trusted folder (provider.use allows) asks again, and is shown", () =>
+    withFixture((fixture) =>
+      Effect.gen(function* () {
+        yield* trustNow
+        yield* until(entries.pipe(Effect.andThen(Effect.flatMap(KeteFolderTrust.Service, (service) => service.status()))), (status) => status.kind === "trusted", "the reload")
+      }).pipe(
+        Effect.provide(graph(fixture)),
+        (effect) =>
+          Effect.promise(async () => {
+            await clean(fixture)
+            await write(path.join(fixture.repo, "kete.json"), { shell: "/bin/sh", disabled_providers: ["other"] })
+          }).pipe(Effect.andThen(effect)),
+        // After trust, the project adds an allow through the v1 provider list.
+        Effect.andThen(Effect.promise(() => write(path.join(fixture.repo, "kete.json"), { shell: "/bin/sh", disabled_providers: ["other"], enabled_providers: ["evil"] }))),
+        Effect.andThen(
+          Effect.gen(function* () {
+            const all = yield* entries
+            const status = yield* (yield* KeteFolderTrust.Service).status()
+            expect(status.kind).toBe("untrusted")
+            expect(Config.latest(all, "shell")).toBeUndefined()
+            const allows = all.flatMap((entry) => (entry.type === "document" ? (entry.info.experimental?.policies ?? []) : [])).filter((policy) => policy.effect === "allow")
+            expect(allows).toEqual([])
+            const { description, options } = yield* formText
+            expect(options).toContain("trust")
+            expect(description).toContain('"provider.use"')
+            expect(description).toContain("→ allow")
+          }).pipe(Effect.provide(graph(fixture))),
+        ),
+      ),
+    ),
+  )
 })

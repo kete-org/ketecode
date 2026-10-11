@@ -15,7 +15,9 @@
 //   binaries), `shell`, `worktree` (where worktrees and their setup script run), remote `skills` URLs
 //   and git `references` (fetched when they load), permission rules that loosen (`allow` rules, and an
 //   `ask` rule overlapping a machine-level `deny`: rules are last-match-wins, so that ask would turn the
-//   deny into a question) and `experimental.policies` allow statements. Legacy keys (`permission`,
+//   deny into a question), `experimental.policies` allow statements and the v1 `enabled_providers`
+//   (which normalizes into `provider.use` allows; `disabled_providers`, its deny-only sibling, is
+//   fingerprinted too, so dropping a denied provider asks again). Legacy keys (`permission`,
 //   `tools`, `agent`, `mode`) count too. `{env:…}`/`{file:…}` substitution in a project document is
 //   held back as well (`substitutionTokens`): until the folder is trusted the runtime loads project
 //   documents with the tokens left as they are.
@@ -100,6 +102,11 @@ export const RUNTIME_GUARDED = [...JOB_GUARDED, "formatter", "shell", "worktree"
 export const PERMISSION_KEYS = ["permissions", "permission", "tools"] as const
 /** Raw keys holding agents (native, and v1). */
 export const AGENT_KEYS = ["agents", "agent", "mode"] as const
+/** v1 provider lists config/normalize.ts turns into `provider.use` policy statements:
+ * `enabled_providers` into a deny of every provider plus an allow for each one listed,
+ * `disabled_providers` into a deny for each one listed. Fingerprinted whole (so removing a denied
+ * provider or adding an allowed one after trust asks again); `enabled_providers` is shown. */
+export const PROVIDER_LIST_KEYS = ["enabled_providers", "disabled_providers"] as const
 /** Settings read from the machine-level `kete` object even when a project document sets its own
  * `kete` (core/src/kete/folder-trust.ts `shield`): `offline` is on when either says so; the others
  * come from the machine level when the project doesn't set them (or they are held back). */
@@ -144,6 +151,12 @@ function policies(document: Record<string, unknown>): unknown {
   return isRecord(document.experimental) ? document.experimental.policies : undefined
 }
 
+/** The providers a raw `enabled_providers` allows (config/normalize.ts makes an allow statement for each). */
+function enabledProviders(document: Record<string, unknown>): string[] {
+  const value = document.enabled_providers
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+}
+
 /** Policy statements that allow (a project's would outrank a host-injected deny). */
 export function allowPolicies(value: unknown): Array<{ action: string; resource: string; effect: string }> {
   if (!Array.isArray(value)) return []
@@ -165,6 +178,7 @@ export function guardedValues(document: unknown): Record<string, unknown> {
   if (isRecord(kete)) for (const key of KETE_GUARDED) if (key in kete) found[`kete.${key}`] = kete[key]
   for (const key of PERMISSION_KEYS) if (key in document) found[key] = document[key]
   for (const key of ["skills", "references"]) if (key in document) found[key] = document[key]
+  for (const key of PROVIDER_LIST_KEYS) if (key in document) found[key] = document[key]
   const policy = policies(document)
   if (policy !== undefined) found["experimental.policies"] = policy
   for (const group of AGENT_KEYS) {
@@ -264,6 +278,7 @@ export function runtimeGuarded(document: unknown): string[] {
   for (const key of ["formatter", "shell", "worktree"]) if (key in document && !exempt(key, document[key])) found.push(key)
   if ("skills" in document && remoteSkills(document.skills).length > 0) found.push("skills")
   if ("references" in document && gitReferences(document.references).length > 0) found.push("references")
+  if (enabledProviders(document).length > 0) found.push("enabled_providers")
   if (allowPolicies(policies(document)).length > 0) found.push("experimental.policies")
   for (const key of PERMISSION_KEYS)
     if (key in document && rawRules(key, document[key]).some((rule) => rule.effect === "allow")) found.push(key)
@@ -365,7 +380,7 @@ function describeHooks(hooks: unknown): string[] {
  * CLI) and on the parts of a normalized one the runtime held back (core): local MCP server commands
  * (and their environment variable names), remote MCP URLs, provider packages, environment variable
  * names, endpoints and header *names*, plugin specs, project hook commands, formatter commands, the
- * shell, the worktree directory, remote skills URLs, git references, policy allow statements, and
+ * shell, the worktree directory, remote skills URLs, git references, `enabled_providers`, policy allow statements, and
  * every other guarded key by name. Never an API key or a header value. Permission rules are described
  * by the caller (`describeRule`), which knows which ones are held.
  */
@@ -422,6 +437,8 @@ export function describe(document: unknown): string[] {
   if ("references" in document)
     for (const [name, entry] of gitReferences(document.references))
       items.push(`reference ${shown(name)}: git ${shown(isRecord(entry) ? entry.repository : entry)}${isRecord(entry) && entry.branch !== undefined ? ` (branch ${shown(entry.branch)})` : ""}`)
+  const enabled = enabledProviders(document)
+  if (enabled.length > 0) items.push(`enabled_providers: allows provider ${enabled.map((name) => shown(name)).join(", ")} (provider.use)`)
   for (const policy of allowPolicies(policies(document)))
     items.push(`policy: ${shown(policy.action)} ${shown(policy.resource)} → ${safe(policy.effect)}`)
   return items

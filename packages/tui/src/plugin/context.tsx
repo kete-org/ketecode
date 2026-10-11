@@ -300,8 +300,9 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
           install: true,
           optional: true,
         })),
-        ...serverTuiPlugins().map((plugin) => ({
-          entry: plugin.source.type === "package" ? plugin.source.target : path.dirname(plugin.source.path),
+        // kete_change: a server-reported local plugin loads only when the server vouches for its files now (kete/folder-trust.ts)
+        ...(await KeteTuiFolderTrust.serverTargets(serverTuiPlugins(), props.directories, (local) => KeteTuiFolderTrust.listed(client.api, process.cwd(), local))).map((entry) => ({ // kete_change
+          entry, // kete_change
           install: false,
           optional: true,
         })),

@@ -8,7 +8,8 @@
 // current fingerprint (or nothing in it is held back) the project documents are loaded again from the
 // same text, substituted; otherwise they stay raw (the tokens are left as they are) with their guarded
 // settings removed (util/src/kete/folder-trust.ts lists them: the job list plus formatter, shell,
-// worktree, remote skills URLs, git references, loosening permission rules and policy allows). MCP,
+// worktree, remote skills URLs, git references, loosening permission rules and policy allows, which
+// include the `provider.use` allows the v1 `enabled_providers` normalizes into). MCP,
 // providers, sharing, formatters, the shell, worktrees, skills, references, permissions, policies,
 // `kete.*` readers and hooks only ever see the gated entries, so nothing guarded starts before trust.
 // Trusted project documents are substituted from the `{file:…}` bytes the fingerprint hashed
@@ -21,7 +22,8 @@
 // fingerprint (`bound`): a change since then doesn't load (and Config reloads, which asks again), so
 // nothing runs on a stale decision while the debounced reload is pending or for a change the config
 // watcher never sees (node_modules). The TUI asks through the `kete.folder.trust` RPC
-// (folder-trust/rpc.ts) before it loads `.kete/plugins/`.
+// (folder-trust/rpc.ts) before it loads `.kete/plugins/` or a local plugin from the server's plugin
+// list (`pluginDigests`).
 // AGENTS.md, agents, commands, local skills, instructions and every other setting load as before.
 //
 // Whatever the trust state, a project document's `kete` object can't mask the machine-level one for
@@ -112,8 +114,11 @@ export interface Interface {
    * load: always for one no project document configures; for a project's, the folder is trusted and
    * (store trust) the plugin's files are still the ones whose fingerprint was trusted. */
   readonly configuredPluginAllowed: (target: string) => Effect.Effect<boolean>
-  /** For the `kete.folder.trust` RPC: each requested plugin directory that is one of this location's
-   * project plugin directories and may load, with its digest now (`KeteFolderTrustRules.pluginDigest`). */
+  /** For the `kete.folder.trust` RPC: each requested path that may load, with its digest now
+   * (`KeteFolderTrustRules.pluginDigest`/`targetDigest`): one of this location's project plugin
+   * directories, or a local plugin inside one or inside a project-configured local plugin, only while
+   * the folder is trusted and (store trust) those files are still the trusted ones; a local plugin
+   * inside one the machine-level config names (not project code), always. Anything else isn't listed. */
   readonly pluginDigests: (
     directories: ReadonlyArray<string>,
   ) => Effect.Effect<Array<{ readonly directory: string; readonly digest: string }>>
@@ -348,6 +353,12 @@ const parseRaw = (text: string): { ok: true; value: unknown } | { ok: false } =>
   return errors.length ? { ok: false } : { ok: true, value }
 }
 
+/** Whether `child` is `parent` or inside it (both absolute). */
+function contains(parent: string, child: string) {
+  const relative = path.relative(parent, child)
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
+
 export const layerWith = (options: Options = {}) =>
   Layer.effect(
     Service,
@@ -380,6 +391,8 @@ export const layerWith = (options: Options = {}) =>
           } = "any"
       // Local plugin targets the gated project documents configure (resolved as ConfigPluginSource does).
       let projectTargets = new Set<string>()
+      // Local plugin targets the machine-level documents configure (the TUI may load those too).
+      let machineTargets = new Set<string>()
       const stale = yield* PubSub.unbounded<void>()
       const invalidate = PubSub.publish(stale, undefined).pipe(Effect.asVoid)
 
@@ -524,6 +537,9 @@ export const layerWith = (options: Options = {}) =>
       ) {
         const isProjectDocument = (entry: Entry): entry is Document =>
           entry.type === "document" && entry.path !== undefined && project.documents.has(entry.path)
+        machineTargets = new Set(
+          raw.filter((entry): entry is Document => entry.type === "document" && !isProjectDocument(entry)).flatMap((document) => configuredTargets(document)),
+        )
         const machineDocuments = raw.filter((entry): entry is Document => entry.type === "document" && !isProjectDocument(entry))
         const machineDirectories = raw.flatMap((entry) =>
           entry.type === "directory" && !project.directories.has(entry.path) ? [entry.path] : [],
@@ -655,6 +671,9 @@ export const layerWith = (options: Options = {}) =>
         const raw = (yield* load(false)).entries
         const isProjectDocument = (entry: Entry): entry is Document =>
           entry.type === "document" && entry.path !== undefined && project.documents.has(entry.path)
+        machineTargets = new Set(
+          raw.filter((entry): entry is Document => entry.type === "document" && !isProjectDocument(entry)).flatMap((document) => configuredTargets(document)),
+        )
         // Job mode loads no project config; if some did load, it is checked like any other folder.
         if (KeteJobMode.enabled(env) && project.directories.size === 0 && !raw.some(isProjectDocument)) {
           status = { kind: "trusted", reason: "job" }
@@ -716,23 +735,59 @@ export const layerWith = (options: Options = {}) =>
       }, Effect.catchCause(() => Effect.succeed(false)))
 
       const pluginDigests = Effect.fn("KeteFolderTrust.pluginDigests")(function* (requested: ReadonlyArray<string>) {
-        if (status.kind !== "trusted") return []
+        const trusted = status.kind === "trusted"
         const real = (file: string) => Effect.promise(() => fs.realpath(file).catch(() => undefined))
         const known: Array<[string, string]> = []
         for (const directory of projectDirectories) {
           const resolved = yield* real(directory)
           if (resolved !== undefined) known.push([resolved, directory])
         }
+        // Where project code lives: each project plugin directory and each project-configured target,
+        // lexically and resolved, so a path reaching one through a symlink is still project code.
+        const roots = async (paths: Iterable<string>) =>
+          Promise.all(
+            [...paths].map(async (item) => ({ item, forms: [path.resolve(item), await fs.realpath(item).catch(() => undefined)] })),
+          )
+        const pluginRoots = yield* Effect.promise(() =>
+          roots([...projectDirectories].flatMap((directory) => KeteFolderTrustRules.PLUGIN_DIRECTORIES.map((name) => path.join(directory, name)))),
+        )
+        const targetRoots = yield* Effect.promise(() => roots(projectTargets))
+        const machineRoots = yield* Effect.promise(() => roots(machineTargets))
+        const digestOf = (directory: string) =>
+          Effect.promise(() => KeteFolderTrustRules.targetDigest(directory, fs)).pipe(
+            Effect.map((digest) => (typeof digest === "string" ? digest : undefined)),
+          )
+        const answer = Effect.fnUntraced(function* (directory: string) {
+          const name = path.basename(directory)
+          if ((KeteFolderTrustRules.PLUGIN_DIRECTORIES as ReadonlyArray<string>).includes(name)) {
+            const parent = yield* real(path.dirname(directory))
+            const project = known.find(([resolved]) => resolved === parent)?.[1]
+            if (project !== undefined) {
+              if (!trusted) return undefined
+              const ours = path.join(project, name)
+              if (!(yield* pluginCurrent(ours))) return undefined
+              return yield* Effect.promise(() => KeteFolderTrustRules.pluginDigest(ours, fs))
+            }
+          }
+          // A local plugin inside one (the directory of its entrypoint, as the TUI loads it).
+          const forms = [path.resolve(directory), yield* real(directory)]
+          const inside = (root: { readonly forms: ReadonlyArray<string | undefined> }) =>
+            forms.some((form) => form !== undefined && root.forms.some((parent) => parent !== undefined && contains(parent, form)))
+          const plugin = pluginRoots.find(inside)
+          const target = targetRoots.find(inside)
+          if (plugin !== undefined || target !== undefined) {
+            if (!trusted) return undefined
+            if (plugin !== undefined && !(yield* pluginCurrent(plugin.item))) return undefined
+            if (target !== undefined && !(yield* configuredPluginAllowed(target.item))) return undefined
+            return yield* digestOf(directory)
+          }
+          // Not project code: a local plugin the machine-level configuration names loads in any folder.
+          if (machineRoots.some(inside)) return yield* digestOf(directory)
+          return undefined
+        })
         const result: Array<{ directory: string; digest: string }> = []
         for (const directory of requested) {
-          const name = path.basename(directory)
-          if (!(KeteFolderTrustRules.PLUGIN_DIRECTORIES as ReadonlyArray<string>).includes(name)) continue
-          const parent = yield* real(path.dirname(directory))
-          const project = known.find(([resolved]) => resolved === parent)?.[1]
-          if (project === undefined) continue
-          const ours = path.join(project, name)
-          if (!(yield* pluginCurrent(ours))) continue
-          const digest = yield* Effect.promise(() => KeteFolderTrustRules.pluginDigest(ours, fs))
+          const digest = yield* answer(directory)
           if (digest !== undefined) result.push({ directory, digest })
         }
         return result
