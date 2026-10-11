@@ -114,6 +114,11 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      # A stable tag needs its "## X.Y.Z" section in CHANGELOG.md: the binary embeds it for
+      # /release-notes. Pre-release tags pass (their builds use "## Unreleased").
+      - name: Check CHANGELOG.md
+        run: bun run --cwd packages/kete-tools changelog:check "$TAG"
+
       # Cross-compiles every target from Linux, archives each with LICENSE and NOTICE, packages the
       # VS Code extension, and writes SHA256SUMS into packages/kete-tools/dist-release.
       - name: Build release

@@ -107,6 +107,8 @@ export function isKeteOwned(file: string): boolean {
     normalized === ".github/SECURITY.md" ||
     normalized === ".github/CONTRIBUTING.md" ||
     normalized === ".github/CODE_OF_CONDUCT.md" ||
+    // The user-facing release notes the binary embeds (`/release-notes`); upstream has no root CHANGELOG.
+    normalized === "CHANGELOG.md" ||
     // Kete's gitleaks configuration (allowlists for test fixtures).
     normalized === ".gitleaks.toml" ||
     normalized.startsWith("docs/adr/") ||
