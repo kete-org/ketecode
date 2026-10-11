@@ -1097,3 +1097,22 @@ trusted; never in job mode. The config schema change regenerated `protocol/opena
 **Sync checklist:** if upstream adds config-declared hooks, compare semantics and trust handling
 before keeping both. If upstream changes `tool.execute.before/after`, `session.prompt` or the
 session execution/permission/form events, re-check the event mapping in `kete/hooks.ts`.
+
+## Shell completions (feature/shell-completions)
+
+`kete completion [bash|zsh|fish|powershell]` (`cli/src/kete/completion*.ts`, `.github/README.md`
+"Shell completions"). bash, zsh and fish are Effect's own `--completions` scripts: the handler rebuilds
+the command tree from the `Spec` nodes the way `framework/runtime.ts`'s `provide` does (without
+handlers) and captures `--completions <shell>`. PowerShell is Kete's generator; each command's flags
+come from its captured `--help` doc, because a command's flags are otherwise reachable only through
+Effect internals. The spec is in `KeteCommands.specs`, so `commands.ts` is unchanged.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/src/index.ts` | `completion` handler → `kete/completion-command.ts` (one marked line) | the handler map is the only place a command's handler is registered |
+
+**Sync checklist:** if upstream changes `provide` in `framework/runtime.ts` (how subcommands and alias
+nodes are attached) or `Runtime.run`'s global flags, mirror it in `kete/completion-tree.ts`'s
+`attach`/`build`; `test/kete/completion.test.ts` compares `kete completion <shell>` with
+`kete --completions <shell>` and fails if they drift. If upstream adds its own `completion` command,
+compare and drop one.
