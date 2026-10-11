@@ -99,6 +99,7 @@ export function isKeteOwned(file: string): boolean {
     normalized === "docs/hooks.md" ||
     // The parity plan against Claude Code and Codex CLI.
     normalized === "docs/parity-plan.md" ||
+    normalized === "docs/statusline.md" ||
     // Kete Code's public-facing files; GitHub prefers .github/ over upstream's root files (ADR 0010).
     normalized === ".github/README.md" ||
     normalized === ".github/SECURITY.md" ||

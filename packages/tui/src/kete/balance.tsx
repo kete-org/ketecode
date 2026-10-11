@@ -21,21 +21,27 @@ export function account(metadata: Record<string, unknown> | undefined) {
   }
 }
 
+/** "$12.50 balance", or undefined without a platform account. Shared by the sidebar and the status line. */
+export function balanceText(metadata: Record<string, unknown> | undefined) {
+  const value = account(metadata)
+  if (!value) return
+  return `${new Intl.NumberFormat("en-US", { style: "currency", currency: value.currency }).format(value.balance)} balance`
+}
+
 export function KeteBalance(props: { context: Plugin.Context; sessionID: string }) {
   const theme = props.context.theme
   const session = createMemo(() => props.context.data.session.get(props.sessionID))
-  const current = createMemo(() =>
-    account(
+  const metadata = createMemo(
+    () =>
       props.context.data.location.integration
         .list(session()?.location ?? props.context.location)
         ?.find((integration) => integration.id === "kete")?.metadata,
-    ),
   )
+  const current = createMemo(() => account(metadata()))
 
   return (
     <Show when={current()}>
       {(value) => {
-        const money = new Intl.NumberFormat("en-US", { style: "currency", currency: value().currency })
         const status = () =>
           value().micros <= 0
             ? { fg: theme.text.feedback.error.base, note: "Out of credit. Top up to continue." }
@@ -47,7 +53,7 @@ export function KeteBalance(props: { context: Plugin.Context; sessionID: string 
             <text fg={theme.text.base}>
               <b>{Brand.displayName}</b>
             </text>
-            <text fg={status()?.fg ?? theme.text.muted}>{money.format(value().balance)} balance</text>
+            <text fg={status()?.fg ?? theme.text.muted}>{balanceText(metadata())}</text>
             <Show when={status()}>{(item) => <text fg={item().fg}>{item().note}</text>}</Show>
             <Show when={value().organization}>
               {(organization) => <text fg={theme.text.muted}>{organization()}</text>}

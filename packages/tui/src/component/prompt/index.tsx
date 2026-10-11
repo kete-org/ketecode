@@ -55,7 +55,6 @@ import { locationKey, useData } from "../../context/data"
 import { useLocation } from "../../context/location"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
-import { abbreviateHome } from "../../runtime"
 import { Slot } from "../../plugin/render"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
 import {
@@ -67,9 +66,9 @@ import { DialogImagePreview } from "../dialog-image-preview"
 import { useDirectoryRecents } from "../../prompt/directory-recents"
 import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
-import { truncateFilePath } from "../../ui/file-path"
 import { PromptMetadataRow } from "./metadata"
 import * as KetePermissionModeView from "../../kete/permission-mode" // kete_change
+import { KeteStatusLineRow } from "../../kete/statusline" // kete_change (abbreviateHome and truncateFilePath imports moved there)
 
 export type PromptProps = {
   sessionID?: string
@@ -1605,20 +1604,12 @@ export function Prompt(props: PromptProps) {
     if (status() !== "idle") return
     return data.session.get(props.sessionID)?.location
   })
-  const locationLabel = createMemo(() => {
+  // kete_change start: locationLabel / locationLabelDisplay moved into the status line (kete/statusline.tsx)
+  const keteStatusLocation = createMemo(() => {
     const pending = pendingDirectory()
-    const location = pending ? { directory: pending } : footerLocation()
-    if (!location) return
-    const directory = abbreviateHome(location.directory, paths.home)
-    const branch = data.location.vcs.info(location)?.branch.current
-    return branch ? `${directory}:${branch}` : directory
+    return pending ? { directory: pending } : footerLocation()
   })
-  const [locationWidth, setLocationWidth] = createSignal(dimensions().width)
-  const locationLabelDisplay = createMemo(() => {
-    const label = locationLabel()
-    if (!label) return
-    return truncateFilePath(label, locationWidth())
-  })
+  // kete_change end
   const locationActions = useWorkingDirectoryActions({
     directory: () => footerLocation()?.directory,
     onMove: () => void move.open(),
@@ -1845,15 +1836,8 @@ export function Prompt(props: PromptProps) {
         <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
           <Slot path="prompt.footer" input={footerInput()}>
             <Slot path="prompt.footer.status" input={footerInput()}>
-              <box
-                flexGrow={1}
-                flexShrink={1}
-                minWidth={0}
-                onSizeChange={function (this: BoxRenderable) {
-                  const width = this.width
-                  queueMicrotask(() => setLocationWidth(width))
-                }}
-              >
+              {/* kete_change: the status line measures its own width */}
+              <box flexGrow={1} flexShrink={1} minWidth={0}>
                 <Switch>
                   <Match when={status() === "running"}>
                     <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
@@ -1870,6 +1854,8 @@ export function Prompt(props: PromptProps) {
                         warning={theme.text.feedback.warning.base}
                         flash={theme.decrease(theme.text.feedback.warning.base, 2)}
                       />
+                      {/* kete_change */}
+                      <KeteStatusLineRow sessionID={props.sessionID} />
                     </box>
                   </Match>
                   <Match when={move.progress()}>
@@ -1890,23 +1876,15 @@ export function Prompt(props: PromptProps) {
                     </box>
                   </Match>
                   <Match when={true}>
-                    <Show when={!props.hint && locationLabelDisplay()} fallback={props.hint ?? <text />}>
-                      {(location) => (
-                        <text
-                          id="prompt.footer.location"
-                          fg={locationActions.hovered() ? theme.text.base : theme.text.muted}
-                          wrapMode="none"
-                          truncate
-                          flexGrow={1}
-                          flexShrink={1}
-                          onMouseOver={locationActions.onMouseOver}
-                          onMouseOut={locationActions.onMouseOut}
-                          onMouseUp={locationActions.onMouseUp}
-                        >
-                          {location()}
-                        </text>
-                      )}
+                    {/* kete_change start: the configurable status line replaces the directory:branch label */}
+                    <Show when={!props.hint} fallback={props.hint ?? <text />}>
+                      <KeteStatusLineRow
+                        sessionID={props.sessionID}
+                        location={keteStatusLocation()}
+                        actions={locationActions}
+                      />
                     </Show>
+                    {/* kete_change end */}
                   </Match>
                 </Switch>
               </box>

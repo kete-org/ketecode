@@ -8,6 +8,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { watch } from "fs"
 import path from "path"
 import { TuiKeybind } from "./keybind"
+import { KeteStatusLineConfig } from "../kete/statusline-config" // kete_change
 
 export interface Interface {
   readonly path?: string
@@ -239,6 +240,7 @@ export const Info = Schema.Struct({
   animations: Schema.optional(Schema.Boolean).annotate({ description: "Enable interface animations" }),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
   cursor: Schema.optional(Cursor),
+  statusline: Schema.optional(KeteStatusLineConfig), // kete_change
 })
 export type Info = Schema.Schema.Type<typeof Info>
 

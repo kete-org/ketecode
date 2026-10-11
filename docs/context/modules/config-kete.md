@@ -1,13 +1,15 @@
 ---
 module: config-kete
 paths: [packages/schema/src/config/kete.ts, packages/schema/src/config.ts, packages/core/src/config/normalize.ts, packages/core/src/config/discovery.ts, packages/core/src/config.ts]
-verified-at: 460d1de894
+verified-at: 006573bd58
 ---
 ## Quick answers
+- What is `kete.sandbox` / `kete.lsp`? `ConfigKete.Sandbox` (`schema/src/config/kete.ts:91-123`: `mode` auto/required/off, `network`, `caches`, `loopback`, `allowWrite`/`allowRead`/`denyRead`/`denyWrite`; `Info.sandbox` `:190`) is the OS sandbox for shell commands (`docs/sandbox.md`); only the global config can loosen it, a project config can only tighten. `ConfigKete.Lsp.unsandboxed` (`:165`, `Info.lsp` `:197`) lets language servers start without an active sandbox (global config only). Hooks classes are at `:125-163`.
+- How does Kete add a TUI config key? TUI config is separate from the runtime `kete` section: its schema is `Info` in `packages/tui/src/config/index.tsx:66` (resolved by `resolve` `:275`, read with `useConfig` `:367`), an upstream file. A new TUI key is therefore an upstream edit that needs `kete_change` markers (no `kete` path to exempt it), unlike a `kete.*` key in `packages/schema/src/config/kete.ts`, which needs no upstream edit and no TUI change. Not part of the protocol/client regen.
 - What is `kete.hooks`? Shell hooks (`ConfigKete.Hooks`); unlike other `kete` fields it is read from every document, user vs project (project hooks need trust) — see the `hooks` card. Protocol and client regenerated. `kete job run` treats it as a guarded repository key.
-- What is `kete.unattended.passEnv`? `ConfigKete.Unattended` (`schema/src/config/kete.ts:82-87`, `Info.unattended` `:104`): names an unattended run's shell commands keep although they look like credentials; read by `KeteToolEnv.forSession` via `Config.latest(entries, "kete")` (so, like every `kete` field, the highest-priority file's whole `kete` object wins). `kete job run` refuses a repository config that sets `kete.unattended` (or `kete.integrations`/`kete.platform`) unless `--trust-project-config`. Protocol and client regenerated.
-- What is `kete.integrations.slack.clientId`? The Slack app client ID `kete mcp add slack` uses when `--client-id` isn't given (`schema/src/config/kete.ts:94`, camelCase as the spec named it, unlike `max_concurrent`); protocol and client regenerated. The CLI reads it straight from the project/global config files (`cli/src/kete/mcp-preset-io.ts:33`). See the `mcp-presets` card.
-- What is `kete.offline`? An optional boolean (`schema/src/config/kete.ts:72`): offline mode (local models only, no platform/gateway/update/web/remote-MCP calls). Global config applies process-wide; a project config covers everything except the models.dev fetch and update checks (decided at startup). Fail-closed: a non-boolean counts as on. See the `local-models` card; the schema change regenerated `protocol/openapi.json` and the client types.
+- What is `kete.unattended.passEnv`? `ConfigKete.Unattended` (`schema/src/config/kete.ts:82-88`, `Info.unattended` `:187`): names an unattended run's shell commands keep although they look like credentials; read by `KeteToolEnv.forSession` via `Config.latest(entries, "kete")` (so, like every `kete` field, the highest-priority file's whole `kete` object wins). `kete job run` refuses a repository config that sets `kete.unattended` (or `kete.integrations`/`kete.platform`) unless `--trust-project-config`. Protocol and client regenerated.
+- What is `kete.integrations.slack.clientId`? The Slack app client ID `kete mcp add slack` uses when `--client-id` isn't given (`schema/src/config/kete.ts:72`, camelCase as the spec named it, unlike `max_concurrent`); protocol and client regenerated. The CLI reads it straight from the project/global config files (`cli/src/kete/mcp-preset-io.ts:33`). See the `mcp-presets` card.
+- What is `kete.offline`? An optional boolean (`schema/src/config/kete.ts:173`): offline mode (local models only, no platform/gateway/update/web/remote-MCP calls). Global config applies process-wide; a project config covers everything except the models.dev fetch and update checks (decided at startup). Fail-closed: a non-boolean counts as on. See the `local-models` card; the schema change regenerated `protocol/openapi.json` and the client types.
 - Is there an env var that disables project config outside job mode? Yes — upstream's
   `OPENCODE_CONFIG_PROJECT_DISABLE`/`OPENCODE_DISABLE_PROJECT_CONFIG` (checked in that order,
   `packages/cli/src/server-process.ts:111-113`, user-facing `KETE_CONFIG_PROJECT_DISABLE` via the
@@ -24,16 +26,16 @@ verified-at: 460d1de894
   `kete.json(c)`, `.kete/`) never runs; the global config dir (where `kete.runtime.type` lives)
   still loads. See the `job-mode` card, `docs/jobs.md` "Job mode".
 - Where do Kete-only settings live in `kete.json`/`.kete/`? Under the top-level `kete` key — schema at `packages/schema/src/config/kete.ts`.
-- Where do I add a new `kete.*` field? `ConfigKete.Info` in `packages/schema/src/config/kete.ts:71-79`, plus the protocol/client regen in CLAUDE.md §8. Nothing to touch in `normalize.ts` or `discovery.ts` for a field *inside* an existing sub-object (e.g. a new `Budget` field) — only for a brand-new top-level sub-key of `kete` (none needed there either; see Changes).
+- Where do I add a new `kete.*` field? `ConfigKete.Info` in `packages/schema/src/config/kete.ts:172-200`, plus the protocol/client regen in CLAUDE.md §8. Nothing to touch in `normalize.ts` or `discovery.ts` for a field *inside* an existing sub-object (e.g. a new `Budget` field) — only for a brand-new top-level sub-key of `kete` (none needed there either; see Changes).
 - Does `kete.budget` merge with `kete.subagents` from a different config file? No — the whole `kete` object is replaced by the highest-priority file that sets it (`packages/core/src/config.ts:23-26`); see Gotchas.
 - How do I read a kete setting in runtime code? `Config.latest(yield* config.entries(), "kete")?.<field>` — see `packages/core/src/kete/subagents.ts:113`, `:225`, `:300`, `workflows.ts:241`, and `sync/plugin.ts:363` (`?.runtime?.type`, resolved via `KeteRuntimeRegistration.resolveRuntimeType` — see the runtime-registration card).
-- Where's the runtime type field (ADR 0005)? `ConfigKete.Runtime` (`kete.ts:22-27`), `Info.runtime` (`:74`) — one of `"local"`/`"kete_cloud"`/`"enterprise_private"`, default `local`, falls back to `KETE_RUNTIME_TYPE`; consumed by `runtime-registration` and read by `kete whoami` (`cli`/`account-login` cards).
+- Where's the runtime type field (ADR 0005)? `ConfigKete.Runtime` (`kete.ts:22-27`), `Info.runtime` (`:179`) — one of `"local"`/`"kete_cloud"`/`"enterprise_private"`, default `local`, falls back to `KETE_RUNTIME_TYPE`; consumed by `runtime-registration` and read by `kete whoami` (`cli`/`account-login` cards).
 
 ## Purpose
 `ConfigKete.Info` is the single Kete-owned config namespace (`kete` key of `Config.Info`), holding settings with no upstream OpenCode equivalent: session spend budgets, the Kete platform URL, subagent concurrency/timeout/worktree defaults, and named workflows. Kept as one namespace so upstream config sections never conflict with Kete's on sync (CLAUDE.md §4).
 
 ## Entry points
-- Schema: `packages/schema/src/config/kete.ts` — `Budget`, `Platform`, `Runtime`, `Subagents`, `WorkflowStep`, `Workflow`, `Info` (`ConfigKete.Info`, lines 71-79).
+- Schema: `packages/schema/src/config/kete.ts` — `Budget`, `Platform`, `Runtime`, `Subagents`, `WorkflowStep`, `Workflow`, `Integrations`, `Unattended`, `Sandbox`, `Hook`/`Hooks`, `Lsp`, `Info` (`ConfigKete.Info`, lines 172-200).
 - Wired into the root config schema: `packages/schema/src/config.ts:12` (import, `kete_change`), `:111` (`kete: ConfigKete.Info.pipe(optional)`, `kete_change`).
 - Normalized as an atomic top-level field: `packages/core/src/config/normalize.ts:214` (`kete: Info.fields.kete` in the `nativeAtomic` map, `kete_change`).
 - Read anywhere via `Config.Service.entries()` + `Config.latest(entries, "kete")`: `packages/core/src/config.ts:23-26`.
@@ -41,7 +43,7 @@ verified-at: 460d1de894
 ## Key files
 | File | Role |
 | --- | --- |
-| `packages/schema/src/config/kete.ts` (80 lines) | Schema classes: `Budget`, `Platform`, `Runtime`, `Subagents`, `WorkflowStep`, `Workflow`, `Info` |
+| `packages/schema/src/config/kete.ts` (200 lines) | Schema classes: `Budget`, `Platform`, `Runtime`, `Subagents`, `WorkflowStep`, `Workflow`, `Integrations`, `Unattended`, `Sandbox`, `Hooks`, `Lsp`, `Info` |
 | `packages/schema/src/config.ts:12,111` | Wires `ConfigKete.Info` into `Config.Info` as the `kete` field |
 | `packages/core/src/config/normalize.ts:200-221` | `nativeAtomic` — top-level fields (incl. `kete`) copied verbatim per source file, no per-field deep merge |
 | `packages/core/src/config/discovery.ts` | Finds candidate config files/dirs; unrelated to `kete`-key semantics, only to which files are read (uses `Brand.configFiles`, `Brand.projectDirectory`, `kete_change` at lines 10,12,42-43,68-72) |
@@ -78,7 +80,7 @@ verified-at: 460d1de894
 ## Changes
 Adding a new `kete.*` config key end to end:
 1. Add the field to the relevant class (or a new `Schema.Class`) in `packages/schema/src/config/kete.ts`, with an `.annotate({ description: ... })` (schema descriptions become config docs/JSON-schema hints).
-2. If it's a new top-level sub-key of `ConfigKete.Info` (line 64), add it there; no change needed in `packages/schema/src/config.ts` or `packages/core/src/config/normalize.ts` — both already treat `kete` atomically.
+2. If it's a new top-level sub-key of `ConfigKete.Info` (line 64), add it there (`Info`, line 172); no change needed in `packages/schema/src/config.ts` or `packages/core/src/config/normalize.ts` — both already treat `kete` atomically.
 3. Read it in runtime code via `Config.latest(yield* config.entries(), "kete")?.<path>`, following the pattern in `packages/core/src/kete/subagents.ts:113` or `workflows.ts:241`.
 4. Regenerate the protocol/client (CLAUDE.md §8): `bun run generate` in `packages/protocol` (writes `openapi.json`), then `bun run generate` in `packages/client` (writes `src/*/generated/`). Commit both.
 5. Add a test under `packages/core/test/kete/` exercising the new field through `Config.Test`/`Config.testLayer` (see `packages/core/src/config.ts:58-68`).

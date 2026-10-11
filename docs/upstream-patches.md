@@ -733,6 +733,28 @@ secret references to MCP config, move the `KeteMcpSecrets.prepare` call with it 
 | `script/package.json` | A `test` script (`bun test test/kete`) for the channel tests; CI runs them (`kete-build.yml`) |
 | `script/src/index.ts` | A build without `OPENCODE_CHANNEL` takes its channel from the git branch through `script/src/kete/channel.ts`'s `branchChannel`, which turns `/` (and anything else the TUI's storage folder names reject) into `-` and falls back to `local` for a detached checkout. Before, a local build from `fix/x` crashed the TUI at startup ("Invalid storage segment"). Upstream's own branches are plain names, so their channels are unchanged |
 
+### Status line (feature/status-line)
+
+A configurable row under the prompt (`tui/src/kete/statusline*.ts(x)`, `docs/statusline.md`), set by the
+TUI config key `statusline` and edited with `/statusline` (a builtin plugin, so `app.tsx` is untouched).
+
+Departs from the spec, which wanted a `prompt.footer.status` slot claim: a claim sits beside the prompt's
+own `directory:branch` label (so it cannot replace it or get a stable width) and the slot input lacks the
+prompt-local pending-directory / move / idle state. Hence one small marked edit to the prompt.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/config/index.tsx` | Import `KeteStatusLineConfig`; `statusline` field on `Info` | config schema; `resolve` passes it through |
+| `tui/src/component/prompt/index.tsx` | `<KeteStatusLineRow>` replaces the location `<text>` in the idle `Match`; one line after `PromptInterruptStatus` in the running `Match`; the status line measures itself, so the outer box's `onSizeChange` and `locationWidth` are gone; `locationLabel` / `locationLabelDisplay` and the `abbreviateHome` / `truncateFilePath` imports moved into the status line (deleted here as unused) | the label's inputs are prompt-local |
+| `tui/src/plugin/builtins.ts` | Import and list `KeteStatusLine` | builtin plugin list |
+
+The `sandbox-status`, `local-status` and `todo` plugins no longer claim `prompt.footer.status` (their
+`home.footer.status` claim is unchanged); those are status line items now. Other `prompt.footer.status`
+claims (upstream's side-question indicator, `feature-plugins/prompt/btw.tsx`) still render beside the row.
+
+**Sync checklist:** re-check the prompt's idle and running `Match` blocks and the footer `Slot`s, and
+`Info` for the new key. If upstream adds its own configurable status line, compare and drop one.
+
 ### Upstream test edits
 
 55 upstream test files and `core/script/test.ts` were updated so their fixtures
