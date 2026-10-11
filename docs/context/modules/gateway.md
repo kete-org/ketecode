@@ -1,7 +1,7 @@
 ---
 module: gateway
 paths: [packages/core/src/kete/gateway.ts, packages/tui/src/kete/balance.tsx]
-verified-at: 8a2747cd4d
+verified-at: a6f140247e
 ---
 ## Quick answers
 - What does the gateway do offline? `core/src/kete/gateway.ts:167` `offline()` = `KeteOffline.active(config, environment)` (env flag or `kete.offline` as loaded now), checked at the start of every `balance` (`:330`) and `refresh` (`:341`) tick: no models, balance or price requests while on, resumed on the next tick when off. Models already loaded are removed by `KeteOffline`'s model filter.
@@ -40,7 +40,7 @@ Discovers which models a configured Kete Model Gateway allows (one native route 
 ## Entry points
 - `packages/core/src/kete/gateway.ts:138` `make(options)` — builds the plugin (`gateway.ts:427` exports the default instance as `Plugin`).
 - Registered in `packages/core/src/plugin/internal.ts:270` (`KeteGateway.Plugin`, in `pre`, after the catalog and provider plugins — see Gotchas).
-- `packages/tui/src/kete/balance.tsx:62` default-exports a TUI `Plugin.define` registered in `packages/tui/src/plugin/builtins.ts:7,21` (after `SidebarContext`).
+- `packages/tui/src/kete/balance.tsx:68` default-exports a TUI `Plugin.define` registered in `packages/tui/src/plugin/builtins.ts:7,25` (after `SidebarContext`).
 
 - Which wire protocol does each gateway route speak (not previously mapped anywhere)? `routes`
   (`gateway.ts:105-136`) publishes one native per-provider route each, and the wire protocol is a
@@ -60,7 +60,7 @@ Discovers which models a configured Kete Model Gateway allows (one native route 
 - `gateway.ts:271-302` `pricing` — `GET <platform>/api/v1/models`, mapped by `route.prefix + model_id`.
 - `gateway.ts:304-318` `me` — `GET <platform>/api/v1/me`, mapped to `{balance_micros, currency, organization}`.
 - `gateway.ts:434-467` `configured` — resolves URL/key/platform: in job mode the descriptor key + env URLs only (`:447-455`); otherwise signed-in account (`KeteAccount`) wins over `providers.kete.settings.{baseURL,apiKey}` wins over `KETE_GATEWAY_URL`/`KETE_GATEWAY_KEY`/`KETE_PLATFORM_URL`.
-- `balance.tsx:14-22` `account()` — parses integration metadata into a display shape; `balance.tsx:12` `lowBalanceMicros` (1,000,000, i.e. $1) is the low-balance warning threshold.
+- `balance.tsx:14-22` `account()` (and `balanceText` `:25`, shared by the sidebar and the status line's opt-in `balance` item, `statusline.tsx:279`) — parses integration metadata into a display shape; `balance.tsx:12` `lowBalanceMicros` (1,000,000, i.e. $1) is the low-balance warning threshold.
 
 ## Data flow
 Plugin start → `load()` resolves gateway URL/key/platform (account > config > env; job mode: descriptor key + env URLs) → `refresh()` discovers models per route and (if platform configured) fetches prices → `ctx.provider.transform` publishes each discovered model under `providerID` with `baseURL` set to `${gatewayURL}${route.prefix}` and catalog fields copied from the source provider (`gateway.ts:204-218`) → separately, `balance()` polls `GET /api/v1/me` every `balanceInterval` (default 1 minute) and writes the result onto the `kete` integration's `metadata` via `ctx.integration.transform` (`gateway.ts:186-193`, `321-329`) → TUI's `KeteBalance` component reads that metadata off `context.data.location.integration.list(...)` per session and renders it in the sidebar (`balance.tsx:24-33`).

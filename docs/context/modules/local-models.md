@@ -1,7 +1,7 @@
 ---
 module: local-models
 paths: [packages/core/src/kete/local-hosts.ts, packages/core/src/kete/local-models.ts, packages/core/src/kete/offline.ts, packages/util/src/kete/offline.ts, packages/util/src/kete/local-picker.ts, packages/schema/src/kete/local-models.ts, packages/cli/src/kete/offline.ts, packages/cli/src/kete/offline-startup.ts, packages/cli/src/kete/models-pull.ts, packages/cli/src/kete/models-list.ts, packages/tui/src/kete/local-models.ts, packages/tui/src/kete/local-offer.tsx, packages/tui/src/kete/local-status.tsx, packages/app/src/kete/local-models.ts, packages/app/src/kete/local-ui.tsx]
-verified-at: 4e26b57120
+verified-at: a6f140247e
 ---
 ## Quick answers
 - Where should an unattended run's local-server address go? The global config: `kete job run` refuses a repository config that sets `providers` unless `--trust-project-config` (`docs/local-models.md` "Environment variables", `docs/jobs.md`).
@@ -13,7 +13,7 @@ verified-at: 4e26b57120
 - How is a failed model lookup reported offline? `ModelUnavailableError` (`core/src/session/runner/model.ts:20-30`, hint at `:30`) fires first when `KeteOffline` removed the model from the catalog; the runner check (`core/src/kete/run-checks.ts:50`) covers models that got through.
 - Why can't a client change `kete.offline` through the config API? The config PATCH endpoint only accepts `shell` (`schema/src/config.ts:114-116`); offline is set by flag, env or the config file.
 - Is there an LSP download to turn off offline? No: LSP auto-download doesn't exist in v2 core.
-- Where does the TUI hook in? Plugin slots and toast: `plugin/src/tui/context.ts:191-203,462-512`; the footer slot is `tui/src/kete/local-status.tsx:39-40`, registered in `tui/src/plugin/builtins.ts:23`; the model dialog is `tui/src/component/dialog-model.tsx:32`; first-run offer and notice are `useKeteLocalModels()` called at `tui/src/app.tsx:497`.
+- Where does the TUI hook in? Plugin slots and toast: `plugin/src/tui/context.ts:191-203,462-512`; the home footer slot is `tui/src/kete/local-status.tsx:37` (`home.footer.status` only; the prompt shows Offline through the status line's opt-in `local-model` item, `tui/src/kete/statusline.tsx:287`, text `KeteLocalPicker.offlineLabel`), registered in `tui/src/plugin/builtins.ts:26`; the model dialog is `tui/src/component/dialog-model.tsx:32`; first-run offer and notice are `useKeteLocalModels()` called at `tui/src/app.tsx:497`.
 - Where does the web picker hook in? `app/src/providers/models/select-dialog.tsx:133,198,492` (badges, unreachable lines) and `provider-group.tsx:14` (`groupTitle`); web API client `app/src/runtime/server/api.ts`, `client.tsx`.
 - How do plugins define a CLI RPC/handler map? Handler maps accept `{ $, sub }` for a command with subcommands (`cli/src/framework/runtime.ts:43-76`); global flags go in `runtime.ts:86`. See the `cli` card.
 - Which tools do tests use for the status RPC in the TUI? The fixture answers it: `packages/tui/test/fixture/tui-client.ts:167` returns offline false and no providers.
@@ -26,7 +26,7 @@ Make local model servers first class without the gateway: remote hosts through e
 - `packages/core/src/plugin/internal.ts:319-321` registers `KeteLocalModels.Plugin` (after `ConfigProviderPlugin`, so configured `capabilities.tools` is applied) and `KeteOffline.Plugin`; `:337` puts the offline plugin in `guarded`.
 - `core/src/kete/local-models.ts:260` `Plugin` = `make()`; `core/src/kete/offline.ts:66` `Plugin`.
 - `cli/src/index.ts:5` imports `./kete/offline-startup`; `index.ts:67` maps `models: { $, pull }`.
-- `tui/src/app.tsx:497` `useKeteLocalModels()`; `tui/src/plugin/builtins.ts:23` footer plugin.
+- `tui/src/app.tsx:497` `useKeteLocalModels()`; `tui/src/plugin/builtins.ts:26` footer plugin.
 - `app/src/kete/panel.tsx:33,43` (`KeteOfflineIndicator`, `KeteLocalOffer`); `app/src/kete/composer-controls.tsx:51` (no-tools notice).
 
 ## Key files
@@ -40,7 +40,7 @@ Make local model servers first class without the gateway: remote hosts through e
 | `schema/src/kete/local-models.ts` | RPC `Definition` (`:62`), `Status`, `ProviderStatus`, states `reachable`/`unreachable`/`not_configured`/`blocked` (offline, non-local host) |
 | `cli/src/kete/{offline,offline-startup}.ts` | pure rules vs side effect; see the `cli` card |
 | `cli/src/kete/models-pull.ts`, `models-list.ts` | pull flow (`pull` at `:145`, exits `:28`), TTY details (`:19,26`) |
-| `tui/src/kete/local-models.ts`, `local-offer.tsx`, `local-status.tsx` | status fetch (`:19`), dialog fields/unreachable options, first-run offer + notice, footer indicator |
+| `tui/src/kete/local-models.ts`, `local-offer.tsx`, `local-status.tsx` | status fetch (`:19`), dialog fields/unreachable options, first-run offer + notice, home footer indicator (`OfflineIndicator` `:14` is reused by the status line) |
 | `app/src/kete/local-models.ts`, `local-ui.tsx` | status fetch, picker helpers, badges, indicator, offer card, no-tools notice hook (`:180`) |
 
 ## Data flow

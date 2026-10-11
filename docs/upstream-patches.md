@@ -779,6 +779,24 @@ still say rename is `ctrl+r`; they are upstream's site and are left unchanged.
 condition), the focus effect, `resolve`'s keybind block, and `Definitions` (rename's default and the new
 key). If upstream adds its own history search or binds Ctrl+R in the prompt, compare and drop one.
 
+### Home notices and tips (feature/home-notices)
+
+Notices under the home logo, the same text as the VS Code chat panel (`util/src/kete/notices.ts`, shared;
+the TUI passes `/agents`, the panel `/agent`), and one tip per launch (`tui/src/kete/home-notices.tsx`,
+`tui/src/kete/home-tips.ts`, `docs/home-notices.md`). Conditions come from the new `kete.sync` `status`
+plugin RPC (`schema/src/kete/sync.ts`, registered in `core/src/kete/sync/plugin.ts`) and upstream's
+`fs.list`, so no new HTTP endpoint and no protocol regeneration.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/routes/home.tsx` | Import; `<KeteHomeNotices />` in a `kete_change start/end` block after `<UpdateNotification>` | `SlotMap` (`plugin/src/tui/context.ts`) has no slot under the logo; adding one changes the plugin API contract |
+| `tui/src/config/index.tsx` | `tips` field on `Info` (one line after `statusline`) | the TUI config schema is upstream's; a display setting like `animations` |
+| `tui/test/fixture/tui-client.ts` | Answers `/api/rpc/kete.sync/status` (signed out, no agents) beside the other `kete.*` RPC lines | the fixture throws on unknown requests; upstream already answers `/api/fs/list` |
+
+**Sync checklist:** re-check `home.tsx`'s column (logo, `UpdateNotification`, the Kete bottom spacer,
+prompt): the notices measure their own height and render only whole notices, so the prompt keeps its rows.
+If upstream adds a slot under the logo or its own home tips, move to it and drop the `home.tsx` edit.
+
 ### Upstream test edits
 
 55 upstream test files and `core/script/test.ts` were updated so their fixtures
