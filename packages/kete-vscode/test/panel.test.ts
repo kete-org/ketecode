@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { KeteNotices } from "@opencode/util/kete/notices"
 import { dismiss, dismissCliHint, dismissNotice, loadPanelState, NOTICES, type Store } from "../src/panel"
 
 function fakeStore(): Store {
@@ -13,6 +14,27 @@ function fakeStore(): Store {
     },
   }
 }
+
+describe("NOTICES", () => {
+  test("comes from the shared module with the panel's /agent command", () => {
+    expect(NOTICES).toEqual(KeteNotices.list({ agentCommand: "/agent" }))
+  })
+  test("keeps the approved text unchanged", () => {
+    expect(NOTICES).toEqual([
+      {
+        id: "portal-agents",
+        title: "Agents from your portal",
+        body: "Agents you set up in the Kete Code Portal sync here automatically. Pick one with `/agent`.",
+        isNew: true,
+      },
+      {
+        id: "agents-md",
+        title: "Kete reads your AGENTS.md",
+        body: "Project conventions in `AGENTS.md` load at the start of every session.",
+      },
+    ])
+  })
+})
 
 describe("dismiss", () => {
   test("adds a known id, deduped", () => {

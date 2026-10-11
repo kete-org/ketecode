@@ -62,7 +62,7 @@ describe("KeteSkillPlugin", () => {
       const report = (yield* loadBoth()).skills.find((skill) => skill.id === "report")
       expect(report?.description).toContain("Kete Code issue")
       expect(report?.content).toContain("Never file a Kete Code issue in the OpenCode repository")
-      expect(report?.content).toContain("does not have a public issue tracker yet. Do not publish the report anywhere")
+      expect(report?.content).toContain("<https://github.com/kete-org/ketecode/issues>")
       expect(report?.content).toContain("- Kete Code version: 1.2.3")
       expect(report?.content).toContain("- install/channel: beta")
       expect(report?.content).not.toContain("gh issue create")

@@ -50,6 +50,7 @@ export * as KeteAgentSync from "./plugin.js"
 import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
 import type { Document } from "@opencode/schema/config"
+import { KeteSyncRpc } from "@opencode/schema/kete/sync"
 import { KeteAccount } from "@opencode/util/kete/account"
 import { KeteRuntimeRegistration } from "@opencode/util/kete/runtime-registration"
 import { KeteSyncPolicy } from "@opencode/util/kete/sync/policy"
@@ -213,6 +214,23 @@ export function make(
         Effect.flatMap((loaded) => refresh(loaded?.cached)),
         Effect.catch((cause) => Effect.logWarning(`${Brand.displayName} managed agents unavailable`, { cause })),
       )
+
+      // What clients show portal notices from (schema/src/kete/sync.ts). The account is read fresh on
+      // every call: a running server keeps `state.cached` after `kete logout` (a signed-out sync leaves
+      // it alone) and `state.account` only changes on the next sync tick, which offline mode skips.
+      yield* ctx.rpc
+        .register(KeteSyncRpc.Definition, {
+          status: () =>
+            Effect.gen(function* () {
+              const account = yield* readAccount
+              return {
+                signedIn: account !== undefined,
+                managedAgents: state.cached?.response.agents.length ?? 0,
+                offline: yield* offline(),
+              }
+            }),
+        })
+        .pipe(Effect.orDie)
 
       yield* ctx.agent.transform((editor) => {
         const cached = state.cached

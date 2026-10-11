@@ -49,3 +49,24 @@ export function httpUrl(value: string | undefined) {
 export function configDirectory(paths: string) {
   return paths.match(/^config\s+(.+)$/m)?.[1]?.trim()
 }
+
+/**
+ * Settings a repository must never set: the program the extension runs and the URLs its account and
+ * gateway traffic go to. They are machine-scoped in package.json; this reads only the user-level value as
+ * well, in case an editor (some VS Code forks) applies workspace or folder values anyway
+ * (GHSA-43vv-qhh9-p4cv).
+ */
+export const machineSettings = ["cliPath", "gateway.url", "platform.url"] as const
+export type MachineSetting = (typeof machineSettings)[number]
+
+/** The part of `WorkspaceConfiguration.inspect` this needs (kept free of the `vscode` module). */
+export type Inspectable = {
+  inspect<T>(section: string): { globalValue?: T; defaultValue?: T } | undefined
+}
+
+/** A machine setting's value from user settings only (else its default); workspace values are ignored. */
+export function machineSetting<T>(config: Inspectable, key: MachineSetting): T | undefined {
+  const inspected = config.inspect<T>(key)
+  return inspected?.globalValue ?? inspected?.defaultValue
+}
+

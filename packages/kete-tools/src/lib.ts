@@ -101,11 +101,15 @@ export function isKeteOwned(file: string): boolean {
     normalized === "docs/parity-plan.md" ||
     normalized === "docs/statusline.md" ||
     normalized === "docs/folder-trust.md" ||
+    normalized === "docs/history-search.md" ||
+    normalized === "docs/home-notices.md" ||
     // Kete Code's public-facing files; GitHub prefers .github/ over upstream's root files (ADR 0010).
     normalized === ".github/README.md" ||
     normalized === ".github/SECURITY.md" ||
     normalized === ".github/CONTRIBUTING.md" ||
     normalized === ".github/CODE_OF_CONDUCT.md" ||
+    // The user-facing release notes the binary embeds (`/release-notes`); upstream has no root CHANGELOG.
+    normalized === "CHANGELOG.md" ||
     // Kete's gitleaks configuration (allowlists for test fixtures).
     normalized === ".gitleaks.toml" ||
     normalized.startsWith("docs/adr/") ||

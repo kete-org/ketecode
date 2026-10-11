@@ -120,6 +120,10 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
     reason: "folder trust: trust root, plugin and agent files hashed for the fingerprint; the gate passes everything through in job mode (its server loads no project config)",
   },
   "packages/util/src/kete/job-secrets.ts": { category: "confinement", reason: "reads the inherited secrets descriptor" },
+  "packages/util/src/kete/bug-report-file.ts": {
+    category: "not-worktree",
+    reason: "problem reports (kete bug, /feedback): reads the end of kete's log file and saves a report in the temp dir; CLI and TUI only, never the runtime",
+  },
 }
 
 describe("AC1: every in-process file-access site is classified", () => {

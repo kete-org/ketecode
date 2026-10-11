@@ -22,7 +22,7 @@ import { Global } from "@opencode/util/global"
 import { KeteAccount } from "@opencode/util/kete/account"
 import type { KeteSecretStore } from "@opencode/util/kete/secret-store"
 import { testEffect } from "../lib/effect"
-import { permissions, registries } from "./sync-fixture"
+import { permissions, registries, rpc } from "./sync-fixture"
 import { agentHost, host } from "../plugin/host"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Agent.node, Bus.node, FSUtil.node, Global.node])))
@@ -107,6 +107,7 @@ const start = (options: KeteAccount.Options) =>
     const hooks: Registered[] = []
     const extra = registries()
     const pluginHost = host({
+      rpc: rpc().host,
       permission: permissions().host,
       agent: agentHost(agents),
       skill: extra.host.skill,

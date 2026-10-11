@@ -14,6 +14,7 @@ export async function createAppFixture(
     config?: Config.Info
     args?: TuiInput["args"]
     fetch?: FetchHandler
+    app?: TuiInput["app"] // kete_change: version and channel (release notes tests)
   } = {},
 ) {
   const { run } = await import("../../src/app")
@@ -30,7 +31,7 @@ export async function createAppFixture(
   const server = Bun.serve({ port: 0, fetch: (request) => calls.fetch(request) })
   const task = Effect.runPromise(
     run({
-      app: { name: "test", version: "test", channel: "test" },
+      app: input.app ?? { name: "test", version: "test", channel: "test" }, // kete_change
       server: { endpoint: { url: server.url.toString() } },
       config: { get: async () => input.config ?? { animations: false }, update: async () => ({}) },
       packages: { prepare: async () => ({ directory: "" }) },

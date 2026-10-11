@@ -22,7 +22,7 @@ import { KeteRuntimeRegistration } from "@opencode/util/kete/runtime-registratio
 import type { KeteSecretStore } from "@opencode/util/kete/secret-store"
 import { testEffect } from "../lib/effect"
 import { agentHost, host } from "../plugin/host"
-import { permissions, registries } from "./sync-fixture"
+import { permissions, registries, rpc } from "./sync-fixture"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Agent.node, Bus.node, FSUtil.node, Global.node])))
 
@@ -150,6 +150,7 @@ const start = (
     const extraHost = registries()
     const permission = permissions()
     const pluginHost = host({
+      rpc: rpc().host,
       permission: permission.host,
       agent: agentHost(agents),
       skill: extraHost.host.skill,

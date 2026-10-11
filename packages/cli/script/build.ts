@@ -11,9 +11,11 @@ import { buildAppArchive } from "./app-assets"
 import { verifyArtifact, verifySimulationGraph } from "./verify-artifact"
 import { resolveOpencodePty } from "./opencode-pty"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
+import { changelogPath, releaseNotesFor } from "./kete-release-notes" // kete_change
 
 const dir = path.resolve(import.meta.dirname, "..")
 const binary = Brand.cliName // kete_change
+const releaseNotes = releaseNotesFor(changelogPath, Script.version, Script.preview) // kete_change: embedded for /release-notes
 const outdir = path.resolve(
   dir,
   process.argv.find((arg) => arg.startsWith("--outdir="))?.slice("--outdir=".length) ?? "dist",
@@ -155,6 +157,7 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
       OPENCODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_ARTIFACT: `'cli'`,
       KETE_TARGET: JSON.stringify(target.slice(binary.length + 1)), // kete_change: the release target kete upgrade fetches
+      KETE_RELEASE_NOTES: JSON.stringify(releaseNotes), // kete_change: CHANGELOG.md's section for this version
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "undefined",
       // FFF_LIBC selects the fff native lib variant: "musl" or "gnu".
       FFF_LIBC: item.os === "linux" ? `'${item.abi ?? "gnu"}'` : "undefined",

@@ -74,6 +74,7 @@ export const { use: usePromptHistory, provider: PromptHistoryProvider } = create
     const [store, setStore] = createStore({ index: 0, history: [] as PromptInfo[] })
 
     return {
+      entries: (): readonly PromptInfo[] => store.history, // kete_change: read-only, for prompt history search
       move(direction: 1 | -1, input: string) {
         if (!store.history.length) return undefined
         const current = store.history.at(store.index)
