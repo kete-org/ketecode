@@ -10,6 +10,7 @@ import KeteSandboxStatus from "../kete/sandbox-status" // kete_change
 import KeteTodo from "../kete/todo" // kete_change
 import KeteStatusLine from "../kete/statusline" // kete_change
 import KeteReleaseNotes from "../kete/release-notes" // kete_change
+import KeteFeedback from "../kete/feedback" // kete_change
 import DiffViewer from "../feature-plugins/system/diff-viewer"
 import Notifications from "../feature-plugins/system/notifications"
 import Plugins from "../feature-plugins/system/plugins"
@@ -29,6 +30,7 @@ export const builtins = [
   KeteTodo, // kete_change: the session task list (sidebar list, footer progress)
   KeteStatusLine, // kete_change: the configurable status line (/statusline)
   KeteReleaseNotes, // kete_change: /release-notes, and the notes once after an upgrade
+  KeteFeedback, // kete_change: /feedback, the problem report dialog
   SidebarMcp,
   SidebarFooter,
   Notifications,
