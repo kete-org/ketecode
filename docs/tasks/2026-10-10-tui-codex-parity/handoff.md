@@ -38,3 +38,41 @@
 - Decisions: the cli test imports `../../../tui/src/kete/statusline-config` relatively because `@opencode/tui` has no `./kete/*` export. The picker is plain `DialogSelect` via `useDialog().replace`; item menu (Hide/Earlier/Later) reopens the picker after each change. Prompt: removed `locationLabel`, `locationLabelDisplay`, `locationWidth` and the `abbreviateHome`/`truncateFilePath` imports as unused. `todo` item only loads todos when `todo` is listed.
 - Not done: step 8 real-terminal checklist; card updates (librarian).
 - Open: the types in `statusline.tsx` (`useTodos` argument, `Picker` option unions, `onSizeChange` this-type) are unchecked and may need small fixes.
+
+## 2026-10-11 planner (P2 plan written)
+- Done: re-ran `stale-cards.mjs` on ui-branding and config-kete (current). Rewrote `plan.md` for P2 only (A6; AC4, AC5, the P2 part of AC13). P1 is kept as a "Done" note (PR #37); its full plan is in git history. The build agent is a general-purpose agent with a shell.
+- Decisions (plan.md "Design"):
+  - Ctrl+R is a new keybind `prompt.history.search`. It lives in a prompt layer targeted at the textarea, so it applies only when the prompt has focus.
+  - The search bar is inline, above the textarea, with its own input. The textarea is never changed while searching, so Esc restores the draft exactly.
+  - A user's explicit `session.rename` key removes the same key from history search's default in `resolve()`, so the override wins even inside the focused prompt.
+  - A marked `entries()` accessor is added to the history provider.
+- **Open question Q1 (blocks merge, not build): `<leader>r` is `session.redo`'s default** (`tui/src/config/keybind.ts:191`, upstream since v1), bound in the same session layer as rename (`routes/session/index.tsx:876,987,1282`). D2's `<leader>r` would collide.
+  - Plan builds with (a) rename → `<leader>shift+r`, redo unchanged.
+  - Alternatives: (b) swap, so redo moves to `<leader>shift+r`; (c) no rename key.
+  - The maintainer must confirm before merge.
+- Docs enough: no — missing:
+  - TUI keybind defaults are `Definitions` in `tui/src/config/keybind.ts` (`session.rename` `:122`, `session.redo` `:191`, `prompt.history.*` `:241-242`). Overrides are merged in `config/index.tsx` `resolve` (`:283-292`).
+  - A keymap layer command's `id` takes its configured keys from `config.keybinds.get(id)` (`tui/src/context/keymap.tsx:260-266`).
+  - The prompt's history ↑/↓ are targeted layers at `component/prompt/index.tsx:1011-1081`. `usePromptHistory()` exposes only `move`/`append` (`prompt/history.tsx:73-112`), and history is capped at 50 entries.
+  - Session commands (rename, redo) and their layers: `routes/session/index.tsx:874-887,985-1000,1255-1285`. The session list dialog reuses `session.rename` (`component/dialog-session-list.tsx:281`).
+  - App-level TUI test harness: `test/fixture/app.ts` `createAppFixture` (`mockInput`, kitty keyboard).
+- Open: whether v1 keybind migration copies v1 defaults (`config/v1/keybind.ts:99,304`). The builder checks this (plan Files).
+
+## 2026-10-11 maintainer decision (relayed by the main session)
+P2 Q1: rename's new default is `<leader>shift+r` (option a); redo keeps `<leader>r`.
+
+## 2026-10-11 implementer (P2 built and checked)
+- Done: P2 (A6) per plan.md, with Q1 (a): `session.rename` default `<leader>shift+r`, `session.redo` keeps `<leader>r`.
+  - Created: `tui/src/kete/history-search.ts` (pure `find`/`excerpt`/`keteHistorySearchKeys`, `RENAME_DEFAULT`, `SEARCH_DEFAULT`), `tui/src/kete/history-search-bar.tsx` (controller + bar), `tui/test/kete/history-search.test.ts`, `tui/test/kete/history-search-prompt.test.tsx`, `cli/test/kete/history-search-migrate.test.ts`, `docs/history-search.md`.
+  - Changed (upstream, marked): `tui/src/config/keybind.ts`, `tui/src/config/index.tsx`, `tui/src/prompt/history.tsx`, `tui/src/component/prompt/index.tsx`. Changed (Kete): `docs/upstream-patches.md` (new section after "Status line"), `kete-tools/src/lib.ts` + `test/lib.test.ts` (`docs/history-search.md` is Kete-owned).
+- Decisions / departures from the plan:
+  - The bar file is `history-search-bar.tsx`, not `history-search.tsx`: a `.ts` and `.tsx` with the same base name make `import "./history-search"` ambiguous (TypeScript resolves `.ts` first, Bun `.tsx`).
+  - Duplicate id settled from `context/keymap.tsx` and `@opentui/keymap` (`collectActiveCommands`): the same command name in two layers is allowed (a chain; the first active layer is reachable). The bar's layer (targeted at its own input, priority 2) reuses `prompt.history.search`, so the configured keys walk older; while the bar has focus the prompt's textarea-targeted layer is inactive.
+  - `find(entries, query, before?, skip?)`: `skip` is the set of texts already shown in this search (the dedupe).
+  - Prompt test sessions use a random ID per test: the prompt's draft stash (`component/prompt/draft-stash`) is per session ID and module-global, so a fixed ID leaked one test's prompt into the next.
+- v1 migration question (planner's open item): `cli/src/config/migrate.ts` `migrateV1` copies only the keybinds present in the user's v1 `tui.json` (`TuiKeybind.KeybindOverrides` fields are all `optional`, no defaults applied), and the in-place rename path rewrites only existing properties. So a migrated config never pins rename to v1's `ctrl+r` default; only a user who wrote `session_rename` in v1 gets an explicit override, which then (by design) takes Ctrl+R from search. Covered by `cli/test/kete/history-search-migrate.test.ts`.
+- Checks (all run): tui `bun run typecheck` PASS; tui `bun run test` 1457 pass / 0 fail (1459 tests; the 2 `dialog-shell-output` timeouts did not appear this run); plan's narrow tests and regression set (68 pass); cli `bun run typecheck` PASS, `bun test test/kete` 306 pass / 1 skip / 0 fail; kete-tools typecheck PASS, `bun run test` 59 pass; root `bun run lint` 0 warnings/errors; `upstream:check` passed (first run flagged two JSX lines; fixed with `{/* kete_change start/end */}` on their own lines). `kete-tools verify --base main` NOT run.
+- Real terminal (built `dist/cli-darwin-arm64/bin/kete`, pty + pyte, 110x30, xterm-256color; the user's existing history only, nothing submitted): Ctrl+R opened the bar; typing `audit` showed the newest match; Ctrl+R again showed `(no older match)` (only duplicates older); Esc closed it with the draft `hello draft` unchanged; a second run: `resume` matched, Enter put `RESUME_READY` in the prompt without sending; Ctrl+C in the bar closed it, prompt kept, app didn't exit. The session list dialog's footer shows `rename ctrl+x shift+r`. A legacy `R` parses as `shift+r` (`parseKeypress`), so `ctrl+x` then `R` works without the kitty protocol.
+- Not checked in a real terminal: rename via `<leader>shift+r` in a session and in the session list (this channel has no sessions; creating one means submitting a prompt) — covered by the app-fixture test; the `cli.json` `"session.rename": "ctrl+r"` override (would mean editing `~/.config/kete/cli.json`) — covered by unit and app-fixture tests; `<leader>r` redo after undo (unchanged binding); iTerm2, macOS Terminal and Windows Terminal specifically (pty emulation only).
+- Open: upstream's keybind docs (`packages/web/src/content/docs/*/keybinds.mdx`, `services/www/src/docs/content/cli/keybinds.mdx`) still list rename as `ctrl+r`; left unchanged as upstream's site (noted in upstream-patches).
+- Docs enough: no — missing: `@opentui/keymap` allows the same command name in several layers (chains; first active layer wins), `node_modules/.bun/@opentui+keymap@*/src/index.js` `collectActiveCommands`; the prompt draft stash is module-global per session ID, so app-fixture tests sharing a session ID leak drafts.

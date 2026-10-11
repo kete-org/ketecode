@@ -4,6 +4,7 @@ import type { KeyEvent, Renderable } from "@opentui/core"
 import type { Binding } from "@opentui/keymap"
 import type { BindingConfig, BindingDefaults } from "@opentui/keymap/extras"
 import { Schema } from "effect"
+import { RENAME_DEFAULT, SEARCH_DEFAULT } from "../kete/history-search" // kete_change
 
 const KeyStroke = Schema.Struct({
   name: Schema.String,
@@ -119,7 +120,7 @@ export const Definitions = {
   "session.tab.reopen": keybind("ctrl+shift+t", "Reopen last closed session tab"),
   "session.timeline": keybind("<leader>g", "Show session timeline"),
   "session.fork": keybind("none", "Fork session from message"),
-  "session.rename": keybind("ctrl+r", "Rename session"),
+  "session.rename": keybind(RENAME_DEFAULT, "Rename session"), // kete_change (was ctrl+r; Ctrl+R searches prompt history)
   "session.delete": keybind("ctrl+d", "Delete session"),
   "session.share": keybind("none", "Share current session"),
   "session.unshare": keybind("none", "Unshare current session"),
@@ -240,6 +241,7 @@ export const Definitions = {
   "input.select.all": keybind("super+a", "Select all in input"),
   "prompt.history.previous": keybind("up", "Previous history item"),
   "prompt.history.next": keybind("down", "Next history item"),
+  "prompt.history.search": keybind(SEARCH_DEFAULT, "Search prompt history"), // kete_change
 
   "composer.subagent.up": keybind("up", "Previous subagent"),
   "composer.subagent.down": keybind("down", "Next subagent"),

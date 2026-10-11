@@ -2,196 +2,173 @@
 
 <!-- Written by the planner from spec.md and the module cards. This file list is the implementer's reading list. -->
 
-> **Size: Large.** This plan edits upstream files (`tui/src/config/index.tsx`, `tui/src/component/prompt/index.tsx`,
-> `tui/src/plugin/builtins.ts`) and adds a user-facing config key (`statusline`, a contract). The approval this
-> needs is **already given**: on 2026-10-10 the maintainer approved the spec (all six phases; D1 (a), D3 (a)) and
-> authorised building Milestone A end to end, merging when green.
+> **Size: Large.** P2 edits four upstream files (`tui/src/config/keybind.ts`, `tui/src/config/index.tsx`,
+> `tui/src/prompt/history.tsx`, `tui/src/component/prompt/index.tsx`) and changes a keybind default
+> (`session.rename`), which is a user-facing contract. The approval this needs is **already given**: on 2026-10-10
+> the maintainer approved the spec (all six phases; D1 (a), D2 (a), D3 (a)) and authorised building Milestone A end
+> to end, merging when green.
 >
-> **Differs from the spec (reviewer, please confirm):** the spec says P1 renders through the
-> `prompt.footer.status` slot "so the prompt component itself is not edited". That doesn't work, for two reasons.
-> (1) Content added to that slot sits beside the prompt's own `flexGrow` location box
-> (`component/prompt/index.tsx:1847-1911`, `plugin/render.tsx:85-135`). So the status line can't remove the
-> existing `directory:branch` label, which would show twice next to the `directory`/`branch` items and break AC1/AC2
-> ordering. It also can't get a stable width to drop items without wrapping (AC2). (2) The slot input
-> (`plugin/src/tui/context.ts:159-163`) doesn't include the prompt-local state the label uses: pending directory,
-> worktree move, idle/running. So P1 makes **one small marked edit** to the prompt (CLAUDE.md §4 step 5): the status
-> line's row is rendered where the location label is today, and after the running spinner. All the logic stays in
-> Kete-owned `tui/src/kete/statusline*.ts(x)`. The `/statusline` command is a builtin plugin, so `app.tsx` isn't
-> edited.
+> **Build agent:** a general-purpose agent with a shell. It runs every Verification command itself and reports
+> real output; nothing here may be marked done unrun (the P1 implementer had no shell, see `handoff.md`).
+>
+> **Open question Q1 (blocks only the merge, not the build): `<leader>r` is already taken.** D2 says rename's
+> default moves to `<leader>r`, but `session.redo` has defaulted to `<leader>r` since upstream v1
+> (`tui/src/config/keybind.ts:191`). Both commands are bound in the **same** session layer
+> (`routes/session/index.tsx:876,987,1282`), so the key would be ambiguous. Options:
+> - (a) **recommended:** rename moves to `<leader>shift+r`, redo is unchanged (one contract change, upstream users
+>   keep their redo key);
+> - (b) rename takes `<leader>r` and redo moves to `<leader>shift+r` (two default changes);
+> - (c) rename has no default key, only the palette and `/rename` (fails AC5 as written).
+>
+> Build with (a). The key is one constant (step 1), so a different answer is a one-line change. **Do not merge
+> until the maintainer answers Q1.**
 
-## Scope of this revision: P1 only (plan item A1)
+## Done: P1, configurable status line (plan item A1)
+Built and merged in PR #37 (`f8030fdfb6`, review fixes `6414bbc386`): AC1–AC3 and the P1 part of AC13. The full P1
+plan is in this file's git history (`git log -p -- docs/tasks/2026-10-10-tui-codex-parity/plan.md`). The upstream
+edits are recorded in `docs/upstream-patches.md` ("Status line (feature/status-line)"); the user guide is
+`docs/statusline.md`. P1 card updates (ui-branding, config-kete, permissions, sandbox, todo, local-models, gateway)
+are still owed by the librarian at task close.
 
-This revision covers **P1, the configurable status line**: AC1, AC2, AC3, and the parts of AC13 that apply to
-P1. **P2–P6 each get their own plan revision** once P1 is merged, so later phases start from cards that reflect P1.
+## Scope of this revision: P2 only (plan item A6)
+**P2, prompt history search**: AC4, AC5 and the parts of AC13 that apply to P2. P3–P6 get their own revisions.
 
 ## Cards read
-- docs/context/modules/ui-branding.md (verified-at 006573bd58, stale: no)
-- docs/context/modules/config-kete.md (verified-at current, stale: no)
-- docs/context/modules/permissions.md (verified-at 006573bd58, stale: no)
-- docs/context/modules/sandbox.md (stale: no)
-- docs/context/modules/todo.md (stale: no)
-- docs/context/modules/local-models.md (stale: no)
-- docs/context/modules/gateway.md (stale: no)
-- docs/context/modules/web-app.md (stale: no; P1 only reuses the mode labels)
-- docs/context/pitfalls.md, decisions.md, commands.md
+- docs/context/modules/ui-branding.md (verified-at 006573bd58, stale: no). It gives only the history file
+  location (`prompt/history.tsx:63-71`); keybinds, the keymap layers and the prompt's history commands came from
+  code (gaps logged in `handoff.md`).
+- docs/context/modules/config-kete.md (stale: no). The TUI config is separate from the `kete` section; no protocol
+  or client regeneration.
+- docs/context/pitfalls.md, decisions.md, commands.md.
 
 ## Design (fixed by this plan)
-- **Where the setting lives (D1 a):** the TUI config schema `Info` (`tui/src/config/index.tsx:66`), key `statusline`:
-  `{ items?: string[], colors?: boolean }`. On disk this is the CLI's **`cli.json`** in the global config directory
-  (`packages/cli/src/config/config.ts:31`; `cli/src/config/schema.ts` spreads `Config.Info.fields`). The spec calls
-  it `tui.json`, but that is the legacy name and gets migrated into `cli.json`. The schema itself lives in Kete
-  code (`tui/src/kete/statusline-config.ts`); `index.tsx` gets one import line and one field, both marked.
-- **`items` is `Schema.Array(Schema.String)`, not a literal union, on purpose.** The CLI loader decodes the whole
-  file with `decodeUnknownOption` (`cli/src/config/config.ts:22,65`). One invalid value therefore silently throws
-  away **every** setting in `cli.json`. Unknown IDs are found by `KeteStatusLineConfig.parse` and reported as a
-  warning toast. They are never dropped silently (AC2).
-- **Item IDs** (`ITEMS`, in order): `directory`, `branch`, `mode`, `context`, `model`, `sandbox`, `balance`, `todo`,
-  `local-model`, `cost`. `cost` = the session's spend so far, from the same source as upstream's prompt footer
-  (`props.context.data.session.cost(sessionID)`, `feature-plugins/prompt/footer.tsx:43-46`, formatted the same way;
-  hidden when 0); added by the maintainer's parity plan item A1 (2026-10-10). **Default** `["directory", "branch", "mode", "context"]`. `colors` defaults to `true`.
-  Duplicates are removed (the first one wins).
-- **What each item shows** (it hides when its value is unknown):
-  - `directory`: home-abbreviated path, with the click menu the location label has today (copy, open, workspaces).
-  - `branch`: `data.location.vcs.info(location)?.branch.current`.
-  - Both `directory` and `branch` hide while the session isn't idle, as upstream's label does today.
-  - `mode`: `KetePermissionModes.label[current ?? "default"]`, from `useKetePermissionMode()`.
-  - `context`: `${100 - percent}% left`, where `percent` comes from `contextUsage(...)`, using the same inputs as
-    `feature-plugins/prompt/footer.tsx:36-41`.
-  - `model`: model plus variant, from `useLocal()`.
-  - `sandbox`: today's `label(status)`.
-  - `balance`: the credit text from `balance.tsx`'s `account()`.
-  - `todo`: `footerLabel(todos)`.
-  - `local-model`: "Offline", via `offlineFrom`.
-- **Security pin:** the `sandbox` warning ("Unsandboxed …") **always shows** when it applies, even if `sandbox` isn't
-  in the list (it isn't in the default list). If listed, it appears at the listed position; otherwise it goes last.
-  It is never dropped for width while any other item is left. Hiding it by default would quietly weaken a security
-  signal (CLAUDE.md §9).
-- **Fitting:** items are joined with `" · "` and drop from the end until `stringWidth` fits the row's measured
-  width, with `wrapMode="none"`. The row is a `flexGrow={1} flexShrink={1} minWidth={0}` box that measures itself
-  with `onSizeChange`. Its width doesn't depend on its content, so the measurement can't oscillate.
-- **Colours** (`colors: true`):
-  - `mode` uses the warning colour for Plan and Ask and the accent colour for Auto.
-  - `context` uses the warning colour at ≤ 20 % left and the error colour at ≤ 5 %.
-  - `branch` uses the accent colour.
-  - Everything else is `text.muted`.
-  - With `colors: false` everything is muted, except the sandbox glyph, which keeps the warning colour.
-- **Slots after P1:** `sandbox-status.tsx` and `local-status.tsx` keep their `home.footer.status` claims (the home
-  footer row is unchanged). Their `prompt.footer.status` claims, and `todo.tsx`'s, are removed, because those are
-  now status line items. Behaviour change: todo progress and "Offline" no longer show by default; users add `todo`
-  or `local-model`. Record this in the user doc.
-- **Kept as is (noted, not changed in P1):**
-  - The prompt's metadata row still shows a non-default permission mode next to the agent (`metadata.tsx`, an
-    existing marked edit). D3 keeps the agent there.
-  - Upstream's `prompt.footer` plugin still shows `tokens (n%) · $cost` on the right.
-  - Both overlap with `mode`/`context`; the real-terminal check decides whether a follow-up should remove one.
+- **Key.** A new keybind `prompt.history.search`, default `ctrl+r`, description "Search prompt history". Its
+  command is registered in a prompt layer targeted at the textarea (`target: inputTarget`, `priority: 1`), like
+  `prompt.history.previous` (`component/prompt/index.tsx:1011-1045`). So Ctrl+R searches only when the prompt has
+  focus; with focus elsewhere it does whatever else is bound.
+- **Rename (D2 + Q1).** `session.rename`'s default changes from `ctrl+r` to `<leader>shift+r` (Q1 (a)). The palette
+  entry and `/rename` don't change (`routes/session/index.tsx:874-887`). The session list dialog's rename action
+  uses the same binding (`component/dialog-session-list.tsx:281`), so it moves too. Check that in the real
+  terminal.
+- **A user override for rename still wins.** If the user's config sets `session.rename` and doesn't set
+  `prompt.history.search`, `resolve()` removes from history search's default any key the user gave rename. (With
+  the defaults, `ctrl+r` → `"none"`.) Without this, the targeted prompt layer would beat the user's Ctrl+R rename
+  whenever the prompt has focus. If the user sets both explicitly, both are kept as written. The pure helper
+  `keteHistorySearchKeys(overrides)` lives in `tui/src/kete/history-search.ts`; `config/index.tsx` calls it in
+  one marked line, next to upstream's own default adjustment for `terminal.suspend` (`:283-292`).
+- **Search model** (pure, `history-search.ts`):
+  - It searches `usePromptHistory()` entries (capped at `MAX_HISTORY_ENTRIES` = 50, so cost is bounded),
+    newest first.
+  - Matching is a case-insensitive substring search on `entry.text`. An entry whose text equals one already
+    returned in this search is skipped, so repeated Ctrl+R never shows the same text twice.
+  - `find(entries, query, before?)` returns `{ index, entry, start, end }` or `undefined`. An empty query matches
+    nothing.
+  - `excerpt(text, start, end, width)` returns one line around the match (newlines shown as `⏎`) plus highlight
+    offsets, measured with `stringWidth`.
+- **UI** (`history-search.tsx`, inline, no dialog):
+  - Ctrl+R opens a one-line search bar inside the prompt box, above the textarea: label `history search:`, an
+    `<input>` for the query, then the match excerpt with the matched span in the accent colour, or
+    `no match` (muted).
+  - The textarea is **not changed while searching**, so Esc restores the draft exactly (text, parts, mode, cursor).
+  - Keys while the bar has focus, in its own layer targeted at the bar's input with priority above the prompt's:
+    - Typing refines the query and re-searches from the newest entry.
+    - Ctrl+R (the configured `prompt.history.search` keys) finds the next older match. At the oldest match it
+      stays put and shows `no older match`.
+    - Enter accepts the match. It is applied the way history ↑ applies one: `ref.set(clone)` plus
+      `setStore("mode", entry.mode ?? "normal")`, with a cloned entry so the history store isn't aliased. The bar
+      closes and the cursor goes to the end. Nothing is submitted.
+    - Enter with no match closes the bar like Esc.
+    - Esc and Ctrl+C close the bar and leave the draft as it was.
+  - The bar closes by itself when the prompt becomes `disabled()` (a permission or question prompt appears) or
+    the prompt unmounts.
+- **Focus.** While the bar is open, the prompt's focus effect (`component/prompt/index.tsx:729-741`) treats the
+  textarea like it does when a dialog is open: blur it and make it non-focusable. When the bar closes, the effect
+  runs again and gives focus back to the textarea. This is one marked condition.
+- **History access.** `usePromptHistory()` exposes only `move`/`append`, so a marked `entries()` accessor is added
+  that returns the store's array (read-only). Nothing else in `history.tsx` changes; `move`'s index isn't touched
+  by a search.
+- **Mini mode** (`tui/src/mini`) has its own composer and isn't in P2's scope.
 
 ## Files
 | File | Read / change | Why |
 |---|---|---|
-| `packages/tui/src/kete/statusline-config.ts` | create | Effect schema `KeteStatusLineConfig` (`items`, `colors`), `ITEMS`, `DEFAULT_ITEMS`, labels/descriptions, `parse(config) → { items, unknown, colors }`, pure picker helpers `toggle`, `move`, `reset`, and `save(items, colors) → (draft) => void` (keeps unknown IDs, writes only `statusline`). No Solid imports. |
-| `packages/tui/src/kete/statusline.tsx` | create | `fit(items, width)` (pure; sandbox pinned), `StatusLineView` (pure render from `{id, text, tone}[]`), `KeteStatusLineRow` (collects items through app hooks and measures its width), and the default-exported builtin plugin `kete.statusline`: the `/statusline` command (palette "Configure status line", group "System"), the picker dialog, and the unknown-ID warning toast. |
-| `packages/tui/src/config/index.tsx` | change (upstream, marked) | Import `KeteStatusLineConfig` and add `statusline: Schema.optional(KeteStatusLineConfig)` to `Info` (`:66`). `resolve` passes it through with `...input`; no `Resolved` change. |
-| `packages/tui/src/component/prompt/index.tsx` | change (upstream, marked) | The `kete_change start/end` block in the idle `Match` (`:1892-1909`) renders `<KeteStatusLineRow>` in place of the location `<text>`; `props.hint` keeps priority. One marked line puts the row after `<PromptInterruptStatus/>` in the running `Match` (`:1858-1872`). Read `:1600-1625` (`footerLocation`, `pendingDirectory`, `locationActions`) to pass `location` and `actions`. Nothing else in the file changes. |
-| `packages/tui/src/plugin/builtins.ts` | change (upstream, marked) | Import and list `KeteStatusLine` next to the other Kete entries. |
-| `packages/tui/src/kete/sandbox-status.tsx` | change | Remove the `prompt.footer.status` claim (`:56`); keep `home.footer.status`. Export what the item needs (`fetchSandboxStatus` and `label` already are). |
-| `packages/tui/src/kete/local-status.tsx` | change | Remove the `prompt.footer.status` claim; keep `home.footer.status`. |
-| `packages/tui/src/kete/todo.tsx` | change | Remove the `prompt.footer.status` claim (`:134-137`). Narrow `useTodos`'s parameter to `Pick<Plugin.Context, "client" \| "data" \| "location">` so the row can call it with `useClient().api`, `useData()` and `useLocation().ref`; these are what the plugin context is built from (`plugin/api.tsx:136-142`). |
-| `packages/tui/src/kete/balance.tsx` | change | Export a `balanceText(metadata)` formatter that `KeteBalance` also uses, so the sidebar and the item agree. |
-| `packages/tui/src/kete/permission-mode.tsx` | read | `useKetePermissionMode()`, `KetePermissionModes` labels. |
-| `packages/tui/src/kete/local-models.ts` | read | `offlineFrom`, `KeteLocalPicker.offlineLabel`. |
-| `packages/tui/src/util/session.ts` | read | `contextUsage` (`:58`). |
-| `packages/tui/src/feature-plugins/prompt/footer.tsx` | read | How `contextUsage` gets its inputs (`:36-41`); `stringWidth` import. |
-| `packages/tui/src/feature-plugins/sidebar/footer.tsx` | read | The pattern for `useWorkingDirectoryActions` and the `directory:branch` lookup from a plugin (`:79-92`). |
-| `packages/tui/src/ui/working-directory-actions.tsx` | read | The `actions` object the prompt passes (hover, mouse handlers). |
-| `packages/tui/src/feature-plugins/system/stats.tsx` | read | How a builtin plugin registers a slash and palette command (`:184-212`, `append: "app"` + `context.keymap.layer`). |
-| `packages/tui/src/component/dialog-config.tsx` | read | The `DialogSelect` and `config.update` pattern for a settings picker that stays open (`:355-385`). |
-| `packages/tui/src/config/index.tsx` `useConfig` (`:337-371`) | read | `data.statusline` and `update`; the file watcher reapplies config edited outside the TUI. |
-| `packages/plugin/src/tui/context.ts` | read | `Dialog`/`DialogSelectOptions` (`:327-381`), toast, `Plugin.Context`. |
-| `packages/plugin/src/tui/context.ts` slot docs (`:185-215`) | read | Background only; no change (the slot API stays as it is). |
-| `packages/cli/src/config/config.ts`, `packages/cli/src/config/schema.ts` | read | How `cli.json` is loaded and updated, and why the schema stays lenient. |
-| `packages/tui/test/kete/statusline.test.tsx` | create | AC1, AC2, AC3 (tui side): see Verification. Render pattern from `test/kete/balance.test.tsx`. |
-| `packages/tui/test/kete/balance.test.tsx` | read | `testRender` and fake-context pattern. |
-| `packages/tui/test/kete/todo.test.tsx`, `sandbox-status.test.ts`, `local-models.test.tsx` | read / change if needed | Remove any assertion that relies on the removed `prompt.footer.status` claims. |
-| `packages/cli/test/kete/statusline-config.test.ts` | create | AC3 store side: round trip through the real `Config.layer` (pattern: `packages/cli/test/config.test.ts:1-60`, `run()` helper, `./fixture/tmpdir` → `../fixture/tmpdir`). |
-| `packages/cli/test/config.test.ts` | read | The test harness above. |
-| `docs/upstream-patches.md` | change | New section "Status line (feature/status-line)": the three upstream files with the reason for each, the spec deviation, and the sync checklist (the prompt's idle/running `Match` blocks, `Info`). |
-| `docs/statusline.md` | create | Short user guide: items, default, `cli.json` example, `/statusline`, `colors`, the sandbox pin, and that todo/Offline must now be added. There is no root CHANGELOG; this doc and the PR body carry the change note. |
+| `packages/tui/src/kete/history-search.ts` | create | Pure: `find`, `excerpt`, `keteHistorySearchKeys(overrides) → overrides` (normalises string / comma list / array / `{ key }` values; compares lower-cased keys), `RENAME_DEFAULT = "<leader>shift+r"` exported for the keybind definition and tests. No Solid imports. |
+| `packages/tui/src/kete/history-search.tsx` | create | `createKeteHistorySearch({ entries, disabled, onAccept })` → `{ active, open, close, query, match, older, accept }` (signals; no global state) and `KeteHistorySearchBar` (the row, its `<input>`, a `Keymap.createLayer` targeted at that input for Esc / Ctrl+C / Enter / older). Uses `useTheme`. |
+| `packages/tui/src/config/keybind.ts` | change (upstream, marked) | Add `"prompt.history.search": keybind("ctrl+r", "Search prompt history")` after `prompt.history.next` (`:242`); change `session.rename`'s default (`:122`) to `RENAME_DEFAULT`. Import it, marked. |
+| `packages/tui/src/config/index.tsx` | change (upstream, marked) | In `resolve` (`:283`), after the `terminal.suspend` block, one marked line: `Object.assign(keybinds, keteHistorySearchKeys(input.keybinds ?? {}))`; one marked import. |
+| `packages/tui/src/prompt/history.tsx` | change (upstream, marked) | Add `entries(): readonly PromptInfo[]` to the returned object (`:73`), marked. |
+| `packages/tui/src/component/prompt/index.tsx` | change (upstream, marked) | Marked import. A `kete_change start/end` block after the history layers (`:1011-1081`) creates the controller and a layer (`target: inputTarget`, `priority: 1`, enabled under the same condition as the history layers, with `!auto()?.visible`) with `{ id: "prompt.history.search", title: "Search prompt history", group: "Prompt", run: () => keteSearch.open() }`. One marked condition in the focus effect (`:731`). One marked `<Show when={keteSearch.active()}><KeteHistorySearchBar …/></Show>` inside the padded prompt box, just above the textarea. Nothing else changes. |
+| `packages/tui/src/context/keymap.tsx` | read | `:230-270`: how a layer command's `id` picks up configured keys (`config.keybinds.get(id)`) and how `bind: false` and `bindings` work. Decides whether the bar's layer can reuse the id `prompt.history.search`. If keymap rejects or merges the duplicate name, use an internal id `kete.history.search.older` whose `bind` is the configured keys from `useConfig().data.keybinds.get("prompt.history.search")`. |
+| `packages/tui/src/routes/session/index.tsx` | read | `:874-887` (rename command, palette), `:985-1000` (redo, Q1), `:1255-1285` (layers). No change. |
+| `packages/tui/src/component/dialog-session-list.tsx` | read | `:281`: the rename action follows `session.rename`. No change. |
+| `packages/tui/src/config/v1/keybind.ts` | read | `:99,304`: the v1 `session_rename` mapping. Confirm that migration copies only the keys a user set, not v1 defaults (otherwise migrated users would get an explicit `ctrl+r` and lose search). Report what you find in `handoff.md`. |
+| `packages/tui/src/context/runtime.tsx` | read | Where `useTuiPaths().state` points in the app fixture, to seed `prompt-history.jsonl`. |
+| `packages/tui/test/kete/history-search.test.ts` | create | Pure tests (AC4 logic, AC5 resolve). |
+| `packages/tui/test/kete/history-search-prompt.test.tsx` | create | App-fixture tests (AC4 end to end, AC5 palette and keys). |
+| `packages/tui/test/fixture/app.ts`, `test/clear-session.test.tsx`, `test/command-selection.test.tsx` | read | `createAppFixture`, `mockInput.typeText`/key presses, a session fixture with fetch handlers. |
+| `packages/tui/test/prompt/history-provider.test.tsx` | read / change only if needed | History provider harness; must still pass. |
+| `packages/tui/test/config-v2.test.tsx` | read / change only if needed | `decodeInfo` + `resolve` pattern (`:10`, `:200-210`); must still pass. |
+| `docs/upstream-patches.md` | change (append a section; **use Edit, never Write**) | New section "Prompt history search (feature/history-search)": the four upstream files, why no seam works for each, and a sync checklist (history layers, focus effect, `resolve` keybind block, `Definitions`). |
+| `docs/history-search.md` | create | Short user guide: Ctrl+R, the keys in the bar, that rename moved to `<leader>shift+r`, how to get Ctrl+R rename back (`"keybinds": { "session.rename": "ctrl+r" }` in `cli.json`, which turns history search's Ctrl+R off), and how to rebind search. There is no root CHANGELOG; this doc and the PR body carry the change note. |
+
+Why no seam (for the patches doc):
+- Keybind defaults exist only in `Definitions`.
+- The override rule has to run where overrides are merged (`resolve`).
+- History entries are private to the provider's store.
+- The search must be a prompt-focused layer and render inside the prompt box. A slot claim can't target the
+  textarea or take focus, and the plugin API has no prompt-history access.
 
 ## Steps
-1. **Config schema.** Create `tui/src/kete/statusline-config.ts`:
-   - `ITEMS`, `DEFAULT_ITEMS`, labels.
-   - `KeteStatusLineConfig = Schema.Struct({ items: optional(Array(String)), colors: optional(Boolean) })`, with
-     `annotate` descriptions in the style of `Info`.
-   - `parse(value)` returns known IDs in order (deduped), the `unknown` list and `colors`. It falls back to
-     `DEFAULT_ITEMS` only when `items` is absent; `[]` means no items.
-   - The pure picker helpers and `save(...)`.
-
-   Then add the two marked lines to `tui/src/config/index.tsx`.
-2. **Row.** Create `tui/src/kete/statusline.tsx`:
-   - `fit` and `StatusLineView` (pure).
-   - `KeteStatusLineRow(props: { sessionID?: string; location?: LocationRef; actions?: ReturnType<typeof
-     useWorkingDirectoryActions>; running?: boolean })`. It collects each listed item through `useConfig`,
-     `useData`, `useClient`, `useLocation`, `useLocal`, `useTheme`, `useTuiPaths` and `useKetePermissionMode`.
-     Sandbox status is fetched once per location, as `sandbox-status.tsx` does. Each item recomputes only from its
-     own inputs: memos, no polling (spec Performance).
-   - `directory` gets the hover and mouse handlers from `actions`.
-3. **Plugin.** In the same file, `export default Plugin.define({ id: "kete.statusline" })`:
-   - An `append: "app"` claim registers the `statusline.configure` command (`slash: { name: "statusline" }`,
-     palette) through `context.keymap.layer`.
-   - A `createEffect` on `parse(config.data.statusline).unknown` shows one warning toast per distinct unknown list,
-     naming the IDs and the valid ones.
-   - The picker (a `DialogSelect` that stays open, as in dialog-config):
-     - one row per item, marked on or off;
-     - choosing an off item appends it;
-     - choosing an on item opens Hide / Move earlier / Move later;
-     - plus "Colours: on/off" and "Reset to default".
-   - Each change calls `config.update(save(...))`. Errors go to `toast.error` and are never swallowed. Register the
-     plugin in `builtins.ts` with a marked line.
-4. **Prompt hook.** In `component/prompt/index.tsx`, inside the idle `Match`, replace the location `<Show>` body
-   with a `kete_change start/end` block. It renders `props.hint` when set, otherwise `<KeteStatusLineRow
-   sessionID={props.sessionID} location={…same location as locationLabel()…} actions={locationActions} />`. Add one
-   marked `<KeteStatusLineRow running sessionID={props.sessionID} />` after `<PromptInterruptStatus/>`. Add the
-   import line, marked. Keep `locationLabel`/`locationLabelDisplay` only if other code still uses them; if they
-   become unused, delete them inside the marked block rather than leaving dead code, and say so in
-   `upstream-patches.md`. Don't reformat anything else.
-5. **Move the old indicators.** Remove the `prompt.footer.status` claims from `sandbox-status.tsx`,
-   `local-status.tsx` and `todo.tsx`. Narrow `useTodos`'s parameter. Add `balanceText` to `balance.tsx`.
-6. **Tests.**
-   - Create `tui/test/kete/statusline.test.tsx`.
-   - Create `cli/test/kete/statusline-config.test.ts`.
-   - Adjust any existing Kete TUI test that relied on the removed claims.
-7. **Docs.** Add the `docs/upstream-patches.md` section and `docs/statusline.md`.
-8. **Checks.** Run the Verification table top to bottom, then build the binary and check it in a real terminal:
-   - default row at 100, 60 and 40 columns;
-   - `/statusline` toggles and reorders, and `cli.json` changes;
-   - an unknown ID shows the warning toast;
-   - Unsandboxed still shows with `kete.sandbox` off;
-   - the running state shows the spinner, the interrupt hint and the items;
-   - clicking the directory opens the working-directory menu.
+1. **Pure module.** Create `tui/src/kete/history-search.ts` (`find`, `excerpt`, `keteHistorySearchKeys`,
+   `RENAME_DEFAULT`). Write `test/kete/history-search.test.ts` alongside it.
+2. **Keybinds.** In `config/keybind.ts`, add `prompt.history.search` and change `session.rename`'s default to
+   `RENAME_DEFAULT`, all marked. In `config/index.tsx`, add the marked import and the marked `resolve` line. Check
+   `config/v1/keybind.ts` migration as noted in Files.
+3. **History accessor.** Add the marked `entries()` to `prompt/history.tsx`.
+4. **Bar.** Create `tui/src/kete/history-search.tsx`:
+   - The controller creates signals per prompt instance.
+   - A `createEffect` closes the bar when `disabled()` turns true; `onCleanup` closes it.
+   - The bar's layer handles typing (via the input's `onInput`), older, accept, Esc and Ctrl+C.
+   - Settle the duplicate-id question from `context/keymap.tsx` first.
+5. **Prompt hook.** Add the marked import, controller, layer, focus condition and `<Show>` to
+   `component/prompt/index.tsx`. `onAccept` = `(entry) => { ref.set(structuredClone(unwrap(entry)));
+   setStore("mode", entry.mode ?? "normal") }`. Don't reformat anything else.
+6. **Prompt tests.** Create `test/kete/history-search-prompt.test.tsx` with `createAppFixture`, a seeded
+   `prompt-history.jsonl` and a session fixture.
+7. **Docs.** Append the `docs/upstream-patches.md` section with Edit. Create `docs/history-search.md`.
+8. **Checks.** Run the Verification table top to bottom. Then build the binary and check it in a real terminal
+   (macOS Terminal and iTerm2; Windows Terminal if available, otherwise say it wasn't checked):
+   - Ctrl+R in the prompt opens the bar;
+   - typing highlights the match;
+   - Ctrl+R walks older matches;
+   - Enter fills the prompt without sending;
+   - Esc leaves the draft, including an `@file` part, unchanged;
+   - `<leader>shift+r` opens rename in a session and in the session list dialog;
+   - with `"session.rename": "ctrl+r"` in `cli.json`, Ctrl+R renames and doesn't search;
+   - `<leader>r` still redoes after an undo.
 
 ## Verification
 | Criterion | Command (narrowest first) |
 |---|---|
-| AC1: default row shows directory, branch, mode and context at 100 columns; context % matches `contextUsage` for a fixture session | `cd packages/tui && bun test ./test/kete/statusline.test.tsx -t "default"`. Tests: (a) `parse(undefined)` gives `DEFAULT_ITEMS`; (b) the context item for fixture messages and models equals `100 - contextUsage(...).percent`; (c) a `testRender` of `StatusLineView` at width 100 with items from fixture inputs contains, in order, the directory, the branch, `Default` and `NN% left`. |
-| AC2: configured order; unknown IDs reported; drop from the end at 60 and 40 columns, no wrap | `cd packages/tui && bun test ./test/kete/statusline.test.tsx -t "order\|unknown\|narrow"`. Tests: `parse({ items: ["context", "mode", "nope"] })` gives `["context", "mode"]` with unknown `["nope"]`; the plugin's warning text names `nope`; `fit` at 60 and 40 keeps a prefix, keeps the sandbox warning while it applies, and each rendered frame has the row on one line. |
-| AC3: `/statusline` changes and persists the list | `cd packages/tui && bun test ./test/kete/statusline.test.tsx -t "picker"` (toggle, move and reset, then `save` applied to a draft with immer `produce`, as the store does), then `cd packages/cli && bun test ./test/kete/statusline-config.test.ts`. The CLI test uses the real `Config.layer` in a tmpdir: an update with a `statusline` draft is written to `cli.json`, read back by `get`, and leaves other keys and JSONC comments alone; a `cli.json` with an unknown item ID still decodes, and its other settings survive. |
-| Regressions in the moved indicators | `cd packages/tui && bun test ./test/kete/todo.test.tsx ./test/kete/sandbox-status.test.ts ./test/kete/local-models.test.tsx ./test/kete/balance.test.tsx ./test/kete/permission-mode.test.tsx`; `cd packages/cli && bun test ./test/config.test.ts` |
-| AC13 (P1): typecheck and tests | `cd packages/tui && bun run typecheck && bun test` (known: 2 `dialog-shell-output` timeouts that `main` has too); `cd packages/cli && bun run typecheck && bun test ./test/kete` |
-| AC13 (P1): lint | `bun run lint` (root) |
-| AC13 (P1): upstream hygiene; every upstream edit in `docs/upstream-patches.md` | `bun run --cwd packages/kete-tools upstream:check`; `git grep -n kete_change -- packages/tui/src/config/index.tsx packages/tui/src/component/prompt/index.tsx packages/tui/src/plugin/builtins.ts` |
-| AC13 (P1): before the PR | `bun run --cwd packages/kete-tools verify --base main` |
-| AC13 (P1): built binary in a real terminal | `cd packages/cli && bun run build --single --skip-install --skip-web-ui`, then run `dist/cli-<os>-<arch>/bin/kete` through the checklist in step 8. |
+| AC4 logic: newest match first, repeat walks older, dedupe, case-insensitive, empty query and no match | `cd packages/tui && bun test ./test/kete/history-search.test.ts -t "find"` |
+| AC4 in the prompt: Ctrl+R finds the newest match; Ctrl+R again is older; Enter puts it in the textarea, not submitted, mode restored for a shell entry; Esc leaves the typed draft unchanged | `cd packages/tui && bun test ./test/kete/history-search-prompt.test.tsx -t "search"`. Seed three entries (`"fix tests"`, `"build"`, `"fix lint"`); type the draft `"draft"`; press Ctrl+R and type `fix`; assert the bar shows `fix lint`; press Ctrl+R and assert `fix tests`; press Enter and assert the textarea text is `fix tests` and no prompt request was sent. Second test: same, then Esc; the textarea is `"draft"`. |
+| AC5: rename at its new default, in the palette, and a user override wins | `cd packages/tui && bun test ./test/kete/history-search.test.ts -t "keys"`:<br>(a) `Definitions["session.rename"].default` is `RENAME_DEFAULT` and `prompt.history.search` is `ctrl+r`;<br>(b) `resolve(decodeInfo({ keybinds: { "session.rename": "ctrl+r" } }))` gives rename `ctrl+r` and search `[]`;<br>(c) both set explicitly → both kept;<br>(d) rename set to another key → search keeps `ctrl+r`.<br>Then `bun test ./test/kete/history-search-prompt.test.tsx -t "rename"`: in a session, the leader sequence opens the rename dialog; Ctrl+P, type "Rename", and "Rename session" is listed; with the `ctrl+r` override, Ctrl+R in the focused prompt opens rename and not the bar. |
+| Regressions (history, config, keymap) | `cd packages/tui && bun test ./test/prompt/history.test.ts ./test/prompt/history-provider.test.tsx ./test/config-v2.test.tsx ./test/config.test.tsx ./test/keybind.test.ts ./test/keymap.test.tsx ./test/keymap-scope.test.tsx ./test/kete/statusline.test.tsx` |
+| AC13 (P2): typecheck and tests | `cd packages/tui && bun run typecheck && bun test` (known: 2 `dialog-shell-output` timeouts that `main` has too; report anything else) |
+| AC13 (P2): lint | `bun run lint` (root) |
+| AC13 (P2): upstream hygiene; every upstream edit in `docs/upstream-patches.md` | `bun run --cwd packages/kete-tools upstream:check`; `git grep -n kete_change -- packages/tui/src/config/keybind.ts packages/tui/src/config/index.tsx packages/tui/src/prompt/history.tsx packages/tui/src/component/prompt/index.tsx` |
+| AC13 (P2): before the PR | `bun run --cwd packages/kete-tools verify --base main` |
+| AC13 (P2): built binary in a real terminal | `cd packages/cli && bun run build --single --skip-install --skip-web-ui`, then run `dist/cli-<os>-<arch>/bin/kete` through the step 8 checklist. |
 
 No protocol or client regeneration: the TUI config isn't part of the server schema (config-kete card).
 
 ## Cards to update after the build
-- `ui-branding`:
-  - Quick answers on footer slots: `prompt.footer.status` no longer gets the sandbox, Offline or todo claims, and the status line is rendered by the prompt's marked hook.
-  - The TUI config file is `cli.json`, and an invalid file is dropped whole.
-  - Add the `tui/src/kete/statusline*` paths.
-- `config-kete`: the `statusline` TUI key, with the lenient-schema reason.
-- `permissions`: the TUI mode is now also shown by the status line's `mode` item.
-- `sandbox`: the TUI warning on the prompt row comes from the status line (pinned); the home footer is unchanged.
-- `todo` and `local-models`: footer progress and Offline are now the opt-in status line items `todo` and `local-model`.
-- `gateway`: the `balance` item and `balanceText`.
-- New Quick answers for every "Docs enough: no" gap in `handoff.md`.
+- `ui-branding` Quick answers:
+  - prompt history search (`tui/src/kete/history-search*`, the prompt hook, `entries()` on the history provider);
+  - where TUI keybind defaults live (`config/keybind.ts` `Definitions`) and how a layer command's `id` takes its
+    configured key (`context/keymap.tsx`);
+  - the `resolve` rule that a user's rename key wins over history search;
+  - the rename default (`<leader>shift+r`, or whatever Q1 decides) and that `<leader>r` is redo.
+- `config-kete`: TUI keybind overrides live in `cli.json` `keybinds`, and `resolve` adjusts defaults.
+- Every "Docs enough: no" gap in `handoff.md` becomes a Quick answers line.
+- Still owed from P1: the card updates listed in the P1 "Done" note above.

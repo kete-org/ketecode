@@ -9,6 +9,7 @@ import { watch } from "fs"
 import path from "path"
 import { TuiKeybind } from "./keybind"
 import { KeteStatusLineConfig } from "../kete/statusline-config" // kete_change
+import { keteHistorySearchKeys } from "../kete/history-search" // kete_change
 
 export interface Interface {
   readonly path?: string
@@ -290,6 +291,7 @@ export function resolve(
         .join(",")
     }
   }
+  Object.assign(keybinds, keteHistorySearchKeys(input.keybinds ?? {})) // kete_change
 
   return {
     ...input,
