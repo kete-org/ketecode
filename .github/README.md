@@ -79,6 +79,21 @@ kete auth login                   # add a model provider key (Anthropic, OpenAI,
 kete login                        # or sign in to a Kete account to use the gateway
 ```
 
+### Shell completions
+
+Tab completion for `kete`'s commands and flags. `kete completion` prints these lines; add the one for
+your shell, then open a new shell:
+
+| Shell | Where | Line |
+| --- | --- | --- |
+| bash | `~/.bashrc` | `eval "$(kete completion bash)"` |
+| zsh | `~/.zshrc`, after `compinit` | `eval "$(kete completion zsh)"` |
+| fish | run once | `kete completion fish > ~/.config/fish/completions/kete.fish` |
+| PowerShell | `$PROFILE` (Windows PowerShell 5.1 or PowerShell 7) | `kete completion powershell \| Out-String \| Invoke-Expression` |
+
+`kete --completions <bash|zsh|fish>` prints the same bash, zsh and fish scripts. Completions cover
+commands, subcommands and flags, not values such as session IDs or model names.
+
 ## What it does
 
 - **Works in your repository.** Searches and reads only the files that matter, edits across
