@@ -26,7 +26,7 @@ import type { SyncedMcpServer } from "@opencode/util/kete/sync/contract"
 import { KeteSync } from "@opencode/util/kete/sync/sync"
 import { testEffect } from "../lib/effect"
 import { agentHost, host } from "../plugin/host"
-import { permissions, registries } from "./sync-fixture"
+import { permissions, registries, rpc } from "./sync-fixture"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Agent.node, Bus.node, FSUtil.node, Global.node])))
 const org = "573b7e15-80c5-4db4-9e43-a8841b97f055"
@@ -217,7 +217,7 @@ describe("synced skills and MCP servers in the runtime", () => {
         ],
         servers: { github: new Mcp.LocalConfig({ type: "local", command: ["my-github"] }) },
       })
-      const pluginHost = host({ permission: permissions().host, agent: agentHost(agents), skill: local.host.skill, mcp: local.host.mcp, session: { hook: (() => Effect.void) as unknown as Plugin.Context["session"]["hook"] } })
+      const pluginHost = host({ rpc: rpc().host, permission: permissions().host, agent: agentHost(agents), skill: local.host.skill, mcp: local.host.mcp, session: { hook: (() => Effect.void) as unknown as Plugin.Context["session"]["hook"] } })
       yield* AgentPlugin.Plugin.effect(pluginHost)
       yield* KeteAgentSync.make({ registration: false, interval: "1 hour", account: options }).effect(pluginHost).pipe(
         Effect.provide(Config.testLayer([])),
@@ -252,7 +252,7 @@ describe("synced skills and MCP servers in the runtime", () => {
       cleanup.push(() => rm(root, { recursive: true, force: true }))
       const agents = yield* Agent.Service
       const local = registries({ servers: { github: new Mcp.LocalConfig({ type: "local", command: ["my-github"] }) } })
-      const pluginHost = host({ permission: permissions().host, agent: agentHost(agents), skill: local.host.skill, mcp: local.host.mcp, session: { hook: (() => Effect.void) as unknown as Plugin.Context["session"]["hook"] } })
+      const pluginHost = host({ rpc: rpc().host, permission: permissions().host, agent: agentHost(agents), skill: local.host.skill, mcp: local.host.mcp, session: { hook: (() => Effect.void) as unknown as Plugin.Context["session"]["hook"] } })
       yield* KeteAgentSync.make({ registration: false,
         interval: "1 hour",
         account: { config: path.join(root, "c"), data: path.join(root, "d"), native: memoryStore() },

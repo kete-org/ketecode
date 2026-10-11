@@ -9,6 +9,7 @@ import { watch } from "fs"
 import path from "path"
 import { TuiKeybind } from "./keybind"
 import { KeteStatusLineConfig } from "../kete/statusline-config" // kete_change
+import { keteHistorySearchKeys } from "../kete/history-search" // kete_change
 
 export interface Interface {
   readonly path?: string
@@ -241,6 +242,7 @@ export const Info = Schema.Struct({
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
   cursor: Schema.optional(Cursor),
   statusline: Schema.optional(KeteStatusLineConfig), // kete_change
+  tips: Schema.optional(Schema.Boolean).annotate({ description: "Show a tip on the home screen" }), // kete_change
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
@@ -290,6 +292,7 @@ export function resolve(
         .join(",")
     }
   }
+  Object.assign(keybinds, keteHistorySearchKeys(input.keybinds ?? {})) // kete_change
 
   return {
     ...input,

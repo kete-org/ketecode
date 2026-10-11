@@ -1,13 +1,14 @@
 ---
 module: todo
 paths: [packages/core/src/kete/todo.ts, packages/schema/src/kete/todo.ts, packages/tui/src/kete/todo.tsx, packages/app/src/kete/todo.ts, packages/app/src/kete/todo-dock.tsx]
-verified-at: e81d6b17f0
+verified-at: a6f140247e
 ---
 ## Quick answers
 - Did upstream have a todo tool? Yes: v2 removed `todowrite` in `7feefb697f` (#35989, DB table, app dock, prompts). Kete re-adds it as a plugin with the same name and item shape; session-ui still titles `todowrite` parts and the timeline still hides them (`session-ui/src/timeline/projection.ts:587`), so the list shows in the dock, not inline.
 - Where is the list stored? Plugin storage (`ctx.storage`, the global SQLite KV table, namespaced by plugin id) under `session/<sessionID>` (`core/src/kete/todo.ts:62`); removed on `session.deleted` (`:144`).
 - How do clients read it? `kete.todo` plugin RPC `get({sessionID})` and the `rpc.kete.todo.updated` event (`schema/src/kete/todo.ts`); no HTTP endpoint or protocol change. Call with the session's `location`.
 - Permission? Action `todowrite` (catch-all allow; policies can deny, which hides the tool); in `KetePermissionMode.planAllowed`. Explore denies it (its `*: deny`).
+- Where does the TUI show progress? The sidebar list (`tui/src/kete/todo.tsx:78`, the plugin claims only `sidebar.content`, `:129-134`) and, opt-in, the status line's `todo` item (`statusline.tsx:283`, text from `footerLabel` `todo.tsx:37`; loads todos only when `todo` is in `statusline.items`). `TodoFooter` (`:113`) is no longer claimed by a slot.
 - Is the list in the system prompt? Only a one-line instruction when the tool is offered (`:136`); not the list (prompt caching).
 
 ## Purpose
@@ -15,7 +16,7 @@ A per-session task list the agent maintains with `todowrite` so the user sees pl
 
 ## Entry points
 - `KeteTodo.Plugin` (`core/src/kete/todo.ts:73`), registered last in `pre` (`core/src/plugin/internal.ts:302`).
-- TUI plugin `kete.todo` (`tui/src/kete/todo.tsx`), registered in `tui/src/plugin/builtins.ts:27`.
+- TUI plugin `kete.todo` (`tui/src/kete/todo.tsx`), registered in `tui/src/plugin/builtins.ts:28`.
 - Web dock `KeteTodoDock` (`app/src/kete/todo-dock.tsx`), rendered by `app/src/composer/composer.tsx:29`.
 
 ## Key files

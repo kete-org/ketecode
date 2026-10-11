@@ -1,5 +1,13 @@
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
+// kete_change start: Open issue on Kete's tracker, with a scrubbed report
+import open from "open"
+import { Global } from "@opencode/util/global"
+import { KeteBugReport } from "@opencode/util/kete/bug-report"
+import { KeteBugReportFile } from "@opencode/util/kete/bug-report-file"
+/** The longest crash message the issue title and body keep, in UTF-8 bytes. */
+const MAX_MESSAGE = 200
+// kete_change end
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import { createSignal, For, Show } from "solid-js"
 import { getScrollAcceleration } from "../util/scroll"
@@ -14,6 +22,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
   const clipboard = useClipboard()
   const app = useTuiApp()
   const [copyState, setCopyState] = createSignal<"idle" | "copied" | "failed">("idle")
+  const [openState, setOpenState] = createSignal<"idle" | "opened" | "failed">("idle") // kete_change
 
   // Safe fallback palette per mode (mirrors theme/assets/opencode.json) since the
   // theme context may be the thing that crashed.
@@ -44,14 +53,25 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
 
   const message = props.error.message || "An unknown error occurred."
   const stack = props.error.stack || "No stack trace available."
-  const issueURL = buildIssueURL(message, stack, app.version)
+  // kete_change start: secrets and the home directory scrubbed from the report
+  // The message is third-party text of any length: one line, capped, paths and payloads masked.
+  const home = KeteBugReportFile.homes(Global.Path.home)
+  const issueURL = buildIssueURL(KeteBugReport.scrubLine(message, home, MAX_MESSAGE), KeteBugReport.scrub(stack, home), app.version)
+  // kete_change end
 
   const copyReport = () => {
     void clipboard
-      .write(issueURL.searchParams.get("description") ?? message) // kete_change: plain report, no Kete tracker yet
+      .write(issueURL.searchParams.get("description") ?? message) // kete_change: copies the report text, not the link
       .then(() => setCopyState("copied"))
       .catch(() => setCopyState("failed"))
   }
+  // kete_change start
+  const openIssue = () => {
+    void open(issueURL.toString())
+      .then(() => setOpenState("opened"))
+      .catch(() => setOpenState("failed"))
+  }
+  // kete_change end
 
   const actions = [
     {
@@ -60,6 +80,13 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
       copy: true,
       onUse: copyReport,
     },
+    // kete_change start
+    {
+      key: "o",
+      label: () => ({ idle: "Open issue", opened: "✓ Opened", failed: "Open failed" })[openState()],
+      onUse: openIssue,
+    },
+    // kete_change end
     { key: "r", label: () => "Restart", onUse: props.reset },
     { key: "q", label: () => "Quit", onUse: () => exit() },
   ]
@@ -98,6 +125,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
     if (evt.name === "end" && scroll) return scroll.scrollTo(scroll.scrollHeight)
     if (evt.name === "q") return exit()
     if (evt.name === "c") return copyReport()
+    if (evt.name === "o") return openIssue() // kete_change
     if (evt.name === "r") return props.reset()
   })
 
@@ -210,7 +238,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
                 ? "Report copied to the clipboard." // kete_change
                 : copyState() === "failed"
                   ? "Clipboard write failed. Try again or report the crash manually."
-                  : "Copy the report to keep a record of this crash." /* kete_change */}
+                  : KeteBugReport.LINK_NOTICE /* kete_change */}
             </text>
             {/* kete_change */}
             <text fg={colors.muted}>{Brand.displayName} {app.version}</text>
@@ -225,7 +253,7 @@ function buildIssueURL(message: string, stack: string, version: string) {
   // Field keys match the ids in .github/ISSUE_TEMPLATE/bug-report.yml so the issue
   // form opens pre-filled. Populating os/terminal/reproduce keeps the report past
   // the contributing-guidelines compliance check, which pushes for system info.
-  const url = new URL("https://github.com/anomalyco/opencode/issues/new?template=bug-report.yml")
+  const url = new URL(`${Brand.urls.issues}/new?template=bug-report.yml`) // kete_change
   url.searchParams.set("title", `TUI crash: ${message}`)
   url.searchParams.set("opencode-version", version)
   url.searchParams.set("os", describeOS())

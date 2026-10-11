@@ -10,6 +10,7 @@
     "upstream:check": "bun src/check.ts",
     "verify": "bun src/verify.ts",
     "release": "bun src/release.ts",
+    "changelog:check": "bun src/changelog-check.ts",
     "distribute": "bun src/distribute.ts",
     "role-check": "bun src/role-check.ts",
     "typecheck": "tsgo --noEmit",

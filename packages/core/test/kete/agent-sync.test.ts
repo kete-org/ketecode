@@ -14,6 +14,7 @@ import { AgentPlugin } from "@opencode/core/plugin/agent"
 import type { Plugin } from "@opencode/plugin/effect"
 import type { SessionModelRequest } from "@opencode/plugin/effect/session"
 import { Document, Info } from "@opencode/schema/config"
+import { KeteSyncRpc } from "@opencode/schema/kete/sync"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
@@ -22,7 +23,7 @@ import type { KeteSecretStore } from "@opencode/util/kete/secret-store"
 import { KeteSyncCache } from "@opencode/util/kete/sync/cache"
 import { KeteSync } from "@opencode/util/kete/sync/sync"
 import { testEffect } from "../lib/effect"
-import { permissions, registries } from "./sync-fixture"
+import { permissions, registries, rpc } from "./sync-fixture"
 import { agentHost, host } from "../plugin/host"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Agent.node, Bus.node, FSUtil.node, Global.node])))
@@ -135,7 +136,9 @@ const start = (
     const agents = yield* Agent.Service
     const hooks: Array<(evt: ModelRequest) => Effect.Effect<void, unknown>> = []
     const extra = registries()
+    const rpcs = rpc()
     const pluginHost = host({
+      rpc: rpcs.host,
       permission: permissions().host,
       agent: agentHost(agents),
       skill: extra.host.skill,
@@ -153,7 +156,13 @@ const start = (
     yield* KeteAgentSync.make({ registration: false, interval, account: options, ...job }).effect(pluginHost).pipe(
       Effect.provide(Config.testLayer(localConfig)),
     )
-    return { agents, hooks }
+    // `kete.sync` `status`, as a client would call it.
+    const status = () => {
+      const handler = rpcs.handlers.get(KeteSyncRpc.ID)?.status
+      if (!handler) return Effect.die(new Error("kete.sync was not registered"))
+      return handler({}).pipe(Effect.map(Schema.decodeUnknownSync(KeteSyncRpc.Status)), Effect.orDie)
+    }
+    return { agents, hooks, status }
   })
 
 const eventually = <A>(effect: Effect.Effect<A>, ready: (value: A) => boolean) =>
@@ -278,6 +287,41 @@ describe("KeteAgentSync", () => {
       expect(developer?.description).toBe("The developer. · Managed by Kete Labs")
       yield* Effect.promise(() => Bun.sleep(200))
       expect(yield* Effect.promise(() => readFile(KeteSyncCache.file(options.config, org), "utf8"))).toBe(before)
+    }),
+  )
+
+  it.live("status: signed out reports no managed agents", () =>
+    Effect.gen(function* () {
+      const options = yield* account(undefined)
+      const { status } = yield* start(options)
+      expect(yield* status()).toEqual({ signedIn: false, managedAgents: 0, offline: false })
+    }),
+  )
+
+  it.live("status: signed in reports the cached managed-agent count, and logout shows at once", () =>
+    Effect.gen(function* () {
+      const fake = platform([{ status: 200, etag: '"e1"', agents: [managed("developer"), managed("code-reviewer")] }])
+      const options = yield* account(fake.url)
+      const { status } = yield* start(options)
+      // Before the first sync lands nothing is cached: 0 agents, still signed in.
+      const first = yield* status()
+      expect(first.signedIn).toBe(true)
+      const synced = yield* eventually(status(), (value) => value.managedAgents === 2)
+      expect(synced).toEqual({ signedIn: true, managedAgents: 2, offline: false })
+      // `kete logout` while the server runs: the cache stays loaded, but status says signed out.
+      yield* Effect.promise(() => rm(KeteAccount.file(options), { force: true }))
+      expect(yield* status()).toEqual({ signedIn: false, managedAgents: 2, offline: false })
+    }),
+  )
+
+  it.live("status: offline mode reports offline, with the cached agents still counted", () =>
+    Effect.gen(function* () {
+      const fake = platform([{ status: 200, etag: '"e1"', agents: [managed("developer")] }])
+      const options = yield* account(fake.url)
+      const first = yield* start(options)
+      yield* eventually(first.status(), (value) => value.managedAgents === 1)
+      const second = yield* start(options, "1 hour", { environment: { OPENCODE_OFFLINE: "1" } })
+      expect(yield* second.status()).toEqual({ signedIn: true, managedAgents: 1, offline: true })
     }),
   )
 

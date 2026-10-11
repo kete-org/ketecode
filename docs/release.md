@@ -124,8 +124,13 @@ Everything below is created by a maintainer; no workflow creates repositories, s
 ## Cut a release
 
 1. Make sure `main` is green (`kete-build`) and contains everything for the release.
-2. Update `packages/kete-vscode/CHANGELOG.md` for the version (the Marketplace shows it) and
-   merge that.
+2. Update `packages/kete-vscode/CHANGELOG.md` for the version (the Marketplace shows it). In the
+   root `CHANGELOG.md` (the CLI's notes, which `kete` shows once after an upgrade and with
+   `/release-notes`), rename `## Unreleased` to `## X.Y.Z` and start a new empty `## Unreleased`
+   above it. Merge that. The release workflow refuses a stable tag without its `## X.Y.Z` section
+   (`bun run --cwd packages/kete-tools changelog:check kete-vX.Y.Z` checks it locally); pre-release
+   tags don't need one, and their builds carry the `## Unreleased` notes. Never describe a security
+   fix there before its advisory is public.
 3. Tag `main` and push the tag:
 
    ```sh
@@ -226,8 +231,9 @@ publishing.
 
 ## What CI does (`.github/workflows/kete-release.yml`)
 
-1. **build**: cross-compiles every CLI target on Linux, archives each with `LICENSE` and
-   `NOTICE`, packages one extension per VS Code platform with its binary, writes `SHA256SUMS`,
+1. **build**: checks that a stable tag has its `CHANGELOG.md` section (`changelog:check`; each binary
+   embeds its version's section, previews and pre-releases `## Unreleased`), then cross-compiles
+   every CLI target on Linux, archives each with `LICENSE` and `NOTICE`, packages one extension per VS Code platform with its binary, writes `SHA256SUMS`,
    and verifies it. Then assembles the public file set (`distribute public`: every CLI archive,
    checked against that `SHA256SUMS`, plus `install.sh` and `install.ps1`, with a `SHA256SUMS` of
    exactly those files) as the `public-release` artifact; manual runs do this too.

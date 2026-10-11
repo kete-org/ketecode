@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { Argument, Flag, GlobalFlag } from "effect/unstable/cli"
 import { Brand } from "@opencode/util/kete/brand"
 import { Spec } from "../framework/spec"
+import { KeteCompletion } from "./completion"
 
 // Same text as upstream `ServerParams` (`commands/commands.ts:17-26`), which isn't exported.
 const ServerParams = {
@@ -126,6 +127,29 @@ export const specs = [
         Flag.withDescription("Output format"),
         Flag.withDefault("default"),
       ),
+    },
+  }),
+  Spec.make("completion", {
+    description: `Print a shell completion script for ${Brand.cliName} (run without a shell for install lines)`,
+    params: {
+      shell: Argument.choice("shell", KeteCompletion.shells).pipe(
+        Argument.withDescription("Shell to print the script for: bash, zsh, fish or powershell"),
+        Argument.optional,
+      ),
+    },
+  }),
+  Spec.make("bug", {
+    description: `Report a problem: shows a privacy-safe report to review, saves it to a file, and offers to open a GitHub issue with it`,
+    params: {
+      description: Argument.string("description").pipe(
+        Argument.withDescription("What went wrong (optional; it becomes the issue title)"),
+        Argument.variadic({ min: 0 }),
+      ),
+      print: Flag.boolean("print").pipe(
+        Flag.withDescription("Only print the report and save it to a file: never ask, never open a browser"),
+        Flag.withDefault(false),
+      ),
+      ...ServerParams,
     },
   }),
   Spec.make("job", {

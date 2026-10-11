@@ -69,6 +69,7 @@ import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { PromptMetadataRow } from "./metadata"
 import * as KetePermissionModeView from "../../kete/permission-mode" // kete_change
 import { KeteStatusLineRow } from "../../kete/statusline" // kete_change (abbreviateHome and truncateFilePath imports moved there)
+import { createKeteHistorySearch, KeteHistorySearchBar } from "../../kete/history-search-bar" // kete_change
 
 export type PromptProps = {
   sessionID?: string
@@ -728,7 +729,8 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.visible === false || disabled() || dialog.stack.length > 0) {
+    // kete_change: the open history search bar takes focus like a dialog
+    if (props.visible === false || disabled() || dialog.stack.length > 0 || keteSearch.active()) {
       if (input.focused) input.blur()
       input.focusable = false
       return
@@ -1082,6 +1084,33 @@ export function Prompt(props: PromptProps) {
       ],
     }
   })
+
+  // kete_change start: prompt history search (Ctrl+R), src/kete/history-search-bar.tsx
+  const keteSearch = createKeteHistorySearch({
+    entries: () => history.entries(),
+    disabled,
+    onAccept: (entry) => {
+      ref.set(structuredClone(unwrap(entry)))
+      setStore("mode", entry.mode ?? "normal")
+    },
+  })
+
+  Keymap.createLayer(() => {
+    return {
+      priority: 1,
+      target: inputTarget,
+      enabled: inputTarget() !== undefined && !disabled() && !auto()?.visible && input !== undefined,
+      commands: [
+        {
+          id: "prompt.history.search",
+          title: "Search prompt history",
+          group: "Prompt",
+          run: () => keteSearch.open(),
+        },
+      ],
+    }
+  })
+  // kete_change end
 
   let submitting = false
   async function submit(delivery: SessionInbox.Delivery = "steer") {
@@ -1721,6 +1750,11 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Show>
+            {/* kete_change start: prompt history search bar */}
+            <Show when={keteSearch.active()}>
+              <KeteHistorySearchBar search={keteSearch} />
+            </Show>
+            {/* kete_change end */}
             <textarea
               width="100%"
               placeholder={placeholderText()}

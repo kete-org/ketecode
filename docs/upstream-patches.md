@@ -755,6 +755,48 @@ claims (upstream's side-question indicator, `feature-plugins/prompt/btw.tsx`) st
 **Sync checklist:** re-check the prompt's idle and running `Match` blocks and the footer `Slot`s, and
 `Info` for the new key. If upstream adds its own configurable status line, compare and drop one.
 
+### Prompt history search (feature/history-search)
+
+Ctrl+R in the focused prompt opens an inline search over prompt history (`tui/src/kete/history-search.ts`,
+the pure search and key rule; `tui/src/kete/history-search-bar.tsx`, the controller and bar;
+`docs/history-search.md`). The textarea isn't changed while searching, so Esc leaves the draft as it was.
+`session.rename`'s default moves from `ctrl+r` to `<leader>shift+r` (maintainer decision, task
+`2026-10-10-tui-codex-parity` Q1); `session.redo` keeps `<leader>r`.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/config/keybind.ts` | Import `RENAME_DEFAULT`/`SEARCH_DEFAULT`; `session.rename`'s default is `RENAME_DEFAULT`; new `prompt.history.search` after `prompt.history.next` | keybind defaults exist only in `Definitions` |
+| `tui/src/config/index.tsx` | Import; one line in `resolve` after the `terminal.suspend` block: `keteHistorySearchKeys` drops from search's default any key the user gave rename (unless they set search too) | the rule must run where overrides are merged |
+| `tui/src/prompt/history.tsx` | `entries()` on the provider: the history array, read-only | entries are private to the provider's store |
+| `tui/src/component/prompt/index.tsx` | Import; a `kete_change start/end` block after the history ↑/↓ layers (controller + a layer targeted at the textarea binding `prompt.history.search`); one condition in the focus effect (the open bar takes focus like a dialog); the bar in a `<Show>` above the textarea | the search must be a prompt-focused layer rendered inside the prompt box; a slot claim can't target the textarea or take focus, and the plugin API has no prompt-history access |
+
+A v1 `tui.json` migration (`cli/src/config/migrate.ts`) copies only keys the user wrote, so migrated
+configs don't pin rename to v1's `ctrl+r` default (`cli/test/kete/history-search-migrate.test.ts`).
+Upstream's keybind docs (`packages/web/src/content/docs/*/keybinds.mdx`, `services/www/.../keybinds.mdx`)
+still say rename is `ctrl+r`; they are upstream's site and are left unchanged.
+
+**Sync checklist:** re-check the prompt's history ↑/↓ layers (the search layer mirrors their `enabled`
+condition), the focus effect, `resolve`'s keybind block, and `Definitions` (rename's default and the new
+key). If upstream adds its own history search or binds Ctrl+R in the prompt, compare and drop one.
+
+### Home notices and tips (feature/home-notices)
+
+Notices under the home logo, the same text as the VS Code chat panel (`util/src/kete/notices.ts`, shared;
+the TUI passes `/agents`, the panel `/agent`), and one tip per launch (`tui/src/kete/home-notices.tsx`,
+`tui/src/kete/home-tips.ts`, `docs/home-notices.md`). Conditions come from the new `kete.sync` `status`
+plugin RPC (`schema/src/kete/sync.ts`, registered in `core/src/kete/sync/plugin.ts`) and upstream's
+`fs.list`, so no new HTTP endpoint and no protocol regeneration.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/routes/home.tsx` | Import; `<KeteHomeNotices />` in a `kete_change start/end` block after `<UpdateNotification>` | `SlotMap` (`plugin/src/tui/context.ts`) has no slot under the logo; adding one changes the plugin API contract |
+| `tui/src/config/index.tsx` | `tips` field on `Info` (one line after `statusline`) | the TUI config schema is upstream's; a display setting like `animations` |
+| `tui/test/fixture/tui-client.ts` | Answers `/api/rpc/kete.sync/status` (signed out, no agents) beside the other `kete.*` RPC lines | the fixture throws on unknown requests; upstream already answers `/api/fs/list` |
+
+**Sync checklist:** re-check `home.tsx`'s column (logo, `UpdateNotification`, the Kete bottom spacer,
+prompt): the notices measure their own height and render only whole notices, so the prompt keeps its rows.
+If upstream adds a slot under the logo or its own home tips, move to it and drop the `home.tsx` edit.
+
 ### YAML-only front matter (GHSA-m7hc-g593-r9wg)
 
 | File | Change |
@@ -1061,3 +1103,61 @@ trusted; never in job mode. The config schema change regenerated `protocol/opena
 **Sync checklist:** if upstream adds config-declared hooks, compare semantics and trust handling
 before keeping both. If upstream changes `tool.execute.before/after`, `session.prompt` or the
 session execution/permission/form events, re-check the event mapping in `kete/hooks.ts`.
+
+## Shell completions (feature/shell-completions)
+
+`kete completion [bash|zsh|fish|powershell]` (`cli/src/kete/completion*.ts`, `.github/README.md`
+"Shell completions"). bash, zsh and fish are Effect's own `--completions` scripts: the handler rebuilds
+the command tree from the `Spec` nodes the way `framework/runtime.ts`'s `provide` does (without
+handlers) and captures `--completions <shell>`. PowerShell is Kete's generator; each command's flags
+come from its captured `--help` doc, because a command's flags are otherwise reachable only through
+Effect internals. The spec is in `KeteCommands.specs`, so `commands.ts` is unchanged.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/src/index.ts` | `completion` handler → `kete/completion-command.ts` (one marked line) | the handler map is the only place a command's handler is registered |
+
+**Sync checklist:** if upstream changes `provide` in `framework/runtime.ts` (how subcommands and alias
+nodes are attached) or `Runtime.run`'s global flags, mirror it in `kete/completion-tree.ts`'s
+`attach`/`build`; `test/kete/completion.test.ts` compares `kete completion <shell>` with
+`kete --completions <shell>` and fails if they drift. If upstream adds its own `completion` command,
+compare and drop one.
+
+## Release notes (feature/release-notes)
+
+The root `CHANGELOG.md` (Kete-owned) is the CLI's user-facing notes. `cli/script/kete-release-notes.ts`
+reads the section for the version being built (`## Unreleased` for a preview or pre-release; nothing
+when it's missing) through `@opencode/util/kete/changelog`, and the build embeds it as
+`KETE_RELEASE_NOTES`. The builtin TUI plugin `tui/src/kete/release-notes.tsx` adds `/release-notes` and
+shows the notes once after an upgrade (TUI storage `kete-release-notes`). `kete-tools changelog:check`
+fails a stable tag without its section (`kete-release.yml`). Runbook: `docs/release.md` step 2.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/script/build.ts` | Import; `releaseNotes` computed once; `KETE_RELEASE_NOTES` in `define` | the build's `define` map is the only way to embed a build-time constant |
+| `tui/src/plugin/builtins.ts` | Import; `KeteReleaseNotes` in `builtins` | builtin plugin registration list |
+| `tui/test/fixture/app.ts` | Optional `app` input (version, channel) | the fixture hard-codes the app; tests need a release version and channel |
+
+**Sync checklist:** if upstream changes how `build.ts` builds (several `Bun.build` calls, a different
+`define`), keep `KETE_RELEASE_NOTES` in every one that bundles the TUI. If upstream adds its own
+changelog or "what's new" view, compare and drop one.
+
+## Problem reports (feature/bug-report)
+
+`kete bug [description]` (`cli/src/kete/bug.ts`, `bug-flow.ts`) and `/feedback` (alias `/bug`, builtin TUI
+plugin `tui/src/kete/feedback.tsx`, side effects in `feedback-deps.ts`) build the same privacy-safe report
+with `@opencode/util/kete/bug-report` (scrubbing, log field allowlist, issue link) and
+`bug-report-file` (log tail, 0600 save). `Brand.urls.issues` is now Kete's public tracker and
+`Brand.urls.securityReport` the private advisory form. The browser opens the pre-filled bug-report
+form only on the person's yes / Open issue; opening it sends the report to GitHub in the link, and it
+becomes public only when the person submits the issue (`KeteBugReport.LINK_NOTICE`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/src/index.ts` | `bug` handler → `kete/bug.ts` (one marked line) | the handler map is the only place a command's handler is registered |
+| `tui/src/plugin/builtins.ts` | Import; `KeteFeedback` in `builtins` | builtin plugin registration list |
+| `tui/src/component/error-component.tsx` | Imports (`open`, `Global`, `KeteBugReport`, `KeteBugReportFile`); message and stack scrubbed (home → `~`, secrets) before the report is built, and the message cut to one line of at most 200 bytes with paths and payloads masked (`scrubLine`, `MAX_MESSAGE`); an "Open issue" action (key `o`) that opens the form; `buildIssueURL`'s base is `Brand.urls.issues` instead of OpenCode's tracker; footer text (`KeteBugReport.LINK_NOTICE`) | the crash screen is the error boundary's fallback, rendered outside the plugin tree, so a plugin can't add an action to it |
+
+**Sync checklist:** if upstream changes the crash screen's actions, key handler or `buildIssueURL`, keep the
+scrubbing, the Kete tracker base and the Open issue action. If upstream adds its own `bug`/`feedback`
+command or a `/feedback` slash command, compare and drop one.

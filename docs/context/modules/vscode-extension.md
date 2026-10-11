@@ -1,7 +1,7 @@
 ---
 module: vscode-extension
 paths: [packages/kete-vscode/**, packages/app/src/kete/vscode-*.ts, packages/app/src/kete/vscode-*.tsx]
-verified-at: f85913ed4a
+verified-at: a6f140247e
 ---
 
 ## Quick answers
@@ -72,6 +72,26 @@ verified-at: f85913ed4a
   [--assert]`) and in CI: `kete-release.yml`'s `extension-e2e` job (tags and manual dispatch) runs it
   with `--assert` on the linux-x64 `.vsix` in pinned, SHA-256-checked VS Code and VSCodium archives
   under xvfb. Not in `kete-build.yml` (free-minutes budget).
+- **When does each "what's new" notice show, and where is it rendered?** There is no condition on
+  portal agents or `AGENTS.md`: `NOTICES` (`packages/kete-vscode/src/panel.ts:16`, ids
+  `portal-agents` and `agents-md`) is `KeteNotices.list({ agentCommand: "/agent" })` from
+  `@opencode/util/kete/notices` (`util/src/kete/notices.ts:23`), shared with the TUI home screen so the wording
+  can't drift; only the agent command differs (the TUI passes `/agents`). The panel stays unconditional:
+  `panelState()` (`panel.ts:33-45`) only filters out ids this workspace dismissed. The CLI hint is just
+  `!cliHintDismissed` (`panel.ts:42`). Dismissals live in `context.globalState` (`panel.ts:18-19,57-63`). The web UI
+  (`packages/app/src/kete/panel.tsx`) shows notices in `KeteEmptyState` (`panel.tsx:49-52`, `NoticeCard`
+  `:93-113`) and the hint in `KeteCliHint` (`panel.tsx:61-80`), both only when `tipVisible()`
+  (`panel-state.ts:72`, host is not `browser`); the browser default is no notices and no hint
+  (`panel-state.ts:56-62`). To make a notice conditional (e.g. only when the workspace has
+  `AGENTS.md`), the extension must filter in `panelState()`/`extension.ts:417`; the web UI has no hook.
+- **Can the extension bundle import another workspace package (e.g. `@opencode/util/kete/*`)?** Yes.
+  `@opencode/util` is a `workspace:*` devDependency (`packages/kete-vscode/package.json:447`), and
+  `src/extension.ts:47` and `src/mcp-view.ts:21` already import `Brand` from
+  `@opencode/util/kete/brand`; `packages/util/package.json` exports `./*` -> `./src/*.ts`. The build
+  is `bun build src/extension.ts --target=node --format=cjs --external=vscode --minify`
+  (`package.json` scripts), so everything except `vscode` is inlined; there is no tsconfig path
+  mapping. `test/bundle.test.ts` guards the bundled load. Keep imported modules free of
+  runtime-only `require`s (UMD style).
 
 ## Purpose
 
@@ -95,8 +115,8 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
   editor-tools MCP server, settings sync, terminal, sessions tree, and the chat panel's `kete.panel`
   state (`panelState`/`sendPanelState`/`broadcastPanelState`, `extension.ts:411-427`) and its two
   dismiss-message handlers (`extension.ts:604-612`).
-- `panel.ts` (84) — no `vscode` import: `NOTICES` (the fixed "what's new" list, D5), `dismiss()`
-  (known ids only, deduped, capped at 50), `panelState()`/`loadPanelState()` (derive the `kete.panel`
+- `panel.ts` (63) — no `vscode` import: `NOTICES` (the "what's new" list, D5, from the shared
+  `KeteNotices.list`), `dismiss` (= `KeteNotices.dismiss`: known ids only, deduped, capped at 50), `panelState()`/`loadPanelState()` (derive the `kete.panel`
   payload from a dismissal list + platform + `defaultMode`), `dismissNotice()`/`dismissCliHint()`
   (persist via a `Store` interface — `get`/`update` — that `context.globalState` satisfies
   structurally), and the two `globalState` keys.
@@ -220,8 +240,8 @@ Code forks (Cursor, Windsurf, VSCodium) since it ships to both the Marketplace a
 - `panel.ts`'s notice text is never trusted as HTML on the web-UI side — `panel.tsx` renders backtick
   spans as `<code>`, everything else as plain text, never `innerHTML` (see the `web-app` card); adding
   a notice with markup-looking text must not become executable markup.
-- `dismiss()` only records ids that name a real entry in `NOTICES` and caps the list at 50
-  (`panel.ts:44-48`) — an unbounded or unknown-id-accepting dismissal list would let a stale/foreign
+- `dismiss` only records ids that name a real entry in `NOTICES` and caps the list at 50
+  (`util/src/kete/notices.ts:19,45-48`) — an unbounded or unknown-id-accepting dismissal list would let a stale/foreign
   webview grow `globalState` without limit.
 
 ## Testing
