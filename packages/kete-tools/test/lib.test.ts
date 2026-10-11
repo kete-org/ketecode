@@ -36,6 +36,7 @@ describe("ownership", () => {
     expect(isKeteOwned("docs/statusline.md")).toBe(true)
     expect(isKeteOwned("docs/history-search.md")).toBe(true)
     expect(isKeteOwned("docs/home-notices.md")).toBe(true)
+    expect(isKeteOwned("CHANGELOG.md")).toBe(true)
     expect(isKeteOwned("docs/local-models.md")).toBe(true)
     expect(isKeteOwned("docs/integrations/harness.md")).toBe(true)
     expect(isKeteOwned("docs/platform/cli-login-v1.md")).toBe(true)

@@ -1116,3 +1116,22 @@ nodes are attached) or `Runtime.run`'s global flags, mirror it in `kete/completi
 `attach`/`build`; `test/kete/completion.test.ts` compares `kete completion <shell>` with
 `kete --completions <shell>` and fails if they drift. If upstream adds its own `completion` command,
 compare and drop one.
+
+## Release notes (feature/release-notes)
+
+The root `CHANGELOG.md` (Kete-owned) is the CLI's user-facing notes. `cli/script/kete-release-notes.ts`
+reads the section for the version being built (`## Unreleased` for a preview or pre-release; nothing
+when it's missing) through `@opencode/util/kete/changelog`, and the build embeds it as
+`KETE_RELEASE_NOTES`. The builtin TUI plugin `tui/src/kete/release-notes.tsx` adds `/release-notes` and
+shows the notes once after an upgrade (TUI storage `kete-release-notes`). `kete-tools changelog:check`
+fails a stable tag without its section (`kete-release.yml`). Runbook: `docs/release.md` step 2.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/script/build.ts` | Import; `releaseNotes` computed once; `KETE_RELEASE_NOTES` in `define` | the build's `define` map is the only way to embed a build-time constant |
+| `tui/src/plugin/builtins.ts` | Import; `KeteReleaseNotes` in `builtins` | builtin plugin registration list |
+| `tui/test/fixture/app.ts` | Optional `app` input (version, channel) | the fixture hard-codes the app; tests need a release version and channel |
+
+**Sync checklist:** if upstream changes how `build.ts` builds (several `Bun.build` calls, a different
+`define`), keep `KETE_RELEASE_NOTES` in every one that bundles the TUI. If upstream adds its own
+changelog or "what's new" view, compare and drop one.
