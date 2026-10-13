@@ -106,7 +106,7 @@ export const Plugin = define({
             Effect.provideService(FSUtil.Service, fs),
             Effect.map(checkText),
             Effect.catch((error) =>
-              Effect.succeed<Checked>({ state: "invalid", messages: [clip(`substitution failed: ${error.message ?? "a {file:…} reference couldn't be read"}`)] }),
+              Effect.succeed<Checked>({ state: "rejected", messages: [clip(`substitution failed: ${error.message ?? "a {file:…} reference couldn't be read"}`)] }),
             ),
           )
         : Effect.succeed(checkText(file.text))
@@ -117,7 +117,8 @@ export const Plugin = define({
         Effect.andThen(Effect.all([trust.configFiles(), trust.status()])),
         Effect.flatMap(([files, status]) =>
           Effect.gen(function* () {
-            const trusted = status.kind === "trusted"
+            // Job mode loads project files raw even though it counts as trusted.
+            const trusted = status.kind === "trusted" && status.reason !== "job"
             const read = yield* Effect.forEach(files.read, (file) =>
               checkFile(file, !file.project || trusted).pipe(
                 Effect.map(
@@ -145,7 +146,7 @@ export const Plugin = define({
                     path: clip(candidate.path),
                     scope: candidate.scope,
                     state: "unreadable",
-                    messages: ["it exists, but the runtime couldn't read it (check its permissions)"],
+                    messages: ["the runtime didn't load it: it can't be read (check its permissions), or it was created after the last load"],
                   }),
                 ),
               ],

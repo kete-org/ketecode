@@ -208,7 +208,7 @@ function config(facts: Facts): Check[] {
           fix: `Fix the file${Brand.urls.configSchema ? ` (the schema is at ${Brand.urls.configSchema})` : ""}; until then the runtime ignores all of it.`,
         }
       case "unreadable":
-        return { group: "Config", status: "fail", title: `${name} couldn't be read`, details: file.messages }
+        return { group: "Config", status: "warn", title: `${name} isn't loaded`, details: file.messages }
     }
   })
   if (report.files.length === 0) checks.push({ group: "Config", status: "info", title: "No config files: the defaults apply" })
