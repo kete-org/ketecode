@@ -116,7 +116,9 @@ work (A5, D2, E4's marketplace side) runs alongside.
 4. **Milestone C**, then **D4/D5**, then Wave 2's larger items (D1–D3).
 5. **E3, E4**, then Wave 4.
 
-Each item gets a task folder under `docs/tasks/` before it is built. The maintainer approved this
+Each item of size M or larger gets a task folder under `docs/tasks/` before it is built; S items follow
+CLAUDE.md's small-task rule (no folder, but a focused PR with the reviewer, and the upstream-guard
+when upstream files change) (maintainer, 2026-10-13). The maintainer approved this
 plan, including every item marked *new*, on 2026-10-10. Specs that follow the recommended options
 are pre-approved; ask only on real trade-offs.
 

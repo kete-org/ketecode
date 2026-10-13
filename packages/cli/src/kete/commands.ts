@@ -189,6 +189,13 @@ export const specs = [
       ...ServerParams,
     },
   }),
+  Spec.make("doctor", {
+    description: `Check this install: config files, folder trust, models, MCP servers, the OS sandbox and the terminal (makes no network request beyond the local runtime)`,
+    params: {
+      ...ServerParams,
+      format: Flag.choice("format", ["default", "json"]).pipe(Flag.withDescription("Output format"), Flag.withDefault("default")),
+    },
+  }),
   Spec.make("job", {
     description: "Run unattended jobs (ADR 0005/0008)",
     commands: [

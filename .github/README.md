@@ -204,6 +204,16 @@ Changes to upstream files are marked `kete_change` and listed in
 [`docs/upstream-patches.md`](../docs/upstream-patches.md). OpenCode's own README is
 [`README.md`](../README.md) at the repository root.
 
+## Checking your setup
+
+Run `kete doctor`, or `/doctor` in the terminal UI, when something doesn't work as expected. It checks
+the install (and whether several `kete` executables are on your PATH), that the runtime answers, every
+config file (one with a syntax error or invalid settings is otherwise ignored without a word), whether
+this folder is trusted and what is held back, your account, model providers and the model new sessions
+use, MCP servers, the OS sandbox and the terminal, each with how to fix it. It changes nothing and makes
+no network request beyond the local runtime. `kete doctor --format json` prints the checks as JSON; the
+exit code is 1 when a check failed.
+
 ## Reporting a problem
 
 Run `kete bug "what went wrong"`, or `/feedback` (also `/bug`) in the terminal UI. Both build a

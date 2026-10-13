@@ -128,6 +128,9 @@ export interface Interface {
    * trust was decided (Config reloads). */
   readonly changes: () => Stream.Stream<void>
   readonly status: () => Effect.Effect<Status>
+  /** For the `kete.doctor` RPC: the config files the last load read, with their raw text, and whether
+   * each is a project document (the others are the machine's own config). */
+  readonly configFiles: () => Effect.Effect<ReadonlyArray<{ readonly path: string; readonly text: string; readonly project: boolean }>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@kete/FolderTrust") {}
@@ -375,6 +378,7 @@ export const layerWith = (options: Options = {}) =>
       const hooksTrust = KeteHooksTrust.make(global.state)
 
       let status: Status = { kind: "pending" }
+      let configFiles: ReadonlyArray<{ readonly path: string; readonly text: string; readonly project: boolean }> = []
       let projectDirectories = new Set<string>()
       let machineDeny: ReadonlyArray<Rule> = DENY_ALL
       let rootKey: string | undefined
@@ -669,6 +673,7 @@ export const layerWith = (options: Options = {}) =>
       const gate = Effect.fn("KeteFolderTrust.gate")(function* (load: Load, project: Project, texts: ReadonlyMap<string, string>) {
         projectDirectories = new Set(project.directories)
         const raw = (yield* load(false)).entries
+        configFiles = [...texts].map(([file, text]) => ({ path: file, text, project: project.documents.has(file) }))
         const isProjectDocument = (entry: Entry): entry is Document =>
           entry.type === "document" && entry.path !== undefined && project.documents.has(entry.path)
         machineTargets = new Set(
@@ -828,6 +833,7 @@ export const layerWith = (options: Options = {}) =>
         configuredPluginAllowed,
         pluginDigests,
         agentDocuments,
+        configFiles: () => Effect.sync(() => configFiles),
         changes: () =>
           Stream.merge(
             memory.trusted().pipe(
