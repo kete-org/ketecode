@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { KeteDoctor } from "../../src/kete/doctor"
+import { KeteDoctor } from "@opencode/util/kete/doctor"
 
 const HOME = "/home/alice"
 
