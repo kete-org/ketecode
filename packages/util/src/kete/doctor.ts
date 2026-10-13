@@ -8,6 +8,7 @@
 export * as KeteDoctor from "./doctor.js"
 
 import { Brand } from "./brand.js"
+import { KeteTerminalSetup } from "./terminal-setup.js"
 
 export type Status = "ok" | "warn" | "fail" | "info"
 
@@ -57,7 +58,7 @@ export interface Facts {
   /** How this binary was installed (cli/src/kete/updater.ts `detect`); the CLI only. */
   readonly install?: string
   readonly platform: string
-  /** The process environment. Only TERM, COLORTERM, TERM_PROGRAM, TMUX, STY, WT_SESSION and NO_COLOR are read. */
+  /** The process environment: the terminal's variables (TERM, COLORTERM, TERM_PROGRAM, TMUX, WT_SESSION, NO_COLOR and the ones `KeteTerminalSetup.detect` reads). */
   readonly env: Environment
   /** stdin and stdout are terminals; `undefined` when the surface is a terminal UI anyway. */
   readonly interactive?: boolean
@@ -380,6 +381,14 @@ function terminal(facts: Facts): Check[] {
       status: "warn",
       title: "This looks like the classic Windows console",
       fix: "Use Windows Terminal for keys, colours and mouse support.",
+    })
+  const setup = KeteTerminalSetup.detect(env, facts.platform)
+  if (setup.kind !== "native" && facts.interactive !== false)
+    checks.push({
+      group: "Terminal",
+      status: "info",
+      title: "Shift+Enter may send the message instead of a newline here",
+      fix: `Run \`${cli} terminal-setup\` to see what this terminal needs (Ctrl+J always works).`,
     })
   if (env.TMUX) checks.push({ group: "Terminal", status: "info", title: "Running in tmux" })
   else if (env.STY) checks.push({ group: "Terminal", status: "info", title: "Running in screen" })

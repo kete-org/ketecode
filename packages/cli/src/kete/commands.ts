@@ -189,6 +189,17 @@ export const specs = [
       ...ServerParams,
     },
   }),
+  Spec.make("terminal-setup", {
+    description: `Make Shift+Enter insert a newline in the prompt: says what this terminal needs, and adds the keybinding for VS Code, Cursor, Windsurf or VSCodium after asking`,
+    params: {
+      editor: Flag.choice("editor", ["code", "insiders", "cursor", "windsurf", "vscodium"]).pipe(
+        Flag.withDescription("The editor whose terminal to set up, when it can't be told from the environment"),
+        Flag.optional,
+      ),
+      yes: Flag.boolean("yes").pipe(Flag.withDescription("Add the keybinding without asking"), Flag.withDefault(false)),
+      print: Flag.boolean("print").pipe(Flag.withDescription("Only print what to do; change nothing"), Flag.withDefault(false)),
+    },
+  }),
   Spec.make("doctor", {
     description: `Check this install: config files, folder trust, models, MCP servers, the OS sandbox and the terminal (makes no network request beyond the local runtime)`,
     params: {
