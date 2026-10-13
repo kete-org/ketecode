@@ -156,6 +156,33 @@ describe("KeteDoctor.checks", () => {
   })
 })
 
+describe("safety", () => {
+  test("text from config, folder names and settings can't reach the terminal as control sequences", () => {
+    const evil = "x\u001b]0;pwned\u0007\u009b31m\u202eevil\u2028y"
+    const list = KeteDoctor.checks(
+      facts({
+        defaultModel: { provider: "p", model: evil },
+        sandbox: { state: "off", mode: "off", reason: evil },
+        report: {
+          files: [{ path: `/work/${evil}/kete.json`, scope: "project", state: "warnings", messages: [evil] }],
+          trust: { state: "untrusted", held: [evil], heldCount: 1 },
+        },
+      }),
+    )
+    const text = KeteDoctor.render(list)
+    expect(text).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e]/)
+    expect(text).toContain("pwned")
+  })
+})
+
+describe("an older runtime", () => {
+  test("that answers but has no kete.doctor says so instead of 'didn't answer'", () => {
+    const check = find(KeteDoctor.checks(facts({ report: undefined })), "Config files")!
+    expect(check.title).toContain("can't check them")
+    expect(check.status).toBe("info")
+  })
+})
+
 describe("KeteDoctor.render", () => {
   test("groups in order, with symbols, details, fixes and a summary", () => {
     const text = KeteDoctor.render(KeteDoctor.checks(facts({ providers: [], defaultModel: null, mcp: [{ name: "b", status: "needs_auth" }] })))
@@ -173,5 +200,8 @@ describe("KeteDoctor.shown", () => {
     expect(KeteDoctor.shown("/home/alice", HOME)).toBe("~")
     expect(KeteDoctor.shown("/home/alicex/y", HOME)).toBe("/home/alicex/y")
     expect(KeteDoctor.shown("C:\\Users\\a\\kete.json", "C:\\Users\\a")).toBe("~\\kete.json")
+    // Windows paths compare without case; POSIX paths don't.
+    expect(KeteDoctor.shown("c:\\users\\a\\kete.json", "C:\\Users\\A")).toBe("~\\kete.json")
+    expect(KeteDoctor.shown("/Home/Alice/x", HOME)).toBe("/Home/Alice/x")
   })
 })

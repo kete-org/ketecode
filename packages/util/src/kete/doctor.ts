@@ -79,13 +79,36 @@ export interface Facts {
 
 const cli = Brand.cliName
 
+// C0 and C1 controls, DEL, line and paragraph separators, and bidi overrides and isolates: text from
+// config files, folder names and settings must not move the cursor, set a title or reorder the line.
+const unsafe = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g
+
+/** `text` as one safe line for a terminal or the clipboard. */
+export function safe(text: string) {
+  return text.replace(unsafe, " ").trim()
+}
+
+/** The check with every string made safe (`safe`); `render` and the TUI show only these. */
+export function sanitize(check: Check): Check {
+  return {
+    group: check.group,
+    status: check.status,
+    title: safe(check.title),
+    ...(check.details ? { details: check.details.map(safe) } : {}),
+    ...(check.fix ? { fix: safe(check.fix) } : {}),
+  }
+}
+
 /** `~` for the home directory, so the output is shorter and safe to paste. */
 export function shown(file: string, home: string | undefined) {
   if (!home) return file
   const trimmed = home.replace(/[\\/]+$/, "")
-  if (file === trimmed) return "~"
+  // Windows paths compare without case (C:\Users\Me is c:\users\me).
+  const windows = /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith("\\\\")
+  const same = (a: string, b: string) => (windows ? a.toLowerCase() === b.toLowerCase() : a === b)
+  if (same(file, trimmed)) return "~"
   for (const separator of ["/", "\\"])
-    if (file.startsWith(trimmed + separator)) return `~${separator}${file.slice(trimmed.length + 1)}`
+    if (same(file.slice(0, trimmed.length + 1), trimmed + separator)) return `~${separator}${file.slice(trimmed.length + 1)}`
   return file
 }
 
@@ -151,7 +174,16 @@ const scopes = { global: "your config", project: "project config", explicit: "co
 
 function config(facts: Facts): Check[] {
   const report = facts.report
-  if (!report) return [{ group: "Config", status: "info", title: `Config files: ${unknownRuntime}` }]
+  if (!report)
+    return [
+      {
+        group: "Config",
+        status: "info",
+        title: facts.runtime
+          ? "Config files: this runtime can't check them (it may be older than this client)"
+          : `Config files: ${unknownRuntime}`,
+      },
+    ]
   const checks: Check[] = report.files.map((file): Check => {
     const name = `${scopes[file.scope]} ${shown(file.path, facts.home)}`
     switch (file.state) {
@@ -355,7 +387,7 @@ function terminal(facts: Facts): Check[] {
 }
 
 export function checks(facts: Facts): Check[] {
-  return [
+  return ([
     ...install(facts),
     ...runtime(facts),
     ...config(facts),
@@ -363,7 +395,7 @@ export function checks(facts: Facts): Check[] {
     ...mcp(facts),
     ...sandbox(facts),
     ...terminal(facts),
-  ]
+  ] satisfies Check[]).map(sanitize)
 }
 
 export function counts(list: readonly Check[]) {

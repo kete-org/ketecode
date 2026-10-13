@@ -54,14 +54,18 @@ describe("checkText", () => {
     expect(result.state).toBe("warnings")
     expect(result.messages.join(" ")).toContain("logLevel")
   })
-  test("messages are bounded and have no control characters", () => {
-    const text = `{${Array.from({ length: 40 }, () => `"a\u0001": `).join("")}`
-    const result = KeteDoctor.checkText(text)
+  test("messages are bounded and safe: no control, C1 or bidi characters from a key name", () => {
+    const providers = Object.fromEntries(
+      Array.from({ length: 15 }, (_, index) => [`p${index}\u009b31m\u202e\u001b]0;x\u0007`, { whitelist: ["a"] }]),
+    )
+    const result = KeteDoctor.checkText(JSON.stringify({ provider: providers }))
+    expect(result.messages.length).toBeGreaterThan(0)
     expect(result.messages.length).toBeLessThanOrEqual(10)
     for (const message of result.messages) {
       expect(message.length).toBeLessThanOrEqual(300)
-      expect(message).not.toMatch(/[\u0000-\u001f]/)
+      expect(message).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e]/)
     }
+    expect(result.messages.join(" ")).toContain("p0")
   })
 })
 
@@ -95,7 +99,11 @@ describe("the kete.doctor RPC", () => {
           yield* Effect.promise(async () => {
             await fs.mkdir(path.join(repo, ".git"), { recursive: true })
             await fs.mkdir(home, { recursive: true })
-            await write(path.join(global, "kete.json"), `{ "username": "me" }`)
+            // Valid only once {env:…} is substituted, as the loader does for the machine's own files.
+            await write(path.join(global, "kete.json"), `{ "username": {env:KETE_DOCTOR_TEST_NAME} }`)
+            // Exists but can't be read: the loader skips a .kete/ file without a word.
+            await write(path.join(repo, ".kete", "kete.json"), `{}`)
+            if (process.platform !== "win32") await fs.chmod(path.join(repo, ".kete", "kete.json"), 0o000)
             // Broken: a missing comma. The loader drops it whole.
             await write(path.join(repo, "kete.json"), `{\n  "username": "a"\n  "mcp": {}\n}`)
             // Valid, with a setting trust holds back.
@@ -122,6 +130,13 @@ describe("the kete.doctor RPC", () => {
             ),
             Watcher.testLayer,
           )
+          process.env.KETE_DOCTOR_TEST_NAME = `"me"`
+          yield* Effect.addFinalizer(() =>
+            Effect.promise(async () => {
+              delete process.env.KETE_DOCTOR_TEST_NAME
+              await fs.chmod(path.join(repo, ".kete", "kete.json"), 0o600).catch(() => undefined)
+            }),
+          )
           const report = yield* Effect.gen(function* () {
             let handlers: Record<string, (input: unknown) => Effect.Effect<KeteDoctorRpc.Report>> = {}
             yield* KeteDoctor.Plugin.effect(
@@ -140,6 +155,8 @@ describe("the kete.doctor RPC", () => {
 
           const byPath = new Map(report.files.map((file) => [file.path, file]))
           expect(byPath.get(path.join(global, "kete.json"))).toMatchObject({ scope: "global", state: "ok" })
+          if (process.platform !== "win32" && process.getuid?.() !== 0)
+            expect(byPath.get(path.join(repo, ".kete", "kete.json"))).toMatchObject({ scope: "project", state: "unreadable" })
           expect(byPath.get(path.join(repo, "kete.json"))).toMatchObject({ scope: "project", state: "invalid" })
           expect(byPath.get(path.join(repo, ".kete", "kete.jsonc"))).toMatchObject({ scope: "project", state: "ok" })
           expect(report.trust.state).toBe("untrusted")

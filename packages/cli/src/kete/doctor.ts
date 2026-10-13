@@ -25,7 +25,10 @@ const decodeReport = Schema.decodeUnknownPromise(KeteDoctorRpc.Report)
 /** Every `kete` executable on PATH, in PATH order (real paths, each once), and the running one. */
 async function binaries(env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
   const real = (file: string) => fs.realpath(file).catch(() => path.resolve(file))
-  const names = platform === "win32" ? [".exe", ".cmd", ".bat", ""].map((extension) => Brand.cliName + extension) : [Brand.cliName]
+  // Windows finds `kete` by trying each PATHEXT extension, and compares paths without case.
+  const extensions = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
+  const names = platform === "win32" ? extensions.map((extension) => Brand.cliName + extension.toLowerCase()) : [Brand.cliName]
+  const key = (file: string) => (platform === "win32" ? file.toLowerCase() : file)
   const found: string[] = []
   for (const directory of (env.PATH ?? env.Path ?? "").split(path.delimiter)) {
     if (!directory) continue
@@ -35,11 +38,12 @@ async function binaries(env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
       if (!stat?.isFile()) continue
       if (platform !== "win32" && (stat.mode & 0o111) === 0) continue
       const resolved = await real(file)
-      if (!found.includes(resolved)) found.push(resolved)
+      if (!found.some((item) => key(item) === key(resolved))) found.push(resolved)
       break
     }
   }
-  return { onPath: found, running: await real(process.execPath) }
+  const running = await real(process.execPath)
+  return { onPath: found, running: found.find((item) => key(item) === key(running)) ?? running }
 }
 
 export default Runtime.handler(

@@ -1267,7 +1267,8 @@ plugin `tui/src/kete/doctor.tsx`) run the same checks (`@opencode/util/kete/doct
 the runtime, config files, folder trust, account, providers and default model, MCP servers, the OS
 sandbox and the terminal. The runtime's part comes from the `kete.doctor` plugin RPC
 (`core/src/kete/doctor.ts`, schema `schema/src/kete/doctor.ts`), which re-checks each config file the last
-load read the way `Config.parseInfo` does, because the loader drops an invalid file whole and only logs it.
+load read the way `Config.loadFile` + `parseInfo` do (substituted where the loader substitutes: machine
+files always, project files once trusted), because the loader drops an invalid file whole and only logs it.
 The file list comes from `KeteFolderTrust.configFiles()` (the raw texts `gate` already receives), so
 `config.ts` is not touched. Read-only, and offline apart from the local runtime.
 
@@ -1278,6 +1279,6 @@ The file list comes from `KeteFolderTrust.configFiles()` (the raw texts `gate` a
 | `tui/src/plugin/builtins.ts` | Import; `KeteDoctor` in `builtins` | builtin plugin registration list |
 | `tui/test/fixture/tui-client.ts` | Fake answers for `kete.doctor/check` and `/api/model/default` | the fixture's fake server rejects unknown requests |
 
-**Sync checklist:** if upstream's `Config.parseInfo` changes how it parses, normalizes or validates a
-file, make `KeteDoctor.checkText` match. If upstream adds its own `doctor` command or config
+**Sync checklist:** if upstream's `Config.loadFile`/`parseInfo` changes how it substitutes, parses,
+normalizes or validates a file, make `core/src/kete/doctor.ts` match. If upstream adds its own `doctor` command or config
 diagnostics API, compare and drop one.
