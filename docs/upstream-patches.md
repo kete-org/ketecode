@@ -1259,3 +1259,26 @@ becomes public only when the person submits the issue (`KeteBugReport.LINK_NOTIC
 **Sync checklist:** if upstream changes the crash screen's actions, key handler or `buildIssueURL`, keep the
 scrubbing, the Kete tracker base and the Open issue action. If upstream adds its own `bug`/`feedback`
 command or a `/feedback` slash command, compare and drop one.
+
+## Setup checks (feature/doctor)
+
+`kete doctor` (`cli/src/kete/doctor.ts`, `doctor-flow.ts`) and `/doctor` ("Check setup", builtin TUI
+plugin `tui/src/kete/doctor.tsx`) run the same checks (`@opencode/util/kete/doctor`): install and PATH,
+the runtime, config files, folder trust, account, providers and default model, MCP servers, the OS
+sandbox and the terminal. The runtime's part comes from the `kete.doctor` plugin RPC
+(`core/src/kete/doctor.ts`, schema `schema/src/kete/doctor.ts`), which re-checks each config file the last
+load read the way `Config.loadFile` + `parseInfo` do (substituted where the loader substitutes: machine
+files always, project files once trusted), because the loader drops an invalid file whole and only logs it.
+The file list comes from `KeteFolderTrust.configFiles()` (the raw texts `gate` already receives), so
+`config.ts` is not touched. Read-only, and offline apart from the local runtime.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/src/index.ts` | `doctor` handler → `kete/doctor.ts` (one marked line) | the handler map is the only place a command's handler is registered |
+| `core/src/plugin/internal.ts` | Import; `KeteDoctor.Plugin` in the internal plugin list | internal plugin registration list |
+| `tui/src/plugin/builtins.ts` | Import; `KeteDoctor` in `builtins` | builtin plugin registration list |
+| `tui/test/fixture/tui-client.ts` | Fake answers for `kete.doctor/check` and `/api/model/default` | the fixture's fake server rejects unknown requests |
+
+**Sync checklist:** if upstream's `Config.loadFile`/`parseInfo` changes how it substitutes, parses,
+normalizes or validates a file, make `core/src/kete/doctor.ts` match. If upstream adds its own `doctor` command or config
+diagnostics API, compare and drop one.

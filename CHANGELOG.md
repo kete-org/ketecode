@@ -6,6 +6,10 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **`kete doctor` and `/doctor`:** check your setup in one go: the install, the runtime, every config
+  file (one with a syntax error or invalid settings used to be ignored silently), folder trust, your
+  account, model providers and default model, MCP servers, the OS sandbox and the terminal, each with how
+  to fix it. Read-only; `--format json` for scripts.
 - **Folder trust:** a repository's own configuration can no longer start MCP servers, load plugins,
   point providers elsewhere, change the shell or formatters, or loosen permissions until you trust
   the folder. Kete Code asks once ("Trust this folder?"); instructions, agents, commands and skills

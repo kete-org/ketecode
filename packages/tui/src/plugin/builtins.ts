@@ -11,6 +11,7 @@ import KeteTodo from "../kete/todo" // kete_change
 import KeteStatusLine from "../kete/statusline" // kete_change
 import KeteReleaseNotes from "../kete/release-notes" // kete_change
 import KeteFeedback from "../kete/feedback" // kete_change
+import KeteDoctor from "../kete/doctor" // kete_change
 import DiffViewer from "../feature-plugins/system/diff-viewer"
 import Notifications from "../feature-plugins/system/notifications"
 import Plugins from "../feature-plugins/system/plugins"
@@ -31,6 +32,7 @@ export const builtins = [
   KeteStatusLine, // kete_change: the configurable status line (/statusline)
   KeteReleaseNotes, // kete_change: /release-notes, and the notes once after an upgrade
   KeteFeedback, // kete_change: /feedback, the problem report dialog
+  KeteDoctor, // kete_change: /doctor, the setup checks dialog
   SidebarMcp,
   SidebarFooter,
   Notifications,
