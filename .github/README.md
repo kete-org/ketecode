@@ -204,6 +204,17 @@ Changes to upstream files are marked `kete_change` and listed in
 [`docs/upstream-patches.md`](../docs/upstream-patches.md). OpenCode's own README is
 [`README.md`](../README.md) at the repository root.
 
+## Committing and opening pull requests
+
+`/commit [notes]` asks the agent to commit the current changes. It stages only the files that belong
+together, leaves secrets and build output out, writes the message in the repository's own style and
+never pushes. On `main` it asks whether to create a branch first. `/pr [base] [draft]` pushes the
+branch and opens a pull request with `gh` (or a merge request with `glab`), with a title and
+description built from all of the branch's commits. Without either CLI it gives you the text and the
+link instead. Every git and `gh` command they run asks or is allowed under your permission settings,
+like any other command (`git push` asks unless your rules allow it). A `commit` or `pr` command in your own or the
+project's commands replaces the built-in one.
+
 ## Checking your setup
 
 Run `kete doctor`, or `/doctor` in the terminal UI, when something doesn't work as expected. It checks

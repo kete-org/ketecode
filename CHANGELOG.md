@@ -6,6 +6,9 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **`/commit` and `/pr`:** commit the current changes with a message in your repository's style, and
+  push the branch and open a pull request (GitHub `gh` or GitLab `glab`). Every git command still goes
+  through your permission settings, and `git push` asks unless your rules allow it.
 - **`kete doctor` and `/doctor`:** check your setup in one go: the install, the runtime, every config
   file (one with a syntax error or invalid settings used to be ignored silently), folder trust, your
   account, model providers and default model, MCP servers, the OS sandbox and the terminal, each with how
