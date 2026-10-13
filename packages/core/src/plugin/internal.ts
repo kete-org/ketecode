@@ -123,6 +123,7 @@ import { Project } from "../project.js" // kete_change
 import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
 import { KeteFolderTrustRpcPlugin } from "../kete/folder-trust/rpc.js" // kete_change
 import { KeteDoctor } from "../kete/doctor.js" // kete_change
+import { KeteGitCommands } from "../kete/git-commands.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
@@ -315,6 +316,8 @@ const pre = [
   KeteFolderTrustRpcPlugin.Plugin,
   // kete_change: the `kete.doctor` RPC (config file checks, folder trust) for `kete doctor` and /doctor; see kete/doctor.ts
   KeteDoctor.Plugin,
+  // kete_change: built-in /commit and /pr prompt commands; see kete/git-commands.ts
+  KeteGitCommands.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 const post = [

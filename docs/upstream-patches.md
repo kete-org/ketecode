@@ -1282,3 +1282,16 @@ The file list comes from `KeteFolderTrust.configFiles()` (the raw texts `gate` a
 **Sync checklist:** if upstream's `Config.loadFile`/`parseInfo` changes how it substitutes, parses,
 normalizes or validates a file, make `core/src/kete/doctor.ts` match. If upstream adds its own `doctor` command or config
 diagnostics API, compare and drop one.
+
+## Built-in /commit and /pr (feature/git-helpers)
+
+`core/src/kete/git-commands.ts` registers `/commit` and `/pr` as prompt commands, like upstream's `/init`
+and `/review` (`plugin/command.ts`). They are plain prompts: the agent's git and `gh`/`glab` commands go
+through the permission system and the sandbox. The templates contain no ``!`…` `` interpolation. A config
+command with the same name replaces them, because `ConfigCommandPlugin` loads later (`post`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteGitCommands.Plugin` in the internal plugin list | internal plugin registration list |
+
+**Sync checklist:** if upstream adds its own `commit` or `pr` command, compare and drop one.
