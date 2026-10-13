@@ -212,7 +212,7 @@ never pushes. On `main` it asks whether to create a branch first. `/pr [base] [d
 branch and opens a pull request with `gh` (or a merge request with `glab`), with a title and
 description built from all of the branch's commits. Without either CLI it gives you the text and the
 link instead. Every git and `gh` command they run asks or is allowed under your permission settings,
-like any other command (`git push` always asks). A `commit` or `pr` command in your own or the
+like any other command (`git push` asks unless your rules allow it). A `commit` or `pr` command in your own or the
 project's commands replaces the built-in one.
 
 ## Checking your setup

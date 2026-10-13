@@ -95,13 +95,28 @@ describe("/commit and /pr", () => {
     expect(KeteGitCommands.COMMIT).toContain("default branch")
     expect(KeteGitCommands.PR).toContain("Never force-push.")
     expect(KeteGitCommands.PR).toContain("Don't merge, approve, or request reviewers")
-    expect(KeteGitCommands.PR).toContain("don't install it")
+    expect(KeteGitCommands.PR).toContain("don't install anything")
+    // Messages never go through a quoted shell argument; the base is the remote's, freshly fetched.
+    expect(KeteGitCommands.COMMIT).toContain("git commit -F <file>")
+    expect(KeteGitCommands.COMMIT).toContain("Never put the message in")
+    expect(KeteGitCommands.COMMIT).toContain("don't print or quote their contents")
+    expect(KeteGitCommands.COMMIT).toContain("HEAD is detached")
+    expect(KeteGitCommands.PR).toContain("git fetch <remote> <base>")
+    expect(KeteGitCommands.PR).toContain("system temp directory (outside the repository")
+    expect(KeteGitCommands.PR).toContain("already exists")
   })
 
   test("render fills the path and the person's notes as written", () => {
     const text = KeteGitCommands.render("In ${path}: $ARGUMENTS / $ARGUMENTS", "/work/$&repo", " fix $& the $1 typo ")
     expect(text).toBe("In /work/$&repo: fix $& the $1 typo / fix $& the $1 typo")
     expect(KeteGitCommands.render("Notes: $ARGUMENTS", "/x", "  ")).toBe("Notes: (none)")
+    // One pass: a path that contains the placeholder text isn't filled in again.
+    expect(KeteGitCommands.render("${path} | $ARGUMENTS", "/a/$ARGUMENTS", "n")).toBe("/a/$ARGUMENTS | n")
+    for (const template of [KeteGitCommands.COMMIT, KeteGitCommands.PR]) {
+      const text = KeteGitCommands.render(template, "/x", "y")
+      expect(text).not.toContain("$ARGUMENTS")
+      expect(text).not.toContain("${path}")
+    }
   })
 
   it.live("/commit sends the commit prompt with the person's notes", () =>
@@ -122,7 +137,7 @@ describe("/commit and /pr", () => {
       yield* sessions.command({ sessionID: session.id, command: "pr", text: "main draft" })
       const prompts = yield* userPrompts(session.id)
       expect(prompts[0]?.text).toContain("Open a pull request")
-      expect(prompts[0]?.text).toContain("main draft")
+      expect(prompts[0]?.text).toContain("What the person wrote (optional): main draft")
     }),
   )
 
