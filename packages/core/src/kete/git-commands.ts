@@ -17,7 +17,7 @@ Notes from the person (optional): $ARGUMENTS
 
 1. Check the state first with \`git status --short --branch\` and \`git diff --stat\` (and \`git diff --cached --stat\`). Stop and say why if:
    - this isn't a git repository, or there is nothing to commit;
-   - a merge, rebase, cherry-pick, revert or bisect is in progress (\`.git/MERGE_HEAD\`, \`.git/rebase-merge\`, \`.git/rebase-apply\`, \`.git/CHERRY_PICK_HEAD\`, \`.git/REVERT_HEAD\`, \`.git/BISECT_LOG\`), or any path is unmerged (\`UU\`, \`AA\`, \`DU\`… in the status);
+   - a merge, rebase, cherry-pick, revert or bisect is in progress (\`MERGE_HEAD\`, \`rebase-merge\`, \`rebase-apply\`, \`CHERRY_PICK_HEAD\`, \`REVERT_HEAD\` or \`BISECT_LOG\` in the directory \`git rev-parse --git-dir\` prints, which isn't always \`.git\` in a worktree), or any path is unmerged (\`UU\`, \`AA\`, \`DU\`… in the status);
    - HEAD is detached (\`git branch --show-current\` prints nothing).
 2. Choose what goes in the commit:
    - If some changes are already staged, commit only those.
@@ -37,14 +37,15 @@ What the person wrote (optional): $ARGUMENTS
 Read it this way: if its first word names a branch that exists on the remote, that is the base; the word "draft" anywhere makes it a draft; everything else is notes for the description. If it's unclear, ask.
 
 1. Check the state with \`git status --short --branch\`. Stop and say why if a merge, rebase, cherry-pick or revert is in progress, any path is unmerged, or HEAD is detached. If there are uncommitted changes, ask whether to commit them first (the way /commit does) or leave them out.
-2. Find the current branch (\`git branch --show-current\`), the remote (\`origin\`, unless the branch tracks another; if you work from a fork, the pull request goes to the upstream repository) and the base: the branch the person named, otherwise the remote's default (\`git symbolic-ref --short refs/remotes/origin/HEAD\`, \`git remote show origin\`, or \`gh repo view --json defaultBranchRef\`; ask if none works). If the current branch is the base, stop and suggest creating a branch.
+2. Find the current branch (\`git branch --show-current\`), the remote (\`origin\`, unless the branch tracks another). If \`origin\` is your fork of another repository, the pull request goes to that upstream repository: \`gh pr create --repo <owner>/<repo> --head <your user>:<branch>\`; if you can't tell, ask and the base: the branch the person named, otherwise the remote's default (\`git symbolic-ref --short refs/remotes/origin/HEAD\`, \`git remote show origin\`, or \`gh repo view --json defaultBranchRef\`; ask if none works). If the current branch is the base, stop and suggest creating a branch.
 3. Run \`git fetch <remote> <base>\`, then compare with the remote's base, not a possibly stale local one: \`git log --oneline <remote>/<base>..HEAD\` and \`git diff --stat <remote>/<base>...HEAD\`. Read the diff where you need to, but don't print or quote the contents of secret files (\`.env\`, keys, credentials); if a commit adds one, stop and say so before pushing.
 4. If a pull request for this branch already exists (\`gh pr view --json url\`, \`glab mr view\`), don't create another: push any new commits and report its URL.
 5. If the branch has no upstream or has commits the remote doesn't, push it with \`git push -u <remote> <branch>\`. Never force-push. If the push is rejected, explain why and stop.
 6. Write a title of at most 72 characters in the style of the repository's commits, and a description: what changed and why, how it was tested, and anything a reviewer should know. If the repository has a pull request template (\`.github/pull_request_template.md\`, \`.gitlab/merge_request_templates/\`), follow it. Don't claim tests or checks you didn't see pass. Write the description to a file in the system temp directory (outside the repository, deleted afterwards), never into the working tree, and never pass it in a quoted shell argument.
 7. Create it:
-   - GitHub: \`gh pr create --base <base> --title "<title>" --body-file <temp file>\` (\`--draft\` if asked). Keep quotes, backticks and \`$\` out of the title, or escape them.
-   - GitLab: \`glab mr create --target-branch <base> --title "<title>" --description "$(cat <temp file>)"\` (\`--draft\` if asked). The text read from the file isn't run by the shell. In PowerShell use \`--description (Get-Content -Raw <temp file>)\`.
+   Put the title in its own temp file too, and pass both from their files; the text read from a file isn't run by the shell. In PowerShell, use \`(Get-Content -Raw <file>)\` in place of \`"$(cat <file>)"\`.
+   - GitHub: \`gh pr create --base <base> --title "$(cat <title file>)" --body-file <description file>\` (\`--draft\` if asked).
+   - GitLab: \`glab mr create --target-branch <base> --title "$(cat <title file>)" --description "$(cat <description file>)"\` (\`--draft\` if asked).
    - Other hosts (Bitbucket, Azure DevOps, Gitea…), or the CLI isn't installed or signed in: don't install anything. Print the title, the description and the URL to open the pull request in the browser, and say how to set up the CLI if there is one.
    Don't merge, approve, or request reviewers unless the person asked.
 
