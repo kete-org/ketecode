@@ -69,6 +69,11 @@ export function multiplexer(env: Environment): "tmux" | "screen" | undefined {
   return undefined
 }
 
+/** Set when kete runs on another machine than the editor (SSH, WSL, a dev container, Codespaces): the editor reads keybindings.json on the local machine, not here. */
+export function remote(env: Environment): boolean {
+  return Boolean(env.SSH_CONNECTION || env.SSH_TTY || env.WSL_DISTRO_NAME || env.REMOTE_CONTAINERS || env.CODESPACES)
+}
+
 /** The keybinding that makes Shift+Enter send Alt+Enter (ESC, CR), which the prompt reads as newline. */
 export const KEYBINDING = {
   key: "shift+enter",

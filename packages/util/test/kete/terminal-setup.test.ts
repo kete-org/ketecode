@@ -76,3 +76,10 @@ describe("guidance", () => {
     expect(KeteTerminalSetup.guidance({ kind: "windows-terminal" }, {}).lines.join("\n")).toContain('"sendInput"')
   })
 })
+
+describe("remote", () => {
+  test("SSH, WSL, dev containers and Codespaces are remote; a local shell isn't", () => {
+    for (const env of [{ SSH_TTY: "/dev/ttys1" }, { SSH_CONNECTION: "a" }, { WSL_DISTRO_NAME: "Ubuntu" }, { REMOTE_CONTAINERS: "true" }, { CODESPACES: "true" }]) expect(KeteTerminalSetup.remote(env)).toBe(true)
+    expect(KeteTerminalSetup.remote({ TERM_PROGRAM: "vscode" })).toBe(false)
+  })
+})

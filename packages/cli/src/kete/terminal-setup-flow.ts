@@ -40,7 +40,9 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 
 /** The keybindings.json text with the binding appended, or why it can't be. */
 export function withKeybinding(text: string | undefined): { readonly kind: "ok"; readonly text: string } | { readonly kind: "present" } | { readonly kind: "invalid"; readonly reason: string } {
-  const source = text === undefined || text.trim() === "" ? "[]" : text
+  const bom = text?.startsWith("﻿") ? "﻿" : ""
+  const body = text?.slice(bom.length)
+  const source = body === undefined || body.trim() === "" ? "[]" : body
   const errors: ParseError[] = []
   const list: unknown = parse(source, errors, { allowTrailingComma: true })
   if (errors.length > 0) return { kind: "invalid", reason: "it isn't valid JSON with comments" }
@@ -50,7 +52,7 @@ export function withKeybinding(text: string | undefined): { readonly kind: "ok";
     isArrayInsertion: true,
     formattingOptions: { tabSize: 2, insertSpaces: true, eol: source.includes("\r\n") ? "\r\n" : "\n" },
   })
-  return { kind: "ok", text: applyEdits(source, edits) }
+  return { kind: "ok", text: bom + applyEdits(source, edits) }
 }
 
 async function add(deps: Deps, editor: KeteTerminalSetup.Editor, yes: boolean): Promise<Added> {
@@ -84,6 +86,10 @@ export async function run(deps: Deps, input: Input): Promise<number> {
   if (input.print || terminal.kind !== "editor" || !terminal.editor) return 0
   const name = KeteTerminalSetup.EDITORS[terminal.editor].name
   deps.out("")
+  if (KeteTerminalSetup.remote(deps.env)) {
+    deps.out(`This is a remote session, so ${name} reads its keybindings on your local machine. Nothing changed here: add the keybinding there (above), or run kete terminal-setup in a local ${name} terminal.`)
+    return 0
+  }
   const result = await add(deps, terminal.editor, input.yes).catch((error: unknown): Added => ({ kind: "failed", reason: message(error) }))
   switch (result.kind) {
     case "present":

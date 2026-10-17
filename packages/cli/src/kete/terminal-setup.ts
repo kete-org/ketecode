@@ -7,14 +7,25 @@ import { Commands } from "../commands/commands"
 import { Runtime } from "../framework/runtime"
 import { KeteTerminalSetupFlow } from "./terminal-setup-flow"
 
-async function write(file: string, text: string) {
-  await fs.mkdir(path.dirname(file), { recursive: true })
-  const temporary = `${file}.kete-${process.pid}.tmp`
-  await fs.writeFile(temporary, text, { mode: 0o600 })
-  await fs.rename(temporary, file).catch(async (error: unknown) => {
-    await fs.rm(temporary, { force: true })
+export async function write(file: string, text: string) {
+  // Follow a symlink (dotfiles) so the rename replaces its target, not the link; keep the file's mode.
+  const target = await fs.realpath(file).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return file
     throw error
   })
+  const mode = await fs.stat(target).then(
+    (stat) => stat.mode & 0o777,
+    () => 0o600,
+  )
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  const temporary = `${target}.kete-${process.pid}.tmp`
+  try {
+    await fs.writeFile(temporary, text, { mode })
+    await fs.rename(temporary, target)
+  } catch (error) {
+    await fs.rm(temporary, { force: true })
+    throw error
+  }
 }
 
 export default Runtime.handler(

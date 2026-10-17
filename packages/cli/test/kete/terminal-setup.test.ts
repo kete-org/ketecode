@@ -107,3 +107,41 @@ describe("kete terminal-setup", () => {
     expect(calls.out.join("\n")).toContain("already has the keybinding")
   })
 })
+
+describe("review follow-ups", () => {
+  test("a remote session (SSH, WSL, container, Codespaces) writes nothing and says why", async () => {
+    for (const extra of [{ SSH_CONNECTION: "1 2 3 4" }, { WSL_DISTRO_NAME: "Ubuntu" }, { REMOTE_CONTAINERS: "true" }, { CODESPACES: "true" }]) {
+      const { value, calls } = deps({ env: { TERM_PROGRAM: "vscode", CURSOR_TRACE_ID: "x", ...extra } }, { [FILE]: "[]" })
+      expect(await KeteTerminalSetupFlow.run(value, { yes: true, print: false })).toBe(0)
+      expect(calls.writes).toEqual([])
+      expect(calls.out.join("\n")).toContain("remote session")
+    }
+  })
+  test("a byte-order mark is kept, not reported as invalid", () => {
+    const result = KeteTerminalSetupFlow.withKeybinding("﻿[]")
+    expect(result.kind).toBe("ok")
+    if (result.kind === "ok") {
+      expect(result.text.startsWith("﻿")).toBe(true)
+      expect(parse(result.text.slice(1))).toEqual([KeteTerminalSetup.KEYBINDING])
+    }
+  })
+  test("write follows a symlink and keeps the file's mode", async () => {
+    const fs = await import("node:fs/promises")
+    const os = await import("node:os")
+    const { write } = await import("../../src/kete/terminal-setup")
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "kete-ts-"))
+    try {
+      const real = path.join(dir, "dotfiles.json")
+      const link = path.join(dir, "keybindings.json")
+      await fs.writeFile(real, "[]", { mode: 0o644 })
+      await fs.symlink(real, link)
+      await write(link, "[1]")
+      expect((await fs.lstat(link)).isSymbolicLink()).toBe(true)
+      expect(await fs.readFile(real, "utf8")).toBe("[1]")
+      if (process.platform !== "win32") expect((await fs.stat(real)).mode & 0o777).toBe(0o644)
+      expect((await fs.readdir(dir)).sort()).toEqual(["dotfiles.json", "keybindings.json"])
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+})
