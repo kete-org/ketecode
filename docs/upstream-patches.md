@@ -1295,3 +1295,20 @@ command with the same name replaces them, because `ConfigCommandPlugin` loads la
 | `core/src/plugin/internal.ts` | Import; `KeteGitCommands.Plugin` in the internal plugin list | internal plugin registration list |
 
 **Sync checklist:** if upstream adds its own `commit` or `pr` command, compare and drop one.
+
+## Terminal setup (feature/terminal-setup)
+
+`kete terminal-setup` (`cli/src/kete/terminal-setup.ts`, `terminal-setup-flow.ts`) and `/terminal-setup`
+(builtin TUI plugin `tui/src/kete/terminal-setup.tsx`) use `@opencode/util/kete/terminal-setup` to detect
+the terminal and say whether Shift+Enter reaches the prompt (`input.newline` is already
+`shift+return,ctrl+return,alt+return,ctrl+j`). The CLI's only change is a VS Code family keybinding
+(Shift+Enter sends ESC CR, read as Alt+Enter) in the person's `keybindings.json`, after a yes or `--yes`,
+JSONC-preserving, with a backup.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/src/index.ts` | `terminal-setup` handler → `kete/terminal-setup.ts` (one marked line) | the handler map is the only place a command's handler is registered |
+| `tui/src/plugin/builtins.ts` | Import; `KeteTerminalSetup` in `builtins` | builtin plugin registration list |
+
+**Sync checklist:** if upstream changes `input.newline`'s default keys or stops asking for the kitty
+keyboard protocol, update the guidance.

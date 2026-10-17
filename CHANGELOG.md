@@ -6,6 +6,9 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **`kete terminal-setup` and `/terminal-setup`:** make Shift+Enter insert a newline. It says what your
+  terminal needs, and in VS Code, Cursor, Windsurf or VSCodium adds the keybinding for you after asking.
+  Ctrl+J always works.
 - **`/commit` and `/pr`:** commit the current changes with a message in your repository's style, and
   push the branch and open a pull request (GitHub `gh` or GitLab `glab`). Every git command still goes
   through your permission settings, and `git push` asks unless your rules allow it.

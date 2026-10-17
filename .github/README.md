@@ -204,6 +204,14 @@ Changes to upstream files are marked `kete_change` and listed in
 [`docs/upstream-patches.md`](../docs/upstream-patches.md). OpenCode's own README is
 [`README.md`](../README.md) at the repository root.
 
+## Newlines in the prompt
+
+Shift+Enter, Alt+Enter and Ctrl+J insert a newline. Ctrl+J works in every terminal; Shift+Enter works
+in terminals that report it (kitty, WezTerm, Ghostty, Alacritty, foot). Run `kete terminal-setup` (or
+`/terminal-setup`) to see what yours needs. In VS Code, Cursor, Windsurf and VSCodium it offers to add
+one keybinding to the editor's `keybindings.json`; it asks first and keeps a backup. For iTerm2,
+Apple Terminal, Windows Terminal and tmux it prints the setting to change.
+
 ## Committing and opening pull requests
 
 `/commit [notes]` asks the agent to commit the current changes. It stages only the files that belong
