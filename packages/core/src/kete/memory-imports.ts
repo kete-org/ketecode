@@ -8,7 +8,7 @@
 
 export * as KeteMemoryImports from "./memory-imports.js"
 
-import path from "path"
+import path, { join } from "path"
 import { FSUtil } from "@opencode/util/fs-util"
 import { KeteShellRisk } from "./shell-risk.js"
 
@@ -23,7 +23,7 @@ const REASON: Record<Skip, string> = {
   secret: "looks like a secret or credential file",
   "not-markdown": "only .md files can be imported from here",
   "too-large": `larger than ${MAX_FILE / 1024} KiB`,
-  total: `the imports of this memory file would exceed ${MAX_TOTAL / 1024} KiB`,
+  total: `the imports would exceed ${MAX_TOTAL / 1024} KiB in total`,
   "not-file": "not a regular file",
 }
 
@@ -60,7 +60,31 @@ export function target(token: string, importerDir: string, home: string) {
   return token.startsWith("~/") ? path.join(home, token.slice(2)) : path.resolve(importerDir, token)
 }
 
-const SECRET_NAME = [/^\.env/i, /\.(pem|key)$/i, /^id_/i, /credentials/i, /^\.(npmrc|netrc)$/i]
+const SECRET_NAME = [
+  /^\.env/i,
+  /\.(pem|key|p12|pfx|keystore|jks)$/i,
+  /^id_/i,
+  /credentials/i,
+  /^secrets?([._-]|$)/i,
+  /\.tfstate/i,
+  /\.tfvars$/i,
+  /^\.dev\.vars$/i,
+  /history$/i,
+  /^\.(npmrc|netrc|pgpass|htpasswd|vault-token|terraformrc|git-credentials|claude\.json)$/i,
+  /^kubeconfig$/i,
+]
+/** Folders that hold credentials: in the home folder, and `.git` anywhere (remote URLs can carry tokens). */
+const SECRET_HOME_DIRS = [".ssh", ".aws", ".gnupg", ".kube", ".docker", join(".config", "gh"), join(".config", "gcloud")]
+
+/**
+ * A root that may serve imports: not the home folder or a folder above it, and not a file system root. A
+ * project "root" is the cwd when there is no repository, so running in `~` must not make all of home readable.
+ */
+export const usableRoot = (root: string, home: string) => !FSUtil.contains(root, home) && path.dirname(root) !== root
+
+/** Whether a memory file's real path (a CLAUDE.md, possibly a symlink) may be loaded: a `.md` file inside `bound`, not a secret. */
+export const memoryFileAllowed = (real: string, bound: string, home: string) =>
+  denied(real, [{ path: bound, markdownOnly: true }], home) === undefined
 
 /** Why the realpath `real` may not be imported, or undefined when it may. */
 export function denied(real: string, roots: readonly Root[], home: string): Skip | undefined {
@@ -68,7 +92,8 @@ export function denied(real: string, roots: readonly Root[], home: string): Skip
   // The most specific root, so a project that sits in the home folder still checks `.claude` on its own.
   const root = inside.reduce<Root | undefined>((best, item) => (!best || item.path.length > best.path.length ? item : best), undefined)
   if (!root) return "outside"
-  if ([".ssh", ".aws", ".gnupg"].some((dir) => FSUtil.contains(path.join(home, dir), real))) return "secret"
+  if (SECRET_HOME_DIRS.some((dir) => FSUtil.contains(path.join(home, dir), real))) return "secret"
+  if (path.relative(root.path, real).split(path.sep).includes(".git")) return "secret"
   // Relative to the root: the matcher's `.config/kete` pattern would reject every global-config import.
   if (KeteShellRisk.credential(path.relative(root.path, real))) return "secret"
   if (SECRET_NAME.some((pattern) => pattern.test(path.basename(real)))) return "secret"

@@ -3,7 +3,7 @@
 // - Where a folder has no AGENTS.md, its CLAUDE.md (or .claude/CLAUDE.md) is loaded instead, and
 //   ~/.claude/CLAUDE.md joins the global instructions. `kete.memory.claudeMd: false` turns this off.
 // - `@path` tokens in AGENTS.md and CLAUDE.md pull the named file into context right after the file
-//   that names it (up to 5 levels deep, 64 KiB per file, 256 KiB per memory file). A token that can't be
+//   that names it (up to 5 levels deep, 64 KiB per file, 256 KiB in total). A token that can't be
 //   read is left as written and a note line is appended to the file that names it.
 //   `kete.memory.imports: false` turns this off.
 // - Reading a file also loads the CLAUDE.md files of its folders (and their imports), as upstream does
@@ -11,17 +11,20 @@
 //
 // This plugin runs after upstream's ConfigInstructionPlugin and rewrites the InstructionDiscovery entries
 // it produced: upstream's AGENTS.md entries keep their content, CLAUDE.md entries and imports are added
-// in render order, and entries from other contributors stay where they were.
+// in render order, and entries from other contributors follow, in their own order.
 //
 // Security: an import reads a file into model context, so what may be read is decided in
 // memory-imports.ts (allowed folders only, no credential files, only *.md from ~/.claude and the global
-// config folder). A refused path is never read. Known gap: the nested half hands paths to
-// SessionInstructions.load, which reads them again; a file swapped between the check and that read
-// (inside an allowed folder) is not re-checked.
+// config folder). A refused path is never read. A CLAUDE.md is loaded only when its real path is a `.md`
+// file inside its own folder (or the project), so a symlinked `CLAUDE.md -> ~/.ssh/id_rsa` is ignored. A
+// project root that is the home folder (or above it, or `/`) serves no imports and no nested files.
+// `kete.memory` switches: a `false` anywhere (user or project config) wins. Known gaps: the nested half
+// hands paths to SessionInstructions.load, which reads them again, and a file is stat'ed before it is
+// read, so a file swapped in between (inside an allowed folder, by a local process) is not re-checked.
 
 export * as KeteMemoryFiles from "./memory-files.js"
 
-import { dirname, join } from "path"
+import { dirname, join, parse } from "path"
 import { define } from "@opencode/plugin/effect/plugin"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -68,10 +71,10 @@ export const expand = Effect.fn("KeteMemoryFiles.expand")(function* (
 ) {
   const seen = new Set<string>(yield* Effect.forEach(files, (file) => fs.resolve(file.path)))
   const results: Expanded[] = []
+  let used = 0
   for (const file of files) {
     const top: Pending = { path: file.path, content: file.content, notes: [] }
     const loaded: Pending[] = []
-    let used = 0
     const visit = (item: Pending, depth: number): Effect.Effect<void> =>
       Effect.gen(function* () {
         if (depth >= KeteMemoryImports.MAX_DEPTH) return
@@ -176,19 +179,17 @@ export const Plugin = define({
         { path: claudeHome, markdownOnly: true },
         { path: yield* fs.resolve(global.config), markdownOnly: true },
       ]
-      const projectRoots: KeteMemoryImports.Root[] = [
-        ...(discovery.project ? [{ path: root, markdownOnly: false }] : []),
-        ...(discovery.global ? userRoots : []),
-      ]
-      const globalRoots: KeteMemoryImports.Root[] = [
-        ...userRoots,
-        ...(discovery.project ? [{ path: root, markdownOnly: false }] : []),
-      ]
+      // A cwd with no repository makes the cwd the "project root": in `~` that would open all of home.
+      const repository = KeteMemoryImports.usableRoot(root, home)
+      const projectRoot: KeteMemoryImports.Root[] = discovery.project && repository ? [{ path: root, markdownOnly: false }] : []
+      const projectRoots: KeteMemoryImports.Root[] = [...projectRoot, ...(discovery.global ? userRoots : [])]
+      const globalRoots: KeteMemoryImports.Root[] = [...userRoots, ...projectRoot]
       const loaded: { current: Loaded } = { current: { type: "available", items: [] } }
 
       const settings = Effect.fn("KeteMemoryFiles.settings")(function* () {
-        const memory = Config.latest(yield* config.entries(), "kete")?.memory
-        return { claudeMd: memory?.claudeMd !== false, imports: memory?.imports !== false }
+        // The more restrictive setting wins: a project config can't turn back on what the user turned off.
+        const all = (yield* config.entries()).flatMap((entry) => (entry.type === "document" && entry.info.kete?.memory ? [entry.info.kete.memory] : []))
+        return { claudeMd: all.every((memory) => memory.claudeMd !== false), imports: all.every((memory) => memory.imports !== false) }
       })
 
       const claudeCandidates = (dir: string) => CLAUDE_NAMES.map((name) => join(dir, ...name))
@@ -225,7 +226,23 @@ export const Plugin = define({
         if (yield* fs.isFile(agents)) return { path: yield* fs.resolve(agents), kete: false }
         if (!claudeMd) return undefined
         const claude = yield* firstFile(claudeCandidates(dir))
-        return claude ? { path: yield* fs.resolve(claude), kete: true } : undefined
+        if (!claude) return undefined
+        const real = yield* fs.resolve(claude)
+        // A symlinked CLAUDE.md must stay a .md file inside its folder (or the repository), never ~/.ssh/id_rsa.
+        const bound = repository && FSUtil.contains(root, dir) ? root : yield* fs.resolve(dir)
+        if (!KeteMemoryImports.memoryFileAllowed(real, bound, home)) {
+          yield* Effect.logDebug("memory file skipped", { path: claude, real, reason: "resolves outside its folder or is not markdown" })
+          return undefined
+        }
+        return { path: real, kete: true }
+      })
+
+      /** A CLAUDE.md larger than the import total is not loaded (upstream's AGENTS.md has no cap; ours does). */
+      const withinCap = Effect.fn("KeteMemoryFiles.withinCap")(function* (path: string) {
+        const info = yield* fs.stat(path).pipe(Effect.catch(() => Effect.undefined))
+        if (info && Number(info.size) <= KeteMemoryImports.MAX_TOTAL) return true
+        yield* Effect.logWarning("memory file skipped", { path, reason: `larger than ${KeteMemoryImports.MAX_TOTAL / 1024} KiB` })
+        return false
       })
 
       const refresh = Effect.fn("KeteMemoryFiles.refresh")(
@@ -237,7 +254,12 @@ export const Plugin = define({
           }
           if (discovery.global) {
             if (yield* fs.isFile(globalFile)) add({ path: globalFile, kete: false }, true)
-            if (claudeMd && (yield* fs.isFile(claudeGlobal))) add({ path: yield* fs.resolve(claudeGlobal), kete: true }, true)
+            if (claudeMd && (yield* fs.isFile(claudeGlobal))) {
+              const real = yield* fs.resolve(claudeGlobal)
+              // The person's own file (often a dotfiles symlink): any non-secret .md target will do.
+              if (KeteMemoryImports.memoryFileAllowed(real, parse(real).root, home)) add({ path: real, kete: true }, true)
+              else yield* Effect.logDebug("memory file skipped", { path: claudeGlobal, real, reason: "not a markdown file, or a secret" })
+            }
           }
           if (project) {
             for (const dir of ancestorDirectories(start, stop)) {
@@ -248,8 +270,10 @@ export const Plugin = define({
             }
           }
 
+          yield* watchAll(candidates)
           const files: (Memory & { kete: boolean; global: boolean })[] = []
           for (const item of picked) {
+            if (item.kete && !(yield* withinCap(item.path))) continue
             const content = yield* fs.readFileStringSafe(item.path)
             if (content === undefined) {
               // An unreadable CLAUDE.md is ours to report; upstream reports its own AGENTS.md.
@@ -334,7 +358,7 @@ export const Plugin = define({
       // Location root (the root's own are initial instructions), as upstream does for AGENTS.md.
       yield* ctx.tool.hook("execute.after", (event) =>
         Effect.gen(function* () {
-          if (event.tool !== "read" || event.status !== "completed" || !discovery.project) return
+          if (event.tool !== "read" || event.status !== "completed" || !discovery.project || !repository) return
           const requested =
             Predicate.isObject(event.input) && Predicate.hasProperty(event.input, "path") ? event.input.path : undefined
           if (typeof requested !== "string") return
@@ -353,9 +377,12 @@ export const Plugin = define({
 
           const files: (Memory & { kete: boolean })[] = []
           for (const dir of ancestorDirectories(from, cwd).filter((item) => item !== cwd)) {
+            // Dependencies are someone else's code: their memory files don't steer this agent.
+            if (dir.split(/[\\/]/).some((part) => part === "node_modules" || part === "vendor")) continue
             const entry = yield* pick(dir, claudeMd)
             if (!entry || known.has(entry.path)) continue
             if (!entry.kete && !imports) continue
+            if (entry.kete && !(yield* withinCap(entry.path))) continue
             const content = yield* fs.readFileStringSafe(entry.path)
             if (content !== undefined) files.push({ ...entry, content })
           }

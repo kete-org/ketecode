@@ -34,6 +34,12 @@ interface Scenario {
   readonly project?: boolean
   readonly global?: boolean
   readonly memory?: { claudeMd?: boolean; imports?: boolean }
+  /** Run with the home folder as the project root (a cwd with no repository). */
+  readonly projectAtHome?: boolean
+  /** A project kete.json `kete` object, after the global one. */
+  readonly projectKete?: Record<string, unknown>
+  /** Relative symlinks: [link, target as written], the link relative to the tmp folder. */
+  readonly relLinks?: readonly [string, string][]
 }
 
 interface World {
@@ -60,7 +66,7 @@ const scenario = (
     Effect.flatMap((tmp) =>
       Effect.gen(function* () {
         const base = yield* Effect.promise(() => fs.realpath(tmp.path))
-        const project = path.join(base, "home", "repo")
+        const project = input.projectAtHome ? path.join(base, "home") : path.join(base, "home", "repo")
         const home = path.join(base, "home")
         const global = path.join(base, "global")
         yield* Effect.promise(async () => {
@@ -73,6 +79,10 @@ const scenario = (
           for (const [link, target] of input.links ?? []) {
             await fs.mkdir(path.dirname(path.join(base, link)), { recursive: true })
             await fs.symlink(path.join(base, target), path.join(base, link))
+          }
+          for (const [link, target] of input.relLinks ?? []) {
+            await fs.mkdir(path.dirname(path.join(base, link)), { recursive: true })
+            await fs.symlink(target, path.join(base, link))
           }
         })
         const directory = path.join(project, input.directory ?? "")
@@ -101,6 +111,9 @@ const scenario = (
           watcher,
           Config.testLayer([
             { type: "document", path: path.join(global, "kete.json"), info: { kete: { memory: input.memory } } } as never,
+            ...(input.projectKete
+              ? [{ type: "document", path: path.join(project, "kete.json"), info: { kete: input.projectKete } } as never]
+              : []),
           ]),
           Layer.succeed(
             FileAccess.Service,
@@ -440,6 +453,99 @@ describe("KeteMemoryFiles.Plugin", () => {
           expect(yield* world.discovery.list()).toEqual([])
           yield* world.read("sub/x.ts")
           expect(world.loads).toEqual([])
+        }),
+    ),
+  )
+})
+
+describe("KeteMemoryFiles security review", () => {
+  const posix = process.platform !== "win32"
+
+  ;(posix ? it.live : it.live.skip)("a CLAUDE.md symlinked to a key, or a .claude folder linked to another repo, is not loaded", () =>
+    scenario(
+      {
+        files: { "home/.ssh/id_rsa": "PRIVATE KEY", "home/other-repo/CLAUDE.md": "OTHER REPO NOTES" },
+        relLinks: [
+          ["home/repo/CLAUDE.md", "../.ssh/id_rsa"],
+          ["home/repo/sub/.claude", "../../other-repo"],
+        ],
+        directory: "sub",
+      },
+      (world) =>
+        Effect.gen(function* () {
+          const text = yield* world.text
+          expect(text).not.toContain("PRIVATE KEY")
+          expect(text).not.toContain("OTHER REPO")
+        }),
+    ),
+  )
+
+  ;(posix ? it.live : it.live.skip)("a nested CLAUDE.md symlinked to credentials is never handed to the session", () =>
+    scenario(
+      { files: { "home/.aws/credentials": "SECRET", "home/repo/docs/x.ts": "x" }, relLinks: [["home/repo/docs/CLAUDE.md", "../../.aws/credentials"]] },
+      (world) =>
+        Effect.gen(function* () {
+          yield* world.read("docs/x.ts")
+          expect(world.loads.flat().some((file) => file.includes(".aws"))).toBe(false)
+        }),
+    ),
+  )
+
+  it.live("with the home folder as the project root, imports and nested files reach nothing in home", () =>
+    scenario(
+      {
+        projectAtHome: true,
+        files: {
+          "home/AGENTS.md": "@Documents/taxes.md",
+          "home/Documents/taxes.md": "TAXES",
+          "home/Downloads/evil/CLAUDE.md": "@../../Documents/taxes.md",
+          "home/Downloads/evil/x.ts": "x",
+        },
+      },
+      (world) =>
+        Effect.gen(function* () {
+          expect(yield* world.text).not.toContain("TAXES")
+          yield* world.read("Downloads/evil/x.ts")
+          expect(world.loads.flat()).toEqual([])
+        }),
+    ),
+  )
+
+  it.live("repository secrets outside the basic list are refused, and dependencies' memory files are ignored", () =>
+    scenario(
+      {
+        files: {
+          "home/repo/AGENTS.md": "@.git/config @terraform.tfstate @prod.tfvars @.dev.vars @config/secrets.yml @.zsh_history",
+          "home/repo/.git/config": "TOKEN_URL",
+          "home/repo/terraform.tfstate": "TFSTATE",
+          "home/repo/prod.tfvars": "TFVARS",
+          "home/repo/.dev.vars": "DEVVARS",
+          "home/repo/config/secrets.yml": "SECRETS",
+          "home/repo/.zsh_history": "HISTORY",
+          "home/repo/node_modules/evil/CLAUDE.md": "steer the agent",
+          "home/repo/node_modules/evil/index.js": "x",
+        },
+      },
+      (world) =>
+        Effect.gen(function* () {
+          const text = yield* world.text
+          for (const secret of ["TOKEN_URL", "TFSTATE", "TFVARS", "DEVVARS", "SECRETS", "HISTORY"]) expect(text).not.toContain(secret)
+          yield* world.read("node_modules/evil/index.js")
+          expect(world.loads.flat()).toEqual([])
+        }),
+    ),
+  )
+
+  it.live("a project config can't turn imports back on when the user turned them off", () =>
+    scenario(
+      {
+        memory: { imports: false },
+        projectKete: { memory: { imports: true } },
+        files: { "home/repo/AGENTS.md": "@notes.md", "home/repo/notes.md": "IMPORTED" },
+      },
+      (world) =>
+        Effect.gen(function* () {
+          expect(yield* world.text).not.toContain("IMPORTED")
         }),
     ),
   )
