@@ -120,6 +120,14 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
     reason: "folder trust: trust root, plugin and agent files hashed for the fingerprint; the gate passes everything through in job mode (its server loads no project config)",
   },
   "packages/util/src/kete/job-secrets.ts": { category: "confinement", reason: "reads the inherited secrets descriptor" },
+  "packages/util/src/kete/skill-lock.ts": {
+    category: "off-in-job",
+    reason: "skills.lock.json for `kete skill` (CLI only, never the runtime or a job)",
+  },
+  "packages/util/src/kete/skill-source.ts": {
+    category: "off-in-job",
+    reason: "stats a local folder named as a `kete skill add` source (CLI only, never the runtime or a job)",
+  },
   "packages/util/src/kete/bug-report-file.ts": {
     category: "not-worktree",
     reason: "problem reports (kete bug, /feedback): reads the end of kete's log file and saves a report in the temp dir; CLI and TUI only, never the runtime",
