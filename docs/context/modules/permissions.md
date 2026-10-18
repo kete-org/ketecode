@@ -1,7 +1,7 @@
 ---
 module: permissions
 paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/shell-risk.ts, packages/util/src/kete/permission-mode.ts, packages/core/src/kete/permission-ceiling.ts, packages/core/src/permission.ts, packages/core/src/plugin/internal.ts, packages/cli/src/kete/permission-mode.ts, packages/tui/src/kete/permission-mode.tsx]
-verified-at: 52ddc2f9ef
+verified-at: 3c3e792370
 ---
 ## Quick answers
 - Where does the TUI show and cycle the permission mode, does it register into a TUI slot, and where does the current mode come from? Not a slot plugin: `packages/tui/src/kete/permission-mode.tsx` is absent from `packages/tui/src/plugin/builtins.ts` (its Kete entries are `KeteBalance`, `KeteLocalStatus`, `KeteSandboxStatus`, `KeteTodo`, `builtins.ts:24-27`) and calls no `ui.slot`. The prompt calls `useKetePermissionMode()` (`component/prompt/index.tsx:196`) and passes `statusText(current())` as `keteMode` (`:1826`) to the prompt's metadata/status row (`component/prompt/metadata.tsx:12`); nothing shows for Default. Cycling is the `permission.mode.cycle` command (`permission-mode.tsx:21,106-112`: palette entry, `/mode`, bound to `<leader>p` in `config/keybind.ts:172`) registered by `useKetePermissionModeCommands()`, called once from `app.tsx:499`. Current value at runtime (`permission-mode.tsx:48-52`): the open session's `kete.permissionMode` metadata read from the synced data store (`data.session.get(id)?.metadata`, via `modeOf` `:24`), else `args.permissionMode` (`--permission-mode`/`--auto`, `context/args.tsx:12`). Cycling does GET-merge-PATCH of that metadata (`applyMode` `:37-41`, order from `KetePermissionModes.next`), so the server and every client share it; enforcement is core `permission-mode.ts`.
@@ -81,6 +81,8 @@ verified-at: 52ddc2f9ef
   `edit` (`file-access.ts:97-125`; `tool/plugin/edit.ts:181`, `write.ts:79`, `patch.ts:197`); `shell`
   asserts one resource per parsed command text (`tool/plugin/shell.ts:134-136`) — the shape D2's
   best-effort shell-text check matches against.
+- How is the `memory` action (auto memory) decided? `permission-mode.ts` `memory()` (`:87`, called first in `decide()` `:152`): resources are `<scope>/<file>:<verb>`; `:view` always allows; a change is denied in Plan mode, asked in Ask mode, and asked in every other mode for `user/` resources unless a rule or saved "Always" allowed it (resource `source` is not `catch-all`). Project-scope changes are allowed by the catch-all.
+- Why must a Kete-owned rule that needs resource sources go through `apply()`? `apply()` skips non-`guarded` actions early; `memory` is carved out (`:308`) so it takes the full path that computes each resource's source. Test through `apply()`, not `decide()` (pitfalls).
 
 ## Purpose
 Extends upstream's allow/ask/deny permission engine with Kete-specific policies, all applied only after upstream's own rule evaluation: a per-session UI toggle for stricter prompting (for editor clients like VS Code), a security backstop that caps subagent permissions at their ancestors' level so a restricted parent agent can't spawn an unrestricted child, and (the `unattended` card) a run-level policy that fails an unattended session closed. This card covers permission-mode and permission-ceiling in depth and the full `evaluate` hook order; for the unattended plugins' own logic see the `unattended` card.

@@ -20,7 +20,7 @@
 | root lint, upstream:check | pass |
 | reviewer | approve (minors: `memory.md` comment added, result.md filled) |
 | upstream-guard | approve |
-| security review | round 1 found 1 high (silent user-wide save via prompt injection), 3 medium and 5 low, all fixed except LOW-5. Re-review result in the PR |
+| security review | round 1: 1 high (silent user-wide save via prompt injection), 3 medium, 5 low. Round 2: all fixed except LOW-5 (documented), plus a new high (the memory rule never ran through apply()). Round 3: fixed and confirmed by PoC through apply() |
 
 The implementer had no shell tool, so checks ran from the main session. The implementer's file lock (`EffectFlock`) wasn't available to internal plugins, so it was replaced by an in-process semaphore plus atomic writes (documented shortcut).
 

@@ -1,7 +1,7 @@
 ---
 module: instructions
-paths: [packages/core/src/kete/memory-files.ts, packages/core/src/kete/memory-imports.ts, packages/core/src/config/plugin/instruction.ts, packages/core/src/instruction-discovery.ts, packages/core/src/session/instructions.ts, packages/core/src/tool/plugin/read.ts]
-verified-at: 246569111a
+paths: [packages/core/src/kete/auto-memory.ts, packages/core/src/kete/memory-files.ts, packages/core/src/kete/memory-imports.ts, packages/core/src/config/plugin/instruction.ts, packages/core/src/instruction-discovery.ts, packages/core/src/session/instructions.ts, packages/core/src/tool/plugin/read.ts]
+verified-at: 3c3e792370
 ---
 ## Quick answers
 - Which instruction files does the runtime load? `AGENTS.md`, plus `CLAUDE.md` where a folder has no `AGENTS.md` (Kete, below). `ConfigInstructionPlugin` (`core/src/config/plugin/instruction.ts:36-121`): the global `<config>/AGENTS.md`, then every project `AGENTS.md` walking up from the cwd to the project root (nearest first; to the home folder when the cwd is under it), de-duplicated by path (`new Set`, `:51,71`).
@@ -16,6 +16,11 @@ verified-at: 246569111a
 - Does folder trust gate them? No: `AGENTS.md` and "instructions" load as before in an untrusted folder (`core/src/kete/folder-trust.ts:27`); only executable project config is held back (`permissions`/`hooks`/`job-mode` cards). Job review mode turns project `AGENTS.md` discovery off (`job-mode` card).
 - Does the `instructions:` config key work? It is decoded (`core/src/config/normalize.ts:223-224`) but nothing in `core/src` reads it in v2 (grep found no consumer); do not tell users it adds files.
 - Where do I add a Kete instruction source? `InstructionDiscovery.Service.transform((editor) => editor.add(file))` from a Kete plugin registered in `core/src/plugin/internal.ts` (the upstream one is in `post`, `:324`; register yours so it runs after it, since insertion order is render order: global, then nearest to farthest project file, then siblings by registration order).
+- What is auto memory and where do notes live? `core/src/kete/auto-memory.ts` (plugin `kete.auto-memory` `:136`, registered `plugin/internal.ts:330` `// kete_change`): a `memory` tool (view/write/append/delete markdown) over Kete's state folder, never the repo: `<state>/memory/<projectID>-<12-hex hash of the directory>/` (project) and `<state>/memory/user/`; `MEMORY.md` is each folder's index (caps `auto-memory.ts:39-45`; a project without a stable id, `ProjectID.global`, gets no project scope, `:91`). Text is redacted on write and again on load.
+- How do saved notes reach the model? Not through InstructionDiscovery (it is shared by all sessions of a process, so it cannot hide notes from one unattended session). The `context` session hook (`:327`) adds the two indexes to the system prompt per session, fenced under `HEADER` (`:47`: context, not instructions).
+- How do I turn auto memory off? `kete.memory.auto: false` in any config (false anywhere wins). It is also off, with no tool, no notes and no commands, in job mode (`KeteJobMode.enabled`, checked before registration `:138`) and in any unattended session (`kete.unattended` metadata via `KeteUnattendedPolicy.resolve`, fail closed). The tool is removed per request with `delete event.tools[name]` in the `context`/`compaction`/`generate` hooks (`:325-330`, same seam as `core/src/kete/offline.ts`).
+- What are `/remember` and `/memory`? Built-in prompt commands registered by `ctx.command.transform` (`:339`), like `/commit` in `git-commands.ts`; `/remember` with no note reports an error, which `core/src/command.ts:80-88` maps to `ExecutionError`. `/memory` lists via the tool.
+- Which lock guards writes? `EffectFlock.Service.withLock` (`util/src/effect-flock.ts:82-90`), key `kete-memory-<folder>`; write/append/delete go through temp file + rename.
 
 ## Purpose
 Explains how agent instructions reach the model and where a Kete feature can add or change them.
@@ -56,3 +61,4 @@ Plugin start → resolve cwd, project root, home → candidate files → read (u
 - Known gap: the nested half hands paths to `SessionInstructions.load`, which re-reads them, and stat precedes read, so a file swapped in between isn't re-checked.
 - The location-root `AGENTS.md` is loaded up front, so the `read` walk deliberately drops it (`read.ts` filters `dirname(file) !== root`).
 - When the cwd is inside the global config folder, `discovery.global: false` also excludes the global file from the ancestor walk.
+- Auto memory known limits: LOW-5, a `memory: deny` rule blocks writes but does not stop already-saved notes from loading (no evaluate-without-asking API in the permission service; `kete.memory.auto: false` stops loading). Cross-process append (`auto-memory.ts:140` shortcut): two kete processes appending to one file at the same instant can lose an append (writes are atomic, nothing corrupts). Another session's new notes show on the next plugin start, not live. `memory.md` (lowercase) is refused as a name (collides with `MEMORY.md` on case-insensitive disks).

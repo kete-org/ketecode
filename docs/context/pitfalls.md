@@ -203,6 +203,9 @@ Mistakes to avoid, grouped. Each item cites where the rule lives or where it bit
 - CLAUDE.md files and `@imports` are repository-controlled and go to the model: check realpath containment (never the written path) and the secret denylist (`core/src/kete/memory-imports.ts`). Credential matching is `KeteShellRisk.credential` (`core/src/kete/shell-risk.ts:292`); its `.config/kete` pattern (`:286`) matches the global config folder, so match relative to the root.
 - Security-style switches (`kete.memory.*`) are restrictive-wins: read every config document and let a `false` anywhere win (`memory-files.ts:191`), not `Config.latest`.
 - A new fs-touching file in `core/src` or `util/src` must be classified in `packages/core/test/kete/job-fs-sites.test.ts` or that test fails.
+- A Kete-owned permission rule that reads a resource's source (catch-all vs explicit rule) only sees it on `apply()`'s full path, not in `decide()`: route the action through `apply()` (`permission-mode.ts:308`, as `memory` is) and test through `apply()`, or the test passes while real calls behave differently.
+- Test helpers using `await using` must `return await body()`; a bare `return body()` disposes the resource before the promise settles.
+- Auto memory (`kete/auto-memory.ts`) is model-written text that returns in later sessions: redact on write and on load, fence it in the prompt, and keep it off in job mode and unattended sessions.
 
 ## Git / process
 
