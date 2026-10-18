@@ -1415,7 +1415,7 @@ An `AGENTS.md` is loaded (at start, and nested after a `read`) only when its rea
 | --- | --- | --- |
 | `core/src/config/plugin/instruction.ts` | the project walk filters through `KeteInstructionFiles.allowed` (2 marked lines) | the walk resolves and reads in one step inside the plugin; a later transform would still have read the target |
 | `core/src/tool/plugin/read.ts` | the nested walk filters the same way; `Option`, `os`, `Global` imports; the home folder from an optional `Global` (marked lines) | nested files go straight to `SessionInstructions.load`, with no hook in between |
-| `core/src/file-access.ts` | `resolve` follows symlinks (`KeteRealPath.follow`): a path inside the workspace whose real path is outside (or a link loop) becomes external, and the `external_directory` boundary is the real folder (marked lines) | every file tool (read, write, edit, patch, glob, grep) resolves here; a permission hook only sees the lexical folder |
+| `core/src/file-access.ts` | `resolve` follows symlinks (`KeteRealPath.follow`): a path inside the workspace whose real path is outside (or a link loop) becomes external, and the `external_directory` boundary is the real folder (marked lines); skipped in job mode, whose confined file system refuses every symlink itself | every file tool (read, write, edit, patch, glob, grep) resolves here; a permission hook only sees the lexical folder |
 
 **Sync checklist:** if upstream changes either walk, keep the filter on the found path (before `fs.resolve`
 follows the link). If upstream changes `FileAccess.resolve`, keep the real-path decision before the

@@ -10,6 +10,7 @@ import { Permission } from "./permission.js"
 import { Project } from "./project.js"
 import { AbsolutePath } from "./schema.js"
 import { KeteRealPath } from "./kete/real-path.js" // kete_change
+import { KeteJobMode } from "@opencode/util/kete/job-mode" // kete_change
 import type { SessionErrors } from "./session/error.js"
 import type { Tool } from "./tool.js"
 
@@ -104,7 +105,8 @@ const layer = Layer.effect(
         FSUtil.contains(location.directory, absolute) ||
         (worktree !== path.parse(worktree).root && FSUtil.contains(worktree, absolute))
       // kete_change start: inside or outside by where a symlink really leads (kete/real-path.ts); the approval is for the real folder
-      const real = yield* KeteRealPath.follow(fs, absolute)
+      // A job's file system refuses every symlink itself (KeteConfinedFs, kete/job-files.ts), so the lexical answer stands there
+      const real = KeteJobMode.enabled() ? undefined : yield* KeteRealPath.follow(fs, absolute)
       const followed = real !== undefined && real !== KeteRealPath.UNRESOLVED ? AbsolutePath.make(real) : undefined
       const realInside = followed !== undefined && (yield* KeteRealPath.inside(fs, followed, [location.directory, worktree]))
       if (internal && (real === undefined || realInside)) {

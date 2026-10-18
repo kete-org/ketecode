@@ -157,8 +157,7 @@ if (linux)
       yield* Effect.promise(() => s.client.session.wait({ sessionID: session.id }).catch(() => undefined))
       const messages = JSON.stringify(yield* Effect.promise(() => s.client.message.list({ sessionID: session.id })))
       expect(messages).not.toContain("TOP-SECRET-CONTENT")
-      // Refused either by the read tool or, earlier, when FileAccess follows the link to decide inside/outside.
-      expect(messages).toMatch(/Unable to read|refused to follow a symbolic link/)
+      expect(messages).toContain("Unable to read")
       expect(messages).toContain("hello")
       expect(yield* Effect.promise(() => fs.readFile(path.join(repoDir, "written.txt"), "utf8"))).toBe("ok\n")
     }),
