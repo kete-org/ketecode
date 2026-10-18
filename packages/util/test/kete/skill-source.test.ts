@@ -22,7 +22,7 @@ describe("KeteSkillSource", () => {
   test("display and policyResource drop credentials", () => {
     const source = { kind: "git", url: "https://user:secret@GitHub.com/Acme/Skills.git/" } as const
     expect(KeteSkillSource.display(source)).not.toContain("secret")
-    expect(KeteSkillSource.policyResource(source)).toBe("github.com/Acme/Skills")
+    expect(KeteSkillSource.policyResource(source)).toBe("github.com/acme/skills")
     expect(KeteSkillSource.policyResource({ kind: "git", url: "git@GitHub.com:acme/skills.git" })).toBe("github.com/acme/skills")
     expect(KeteSkillSource.policyResource({ kind: "local", path: "/x/y" })).toBe("/x/y")
   })
@@ -42,5 +42,19 @@ describe("KeteSkillSource", () => {
     expect(() => KeteSkillSource.frontmatter("---\nname: 3\n---\n")).toThrow("string")
     expect(() => KeteSkillSource.frontmatter("---\nname: a\n")).toThrow("not closed")
     expect(() => KeteSkillSource.frontmatter("---\n- a\n---\n")).toThrow("mapping")
+  })
+})
+
+describe("review fixes", () => {
+  test("gitUrl refuses parser-confusing characters, dot segments and other transports", () => {
+    for (const bad of ["https://github.com\\@evil.example/x", "https://h/a%2e%2e/b", "https://h/a#b", "https://h/a b", "git@h:a/../b", "ext::sh", "file:///x", "foo::bar"])
+      expect(() => KeteSkillSource.gitUrl(bad)).toThrow(KeteSkillSource.SourceError)
+    expect(KeteSkillSource.gitUrl("https://GitHub.com/acme/skills")).toBe("https://github.com/acme/skills")
+    expect(KeteSkillSource.gitUrl("git@github.com:acme/skills.git")).toBe("git@github.com:acme/skills.git")
+  })
+  test("the policy resource ignores case and folds www. aliases", () => {
+    const resource = (url: string) => KeteSkillSource.policyResource({ kind: "git", url })
+    expect(resource("https://www.github.com/Evil/Repo.git")).toBe("github.com/evil/repo")
+    expect(resource("git@GitHub.com:Evil/Repo")).toBe("github.com/evil/repo")
   })
 })

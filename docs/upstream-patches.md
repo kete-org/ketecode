@@ -1323,7 +1323,6 @@ unchanged.
 | File | Change | Why no seam |
 | --- | --- | --- |
 | `cli/src/index.ts` | `skill` handlers → `kete/skill.ts` (one marked block) | the handler map is the only place a command's handler is registered |
-| `README.md` | a short "Skills" note under Agents (marked) | upstream's README is the only one |
 
 **Sync checklist:** the CLI can't import core, so `skill-flow.ts` copies `Wildcard.match`
 (`core/src/util/wildcard.ts`) and util `skill-source.ts` `frontmatter` mirrors

@@ -16,7 +16,8 @@
 export * as KeteSkillFlow from "./skill-flow"
 
 import { createHash, randomUUID } from "node:crypto"
-import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
+import { constants } from "node:fs"
+import { lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { Brand } from "@opencode/util/kete/brand"
 import { KeteFolderTrustRules } from "@opencode/util/kete/folder-trust"
@@ -75,7 +76,7 @@ const refuse = (message: string): never => {
 
 const sha256 = (data: Uint8Array) => createHash("sha256").update(data).digest("hex")
 
-/** Mirrors core/src/util/wildcard.ts `match`. */
+/** Mirrors core/src/util/wildcard.ts `match`, but always case-insensitive: `policyResource` is lower-case, and a pattern written `github.com/Acme/*` must still match. */
 function match(input: string, pattern: string) {
   let escaped = pattern
     .replaceAll("\\", "/")
@@ -83,7 +84,7 @@ function match(input: string, pattern: string) {
     .replace(/\*/g, ".*")
     .replace(/\?/g, ".")
   if (escaped.endsWith(" .*")) escaped = escaped.slice(0, -3) + "( .*)?"
-  return new RegExp("^" + escaped + "$", process.platform === "win32" ? "si" : "s").test(input.replaceAll("\\", "/"))
+  return new RegExp("^" + escaped + "$", "si").test(input.replaceAll("\\", "/"))
 }
 
 /** Runs one subcommand's work: a refusal is exit 2, anything else exit 1; messages never carry credentials. */
@@ -101,6 +102,29 @@ async function guard(deps: Deps, work: () => Promise<void>): Promise<number> {
 
 const scopeOf = (deps: Deps, options: Pick<Options, "global">) => (options.global ? deps.globalDir : path.join(deps.cwd, Brand.projectDirectory))
 const skillsOf = (scope: string) => path.join(scope, "skills")
+const isLink = (file: string) => lstat(file).then((info) => info.isSymbolicLink(), () => false)
+
+/**
+ * The scope to install into. A project's `.kete`, `.kete/skills` and lockfile come from the repository, so a
+ * symlink there (`.kete/skills -> ../../../.config`) would aim an install, update or remove at folders outside
+ * the project: refuse symlinks and anything that resolves outside it. The global scope is the person's own.
+ */
+async function scopeFor(deps: Deps, options: Pick<Options, "global">) {
+  const scope = scopeOf(deps, options)
+  if (options.global) return scope
+  for (const file of [scope, skillsOf(scope), KeteSkillLock.file(scope)])
+    if (await isLink(file)) refuse(`${show(file)} is a symlink; ${cli} only installs skills into a real folder inside the project`)
+  const [root, real] = await Promise.all([realpath(deps.cwd), realpath(scope).catch(() => undefined)])
+  if (real !== undefined && !real.startsWith(root + path.sep)) refuse(`${show(scope)} resolves outside the project`)
+  return scope
+}
+
+/** `skills/<name>` in the scope; a symlink there is refused (update would read through it). */
+async function targetFor(scope: string, name: string) {
+  const target = path.join(skillsOf(scope), name)
+  if (await isLink(target)) refuse(`${show(target)} is a symlink; not touching it`)
+  return target
+}
 
 // ---- policy and confirmation ----
 
@@ -150,7 +174,12 @@ const GIT_ENV = { GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" }
 
 /** One git call with hooks, submodule recursion and LFS filters off and no credential prompts. Never throws on a non-zero exit. */
 function git(deps: Deps, workspace: Workspace, cwd: string, args: string[]) {
-  const config = ["-c", `core.hooksPath=${workspace.hooks}`, "-c", "submodule.recurse=false", "-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false"]
+  // Only https and ssh (no ext::, file:// or remote helpers), and no redirects: git fetches the URL the policy checked.
+  const config = [
+    ...["-c", `core.hooksPath=${workspace.hooks}`, "-c", "submodule.recurse=false"],
+    ...["-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false"],
+    ...["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false"],
+  ]
   return (deps.git ?? JobGit.run)(cwd, [...config, ...args], {
     timeoutMs: deps.timeoutMs ?? 120_000,
     signal: deps.signal,
@@ -185,7 +214,11 @@ async function fetchGit(deps: Deps, workspace: Workspace, source: KeteSkillSourc
 /** The commit a ref points at on the remote, without cloning; undefined if it can't be told. */
 async function remoteCommit(deps: Deps, workspace: Workspace, source: KeteSkillSource.Source & { kind: "git" }, ref: string | undefined) {
   const result = await git(deps, workspace, workspace.root, ["ls-remote", "--", source.url, ref ?? "HEAD"])
-  return result.exitCode === 0 ? /^([0-9a-f]{40,64})\s/.exec(result.stdout)?.[1] : undefined
+  if (result.exitCode !== 0) return undefined
+  // An annotated tag lists the tag object first and the commit it points at as `<ref>^{}`.
+  const lines = result.stdout.split("\n")
+  const line = lines.find((entry) => entry.endsWith("^{}")) ?? lines[0]
+  return /^([0-9a-f]{40,64})\s/.exec(line ?? "")?.[1]
 }
 
 // ---- reading a skill folder ----
@@ -214,9 +247,24 @@ async function collect(root: string): Promise<Item[]> {
       if (!info.isFile()) refuse(`${show(rel)} is a symlink or special file; a skill may only contain regular files`)
       if (rel !== "SKILL.md" && KeteSyncSkills.safeRelative(rel) === undefined) refuse(`${show(rel)} is not an allowed path in a skill`)
       if (items.length >= MAX_FILES) refuse(`the skill has more than ${MAX_FILES} files`)
-      total += info.size
+      // Open without following a symlink and check what was opened, so a file swapped after lstat can't
+      // smuggle in another one; a hard link could be any file of the person's, so it is refused too.
+      const handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)).catch(() =>
+        refuse(`${show(rel)} changed while it was read; try again`),
+      )
+      const data = await (async () => {
+        try {
+          const opened = await handle.stat()
+          if (!opened.isFile()) refuse(`${show(rel)} is a symlink or special file; a skill may only contain regular files`)
+          if (opened.nlink > 1) refuse(`${show(rel)} is a hard link; a skill may only contain plain files`)
+          if (total + opened.size > MAX_BYTES) refuse(`the skill is larger than ${MAX_BYTES / 1024 / 1024} MiB`)
+          return await handle.readFile()
+        } finally {
+          await handle.close()
+        }
+      })()
+      total += data.length
       if (total > MAX_BYTES) refuse(`the skill is larger than ${MAX_BYTES / 1024 / 1024} MiB`)
-      const data = await readFile(absolute)
       const script =
         (data[0] === 0x23 && data[1] === 0x21) ||
         (process.platform !== "win32" && (info.mode & 0o111) !== 0) ||
@@ -313,8 +361,17 @@ const readLock = (scope: string) => KeteSkillLock.read(scope).catch((error: unkn
 
 const exists = (file: string) => lstat(file).then(() => true, () => false)
 
-const sourceOf = (entry: KeteSkillLock.Entry): KeteSkillSource.Source =>
-  entry.commit !== undefined ? { kind: "git", url: entry.source } : { kind: "local", path: entry.source }
+/** The lockfile's source, held to the same rules as `add` (someone may have edited the file). */
+function sourceOf(entry: KeteSkillLock.Entry): KeteSkillSource.Source {
+  if (entry.commit === undefined) {
+    if (!path.isAbsolute(entry.source)) refuse(`the lockfile's source ${show(entry.source)} isn't an absolute folder path`)
+    return { kind: "local", path: entry.source }
+  }
+  if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(entry.commit)) refuse(`the lockfile's commit ${show(entry.commit)} isn't a commit id`)
+  return { kind: "git", url: KeteSkillSource.gitUrl(entry.source) }
+}
+
+const inside = (root: string, file: string) => file.startsWith(root + path.sep)
 
 function flagChecks(source: KeteSkillSource.Source, input: { ref?: string; path?: string; name?: string }) {
   if (input.ref !== undefined && (input.ref.startsWith("-") || input.ref === "")) refuse("--ref must be a branch, tag or commit")
@@ -330,13 +387,13 @@ export function add(deps: Deps, input: { source: string; path?: string; ref?: st
     const source = await KeteSkillSource.parse(input.source, deps.cwd)
     flagChecks(source, input)
     const force = await policyGate(deps, KeteSkillSource.policyResource(source))
-    const scope = scopeOf(deps, options)
+    const scope = await scopeFor(deps, options)
     const lock = await readLock(scope)
     await withWorkspace(deps, async (workspace) => {
       const found = await prepare(deps, workspace, source, input)
       if ((await deps.orgSkills()).has(found.name)) refuse(`${found.name} is a skill your organization manages; pick another name with --name`)
       if (lock.skills[found.name]) refuse(`${found.name} is already installed; run \`${cli} skill update ${found.name}\``)
-      const target = path.join(skillsOf(scope), found.name)
+      const target = await targetFor(scope, found.name)
       if (await exists(target)) refuse(`${show(target)} already exists and wasn't installed by ${cli}; pick another name with --name or remove it yourself`)
       deps.out(`Skill ${show(found.name)}${found.description ? `: ${show(found.description)}` : ""}\n`)
       deps.out(`  from ${show(KeteSkillSource.display(source))}${input.path ? ` (${show(input.path)})` : ""}${found.commit ? ` at ${found.commit}` : ""}\n`)
@@ -345,6 +402,8 @@ export function add(deps: Deps, input: { source: string; path?: string; ref?: st
       if (found.items.some((item) => item.script))
         deps.out(`  Files marked [script] can run code if the agent is told to. They are installed without the executable bit.\n`)
       await approve(deps, `Install skill ${found.name}?`, { yes: options.yes, force })
+      // Checked again: a folder made while the question was open must not be replaced.
+      if (await exists(target)) refuse(`${show(target)} appeared while you were asked; nothing was changed`)
       await install(scope, found.name, found.items)
       await KeteSkillLock.upsert(scope, found.name, {
         source: KeteSkillSource.display(source),
@@ -364,7 +423,7 @@ export function add(deps: Deps, input: { source: string; path?: string; ref?: st
 
 export function list(deps: Deps, options: Pick<Options, "global">) {
   return guard(deps, async () => {
-    const scope = scopeOf(deps, options)
+    const scope = await scopeFor(deps, options)
     const lock = await readLock(scope)
     const tracked = Object.entries(lock.skills)
     const folders = async (directory: string) =>
@@ -376,7 +435,7 @@ export function list(deps: Deps, options: Pick<Options, "global">) {
       return
     }
     for (const [name, entry] of tracked)
-      deps.out(`${show(name)}  ${show(entry.source)}${entry.path ? ` (${show(entry.path)})` : ""}${entry.commit ? ` @ ${entry.commit.slice(0, 12)}` : ""}${KeteSkillSource.pinned(entry.ref) ? "  pinned" : ""}\n`)
+      deps.out(`${show(name)}  ${show(entry.source)}${entry.path ? ` (${show(entry.path)})` : ""}${entry.commit ? ` @ ${show(entry.commit.slice(0, 12))}` : ""}${KeteSkillSource.pinned(entry.ref) ? "  pinned" : ""}\n`)
     for (const name of local) deps.out(`${show(name)}  local (not tracked)\n`)
     for (const name of org) deps.out(`${show(name)}  org (read-only)\n`)
   })
@@ -385,23 +444,25 @@ export function list(deps: Deps, options: Pick<Options, "global">) {
 export function remove(deps: Deps, name: string, options: Options) {
   return guard(deps, async () => {
     if (!KeteSkillSource.validName(name)) refuse(`${show(JSON.stringify(name))} isn't a skill name`)
-    const scope = scopeOf(deps, options)
+    const scope = await scopeFor(deps, options)
     const lock = await readLock(scope)
     if (!lock.skills[name]) {
       if ((await deps.orgSkills()).has(name)) refuse(`${name} is managed by your organization and can't be removed here`)
       return refuse(`${name} wasn't installed with \`${cli} skill add\` in this scope; ${cli} only removes skills it installed, since a folder you made may be your own work`)
     }
+    const target = await targetFor(scope, name)
     await approve(deps, `Remove skill ${name}?`, { yes: options.yes, force: false })
-    await rm(path.join(skillsOf(scope), name), { recursive: true, force: true })
+    await rm(target, { recursive: true, force: true })
     await KeteSkillLock.remove(scope, name)
     deps.out(`Removed ${show(name)}.\n`)
   })
 }
 
 export async function update(deps: Deps, name: string | undefined, options: Options) {
-  let lock: KeteSkillLock.Lock
-  const scope = scopeOf(deps, options)
+  let lock: KeteSkillLock.Lock | undefined
+  let scope = ""
   const read = await guard(deps, async () => {
+    scope = await scopeFor(deps, options)
     lock = await readLock(scope)
     if (name !== undefined && !lock.skills[name]) {
       if ((await deps.orgSkills()).has(name)) refuse(`${name} is managed by your organization and can't be updated here`)
@@ -409,9 +470,9 @@ export async function update(deps: Deps, name: string | undefined, options: Opti
     }
     if (Object.keys(lock.skills).length === 0) deps.out(`No skills installed with ${cli}.\n`)
   })
-  if (read !== EXIT.ok) return read
+  if (read !== EXIT.ok || lock === undefined) return read
   let code: number = EXIT.ok
-  for (const [skill, entry] of Object.entries(lock!.skills)) {
+  for (const [skill, entry] of Object.entries(lock.skills)) {
     if (name !== undefined && skill !== name) continue
     code = Math.max(code, await guard(deps, () => updateOne(deps, scope, skill, entry, options)))
   }
@@ -420,14 +481,20 @@ export async function update(deps: Deps, name: string | undefined, options: Opti
 
 async function updateOne(deps: Deps, scope: string, name: string, entry: KeteSkillLock.Entry, options: Options) {
   if (!KeteSkillSource.validName(name)) refuse(`the lockfile names ${show(JSON.stringify(name))}, which isn't a skill name; not touching it`)
-  if (KeteSkillSource.pinned(entry.ref)) return void deps.out(`${show(name)} is pinned to ${show(entry.ref!)}; nothing to update.\n`)
+  if (KeteSkillSource.pinned(entry.ref)) return void deps.out(`${show(name)} is pinned to ${show(entry.ref ?? "")}; nothing to update.\n`)
   const source = sourceOf(entry)
-  const force = await policyGate(deps, KeteSkillSource.policyResource(source))
-  const target = path.join(skillsOf(scope), name)
-  // Files edited (or deleted) since install.
+  // A project lockfile comes with the repository: copying a folder from elsewhere on this machine into the
+  // project is the person's call every time, --yes or not.
+  const outside = !options.global && source.kind === "local" && !inside(await realpath(deps.cwd), source.path)
+  const force = (await policyGate(deps, KeteSkillSource.policyResource(source))) || outside
+  const target = await targetFor(scope, name)
+  // Files edited (or deleted) since install; a lockfile path that isn't a safe one inside the skill is refused.
   const edited: string[] = []
   for (const [rel, hash] of Object.entries(entry.files)) {
-    const data = await readFile(path.join(target, ...rel.split("/"))).catch(() => undefined)
+    if (rel !== "SKILL.md" && KeteSyncSkills.safeRelative(rel) === undefined) refuse(`the lockfile lists ${show(rel)}, which isn't a path inside the skill`)
+    const file = path.join(target, ...rel.split("/"))
+    const info = await lstat(file).catch(() => undefined)
+    const data = info?.isFile() && info.size <= MAX_BYTES ? await readFile(file).catch(() => undefined) : undefined
     if (data === undefined || sha256(data) !== hash) edited.push(rel)
   }
   await withWorkspace(deps, async (workspace) => {
@@ -437,7 +504,8 @@ async function updateOne(deps: Deps, scope: string, name: string, entry: KeteSki
     const changes = KeteSkillLock.diff(entry.files, next.hashes)
     if (changes.added.length + changes.removed.length + changes.changed.length === 0)
       return void deps.out(`${show(name)} is up to date.\n`)
-    deps.out(`Update ${show(name)}${next.commit ? ` ${entry.commit?.slice(0, 12) ?? "?"} -> ${next.commit.slice(0, 12)}` : ""}\n`)
+    deps.out(`Update ${show(name)}${next.commit ? ` ${show(entry.commit?.slice(0, 12) ?? "?")} -> ${next.commit.slice(0, 12)}` : ""}\n`)
+    deps.out(`  from ${show(KeteSkillSource.display(source))}\n  into ${show(target)}\n`)
     if (edited.length > 0) {
       deps.out(`  Edited since install (an update overwrites them):\n`)
       for (const rel of edited) deps.out(`    ${show(rel)}\n`)
@@ -455,6 +523,8 @@ async function updateOne(deps: Deps, scope: string, name: string, entry: KeteSki
       ...(next.commit !== undefined ? { commit: next.commit } : {}),
       files: next.hashes,
       installedAt: (deps.now?.() ?? new Date()).toISOString(),
+    }).catch((error: unknown) => {
+      throw new Error(`${name}'s files were updated but the lockfile couldn't be written (${error instanceof Error ? error.message : String(error)}); run \`${cli} skill update ${name}\` again`)
     })
     deps.out(`Updated ${show(name)}.\n`)
   })

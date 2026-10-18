@@ -97,12 +97,6 @@ OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bas
 XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
 ```
 
-### Skills
-
-<!-- kete_change start -->
-Install a skill from a git repository or a folder with `kete skill add <source>`. It shows every file in the skill (scripts marked) and asks before writing anything, and pins the commit in `skills.lock.json`. Use `kete skill list`, `update` and `remove` to manage them; add `--global` for every project.
-<!-- kete_change end -->
-
 ### Agents
 
 OpenCode includes two built-in agents you can switch between with the `Tab` key.

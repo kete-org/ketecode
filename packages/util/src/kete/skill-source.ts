@@ -17,6 +17,9 @@ export class SourceError extends Error {
 const HOSTED = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/
 const SCP = /^[\w.-]+@[\w.-]+:[^\s]+$/
 const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/
+// Characters where WHATWG URL parsing and git/curl disagree (`https://github.com\@evil/x` is github.com to
+// one and evil to the other), so the policy and the review could see another host than git fetches.
+const UNSAFE = /[\\%?#\s\x00-\x1f\x7f]/
 
 export const validName = (name: string) => NAME.test(name)
 
@@ -24,17 +27,30 @@ export const validName = (name: string) => NAME.test(name)
 export async function parse(input: string, cwd: string): Promise<Source> {
   const text = input.trim()
   if (text === "" || text.startsWith("-")) throw new SourceError("the source must be a git URL, owner/repo, or a folder")
-  if (/^(https|ssh):\/\//i.test(text)) {
-    if (!URL.canParse(text)) throw new SourceError("the source URL is not valid")
-    return { kind: "git", url: text }
-  }
-  if (SCP.test(text)) return { kind: "git", url: text }
+  if (/^(https|ssh):\/\//i.test(text) || SCP.test(text)) return { kind: "git", url: gitUrl(text) }
   const folder = path.resolve(cwd, text)
   const found = await stat(folder).catch(() => undefined)
   if (found?.isDirectory()) return { kind: "local", path: folder }
   if (found) throw new SourceError(`${folder} is not a folder`)
   if (HOSTED.test(text)) return { kind: "git", url: `https://github.com/${text}` }
   throw new SourceError(`${text} is not a git URL, owner/repo, or an existing folder`)
+}
+
+/**
+ * A git URL in the one form git, the policy and the review all read the same way: `https://` or `ssh://`
+ * (normalized by WHATWG URL) or `user@host:path`. Throws SourceError for anything else, including a lockfile
+ * source someone edited to `ext::…` or `foo::…`.
+ */
+export function gitUrl(text: string): string {
+  if (UNSAFE.test(text)) throw new SourceError("the source URL has a character that isn't allowed (\\ % ? # a space or a control character)")
+  if (text.split(/[/:]/).some((segment) => segment === "." || segment === ".."))
+    throw new SourceError("the source URL can't contain . or .. segments")
+  if (/^(https|ssh):\/\//i.test(text)) {
+    if (!URL.canParse(text)) throw new SourceError("the source URL is not valid")
+    return new URL(text).href
+  }
+  if (SCP.test(text) && !text.startsWith("-")) return text
+  throw new SourceError("the source must be an https://, ssh:// or user@host:path git URL")
 }
 
 function strip(url: string) {
@@ -48,16 +64,23 @@ function strip(url: string) {
 /** The source as shown or stored: no credentials. */
 export const display = (source: Source) => (source.kind === "git" ? strip(source.url) : source.path)
 
-/** `host/path` for a git source (`github.com/acme/skills`), the folder's absolute path for a local one. */
+const HOST_ALIASES: Record<string, string> = { "www.github.com": "github.com", "www.gitlab.com": "gitlab.com", "www.bitbucket.org": "bitbucket.org" }
+
+/**
+ * `host/path` for a git source (`github.com/acme/skills`), the folder's absolute path for a local one.
+ * Lower-case throughout (GitHub-style hosts ignore case in owner and repo names, so a deny on
+ * `github.com/evil/*` must also catch `Evil/repo`), with `www.` aliases of the big hosts folded.
+ */
 export function policyResource(source: Source) {
   if (source.kind === "local") return source.path
-  const clean = (value: string) => value.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "")
+  const clean = (value: string) => value.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase()
+  const host = (value: string) => HOST_ALIASES[value.toLowerCase()] ?? value.toLowerCase()
   if (!/^[a-z]+:\/\//i.test(source.url)) {
-    const [, host = "", rest = ""] = /^[^@]+@([^:]+):(.*)$/.exec(source.url) ?? []
-    return `${host.toLowerCase()}/${clean(rest)}`
+    const [, name = "", rest = ""] = /^[^@]+@([^:]+):(.*)$/.exec(source.url) ?? []
+    return `${host(name)}/${clean(rest)}`
   }
   const parsed = new URL(source.url)
-  return `${parsed.hostname.toLowerCase()}/${clean(decodeURIComponent(parsed.pathname))}`
+  return `${host(parsed.hostname)}/${clean(parsed.pathname)}`
 }
 
 /** A full commit id (SHA-1 or SHA-256): it can't move, so `update` has nothing to do. */

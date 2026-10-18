@@ -3,7 +3,7 @@
 // the https URL under test is the one that is used and no network is touched).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
+import { chmod, link, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { KeteSkillLock } from "@opencode/util/kete/skill-lock"
@@ -72,7 +72,8 @@ const deps = (): KeteSkillFlow.Deps => ({
   err: (text) => err.push(text),
   policies: async () => policies,
   orgSkills: async () => org,
-  gitEnv: { GIT_CONFIG_GLOBAL: config },
+  // The fixtures reach the bare repo through `insteadOf`, a file path: allow that one protocol here only.
+  gitEnv: { GIT_CONFIG_GLOBAL: config, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "protocol.file.allow", GIT_CONFIG_VALUE_0: "always" },
   git,
   now: () => new Date("2026-10-17T00:00:00Z"),
 })
@@ -482,6 +483,13 @@ describe("kete skill policy", () => {
     expect(await KeteSkillFlow.add(deps(), { source: URL_PLAIN, path: "skills/demo" }, yes)).toBe(0)
   })
 
+  test("a deny can't be dodged by changing the case of the owner", async () => {
+    await fixture()
+    policies = [policy("deny", "example.test/acme/*")]
+    expect(await KeteSkillFlow.add(deps(), { source: "https://example.test/ACME/skills", path: "skills/demo" }, yes)).toBe(2)
+    await nothingWritten()
+  })
+
   test("a policy that is not synced yet asks; one that cannot be read refuses", async () => {
     const dir = await localSkill("pol")
     policies = "no-cache"
@@ -536,5 +544,91 @@ describe("kete skill errors", () => {
     expect(await KeteSkillFlow.add(deps(), { source: dir }, yes)).toBe(2)
     expect(await readFile(KeteSkillLock.file(projectScope()), "utf8")).toBe(JSON.stringify({ version: 9, skills: {} }))
     expect(await stat(path.join(projectScope(), "skills", "lk")).then(() => true, () => false)).toBe(false)
+  })
+})
+
+describe("kete skill security review", () => {
+  const lockfile = (skills: Record<string, unknown>) =>
+    mkdir(projectScope(), { recursive: true }).then(() =>
+      writeFile(KeteSkillLock.file(projectScope()), JSON.stringify({ version: 1, skills })),
+    )
+
+  test.skipIf(!posix)("a symlinked .kete/skills is refused by add, update and remove; nothing outside is touched", async () => {
+    const outside = path.join(tmp, "victim")
+    await mkdir(path.join(outside, "gh"), { recursive: true })
+    await writeFile(path.join(outside, "gh", "hosts.yml"), "keep me")
+    await mkdir(projectScope(), { recursive: true })
+    await symlink(path.relative(projectScope(), outside), path.join(projectScope(), "skills"))
+    await lockfile({ gh: { source: await localSkill("gh"), files: {}, installedAt: "x" } })
+    expect(await KeteSkillFlow.remove(deps(), "gh", yes)).toBe(2)
+    expect(await KeteSkillFlow.update(deps(), "gh", yes)).toBe(2)
+    expect(await KeteSkillFlow.add(deps(), { source: await localSkill("fresh") }, yes)).toBe(2)
+    expect(await readFile(path.join(outside, "gh", "hosts.yml"), "utf8")).toBe("keep me")
+    expect(await readdir(outside)).toEqual(["gh"])
+    expect(text()).toContain("symlink")
+  })
+
+  test.skipIf(!posix)("a symlinked .kete or lockfile is refused", async () => {
+    const elsewhere = path.join(tmp, "elsewhere")
+    await mkdir(elsewhere)
+    await symlink(elsewhere, projectScope())
+    expect(await KeteSkillFlow.add(deps(), { source: await localSkill() }, yes)).toBe(2)
+    await rm(projectScope())
+    await mkdir(projectScope())
+    await writeFile(path.join(elsewhere, "lock.json"), JSON.stringify({ version: 1, skills: {} }))
+    await symlink(path.join(elsewhere, "lock.json"), KeteSkillLock.file(projectScope()))
+    expect(await KeteSkillFlow.list(deps(), { global: false })).toBe(2)
+    expect(await readdir(elsewhere)).toEqual(["lock.json"])
+  })
+
+  test("a URL that git and the URL parser read differently is refused", async () => {
+    for (const source of ["https://example.test\\@evil.example/skill", "https://example.test/a%2F..%2Fb", "https://example.test/a?x", "git@host:acme/../evil"]) {
+      expect(await KeteSkillFlow.add(deps(), { source }, yes)).toBe(2)
+    }
+    await nothingWritten()
+  })
+
+  test("a lockfile source that isn't an https, ssh or scp git URL is refused before git runs", async () => {
+    let called = 0
+    git = (...args) => {
+      called++
+      return JobGit.run(...args)
+    }
+    const commitId = "a".repeat(40)
+    for (const source of ["ext::sh -c touch% /tmp/pwned", "foo::bar", "file:///etc"]) {
+      await lockfile({ bad: { source, commit: commitId, files: {}, installedAt: "x" } })
+      expect(await KeteSkillFlow.update(deps(), "bad", yes)).toBe(2)
+    }
+    expect(called).toBe(0)
+  })
+
+  test("a lockfile file path outside the skill, or a commit that isn't an id, is refused", async () => {
+    await mkdir(path.join(projectScope(), "skills", "bad"), { recursive: true })
+    await lockfile({ bad: { source: URL_PLAIN, commit: "a".repeat(40), files: { "../../../../etc/hosts": "x" }, installedAt: "x" } })
+    expect(await KeteSkillFlow.update(deps(), "bad", yes)).toBe(2)
+    await lockfile({ bad: { source: URL_PLAIN, commit: "\u001b[2J", files: {}, installedAt: "x" } })
+    expect(await KeteSkillFlow.update(deps(), "bad", yes)).toBe(2)
+    expect(await KeteSkillFlow.list(deps(), { global: false })).toBe(0)
+    expect(text()).not.toContain("\u001b[2J")
+  })
+
+  test("a local source outside the project in a project lockfile always asks, even with --yes", async () => {
+    const dir = await localSkill("away")
+    expect(await KeteSkillFlow.add(deps(), { source: dir }, yes)).toBe(0)
+    await writeFile(path.join(dir, "extra.md"), "new")
+    interactive = false
+    expect(await KeteSkillFlow.update(deps(), "away", yes)).toBe(2)
+    interactive = true
+    expect(await KeteSkillFlow.update(deps(), "away", yes)).toBe(0)
+    expect(asked).toEqual(["Update skill away?"])
+  })
+
+  test.skipIf(!posix)("a hard link in a local source is refused", async () => {
+    const dir = await localSkill("linked")
+    await writeFile(path.join(tmp, "secret"), "secret")
+    await link(path.join(tmp, "secret"), path.join(dir, "copy.txt"))
+    expect(await KeteSkillFlow.add(deps(), { source: dir }, yes)).toBe(2)
+    expect(text()).toContain("hard link")
+    await nothingWritten()
   })
 })
