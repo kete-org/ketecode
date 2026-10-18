@@ -1,9 +1,11 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: f3d1b962ee
+verified-at: 99313fa3c1
 ---
 ## Quick answers
+- Which helper runs git clone/fetch/worktree with a timeout and abort signal? `JobGit.run(cwd, args, {timeoutMs, signal, env})` (`packages/cli/src/kete/job-git.ts:37`): no-shell `execFile("git")`, default 30 s (`:30`), worktree add 5 min; timeout resolves `{exitCode:-1, timedOut:true}`, missing git rejects `GitError`, job mode refuses the spawn.
+- What do `kete bug`, `kete completion` and `kete trust` live in? `kete/bug.ts` (deps) + `bug-flow.ts` (flow, asks `QUESTION` before opening a GitHub issue); `kete/completion-command.ts` with `completion.ts` (bash/zsh/fish/powershell, `instructions` when no shell) and `completion-tree.ts` (`script` `:91`, tree from `--help`); `kete/trust.ts` (`list`/`add`/`remove` of trusted folders, exit 0/1/2, `:25`) over `kete/folder-trust.ts` (`inspect` `:141`, `connection` `:236`, which `kete`/`kete run --trust-project-config` use). All registered in `index.ts` Handlers (marked).
 - What do `--permission-mode`, `--auto` and `--dangerously-skip-permissions` do (feature/safe-defaults-modes)? Flags in upstream's `PermissionParams` (`commands/commands.ts`, marked) for `kete` and `kete run`. `kete/permission-mode.ts` `fromFlags` maps `--auto` to the `auto` mode (high-risk still asks; conflicting `--permission-mode` is an error) and `skipsPermissions` keeps the client-side bypass for `--dangerously-skip-permissions`/`--yolo` only. `kete run` sets the mode on the session (GET-merge-PATCH, read back) before the first prompt (`run/run.ts`, marked); the TUI gets it through `Args.permissionMode` (`permissions` card). In `kete run`, any prompt is rejected and the run stops.
 - How does `kete job run` treat the repository's own config? B1 (task 2026-10-05-unattended-secret-hygiene): `JobRun.run` calls `Deps.inspectProjectConfig(realCwd, realRoot ?? realCwd)` before `location.get` (`job-run.ts:496`) and again on the worktree before `session.create` (`:558`, cleaning it up on refusal); any finding refuses (exit 2) with `projectConfigMessage` (`:217`), an inspection error too. `job.ts:222` wires `KeteJobProjectConfig.inspect` (`kete/job-project-config.ts:131`: `kete.json(c)`, `.kete/kete.json(c)`, `.kete/plugin(s)/` per directory up to the repo root; `guardedKeys` `:74`: `providers`/`provider`/`mcp` entries, `plugins`/`plugin`/`enterprise`, `share`/`autoshare` unless off, `kete.integrations`/`platform`/`unattended`/`hooks`; unparseable = finding). `--trust-project-config` (`kete/commands.ts:143`) or `KETE_TRUST_PROJECT_CONFIG=1` (`trusted`, `:59`) skips it; job mode skips it.
 - How are built-in prompt slash commands added (`/init`, `/review`, `/commit`, `/pr`)? A plugin calls `ctx.command.transform((editor) => editor.add({ name, description, execute }))`, and `execute` sends `ctx.session.prompt({ ...input.prompt, sessionID, text, delivery })`. Upstream's are in `core/src/plugin/command.ts` (templates in `plugin/command/*.txt`); Kete's `/commit` and `/pr` are in `core/src/kete/git-commands.ts`. Config commands (`ConfigCommandPlugin`, in `post`) load later, so a configured command with the same name wins. The TUI and VS Code list them from the server's command list.
@@ -51,7 +53,7 @@ verified-at: f3d1b962ee
   (F1, `docs/tasks/2026-09-30-job-entrypoint/`). No git call at all (`repoRoot`/`headSha`/
   `worktreeAdd`/cleanup skipped, `job-run.ts:426-434,455-458,484`); `spec.branch` and `<cwd>/.git`
   are required (else exit 2 `refused`, before any session); the result says `isolated: true`,
-  `worktree` = `directory` = cwd, `branch` = `spec.branch`. `job-git.ts:36`'s
+  `worktree` = `directory` = cwd, `branch` = `spec.branch`. `job-git.ts:37`'s
   `KeteJobMode.refuseSpawn("git")` guard stays as defence in depth. See the `job-mode` card,
   `contracts.md` §6d, `docs/jobs.md` "Job mode".
 - What are `kete serve`'s flags and where do they go? `commands/commands.ts:518-532` (`--hostname`,

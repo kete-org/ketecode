@@ -26,6 +26,8 @@ export interface RunOptions {
   readonly signal?: AbortSignal
   /** Job mode is read from here (default `process.env`); tests inject a value without mutating it. */
   readonly env?: Record<string, string | undefined>
+  /** Extra variables for the git process, merged over `process.env` (`kete skill add`: no prompts, no LFS). */
+  readonly childEnv?: Record<string, string>
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -42,6 +44,7 @@ export function run(cwd: string, args: ReadonlyArray<string>, options: RunOption
       [...args],
       {
         cwd,
+        ...(options.childEnv ? { env: { ...process.env, ...options.childEnv } } : {}),
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         signal: options.signal,
         maxBuffer: 64 * 1024 * 1024,

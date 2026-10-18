@@ -77,6 +77,14 @@ const Handlers = Runtime.handlers(Commands, {
     remove: () => import("./kete/trust").then((module) => ({ default: module.removeCommand })),
   },
   // kete_change end
+  // kete_change start: `kete skill` (kete/skill.ts)
+  skill: {
+    add: () => import("./kete/skill").then((module) => ({ default: module.addCommand })),
+    list: () => import("./kete/skill").then((module) => ({ default: module.listCommand })),
+    update: () => import("./kete/skill").then((module) => ({ default: module.updateCommand })),
+    remove: () => import("./kete/skill").then((module) => ({ default: module.removeCommand })),
+  },
+  // kete_change end
   // kete_change start: `kete models pull` (kete/models-pull.ts)
   models: { $: () => import("./commands/handlers/models"), pull: () => import("./kete/models-pull") },
   // kete_change end

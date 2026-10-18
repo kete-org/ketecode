@@ -1,9 +1,10 @@
 ---
 module: roles-skills
 paths: [packages/core/src/kete/roles.ts, packages/core/src/kete/skill.ts, packages/core/src/kete/skill/*.md, packages/kete-tools/src/role-*.ts]
-verified-at: f85913ed4a
+verified-at: 99313fa3c1
 ---
 ## Quick answers
+- How are skill directories and sources discovered? `core/src/config/plugin/skill.ts:85-100`: for each config directory entry (global `~/.config/kete`, project `.kete`) the sources `<dir>/skill` and `<dir>/skills`; then each `skills:` config item: http(s) URL becomes a URL source, `~/` expands to home, relative paths resolve against the location directory. Directories are scanned with glob `{*.md,**/SKILL.md}` (`skill.ts:121`); frontmatter is parsed by `config/plugin/skill-file.ts`. `.claude`/`.agents` compat roots add `<root>/skills` (`config/plugin/compatibility.ts:41`).
 - What agents does a fresh, non-signed-in install get? Code Reviewer, QA, Docs Writer (subagents), and Security and DevOps (mode `"all"` — usable as primary or delegated-to), defined in `packages/core/src/kete/roles.ts:57-154`.
 - Why "not signed in"? Signed in to a Kete organization, the platform's synced agents decide instead (`roles.ts:6-8`); a local starter role would wrongly reappear after an org paused it.
 - What replaces upstream's `opencode`/`report` skills? `packages/core/src/kete/skill.ts`, which removes them and adds a `kete` skill and a Kete-specific `report` skill, so upstream's own skill markdown is never edited and never conflicts on sync.

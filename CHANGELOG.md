@@ -6,6 +6,12 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **`kete skill add|list|update|remove`:** install a skill from a git repository (`https://…`, `git@…`,
+  or `owner/repo` on GitHub) or a local folder. It shows every file in the skill, scripts marked, and asks
+  before writing anything; nothing from the skill runs at install and its files are written without the
+  executable bit. The commit and each file's hash go in `skills.lock.json`, so `kete skill update` shows
+  what changed. `--global` installs for every project. Skills your organization syncs are never touched,
+  and an organization policy can limit sources (`skill.install`).
 - **`kete terminal-setup` and `/terminal-setup`:** make Shift+Enter insert a newline. It says what your
   terminal needs, and in VS Code, Cursor, Windsurf or VSCodium adds the keybinding for you after asking.
   Ctrl+J always works.
