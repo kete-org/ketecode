@@ -196,7 +196,11 @@ the mode, so they can deny what a mode or rule would allow. No mode turns `ask` 
 
 ## Extra working directories
 
-By default Kete Code asks before it reads or edits anything outside the workspace. To work in more
+By default Kete Code asks before it reads or edits anything outside the workspace. "Outside" goes by the
+real path: a file or folder inside the workspace that is a symlink to somewhere else asks too, for the
+folder it really leads to. Rules and saved approvals for `external_directory` are matched against that real
+folder too, so a rule for a path written through a symlink (macOS `/tmp` is `/private/tmp`) may need the
+real path. To work in more
 folders without asking each time, add them to the session:
 
 - `kete --add-dir ../lib` or `kete run --add-dir ../lib "…"` (repeat the flag, up to 10 folders), or
@@ -212,7 +216,7 @@ What still applies: the file permissions that follow (`read`, `edit`, `shell`) a
 so Plan mode still blocks edits; a `deny` rule always wins; an `external_directory` rule you or your
 organization wrote for a specific folder (for example an `ask`) is kept, only the default question is
 skipped; your organization's policies run after and can still deny. Access is checked on the real path
-(folder symlinks and `..` are resolved), so a folder link inside an added folder to somewhere else grants nothing,
+(symlinks and `..` are resolved), so a link inside an added folder to somewhere else grants nothing,
 and a folder replaced by a symlink after it was added stops counting. One limit: a catch-all
 `"external_directory": "ask"` you wrote yourself (for every folder, resource `*`) looks the same as the
 default, so an added folder skips it too; write a rule for the specific folder to keep asking there.

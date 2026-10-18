@@ -110,7 +110,7 @@ describe("FileAccess.resolve", () => {
     ),
   )
 
-  it.live("resolves a prospective target below an external symlink lexically", () =>
+  it.live("resolves a prospective target below an external symlink as external, by its real folder", () => // kete_change: kete/real-path.ts
     withTempDir(({ path: directory }) =>
       Effect.gen(function* () {
         if (process.platform === "win32") return
@@ -118,11 +118,10 @@ describe("FileAccess.resolve", () => {
         yield* Effect.promise(() => fs.symlink(outside.path, path.join(directory, "escape")))
         const access = yield* FileAccess.Service
         const target = yield* access.resolve({ path: path.join("escape", "new.txt") })
-        expect(target).toMatchObject({
-          absolute: path.join(directory, "escape", "new.txt"),
-          resource: "escape/new.txt",
-        })
-        expect(target.externalDirectory).toBeUndefined()
+        // kete_change start
+        expect(target.absolute).toBe(AbsolutePath.make(path.join(directory, "escape", "new.txt")))
+        expect(target.externalDirectory?.resource).toBe(path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "*"))
+        // kete_change end
       }).pipe(provide(directory)),
     ),
   )

@@ -1386,3 +1386,19 @@ fingerprint is unchanged for folders without them).
 **Sync checklist:** if upstream changes how command templates interpolate shell (the regex, the order of
 `$ARGUMENTS` and shell, or adds its own permission check), keep every interpolation going through
 `KeteCommandShell.interpolate`. If upstream adds new command sources, give them an origin.
+
+## Symlink containment: instruction files and file tools (fix/instruction-symlinks)
+
+An `AGENTS.md` is loaded (at start, and nested after a `read`) only when its real path is a non-secret
+`.md` file inside the repository, or inside its own folder for folders above the repository
+(`core/src/kete/instruction-files.ts`, the rule `kete/memory-files.ts` applies to `CLAUDE.md`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config/plugin/instruction.ts` | the project walk filters through `KeteInstructionFiles.allowed` (2 marked lines) | the walk resolves and reads in one step inside the plugin; a later transform would still have read the target |
+| `core/src/tool/plugin/read.ts` | the nested walk filters the same way; `Option`, `os`, `Global` imports; the home folder from an optional `Global` (marked lines) | nested files go straight to `SessionInstructions.load`, with no hook in between |
+| `core/src/file-access.ts` | `resolve` follows symlinks (`KeteRealPath.follow`): a path inside the workspace whose real path is outside (or a link loop) becomes external, and the `external_directory` boundary is the real folder (marked lines) | every file tool (read, write, edit, patch, glob, grep) resolves here; a permission hook only sees the lexical folder |
+
+**Sync checklist:** if upstream changes either walk, keep the filter on the found path (before `fs.resolve`
+follows the link). If upstream changes `FileAccess.resolve`, keep the real-path decision before the
+internal branch. Report upstream.

@@ -3,7 +3,7 @@ export * as ReadTool from "./read.js"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { basename, dirname, join } from "path"
 import { ToolFailure } from "@opencode/ai"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect" // kete_change: Option
 import { FSUtil } from "@opencode/util/fs-util"
 import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
@@ -11,6 +11,9 @@ import { SessionInstructions } from "../../session/instructions.js"
 import { AbsolutePath } from "../../schema.js"
 import { ReadToolFileSystem } from "../read-filesystem.js"
 import { Environment } from "../../environment/index.js"
+import { KeteInstructionFiles } from "../../kete/instruction-files.js" // kete_change
+import { Global } from "@opencode/util/global" // kete_change
+import os from "os" // kete_change
 
 export const name = "read"
 const FILENAME = "AGENTS.md"
@@ -34,6 +37,7 @@ export const Plugin = {
     const sessionInstructions = yield* SessionInstructions.Service
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
+    const home = Option.match(yield* Effect.serviceOption(Global.Service), { onNone: () => os.homedir(), onSome: (global) => global.home }) // kete_change: the home folder, for the AGENTS.md symlink check
 
     yield* ctx.tool
       .transform((editor) =>
@@ -95,8 +99,8 @@ export const Plugin = {
                   start: result.content.type === "list-page" ? resolved : dirname(resolved),
                   stop: root,
                 })
-                const candidates = (yield* Effect.forEach(discovered, fs.resolve)).filter(
-                  (file) => dirname(file) !== root,
+                const candidates = (yield* Effect.forEach(discovered, (file) => KeteInstructionFiles.allowed(fs, file, location.project.directory, home))).filter( // kete_change: never follow an AGENTS.md symlink out of its folder (kete/instruction-files.ts)
+                  (file): file is string => file !== undefined && dirname(file) !== root, // kete_change
                 )
                 if (candidates.length === 0) return
                 yield* sessionInstructions.load({ sessionID: context.sessionID, paths: candidates })

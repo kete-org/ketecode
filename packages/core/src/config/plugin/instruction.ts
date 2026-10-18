@@ -10,6 +10,7 @@ import { InstructionDiscovery } from "../../instruction-discovery.js"
 import { Instructions } from "../../instructions/index.js"
 import { Location } from "../../location.js"
 import { AbsolutePath } from "../../schema.js"
+import { KeteInstructionFiles } from "../../kete/instruction-files.js" // kete_change
 
 type Loaded =
   | { readonly type: "available"; readonly files: InstructionDiscovery.File[] }
@@ -67,7 +68,7 @@ export const Plugin = define({
 
       const projectSource = Effect.fn("ConfigInstructionPlugin.projectSource")(function* () {
         if (!project) return []
-        const walked = yield* Effect.forEach(yield* fs.up({ targets: ["AGENTS.md"], start, stop }), fs.resolve)
+        const walked = (yield* Effect.forEach(yield* fs.up({ targets: ["AGENTS.md"], start, stop }), (file) => KeteInstructionFiles.allowed(fs, file, root, home))).filter((file): file is string => file !== undefined) // kete_change: never follow an AGENTS.md symlink out of its folder (kete/instruction-files.ts)
         const discovered = new Set(walked.filter((file) => discovery.global || file !== globalFile))
         const files = yield* Effect.forEach(discovered, read, { concurrency: "unbounded" })
         if (files.some((file) => file === undefined)) return Instructions.unavailable

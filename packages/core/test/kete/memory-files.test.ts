@@ -617,4 +617,25 @@ describe("KeteMemoryFiles security review", () => {
         }),
     ),
   )
+
+  ;(process.platform !== "win32" ? it.live : it.live.skip)("upstream's AGENTS.md symlinked to a key or another repository is not loaded at start", () =>
+    scenario(
+      {
+        memory: { claudeMd: false, imports: false },
+        files: { "home/.ssh/id_rsa": "PRIVATE KEY", "home/other/AGENTS.md": "OTHER REPO" },
+        relLinks: [
+          ["home/repo/AGENTS.md", "../.ssh/id_rsa"],
+          ["home/repo/sub/AGENTS.md", "../../other/AGENTS.md"],
+        ],
+        directory: "sub",
+      },
+      (world) =>
+        Effect.gen(function* () {
+          const text = yield* world.text
+          expect(text).not.toContain("PRIVATE KEY")
+          expect(text).not.toContain("OTHER REPO")
+        }),
+    ),
+  )
 })
+

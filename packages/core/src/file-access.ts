@@ -9,6 +9,7 @@ import { Location } from "./location.js"
 import { Permission } from "./permission.js"
 import { Project } from "./project.js"
 import { AbsolutePath } from "./schema.js"
+import { KeteRealPath } from "./kete/real-path.js" // kete_change
 import type { SessionErrors } from "./session/error.js"
 import type { Tool } from "./tool.js"
 
@@ -24,7 +25,7 @@ export type ResolveInput = typeof ResolveInput.Type
 
 export interface ExternalDirectoryAuthorization {
   readonly action: "external_directory"
-  /** Lexical directory used as the external approval boundary. */
+  /** Directory used as the external approval boundary: the real one when a symlink leads elsewhere. */ // kete_change
   readonly directory: AbsolutePath
   readonly resource: string
   readonly save: string
@@ -102,20 +103,27 @@ const layer = Layer.effect(
       const internal =
         FSUtil.contains(location.directory, absolute) ||
         (worktree !== path.parse(worktree).root && FSUtil.contains(worktree, absolute))
-      if (internal) {
+      // kete_change start: inside or outside by where a symlink really leads (kete/real-path.ts); the approval is for the real folder
+      const real = yield* KeteRealPath.follow(fs, absolute)
+      const followed = real !== undefined && real !== KeteRealPath.UNRESOLVED ? AbsolutePath.make(real) : undefined
+      const realInside = followed !== undefined && (yield* KeteRealPath.inside(fs, followed, [location.directory, worktree]))
+      if (internal && (real === undefined || realInside)) {
+      // kete_change end
         return {
           absolute,
           resource: slash(path.relative(location.directory, absolute) || "."),
         } satisfies Target
       }
+      const boundary = followed ?? absolute // kete_change: the real path; the written one for a link loop
       const type =
         input.kind === "directory"
           ? "Directory"
           : input.kind === "file"
             ? "File"
-            : (yield* fs.stat(absolute).pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.undefined)))
+            : (yield* fs.stat(boundary).pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.undefined))) // kete_change: boundary
                 ?.type
-      const directory = AbsolutePath.make(type === "Directory" ? absolute : path.dirname(absolute))
+      // kete_change: always the real folder; rules match by text and `*` crosses `/`, so a rule for `<allowed>/lnk/*` (lnk -> ~/.ssh) would reach where the link leads
+      const directory = AbsolutePath.make(type === "Directory" ? boundary : path.dirname(boundary)) // kete_change: boundary
       return {
         absolute,
         resource: slash(absolute),

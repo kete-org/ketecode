@@ -447,7 +447,7 @@ describe("ShellTool scanner permissions", () => {
         }),
       ))
 
-    test(`${scanner}: a numeric symlink operand still reaches outside without an external-directory prompt`, () =>
+    test(`${scanner}: a numeric symlink operand ${scanner === "native" ? "that leads outside meets the external-directory deny" : "still reaches outside without an external-directory prompt"}`, () => // kete_change: native resolves operands by real path (kete/real-path.ts); legacy skips numeric operands
       withScanner(portable, (registry, fixture) =>
         Effect.gen(function* () {
           yield* Effect.promise(() => fs.symlink(fixture.outside, path.join(fixture.active, "123")))
@@ -468,6 +468,13 @@ describe("ShellTool scanner permissions", () => {
             [],
           )
           expect(result.requests).toEqual([])
+          // kete_change start
+          if (scanner === "native") {
+            expect(JSON.stringify(result.exit)).toContain("permission.rejected")
+            expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+            return
+          }
+          // kete_change end
           expect(result.exit).toMatchObject({
             _tag: "Success",
             value: {

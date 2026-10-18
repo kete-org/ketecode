@@ -51,6 +51,7 @@ import { Permission } from "../permission.js"
 import { PermissionSaved } from "../permission/saved.js"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
+import { KeteRealPath } from "./real-path.js"
 import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteShellRisk } from "./shell-risk.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
@@ -363,54 +364,24 @@ export const apply = Effect.fnUntraced(function* (
 })
 
 /** What `realTarget` returns when a symlink chain can't be followed: a protected path, so the edit asks. */
-export const UNRESOLVED = ".kete/(unresolved symlink)"
-
-/** Symlinks followed for one edit target before giving up. */
-const MAX_LINKS = 32
+export const UNRESOLVED = KeteRealPath.UNRESOLVED
 
 /**
- * Where an edit to `value` would really write; see `Lookup.realpath`. The deepest existing ancestor
- * is resolved with `resolve` (realpath); the remaining components are walked one by one, and a
- * symlink among them — including a dangling one whose target doesn't exist yet, like
- * `notes.json -> .kete/kete.jsonc` — is followed with `readLink`. A chain longer than `MAX_LINKS`
- * gives `UNRESOLVED`. Through `FSUtil` (wrapped in job mode, kete/job-fs-util.ts), never `fs` directly.
+ * Where an edit to `value` would really write (`KeteRealPath.follow`), relative to `directory` when it
+ * is inside it. Through `FSUtil` (wrapped in job mode, kete/job-fs-util.ts), never `fs` directly.
  */
 export const realTarget = Effect.fnUntraced(function* (
   files: Pick<FSUtil.Interface, "existsSafe" | "resolve" | "readLink">,
   directory: string,
   value: string,
 ) {
-  let target = path.resolve(directory, value)
-  for (let hops = 0; hops <= MAX_LINKS; hops++) {
-    let existing = target
-    const rest: string[] = []
-    while (!(yield* files.existsSafe(existing))) {
-      const parent = path.dirname(existing)
-      if (parent === existing) return undefined
-      rest.unshift(path.basename(existing))
-      existing = parent
-    }
-    let current = yield* files.resolve(existing)
-    let next: string | undefined
-    for (const [index, part] of rest.entries()) {
-      const candidate = path.join(current, part)
-      const link = yield* files.readLink(candidate).pipe(Effect.option)
-      if (link._tag === "Some") {
-        next = path.resolve(path.dirname(candidate), link.value, ...rest.slice(index + 1))
-        break
-      }
-      current = candidate
-    }
-    if (next === undefined) {
-      const root = yield* files.resolve(directory)
-      const relative = path.relative(root, current)
-      return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
-        ? relative.split(path.sep).join("/")
-        : current
-    }
-    target = next
-  }
-  return UNRESOLVED
+  const current = yield* KeteRealPath.follow(files, path.resolve(directory, value))
+  if (current === undefined || current === UNRESOLVED) return current
+  const root = yield* files.resolve(directory)
+  const relative = path.relative(root, current)
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+    ? relative.split(path.sep).join("/")
+    : current
 })
 
 export const Plugin = define({
