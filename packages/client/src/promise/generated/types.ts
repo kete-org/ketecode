@@ -2225,6 +2225,7 @@ export type ConfigEntry =
             }>
             unsandboxed?: boolean
           }
+          memory?: { claudeMd?: boolean; imports?: boolean }
           lsp?: { unsandboxed?: boolean }
         }
       }

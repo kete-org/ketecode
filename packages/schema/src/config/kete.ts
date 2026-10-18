@@ -169,6 +169,15 @@ export class Lsp extends Schema.Class<Lsp>("ConfigKete.Lsp")({
   }),
 }) {}
 
+export class Memory extends Schema.Class<Memory>("ConfigKete.Memory")({
+  claudeMd: Schema.Boolean.pipe(optional).annotate({
+    description: "Load CLAUDE.md where a folder has no AGENTS.md (default on)",
+  }),
+  imports: Schema.Boolean.pipe(optional).annotate({
+    description: "Expand @path imports in AGENTS.md and CLAUDE.md (default on)",
+  }),
+}) {}
+
 export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   offline: Schema.Boolean.pipe(optional).annotate({
     description:
@@ -193,6 +202,9 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   hooks: Hooks.pipe(optional).annotate({
     description:
       "Shell commands run at points of the agent loop (docs/hooks.md). Hooks in a project's config run only after you trust them.",
+  }),
+  memory: Memory.pipe(optional).annotate({
+    description: "Memory files: CLAUDE.md compatibility and @path imports in AGENTS.md and CLAUDE.md",
   }),
   lsp: Lsp.pipe(optional).annotate({
     description: "Kete Code's language server settings; the servers themselves are configured under the top-level `lsp` key (docs/lsp.md)",
