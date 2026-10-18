@@ -66,6 +66,17 @@ describe("add-dir validate", () => {
     await refused(path.join(work, "inside"), /inside the workspace/)
     await refused(work, /inside the workspace/)
     await refused("   ", /empty/)
+    for (const dir of [".azure", "Library", ".password-store"]) {
+      nfs.mkdirSync(path.join(home, dir), { recursive: true })
+      await refused(path.join(home, dir), /credentials/)
+    }
+    const star = path.join(root, "a*b")
+    nfs.mkdirSync(star, { recursive: true })
+    await refused(star, /wildcard/)
+    const bin = path.join(root, "tools")
+    nfs.mkdirSync(path.join(bin, "bin"), { recursive: true })
+    const withBin = await run(KeteAddDir.validate(fs, bin, { ...ctx, bin: [path.join(bin, "bin")], existing: [] }))
+    expect(withBin.ok === false && withBin.reason).toMatch(/PATH/)
     const many = Array.from({ length: KeteAddDir.MAX }, (_, index) => path.join(root, `m${index}`))
     await refused(path.join(root, "other"), /at most/, many)
   })
@@ -239,6 +250,19 @@ describe("add-dir grants", () => {
     expect(event.effect).toBe("allow")
   })
 
+  test("the agent moving the session into an added folder still asks", async () => {
+    const event = { ...request([`${lib}/*`]), metadata: { "kete.sessionMove": true } }
+    await run(KeteAddDirPlugin.granted(lookup(sessionWith([lib])), event))
+    expect(event.effect).toBe("ask")
+  })
+
+  test("a folder stored without the guard (an imported session) that wouldn't validate grants nothing", async () => {
+    const event = request([`${home}/.ssh/*`, `${root}/other/*`])
+    await run(KeteAddDirPlugin.granted(lookup(sessionWith([path.join(home, ".ssh"), path.parse(root).root])), event))
+    expect(event.effect).toBe("ask")
+    expect(await run(KeteAddDir.live(fs, Effect.succeed(ctx), lookup(sessionWith([path.join(home, ".ssh"), lib])), id("ses_a")))).toEqual([lib])
+  })
+
   test("job mode grants nothing", async () => {
     process.env.OPENCODE_JOB_MODE = "1"
     try {
@@ -258,6 +282,19 @@ describe("add-dir dirs and rules", () => {
       ses_child: info("ses_child", { [KeteAddDir.metadataKey]: ["/elsewhere"] }, "ses_root"),
     }
     expect(await run(KeteAddDir.dirs(lookup(sessions), id("ses_child")))).toEqual([lib])
+  })
+
+  test("a root session that removed every folder doesn't fall back to a subagent's own list", async () => {
+    const sessions = {
+      ses_root: info("ses_root", { [KeteAddDir.metadataKey]: [] }),
+      ses_child: info("ses_child", { [KeteAddDir.metadataKey]: [lib] }, "ses_root"),
+    }
+    expect(await run(KeteAddDir.dirs(lookup(sessions), id("ses_child")))).toEqual([])
+  })
+
+  test("withoutDirs drops only the folders (session import)", () => {
+    expect(KeteAddDir.withoutDirs({ other: 1, [KeteAddDir.metadataKey]: [lib] })).toEqual({ other: 1 })
+    expect(KeteAddDir.withoutDirs(undefined)).toBeUndefined()
   })
 
   test("the subagent ceiling: a parent that would ask doesn't make a subagent ask again, a parent's deny still denies", async () => {

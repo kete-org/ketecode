@@ -28,6 +28,7 @@ import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
 import { KeteAddDir } from "./add-dir.js"
 import { KetePermissionMode } from "./permission-mode.js"
+import { KeteSessionMove } from "./session-move.js"
 
 export interface Lookup extends KeteAddDir.Lookup {
   readonly agent: (agentID: string | undefined) => Effect.Effect<Agent.Info | undefined>
@@ -36,21 +37,6 @@ export interface Lookup extends KeteAddDir.Lookup {
   readonly fs: Pick<FSUtil.Interface, "existsSafe" | "resolve" | "isDir" | "readLink">
   readonly context: Effect.Effect<Omit<KeteAddDir.Context, "existing">>
 }
-
-/** The session's folders that are still valid folders now, by real path. */
-const live = Effect.fnUntraced(function* (lookup: Lookup, sessionID: SessionSchema.ID) {
-  const stored = yield* KeteAddDir.dirs(lookup, sessionID)
-  if (stored.length === 0) return []
-  const ctx = yield* lookup.context
-  const folders: string[] = []
-  for (const folder of stored) {
-    // A folder that is now a symlink (or was removed) grants nothing.
-    if ((yield* lookup.fs.resolve(folder)) !== folder) continue
-    const result = yield* KeteAddDir.validate(lookup.fs, folder, { ...ctx, existing: [] })
-    if (result.ok && result.real === folder) folders.push(folder)
-  }
-  return folders
-})
 
 /** Whether the directory a `<dir>/*` resource names is, by real path, inside one of the folders. */
 const inside = Effect.fnUntraced(function* (lookup: Lookup, base: string, folders: ReadonlyArray<string>, resource: string) {
@@ -72,11 +58,14 @@ export const granted = Effect.fnUntraced(function* (
     readonly agent?: string
     readonly action: string
     readonly resources: ReadonlyArray<string>
+    readonly metadata?: Record<string, unknown>
     effect: PermissionSchema.Effect
   },
 ) {
   if (event.action !== "external_directory" || event.effect !== "ask") return
-  const folders = yield* live(lookup, event.sessionID)
+  // Moving the session into a folder changes what instructions and config load, so it still asks.
+  if (event.metadata?.[KeteSessionMove.metadataKey] === true) return
+  const folders = yield* KeteAddDir.live(lookup.fs, lookup.context, lookup, event.sessionID)
   if (folders.length === 0) return
   const info = Option.getOrUndefined(yield* lookup.session(event.sessionID))
   const agent = yield* lookup.agent(event.agent ?? info?.agent)

@@ -1356,7 +1356,8 @@ insertion order and on transforms running in registration order.
 | `core/src/session/session.ts` | `setMetadata` runs `KeteAddDir.guard` and publishes its result | a session hook can't refuse a write; same lines as `KeteUnattendedPolicy.guardMetadata` |
 | `core/src/session.ts` | `create` guards `input.metadata` before `inheritMetadata`; yields `FSUtil.Service` | `session.create` metadata doesn't pass through `setMetadata` |
 | `core/src/plugin/internal.ts` | Import; `KeteAddDirPlugin.Plugin` right after `KeteUnattended.PolicyPlugin` in `pre` and in `guarded` | internal plugins are only listed here; a loosening hook must precede the tightening ones |
-| `core/src/tool/plugin/shell.ts` | `session` lookup passed to `KeteSandbox.make` (the session's folders are writable) | the sandbox has no other way to learn the session |
+| `core/src/tool/plugin/shell.ts` | `folders` (`KeteAddDir.live`, re-validated per command) passed to `KeteSandbox.make` so the session's folders are writable; `FSUtil.Service` taken optionally (`Option` import) so upstream's shell tests need no new layer | the sandbox has no other way to learn the session |
+| `core/src/session/transfer.ts` | `import` stores metadata through `KeteAddDir.withoutDirs` | an import publishes `Created` directly, skipping the metadata guard |
 | `cli/src/commands/commands.ts`, `handlers/default.ts`, `handlers/run.ts`, `run/run.ts` | `--add-dir` flag, job-mode refusal, folders applied before the first prompt | upstream's flag spec and handlers; same blocks as `--permission-mode` |
 | `tui/src/context/args.tsx`, `component/prompt/index.tsx`, `app.tsx` | `addDirs` arg; metadata of a new session merged with the permission mode's; startup hook | the TUI's args, new-session `metadata` and hook call site; same lines `--permission-mode` uses |
 

@@ -10,6 +10,7 @@ export * as KetePermissionCeiling from "./permission-ceiling.js"
 
 import type { Permission as PermissionSchema } from "@opencode/schema/permission"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Effect, Option } from "effect"
 import { Agent } from "../agent.js"
 import { Location } from "../location.js"
@@ -112,6 +113,7 @@ export const Plugin = {
     const agents = yield* Agent.Service
     const saved = yield* PermissionSaved.Service
     const location = yield* Location.Service
+    const fs = yield* FSUtil.Service
     const getForPolicy: KeteUnattendedPolicy.Get = (sessionID) => sessions.get(sessionID).pipe(Effect.option)
     const lookup: Lookup = {
       session: (sessionID) => sessions.get(sessionID).pipe(Effect.option),
@@ -132,10 +134,10 @@ export const Plugin = {
                   .map((rule): Permission.Rule => ({ action: rule.action, resource: rule.resource, effect: "allow" }))
               : [],
           ),
-          // A session's extra folders (add-dir-plugin.ts) are allowed in its subagents too. Lexical matching
-          // is safe: the ceiling only tightens, and the real-path check ran before.
+          // A session's extra folders (add-dir-plugin.ts) are allowed in its subagents too: only those that still
+          // pass the checks (`live`, as the grant uses), so a folder swapped or invalid since doesn't widen it.
           Effect.flatMap((policy) =>
-            KeteAddDir.dirs(lookup, sessionID).pipe(Effect.map((folders) => [...policy, ...KeteAddDir.rules(folders)])),
+            KeteAddDir.live(fs, KeteAddDir.context(fs, location.directory), lookup, sessionID).pipe(Effect.map((folders) => [...policy, ...KeteAddDir.rules(folders)])),
           ),
         ),
     }

@@ -24,6 +24,9 @@ import { SessionSchema } from "../session/schema.js"
 import { KeteWorktreeLease } from "./worktree-lease.js"
 import { KeteWorktrees } from "./worktrees.js"
 
+/** Set on the move's permission request, so the extra-folder grant (add-dir-plugin.ts) leaves it asking. */
+export const metadataKey = "kete.sessionMove"
+
 export const isSessionMove = (tool: string) => tool === "session_move" || tool.endsWith("_session_move")
 
 const slash = (value: string) => value.replaceAll("\\", "/")
@@ -84,6 +87,7 @@ export const Plugin = {
             action: "external_directory",
             resources: [slash(path.join(destination, "*"))],
             save: [slash(path.join((yield* Project.root(fs, destination)) ?? destination, "*"))],
+            metadata: { [metadataKey]: true },
             sessionID: event.sessionID,
             agent: event.agent,
             source: { type: "tool", messageID: event.messageID, id: event.id },

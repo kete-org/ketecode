@@ -35,7 +35,6 @@ import { Config } from "../config.js"
 import { Global } from "@opencode/util/global"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
-import { KeteAddDir } from "./add-dir.js"
 import { KetePermissionMode } from "./permission-mode.js"
 import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteSandboxPlans } from "./sandbox/plans.js"
@@ -118,8 +117,8 @@ export interface Deps {
   /** The shell output directory root (`Shell.DIRECTORY` under the data directory). */
   readonly shellDirectory: string
   readonly env?: Record<string, string | undefined>
-  /** The session lookup, for the session's extra folders (add-dir.ts), which are writable too. */
-  readonly session?: KeteAddDir.Lookup["session"]
+  /** The session's extra folders (`KeteAddDir.live`), which are writable too. */
+  readonly folders?: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<string>>
 }
 
 export interface Ask {
@@ -205,7 +204,7 @@ export function make(deps: Deps) {
     }
 
     const mechanism = available.mechanism
-    const extraWrite = deps.session ? yield* KeteAddDir.dirs({ session: deps.session }, Session.ID.make(sessionID)) : []
+    const extraWrite = deps.folders ? yield* deps.folders(Session.ID.make(sessionID)) : []
     const resolved = yield* Effect.tryPromise({
       try: async () => {
         const tmp = await privateTmp(sessionID)

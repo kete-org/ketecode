@@ -6,7 +6,8 @@
 // so it must not import the session).
 //
 // Folders are stored as real paths. A folder can't be: a file-system root, the home folder or a folder
-// above it, a credential folder or Kete Code's own, or anything inside the workspace; at most `MAX`.
+// above it, a credential folder (the sandbox's list) or Kete Code's own, a folder on PATH or holding one,
+// anything inside the workspace, or a path with wildcard characters; at most `MAX`.
 // Job mode (cloud and self-hosted jobs) has one workspace, so adding is always refused there.
 
 export * as KeteAddDir from "./add-dir.js"
@@ -21,6 +22,10 @@ import { Project } from "../project.js"
 import { AbsolutePath } from "../schema.js"
 import type { SessionSchema } from "../session/schema.js"
 import { SECRET_HOME_DIRS } from "./memory-imports.js"
+import { credentials } from "./sandbox/resolve.js"
+
+/** Home-relative folders that can't be added or overlapped: the sandbox's credential paths and macOS's Library. */
+const SECRET = [...new Set([...SECRET_HOME_DIRS, ...credentials, "Library"])]
 
 export const metadataKey = "kete.dirs"
 export const MAX = 10
@@ -45,6 +50,8 @@ export interface Context {
   readonly workspace: ReadonlyArray<string>
   /** Kete Code's own folders (global config, data, state, cache). */
   readonly kete: ReadonlyArray<string>
+  /** Real paths of the PATH entries: a folder holding programs the user runs isn't added. */
+  readonly bin?: ReadonlyArray<string>
   /** Folders accepted already (counted against `MAX`, and an exact repeat is not an error). */
   readonly existing: ReadonlyArray<string>
 }
@@ -65,6 +72,10 @@ export const context = Effect.fnUntraced(function* (fs: FSUtil.Interface, direct
     home: yield* fs.resolve(Global.Path.home),
     workspace,
     kete: yield* Effect.forEach([Global.Path.config, Global.Path.data, Global.Path.state, Global.Path.cache], (value) => fs.resolve(value)),
+    bin: yield* Effect.forEach(
+      (process.env.PATH ?? "").split(path.delimiter).filter((entry) => path.isAbsolute(entry)),
+      (entry) => fs.resolve(entry),
+    ),
   } satisfies Omit<Context, "existing">
 })
 
@@ -92,9 +103,12 @@ export const validate = Effect.fnUntraced(function* (fs: Files, input: string, c
   if (!(yield* fs.isDir(real))) return no(`${input} isn't a folder`)
   if (path.dirname(real) === real) return no(`${input} is a file-system root`)
   if (FSUtil.contains(real, ctx.home)) return no(`${input} is your home folder or contains it`)
-  if (SECRET_HOME_DIRS.some((dir) => FSUtil.overlaps(real, path.join(ctx.home, dir))))
+  // Permission resources are wildcard patterns (rules below), so a folder named `*` would match others.
+  if (/[*?]/.test(real)) return no(`${input} has a wildcard character (* or ?) in its path`)
+  if (SECRET.some((dir) => FSUtil.overlaps(real, path.join(ctx.home, dir))))
     return no(`${input} is or contains a folder of credentials`)
   if (ctx.kete.some((dir) => FSUtil.overlaps(real, dir))) return no(`${input} is or contains Kete Code's own folders`)
+  if (ctx.bin?.some((dir) => FSUtil.overlaps(real, dir))) return no(`${input} is or holds a folder of programs on your PATH`)
   if (ctx.workspace.some((dir) => FSUtil.contains(dir, real))) return no(`${input} is inside the workspace already`)
   if (ctx.existing.includes(real)) return { ok: true, real } satisfies Result
   if (ctx.existing.length >= MAX) return no(`a session can have at most ${MAX} extra folders`)
@@ -137,22 +151,54 @@ export const guard = Effect.fnUntraced(function* (
   return { ...next, [metadataKey]: accepted }
 })
 
+/** `metadata` without `kete.dirs`, for writes that bypass `guard` (a session import). */
+export const withoutDirs = (metadata: SessionSchema.Metadata | undefined): SessionSchema.Metadata | undefined => {
+  if (metadata === undefined || !(metadataKey in metadata)) return metadata
+  const { [metadataKey]: _, ...rest } = metadata
+  return rest
+}
+
 export interface Lookup {
   readonly session: (sessionID: SessionSchema.ID) => Effect.Effect<Option.Option<SessionSchema.Info>>
 }
 
-/** The folders of the root-most session in `sessionID`'s family that has any (a subagent shares its root's). */
+/**
+ * The folders of the root-most session in `sessionID`'s family that has the key, even as an empty list
+ * (a subagent shares its root's, so removing a folder at the root removes it for subagents too).
+ */
 export const dirs = Effect.fnUntraced(function* (lookup: Lookup, sessionID: SessionSchema.ID) {
   let found: string[] = []
   let current: SessionSchema.ID | undefined = sessionID
   for (let depth = 0; current !== undefined && depth <= MAX_DEPTH; depth++) {
     const session: Option.Option<SessionSchema.Info> = yield* lookup.session(current)
     if (Option.isNone(session)) break
-    const own = parse(session.value.metadata?.[metadataKey])
-    if (own.length > 0) found = own
+    const metadata = session.value.metadata
+    if (metadata !== undefined && metadataKey in metadata) found = parse(metadata[metadataKey])
     current = session.value.parentID
   }
   return found
+})
+
+/**
+ * `dirs`, keeping only the folders that still pass `validate` as the same real path now. A folder swapped
+ * for a symlink, removed, or stored without the guard (an imported session) grants nothing.
+ */
+export const live = Effect.fnUntraced(function* (
+  fs: Files,
+  context: Effect.Effect<Omit<Context, "existing">>,
+  lookup: Lookup,
+  sessionID: SessionSchema.ID,
+) {
+  const stored = yield* dirs(lookup, sessionID)
+  if (stored.length === 0) return []
+  const ctx = yield* context
+  const folders: string[] = []
+  for (const folder of stored.slice(0, MAX)) {
+    if ((yield* fs.resolve(folder)) !== folder) continue
+    const result = yield* validate(fs, folder, { ...ctx, existing: [] })
+    if (result.ok && result.real === folder) folders.push(folder)
+  }
+  return folders
 })
 
 const slash = (value: string) => value.replaceAll("\\", "/")

@@ -24,6 +24,7 @@ import { SessionExecution } from "@opencode/core/session/execution"
 import { SessionProjector } from "@opencode/core/session/projector"
 import { SessionStore } from "@opencode/core/session/store"
 import { SessionTransfer } from "@opencode/core/session/transfer"
+import { KeteAddDir } from "@opencode/core/kete/add-dir"
 import { promptLocationNode } from "../fixture/prompt-location"
 import { globalProjectNode } from "../lib/project"
 import { testEffect } from "../lib/effect"
@@ -146,6 +147,22 @@ describe("KeteUnattendedPolicy's guard on Session.setMetadata / setPermissions",
       const root = yield* session.create({ location })
       const child = yield* session.create({ parentID: root.id, metadata: {} })
       expect(child.metadata).toEqual({})
+    }),
+  )
+})
+
+describe("SessionTransfer.import and extra folders (kete/add-dir.ts)", () => {
+  it.effect("an imported session's kete.dirs is dropped (it would skip the folder checks); other metadata is kept", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const transfer = yield* SessionTransfer.Service
+      const template = yield* session.create({ location, metadata: { thread: "a" } })
+      const sessionID = Session.ID.create()
+      yield* transfer.import({
+        data: { info: { ...template, id: sessionID, metadata: { thread: "a", [KeteAddDir.metadataKey]: ["/"] } }, messages: [] },
+        location,
+      })
+      expect((yield* session.get(sessionID)).metadata).toEqual({ thread: "a" })
     }),
   )
 })

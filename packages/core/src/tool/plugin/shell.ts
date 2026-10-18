@@ -6,7 +6,7 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
 import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
 import type { Tool } from "@opencode/schema/tool"
-import { Deferred, Effect, Schema, Scope } from "effect"
+import { Deferred, Effect, Option, Schema, Scope } from "effect" // kete_change: Option
 import { Config } from "../../config.js"
 import { Environment } from "../../environment/index.js"
 import { Job } from "../../job.js"
@@ -24,6 +24,8 @@ import { KeteShellRisk } from "../../kete/shell-risk.js" // kete_change
 import { KeteSandbox } from "../../kete/sandbox.js" // kete_change
 import { Global } from "@opencode/util/global" // kete_change
 import { Location } from "../../location.js" // kete_change
+import { KeteAddDir } from "../../kete/add-dir.js" // kete_change
+import { FSUtil } from "@opencode/util/fs-util" // kete_change
 
 export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
@@ -126,12 +128,15 @@ export const Plugin = {
     // The local OS sandbox for the commands this tool runs (kete/sandbox.ts)
     const global = yield* Global.Service
     const location = yield* Location.Service
+    // Optional so upstream's tests need no new layer; without it no extra folder is writable (fails closed).
+    const fsUtil = Option.getOrUndefined(yield* Effect.serviceOption(FSUtil.Service))
     const sandbox = KeteSandbox.make({
       config,
       global,
       location: { workspace: location.project.directory, directory: location.directory, projectID: location.project.id },
       shellDirectory: path.join(global.data, Shell.DIRECTORY),
-      session: (id) => sessions.get(id).pipe(Effect.option), // the session's extra folders (kete/add-dir.ts) are writable
+      // the session's extra folders (kete/add-dir.ts) are writable, checked again on every command
+      folders: fsUtil && ((id) => KeteAddDir.live(fsUtil, KeteAddDir.context(fsUtil, location.directory), { session: (sid) => sessions.get(sid).pipe(Effect.option) }, id)),
     })
     // kete_change end
 
