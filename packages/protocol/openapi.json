@@ -13363,6 +13363,18 @@
                 },
                 "additionalProperties": false
               },
+              "memory": {
+                "type": "object",
+                "properties": {
+                  "claudeMd": {
+                    "type": "boolean"
+                  },
+                  "imports": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
               "lsp": {
                 "type": "object",
                 "properties": {

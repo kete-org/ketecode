@@ -212,6 +212,20 @@ in terminals that report it (kitty, WezTerm, Ghostty, Alacritty, foot). Run `ket
 one keybinding to the editor's `keybindings.json`; it asks first and keeps a backup. For iTerm2,
 Apple Terminal, Windows Terminal and tmux it prints the setting to change.
 
+## Memory files
+
+Kete loads `AGENTS.md` from your global config folder and from the project folders above where you
+work. Where a folder has no `AGENTS.md`, its `CLAUDE.md` (or `.claude/CLAUDE.md`) is loaded instead,
+and `~/.claude/CLAUDE.md` joins your global instructions. Reading a file also loads the `CLAUDE.md` of
+its folders, as it does for `AGENTS.md`.
+
+A line such as `@docs/style.md` or `@~/notes/team.md` in a memory file pulls that file in right after
+the file that names it (five levels deep at most; 64 KiB per file, 256 KiB per memory file). Imports are
+read only from the project, and from `~/.claude/` and your global config folder when they are `.md`
+files. Credential files (`.env`, keys, `~/.ssh`) and anything outside those folders is skipped, with a
+note in the memory file. Code blocks and inline code are not scanned. Turn either feature off with
+`kete.memory.claudeMd: false` or `kete.memory.imports: false`.
+
 ## Installing skills
 
 `kete skill add <source>` installs a skill from a git repository (`owner/repo`, any git URL, with

@@ -1328,3 +1328,19 @@ unchanged.
 (`core/src/util/wildcard.ts`) and util `skill-source.ts` `frontmatter` mirrors
 `core/src/config/markdown.ts`; if either changes upstream, change the copy. If upstream starts scanning
 skills from other folders, update `list`.
+
+## Memory files (feature/memory-files)
+
+CLAUDE.md compatibility, `@path` imports and nested CLAUDE.md (`core/src/kete/memory-files.ts`,
+`memory-imports.ts`; config `kete.memory`). The plugin rewrites the `InstructionDiscovery` entries that
+`ConfigInstructionPlugin` produced, and loads nested files through the tool `execute.after` hook, so
+`tool/plugin/read.ts` and `config/plugin/instruction.ts` stay unedited.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteMemoryFiles.Plugin` in `post` right after `ConfigInstructionPlugin.Plugin` | internal plugins are only listed here, and its transform must run after upstream's |
+
+**Sync checklist:** the plugin copies the ancestor walk of `instruction.ts` (`ancestorDirectories`, the
+`global` exclusion rule, the watcher + 100 ms debounce shape) and the nested-folder walk of `read.ts`; if
+upstream changes either, change the copy. It relies on `InstructionDiscovery` render order being map
+insertion order and on transforms running in registration order.

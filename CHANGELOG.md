@@ -6,6 +6,11 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **`CLAUDE.md` and `@path` imports:** where a folder has no `AGENTS.md`, its `CLAUDE.md` (or
+  `.claude/CLAUDE.md`) is loaded, `~/.claude/CLAUDE.md` joins your global instructions, and nested
+  `CLAUDE.md` files load when you read a file below them. `@path` lines in `AGENTS.md` and `CLAUDE.md`
+  pull the named file in (five levels, size-capped; secrets and files outside the project and your user
+  folders are skipped with a note). `kete.memory.claudeMd` and `kete.memory.imports` turn them off.
 - **`kete skill add|list|update|remove`:** install a skill from a git repository (`https://…`, `git@…`,
   or `owner/repo` on GitHub) or a local folder. It shows every file in the skill, scripts marked, and asks
   before writing anything; nothing from the skill runs at install and its files are written without the
