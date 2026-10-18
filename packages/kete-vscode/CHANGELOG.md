@@ -2,17 +2,19 @@
 
 ## Unreleased
 
-- **Folder trust:** a repository's own configuration can no longer start MCP servers, load plugins,
-  point providers elsewhere, change the shell or formatters, or loosen permissions until you trust
-  the folder. The chat panel shows the question above the message box ("Trust this folder?" / "Not
-  now"); instructions, agents, commands and skills load either way. After this update every folder
-  with such settings asks once, including folders you used before. Details: `docs/folder-trust.md`.
-
 ## 0.2.7
 
 - Security: `kete.cliPath`, `kete.gateway.url` and `kete.platform.url` are machine settings. A
   workspace's `.vscode/settings.json` can no longer choose the program the extension runs or where
   your sign-in and gateway traffic go; set them in your user settings (GHSA-43vv-qhh9-p4cv).
+- Security: shell commands in a slash command's markdown ask permission and run in the OS sandbox
+  (GHSA-3hxr-ggpq-r784), and symlinks in a repository can no longer reach files outside the
+  workspace without asking (GHSA-96qv-q98x-hrm4). Both fixes are in the bundled `kete`.
+- **Folder trust:** a repository's own configuration can no longer start MCP servers, load plugins,
+  point providers elsewhere, change the shell or formatters, or loosen permissions until you trust
+  the folder. The chat panel shows the question above the message box ("Trust this folder?" / "Not
+  now"); instructions, agents, commands and skills load either way. After this update every folder
+  with such settings asks once, including folders you used before. Details: `docs/folder-trust.md`.
 
 ## 0.2.6
 
