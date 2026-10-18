@@ -12,6 +12,7 @@ import { UI } from "./ui"
 import { Env } from "../env"
 import { errorMessage } from "../util/error"
 import * as KetePermissionMode from "../kete/permission-mode" // kete_change
+import { KeteAddDirCli } from "../kete/add-dir" // kete_change
 import { KeteFolderTrustCli } from "../kete/folder-trust" // kete_change
 
 export type RunCommandInput = {
@@ -28,6 +29,7 @@ export type RunCommandInput = {
   thinking?: boolean
   auto?: boolean
   permissionMode?: KetePermissionMode.Mode // kete_change
+  addDirs?: string[] // kete_change: --add-dir folders, absolute (kete/add-dir.ts)
   trustProjectConfig?: boolean // kete_change: run-trusted (kete/folder-trust.ts)
 }
 
@@ -129,7 +131,17 @@ async function execute(input: RunCommandInput, prepared: Prepared, endpoint: End
     return undefined
   })
   if (!target) return
-  // kete_change start: set the session's permission mode before the first prompt
+  // kete_change start: add the extra folders (--add-dir) and set the session's permission mode before the first prompt
+  if (input.addDirs?.length) {
+    const added = await KeteAddDirCli.addAll(client, target.location, target.session.id, input.addDirs).then(
+      () => true,
+      (error) => {
+        reportRunError(input, errorMessage(error), target.session.id)
+        return false
+      },
+    )
+    if (!added) return
+  }
   if (input.permissionMode !== undefined) {
     const applied = await KetePermissionMode.apply(client.session, target.session.id, input.permissionMode).then(
       () => true,

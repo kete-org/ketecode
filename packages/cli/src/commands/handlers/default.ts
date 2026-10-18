@@ -13,6 +13,7 @@ import { Npm } from "@opencode/util/npm"
 import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_VERSION } from "../../version"
 import { Env } from "../../env"
 import * as KetePermissionMode from "../../kete/permission-mode" // kete_change
+import { KeteAddDirCli } from "../../kete/add-dir" // kete_change
 
 export default Runtime.handler(Commands, (input) =>
   Effect.gen(function* () {
@@ -21,6 +22,8 @@ export default Runtime.handler(Commands, (input) =>
     // kete_change: --auto is the "auto" permission mode; --dangerously-skip-permissions is the bypass
     const permissionMode = yield* Effect.try({ try: () => KetePermissionMode.fromFlags(input), catch: (error) => (error instanceof Error ? error : new Error(String(error))) })
     if (requestedDirectory !== undefined) process.chdir(requestedDirectory)
+    // kete_change: --add-dir folders as absolute paths; refused in a job
+    const addDirs = yield* Effect.try({ try: () => KeteAddDirCli.prepare(input.addDir), catch: (error) => (error instanceof Error ? error : new Error(String(error))) })
     const preflight = UpdatePreflight.make()
     yield* Effect.addFinalizer(() => Effect.promise(() => preflight.close()))
     const serviceStarts = yield* Queue.unbounded<{
@@ -89,6 +92,7 @@ export default Runtime.handler(Commands, (input) =>
         prompt: Option.getOrUndefined(input.prompt),
         auto: KetePermissionMode.skipsPermissions(input), // kete_change
         permissionMode, // kete_change
+        addDirs, // kete_change
       },
       config: {
         path: config.path,

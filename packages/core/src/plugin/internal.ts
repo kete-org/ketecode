@@ -109,6 +109,7 @@ import { KeteSubagents } from "../kete/subagents.js" // kete_change
 import { KeteWorktrees } from "../kete/worktrees.js" // kete_change
 import { KetePermissionCeiling } from "../kete/permission-ceiling.js" // kete_change
 import { KeteUnattended } from "../kete/unattended.js" // kete_change
+import { KeteAddDirPlugin } from "../kete/add-dir-plugin.js" // kete_change
 import { KeteJobPlugin } from "../kete/job-plugin.js" // kete_change
 import { KeteLocalModels } from "../kete/local-models.js" // kete_change
 import { KeteOffline } from "../kete/offline.js" // kete_change
@@ -292,6 +293,8 @@ const pre = [
   KeteBudgetRule.Plugin,
   // kete_change: an unattended run's policy loosens "ask" to "allow"; before mode/ceiling so they can still tighten it back; see kete/unattended.ts
   KeteUnattended.PolicyPlugin,
+  // kete_change: a session's extra folders (--add-dir, /add-dir) turn the default external_directory ask into allow; the other loosening hook, so before mode/ceiling; see kete/add-dir-plugin.ts
+  KeteAddDirPlugin.Plugin,
   // kete_change: safe defaults and permission modes (only tighten); see kete/permission-mode.ts
   KetePermissionMode.Plugin,
   // kete_change: the OS sandbox's escapes always ask (Plan blocks them); its status RPC; see kete/sandbox.ts
@@ -364,6 +367,7 @@ export const guarded: ReadonlySet<string> = new Set([
   OpencodePlugin.id,
   ConfigPolicyPlugin.Plugin.id,
   KeteUnattended.PolicyPlugin.id,
+  KeteAddDirPlugin.Plugin.id,
   KeteUnattended.Plugin.id,
   KeteJobPlugin.Plugin.id,
   KeteOffline.Plugin.id,

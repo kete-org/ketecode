@@ -18,6 +18,7 @@ import { PermissionSaved } from "../permission/saved.js"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
 import { Wildcard } from "../util/wildcard.js"
+import { KeteAddDir } from "./add-dir.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
 
 type Effect = PermissionSchema.Effect
@@ -130,6 +131,11 @@ export const Plugin = {
                   .filter((rule) => !Wildcard.match("budget", rule.action) && !Wildcard.match("question", rule.action))
                   .map((rule): Permission.Rule => ({ action: rule.action, resource: rule.resource, effect: "allow" }))
               : [],
+          ),
+          // A session's extra folders (add-dir-plugin.ts) are allowed in its subagents too. Lexical matching
+          // is safe: the ceiling only tightens, and the real-path check ran before.
+          Effect.flatMap((policy) =>
+            KeteAddDir.dirs(lookup, sessionID).pipe(Effect.map((folders) => [...policy, ...KeteAddDir.rules(folders)])),
           ),
         ),
     }

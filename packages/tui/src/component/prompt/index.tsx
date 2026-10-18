@@ -68,6 +68,7 @@ import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { PromptMetadataRow } from "./metadata"
 import * as KetePermissionModeView from "../../kete/permission-mode" // kete_change
+import * as KeteAddDirView from "../../kete/add-dir" // kete_change
 import { KeteStatusLineRow } from "../../kete/statusline" // kete_change (abbreviateHome and truncateFilePath imports moved there)
 import { createKeteHistorySearch, KeteHistorySearchBar } from "../../kete/history-search-bar" // kete_change
 
@@ -194,6 +195,7 @@ export function Prompt(props: PromptProps) {
   const muted = () => leader() || props.muted
   const local = useLocal()
   const keteMode = KetePermissionModeView.useKetePermissionMode() // kete_change
+  const keteAddDir = KeteAddDirView.useKeteAddDirMetadata() // kete_change
   const paths = useTuiPaths()
   const terminalEnvironment = useTuiTerminalEnvironment()
   const clipboard = useClipboard()
@@ -1253,7 +1255,7 @@ export function Prompt(props: PromptProps) {
       // flight. Sends against the new session gate on the request.
       const created = data.session.create({
         location: directory ? { directory } : location,
-        metadata: keteMode.createMetadata(), // kete_change: --permission-mode in force before the first tool call
+        metadata: KeteAddDirView.mergeKeteMetadata(keteMode.createMetadata(), keteAddDir.createMetadata()), // kete_change: --permission-mode and --add-dir in force before the first tool call
         agent: agent.id,
         model: {
           providerID: selection.providerID,

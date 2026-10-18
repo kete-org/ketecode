@@ -131,6 +131,7 @@ export const Plugin = {
       global,
       location: { workspace: location.project.directory, directory: location.directory, projectID: location.project.id },
       shellDirectory: path.join(global.data, Shell.DIRECTORY),
+      session: (id) => sessions.get(id).pipe(Effect.option), // the session's extra folders (kete/add-dir.ts) are writable
     })
     // kete_change end
 

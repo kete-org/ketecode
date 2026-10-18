@@ -194,6 +194,33 @@ policies (synced from the Kete platform) and `experimental.policies` in config a
 the mode, so they can deny what a mode or rule would allow. No mode turns `ask` or `deny` into
 `allow`.
 
+## Extra working directories
+
+By default Kete Code asks before it reads or edits anything outside the workspace. To work in more
+folders without asking each time, add them to the session:
+
+- `kete --add-dir ../lib` or `kete run --add-dir ../lib "…"` (repeat the flag, up to 10 folders), or
+- `/add-dir <path>` in a session; `/add-dir` lists the folders and `/add-dir remove <path>` drops one.
+
+What it grants: the "outside the workspace" question (`external_directory`) is not asked for anything
+inside an added folder, and agent commands in the OS sandbox can write there ([Sandbox](sandbox.md)).
+Subagents get the same folders. It lasts for the session (stored in its `kete.dirs` metadata, so a
+resumed session keeps them; `--add-dir` with `--continue` or `--session` adds to it); nothing is written
+to your configuration.
+
+What still applies: the file permissions that follow (`read`, `edit`, `shell`) and the permission mode,
+so Plan mode still blocks edits; a `deny` rule always wins; an `external_directory` rule you or your
+organization wrote for a specific folder (for example an `ask`) is kept, only the default question is
+skipped; your organization's policies run after and can still deny. Access is checked on the real path
+(symlinks and `..` are resolved), so a link inside an added folder to somewhere else grants nothing,
+and a folder replaced by a symlink after it was added stops counting. The sandbox's protection of Kete
+Code's configuration, `.git` hooks and credentials still applies inside added folders.
+
+What can't be added: a file-system root, your home folder or a folder above it, a folder that holds or is
+a credential folder (`~/.ssh`, `~/.aws`, `~/.config` …) or Kete Code's own, anything inside the workspace,
+and more than 10 folders. Added folders load no configuration, plugins, agents, skills or instruction files.
+Jobs (cloud and self-hosted) have one workspace: `--add-dir` is refused there.
+
 ## Upgrading from earlier versions
 
 - Interactive sessions now ask before shell commands that can change things, before web requests

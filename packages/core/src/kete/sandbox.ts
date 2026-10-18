@@ -35,6 +35,7 @@ import { Config } from "../config.js"
 import { Global } from "@opencode/util/global"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
+import { KeteAddDir } from "./add-dir.js"
 import { KetePermissionMode } from "./permission-mode.js"
 import { KeteSandboxActions } from "./sandbox/actions.js"
 import { KeteSandboxPlans } from "./sandbox/plans.js"
@@ -104,8 +105,8 @@ export function notice(outcome: Outcome, exit: number | undefined, output: strin
   const network = !outcome.network && NETWORK_DENIED.test(output)
   if (!network && !FILE_DENIED.test(output)) return undefined
   const limits = outcome.network
-    ? "it can write only inside the workspace, temp directories and package caches, never to .git config or hooks or Kete Code configuration, and can't read credentials"
-    : "it can write only inside the workspace, temp directories and package caches, never to .git config or hooks or Kete Code configuration, can't read credentials, and has no network access"
+    ? "it can write only inside the workspace, added folders, temp directories and package caches, never to .git config or hooks or Kete Code configuration, and can't read credentials"
+    : "it can write only inside the workspace, added folders, temp directories and package caches, never to .git config or hooks or Kete Code configuration, can't read credentials, and has no network access"
   const retry = outcome.network || !network ? '"off"' : '"network" (or "off" if it also needs to write elsewhere)'
   return `[This command ran in Kete Code's OS sandbox: ${limits}. If the sandbox caused the failure, run it again with sandbox: ${retry}; the user is asked first.]`
 }
@@ -117,6 +118,8 @@ export interface Deps {
   /** The shell output directory root (`Shell.DIRECTORY` under the data directory). */
   readonly shellDirectory: string
   readonly env?: Record<string, string | undefined>
+  /** The session lookup, for the session's extra folders (add-dir.ts), which are writable too. */
+  readonly session?: KeteAddDir.Lookup["session"]
 }
 
 export interface Ask {
@@ -202,6 +205,7 @@ export function make(deps: Deps) {
     }
 
     const mechanism = available.mechanism
+    const extraWrite = deps.session ? yield* KeteAddDir.dirs({ session: deps.session }, Session.ID.make(sessionID)) : []
     const resolved = yield* Effect.tryPromise({
       try: async () => {
         const tmp = await privateTmp(sessionID)
@@ -216,6 +220,7 @@ export function make(deps: Deps) {
             settings,
             network,
             privateTmp: tmp,
+            extraWrite,
             env,
           },
           placeholders,

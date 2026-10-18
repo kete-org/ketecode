@@ -598,4 +598,24 @@ describe("KeteMemoryFiles security review", () => {
         }),
     ),
   )
+
+  it.live("a folder outside the project (an --add-dir folder) contributes no memory files when read", () =>
+    scenario(
+      {
+        files: {
+          "home/lib/CLAUDE.md": "LIB CLAUDE",
+          "home/lib/AGENTS.md": "LIB AGENTS",
+          "home/lib/src/x.ts": "x",
+          "home/lib/src/CLAUDE.md": "LIB NESTED",
+        },
+      },
+      (world) =>
+        Effect.gen(function* () {
+          yield* world.read("../lib/src/x.ts")
+          expect(world.loads.flat()).toEqual([])
+          expect(yield* world.text).not.toContain("LIB")
+        }),
+    ),
+  )
 })
+

@@ -10,6 +10,7 @@ export interface Args {
   fork?: boolean
   auto?: boolean
   permissionMode?: KetePermissionModes.Mode // kete_change: --permission-mode / --auto (kete/permission-mode.tsx)
+  addDirs?: string[] // kete_change: --add-dir folders, absolute (kete/add-dir.tsx)
 }
 
 export const { use: useArgs, provider: ArgsProvider } = createSimpleContext({

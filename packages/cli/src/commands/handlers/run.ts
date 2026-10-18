@@ -3,6 +3,7 @@ import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { ServerConnection } from "../../services/server-connection"
 import * as KetePermissionMode from "../../kete/permission-mode" // kete_change
+import { KeteAddDirCli } from "../../kete/add-dir" // kete_change
 import { KeteFolderTrustCli } from "../../kete/folder-trust" // kete_change
 import { KeteJobProjectConfig } from "../../kete/job-project-config" // kete_change
 
@@ -11,6 +12,7 @@ export default Runtime.handler(Commands.commands.run, (input) =>
     const { runNonInteractive } = yield* Effect.promise(() => import("../../run/run"))
     // kete_change: --auto is the "auto" permission mode; --dangerously-skip-permissions is the bypass
     const permissionMode = yield* Effect.try({ try: () => KetePermissionMode.fromFlags(input), catch: (error) => (error instanceof Error ? error : new Error(String(error))) })
+    const addDirs = yield* Effect.try({ try: () => KeteAddDirCli.prepare(input.addDir), catch: (error) => (error instanceof Error ? error : new Error(String(error))) }) // kete_change: --add-dir folders as absolute paths; refused in a job
     const separator = process.argv.indexOf("--", 2)
     // kete_change start: --trust-project-config trusts the folder for this run, on a private server (kete/folder-trust.ts)
     const trustProjectConfig = KeteJobProjectConfig.trusted(input.trustProjectConfig, process.env)
@@ -40,6 +42,7 @@ export default Runtime.handler(Commands.commands.run, (input) =>
         thinking: input.thinking,
         auto: KetePermissionMode.skipsPermissions(input), // kete_change
         permissionMode, // kete_change
+        addDirs, // kete_change
         trustProjectConfig, // kete_change
       }),
     )

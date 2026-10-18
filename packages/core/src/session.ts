@@ -65,6 +65,7 @@ import type { Command } from "./command.js"
 import { SessionEnvironment } from "./session/environment.js"
 import { InstructionEntry } from "./session/instruction-entry.js"
 import { KeteUnattendedPolicy } from "./kete/unattended-policy.js" // kete_change
+import { KeteAddDir } from "./kete/add-dir.js" // kete_change
 
 // get project -> project.locations
 //
@@ -244,6 +245,7 @@ const layer = Layer.effect(
     const jobs = yield* Job.Service
     const environments = yield* SessionEnvironment.Service
     const locations = yield* LocationServiceMap.Service
+    const fs = yield* FSUtil.Service // kete_change: validates extra folders (kete.dirs) in create
     const sessions = yield* Session.make()
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
 
@@ -258,6 +260,7 @@ const layer = Layer.effect(
         if (location === undefined)
           return yield* Effect.die(new Error("Session.create requires either location or an existing parentID"))
         const project = yield* projects.resolve(location.directory)
+        const guarded = input.metadata && (yield* KeteAddDir.guard(fs, KeteAddDir.context(fs, location.directory), parent?.metadata, input.metadata)) // kete_change: refuse invalid extra folders (kete.dirs) and store them as real paths
         const projected = yield* bus
           .publish(
             SessionEvent.Created,
@@ -273,7 +276,7 @@ const layer = Layer.effect(
               agent: input.agent,
               // Children inherit metadata and permissions the way they inherit
               // location, so host policies that read them treat the family uniformly.
-              metadata: KeteUnattendedPolicy.inheritMetadata(parent?.metadata, input.metadata), // kete_change: force kete.unattended onto every child in an unattended family (ADR 0008), even when the caller supplies its own metadata (e.g. a worktree subagent, kete/worktrees.ts:227)
+              metadata: KeteUnattendedPolicy.inheritMetadata(parent?.metadata, guarded), // kete_change: force kete.unattended onto every child in an unattended family (ADR 0008), even when the caller supplies its own metadata (e.g. a worktree subagent, kete/worktrees.ts:227)
               permissions: input.permissions ?? parent?.permissions,
               model: input.model
                 ? {
