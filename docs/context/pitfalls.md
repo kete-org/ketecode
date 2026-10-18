@@ -199,6 +199,11 @@ Mistakes to avoid, grouped. Each item cites where the rule lives or where it bit
 - Pre-release detection needs care: real regression fixed at `4a3a5cfe94`/`f4efe33a66`
   ("mark only version suffixes as pre-releases").
 
+## Memory files
+- CLAUDE.md files and `@imports` are repository-controlled and go to the model: check realpath containment (never the written path) and the secret denylist (`core/src/kete/memory-imports.ts`). Credential matching is `KeteShellRisk.credential` (`core/src/kete/shell-risk.ts:292`); its `.config/kete` pattern (`:286`) matches the global config folder, so match relative to the root.
+- Security-style switches (`kete.memory.*`) are restrictive-wins: read every config document and let a `false` anywhere win (`memory-files.ts:191`), not `Config.latest`.
+- A new fs-touching file in `core/src` or `util/src` must be classified in `packages/core/test/kete/job-fs-sites.test.ts` or that test fails.
+
 ## Git / process
 
 - **`gh` defaults to the upstream repo** (`anomalyco/opencode`), not this fork —

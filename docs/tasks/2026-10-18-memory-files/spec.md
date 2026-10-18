@@ -1,7 +1,7 @@
 # Spec: CLAUDE.md compatibility, @imports and nested memory (A2a)
 
 - Task: `docs/tasks/2026-10-18-memory-files` · Size: large · Created: 2026-10-18
-- Status: approved 2026-10-18, plan approved 2026-10-18 (the user said to carry on through every remaining item without stopping, 2026-10-18; recorded in handoff.md) <!-- draft → agreed (medium) / approved (large) → built → closed -->
+- Status: built 2026-10-18 (spec and plan approved 2026-10-18) (the user said to carry on through every remaining item without stopping, 2026-10-18; recorded in handoff.md) <!-- draft → agreed (medium) / approved (large) → built → closed -->
 
 ## Goal
 People moving from Claude Code keep their memory files working. Kete reads `CLAUDE.md` where there is no

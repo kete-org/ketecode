@@ -1,12 +1,18 @@
 ---
 module: instructions
-paths: [packages/core/src/config/plugin/instruction.ts, packages/core/src/instruction-discovery.ts, packages/core/src/session/instructions.ts, packages/core/src/tool/plugin/read.ts]
-verified-at: ecfae5cce7
+paths: [packages/core/src/kete/memory-files.ts, packages/core/src/kete/memory-imports.ts, packages/core/src/config/plugin/instruction.ts, packages/core/src/instruction-discovery.ts, packages/core/src/session/instructions.ts, packages/core/src/tool/plugin/read.ts]
+verified-at: 246569111a
 ---
 ## Quick answers
-- Which instruction files does the runtime load? Only `AGENTS.md`. `ConfigInstructionPlugin` (`core/src/config/plugin/instruction.ts:36-121`): the global `<config>/AGENTS.md`, then every project `AGENTS.md` walking up from the cwd to the project root (nearest first; to the home folder when the cwd is under it), de-duplicated by path (`new Set`, `:51,71`). `CLAUDE.md` is not read, and there is no `@import` expansion.
+- Which instruction files does the runtime load? `AGENTS.md`, plus `CLAUDE.md` where a folder has no `AGENTS.md` (Kete, below). `ConfigInstructionPlugin` (`core/src/config/plugin/instruction.ts:36-121`): the global `<config>/AGENTS.md`, then every project `AGENTS.md` walking up from the cwd to the project root (nearest first; to the home folder when the cwd is under it), de-duplicated by path (`new Set`, `:51,71`).
 - How is it shown to the model? One block per file, `Instructions from: <path>` then the content (`core/src/instruction-discovery.ts:123-125`, source key `core/instructions` `:17`); the plugin rescans on a watcher event (100 ms debounce, `instruction.ts:110`) and `discovery.reload()` re-renders, a change is sent as a diff (`renderUpdate` `:127`).
 - Are nested `AGENTS.md` files loaded? Yes, lazily: after a successful `read` of a file or directory, `AGENTS.md` files between it and the location root (root excluded, it is already loaded) are found (`core/src/tool/plugin/read.ts:16,82-106`) and handed to `SessionInstructions.load` (`core/src/session/instructions.ts:46-112`), which injects one durable synthetic message per new path (ledger = message metadata, so compaction or revert re-injects). External-directory reads and failures are skipped silently.
+- How does CLAUDE.md work? Kete plugin `kete.memory-files` (`core/src/kete/memory-files.ts:155`, registered after the upstream plugin at `internal.ts:326`). Per folder, `AGENTS.md` wins; else `CLAUDE.md` or `.claude/CLAUDE.md` (`pick` `:226`); `~/.claude/CLAUDE.md` joins the global files (`:259`). A CLAUDE.md is loaded only if its realpath is a `.md` inside its folder/repository and not a secret (`memoryFileAllowed` `memory-imports.ts:88`), and at most 256 KiB (`withinCap` `:243`).
+- How do `@path` imports work? `expand` (`memory-files.ts:66`) inlines each `@token` (not in code fences/spans, `importTokens` `memory-imports.ts:41`) right after the file naming it: depth 5, 64 KiB/file, 256 KiB total (`:15-17`); refusals leave the token and append a note line. `denied` (`:92`) allows only real paths inside a root: the repository (only when `location.vcs` is set and not home/above/`/`, `usableRoot` `:85`, `memory-files.ts:185`), plus `~/.claude` and the global config folder as `sensitive` markdown-only roots (`:178`); it refuses `.git`, `~/.ssh` etc., `KeteShellRisk.credential` matches and a secret-name list (`:65-79`).
+- Are nested CLAUDE.md files loaded? Yes, via the tool `execute.after` hook on a completed `read` (`memory-files.ts:361`); same walk as AGENTS.md, repository required, folders under `node_modules`/`vendor` skipped (`:383`), and nested files import only inside their own folder plus `.md` files elsewhere in the repo (`nestedRoots` `:393`). New paths go to `SessionInstructions.load`.
+- How do I turn it off? `kete.memory.claudeMd` / `kete.memory.imports` (`schema/src/config/kete.ts:172`); a `false` in any config document wins, a project cannot re-enable (`settings` `memory-files.ts:191`).
+- Is the discovery transform async, and how do I reorder entries? `discovery.transform(editor => ...)` is a synchronous callback (no Effect inside; precompute into state, as `memory-files.ts` does with `loaded.current`). Editor has no move: `list()`, `remove(path)` each, then `add` in the new order (`memory-files.ts:335-357`).
+- Can a Kete plugin act on a tool's result without editing the tool? Yes: `ctx.tool.hook("execute.after", event => ...)` (`memory-files.ts:361`). The event carries `tool`, `sessionID`, `agent`, `messageID`, `id`, `input`, and `status` (`completed` adds `result`, whose `output` is the tool's structured output) (`plugin/src/effect/tool.ts:29`). That's how nested CLAUDE.md avoids editing `tool/plugin/read.ts`.
 - Does folder trust gate them? No: `AGENTS.md` and "instructions" load as before in an untrusted folder (`core/src/kete/folder-trust.ts:27`); only executable project config is held back (`permissions`/`hooks`/`job-mode` cards). Job review mode turns project `AGENTS.md` discovery off (`job-mode` card).
 - Does the `instructions:` config key work? It is decoded (`core/src/config/normalize.ts:223-224`) but nothing in `core/src` reads it in v2 (grep found no consumer); do not tell users it adds files.
 - Where do I add a Kete instruction source? `InstructionDiscovery.Service.transform((editor) => editor.add(file))` from a Kete plugin registered in `core/src/plugin/internal.ts` (the upstream one is in `post`, `:324`; register yours so it runs after it, since insertion order is render order: global, then nearest to farthest project file, then siblings by registration order).
@@ -40,12 +46,13 @@ Plugin start → resolve cwd, project root, home → candidate files → read (u
 - A source that cannot be read must report `unavailable`, not an empty list (an empty list removes the block from the prompt).
 
 ## Testing
-- `bun run test ./test/<path>` inside `packages/core/` for the upstream instruction tests (search `test/` for `instruction`); no Kete test exists for this seam yet.
+- `bun run test ./test/<path>` inside `packages/core/` for the upstream instruction tests (search `test/` for `instruction`); Kete tests: `packages/core/test/kete/memory-files.test.ts`, `memory-imports.test.ts`.
 
 ## Changes
-- None by Kete today (upstream behavior, documented from a scout finding).
+- `kete.memory-files` plugin and `memory-imports.ts` (pure rules); only upstream edit is the `internal.ts` registration (`kete_change`).
 
 ## Gotchas
-- Users coming from Claude Code expect `CLAUDE.md` and `@file` imports: neither works; put the content in `AGENTS.md`.
+- Memory files are repository-controlled text read into model context: every path is checked by realpath containment, never by the written path (a symlinked CLAUDE.md or import must not escape). A cwd with no repository, or a root that is home or above, serves no imports and no nested files.
+- Known gap: the nested half hands paths to `SessionInstructions.load`, which re-reads them, and stat precedes read, so a file swapped in between isn't re-checked.
 - The location-root `AGENTS.md` is loaded up front, so the `read` walk deliberately drops it (`read.ts` filters `dirname(file) !== root`).
 - When the cwd is inside the global config folder, `discovery.global: false` also excludes the global file from the ancestor walk.
