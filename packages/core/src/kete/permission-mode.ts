@@ -78,6 +78,22 @@ export const planAllowed: ReadonlySet<string> = new Set([
   "shell", "subagent", "opencode_list_mcp_resources", "opencode_read_mcp_resource", "todowrite",
 ])
 
+/**
+ * Auto memory (kete/auto-memory.ts): resources are `<scope>/<file>:<verb>`. Viewing is always fine. A
+ * change is refused in Plan mode, asked in Ask mode, and asked in every other mode for the user scope
+ * unless a rule or "Always" allowed it: user memory reaches every project, so a prompt-injected save
+ * there must not be silent.
+ */
+function memory(input: Input): Outcome {
+  const changes = input.resources.filter((resource) => !resource.value.endsWith(":view"))
+  if (changes.length === 0) return ALLOW
+  if (input.mode === "plan") return { effect: "deny", message: "Plan mode is read-only: saving memory isn't available. Switch permission mode to save notes." }
+  if (input.mode === "ask") return { effect: "ask", message: "Ask mode: approve each change to saved memory." }
+  if (changes.some((resource) => resource.value.startsWith("user/") && resource.source === "catch-all"))
+    return { effect: "ask", message: "This changes your user memory, which every project loads. Approve it only if you asked for it." }
+  return ALLOW
+}
+
 export const parse = KetePermissionModes.parse
 
 const rank: Record<Decision, number> = { deny: 0, ask: 1, allow: 2 }
@@ -133,6 +149,7 @@ function defaulted(resource: Resource, shell: boolean) {
  */
 export function decide(input: Input): Outcome {
   const { mode, action } = input
+  if (action === "memory") return memory(input)
   if (mode === "plan") {
     if (action === "edit") return { effect: "deny", message: PLAN_EDIT }
     if (!planAllowed.has(action))
@@ -287,7 +304,8 @@ export const apply = Effect.fnUntraced(function* (
   },
 ) {
   if (event.effect === "deny") return
-  if (!guarded.has(event.action)) {
+  // `memory` takes the full path below: its decision needs each resource's source (catch-all or not).
+  if (!guarded.has(event.action) && event.action !== "memory") {
     // The sandbox's own checks (kete/sandbox.ts) decide Plan mode themselves: a command that runs
     // unsandboxed because the platform has no sandbox is still a read-only command there.
     if (KeteSandboxActions.isSandboxAction(event.action)) return

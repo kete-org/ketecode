@@ -1,7 +1,7 @@
 ---
 module: audit-log
 paths: [packages/core/src/kete/audit.ts, packages/util/src/kete/redact.ts, packages/util/src/kete/job-audit-sink.ts]
-verified-at: 508e1f85ba
+verified-at: 3c3e792370
 ---
 
 ## Quick answers
@@ -84,9 +84,10 @@ verified-at: 508e1f85ba
   config-rule deny.
 - Does the redactor over-redact anything predictable? Yes — a bare `pass`/`PASS` key or
   `name=value`/`name: value` pair matches the anchored `pass` alternative in `NAME`
-  (`redact.ts:14-20`) even when it isn't a password: `pass: 42`, `PASS=1` (a plain count/flag) get
+  (`redact.ts:18-19`) even when it isn't a password: `pass: 42`, `PASS=1` (a plain count/flag) get
   redacted to `pass: [REDACTED]`/`PASS=[REDACTED]`. Deliberate (favors over- over under-redaction,
   `CLAUDE.md:237-239`), not a bug to narrow away — see Gotchas.
+- What changed in the redactor for auto memory? New key shapes in `keyShapes` (`redact.ts:32`): all `gh[pousr]_` GitHub tokens, Stripe `sk_`/`rk_` live/test, GitLab `glpat-`, npm `npm_`, Slack `xox[abprs]-`. `NAME` is now `auth(?!or)` (`:19`) so "author: Jane" is no longer masked while `auth`/`oauth`/`authorization` still are. Auto memory redacts notes on write and on load with it.
 - What does an interactive session's family write? Nothing — every handler resolves the family
   first via a bounded resolve cache and returns immediately when `state.kind !== "unattended"`
   (`audit.ts:369-372,389-393,473-476,521-529`).

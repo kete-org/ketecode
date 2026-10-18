@@ -13371,6 +13371,9 @@
                   },
                   "imports": {
                     "type": "boolean"
+                  },
+                  "auto": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false

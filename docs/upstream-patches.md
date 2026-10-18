@@ -1339,6 +1339,7 @@ CLAUDE.md compatibility, `@path` imports and nested CLAUDE.md (`core/src/kete/me
 | File | Change | Why no seam |
 | --- | --- | --- |
 | `core/src/plugin/internal.ts` | Import; `KeteMemoryFiles.Plugin` in `post` right after `ConfigInstructionPlugin.Plugin` | internal plugins are only listed here, and its transform must run after upstream's |
+| `core/src/plugin/internal.ts` | Import; `KeteAutoMemory.Plugin` in `post` right after `KeteMemoryFiles.Plugin` (auto memory, `core/src/kete/auto-memory.ts`) | internal plugins are only listed here |
 
 **Sync checklist:** the plugin copies the ancestor walk of `instruction.ts` (`ancestorDirectories`, the
 `global` exclusion rule, the watcher + 100 ms debounce shape) and the nested-folder walk of `read.ts`; if

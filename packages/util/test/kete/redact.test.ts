@@ -116,3 +116,19 @@ describe("KeteRedact.truncate", () => {
     expect(truncated).not.toMatch(/sk-ant-[a-z]/)
   })
 })
+
+describe("KeteRedact more key shapes", () => {
+  test("Stripe, GitLab, GitHub app, npm and Slack session tokens are masked; author fields are not", () => {
+    for (const secret of [
+      "sk_live_abcdefghijklmnop1234",
+      "rk_test_abcdefghijklmnop1234",
+      "glpat-abcdefghijklmnopqrstu",
+      "ghs_abcdefghijklmnopqrstuvwxyz",
+      "npm_abcdefghijklmnopqrstuvwxyz0123456789",
+      "xoxs-1234567890-abcdef",
+    ])
+      expect(KeteRedact.text(`key ${secret} end`)).not.toContain(secret)
+    expect(KeteRedact.text("author: Jane Doe")).toBe("author: Jane Doe")
+    expect(KeteRedact.text("auth_token: abc123")).toBe("auth_token: [REDACTED]")
+  })
+})

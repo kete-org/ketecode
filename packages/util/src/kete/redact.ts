@@ -16,7 +16,7 @@ const MASK = "[REDACTED]"
 // substring of an ordinary word (passage, bypass) — `passw(?:or)?d` (password/passwd) stays
 // unanchored, since that's specific enough to still match inside a compound like `dbPassword`.
 const NAME =
-  "(?:secret|token|passw(?:or)?d|(?<![A-Za-z])pass(?![A-Za-z])|pwd|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth)"
+  "(?:secret|token|passw(?:or)?d|(?<![A-Za-z])pass(?![A-Za-z])|pwd|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth(?!or))"
 const secretName = new RegExp(`[\\w.-]*${NAME}[\\w.-]*`, "i")
 
 /** Whether a bare property/variable name looks like a secret (what `deep` masks a whole value
@@ -26,14 +26,18 @@ export function isSecretKey(name: string): boolean {
   return secretName.test(name)
 }
 
-// Known secret-value shapes: OpenAI/Anthropic-style `sk-...`, GitHub tokens, Slack tokens, AWS
-// access key ids, Google API keys, and JWT-looking three-segment base64url strings.
+// Known secret-value shapes: OpenAI/Anthropic-style `sk-...`, Stripe keys, GitHub, GitLab, npm and
+// Slack tokens, AWS access key ids, Google API keys, and JWT-looking three-segment base64url strings.
+// (`auth` in NAME skips "author…", so "author: Jane" stays readable.)
 const keyShapes = new RegExp(
   [
     "\\bsk-(?:ant-)?[A-Za-z0-9_-]{10,}\\b",
-    "\\b(?:ghp|gho)_[A-Za-z0-9]{20,}\\b",
+    "\\bgh[pousr]_[A-Za-z0-9]{20,}\\b",
+    "\\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}\\b",
+    "\\bglpat-[A-Za-z0-9_-]{20,}\\b",
+    "\\bnpm_[A-Za-z0-9]{30,}\\b",
     "\\bgithub_pat_[A-Za-z0-9_]{20,}\\b",
-    "\\bxox[abp]-[A-Za-z0-9-]{10,}\\b",
+    "\\bxox[abprs]-[A-Za-z0-9-]{10,}\\b",
     "\\bAKIA[A-Z0-9]{16}\\b",
     "\\bAIza[A-Za-z0-9_-]{20,}\\b",
     "\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b",

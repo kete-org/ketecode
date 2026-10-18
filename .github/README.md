@@ -226,6 +226,19 @@ files. Credential files (`.env`, keys, `~/.ssh`) and anything outside those fold
 note in the memory file. Code blocks and inline code are not scanned. Turn either feature off with
 `kete.memory.claudeMd: false` or `kete.memory.imports: false`.
 
+### Auto memory
+
+Kete can also save notes for later sessions: your corrections and preferences, project facts that
+aren't obvious from the code. Say `/remember we use bun, not npm`, or let the agent save one with its
+`memory` tool. Notes are markdown files in Kete's own state folder (not your repository), one set per
+project and one for you: `MEMORY.md` is a short index that loads at the start of every session (first
+200 lines or 25 KiB), with topic files beside it that the agent reads when needed. Loaded notes are
+marked as context, not instructions, and secrets are redacted when they are saved and again when they
+load. Files are capped (25 KiB each, 200 per folder). `/memory` shows what is loaded; you can edit or
+delete the files by hand. Each save is the permission `memory` (allowed by default; set it to `ask` or
+`deny` in `permissions`). Turn it all off with `kete.memory.auto: false`. It is also off in unattended
+runs (`kete job run`) and cloud jobs, where nobody reviews what would be saved.
+
 ## Installing skills
 
 `kete skill add <source>` installs a skill from a git repository (`owner/repo`, any git URL, with

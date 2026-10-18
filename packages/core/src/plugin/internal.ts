@@ -124,6 +124,7 @@ import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
 import { KeteFolderTrustRpcPlugin } from "../kete/folder-trust/rpc.js" // kete_change
 import { KeteDoctor } from "../kete/doctor.js" // kete_change
 import { KeteGitCommands } from "../kete/git-commands.js" // kete_change
+import { KeteAutoMemory } from "../kete/auto-memory.js" // kete_change
 import { KeteMemoryFiles } from "../kete/memory-files.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
@@ -325,6 +326,8 @@ const post = [
   ConfigInstructionPlugin.Plugin,
   // kete_change: CLAUDE.md, @path imports and nested memory files; runs after the plugin above, whose entries it rewrites; see kete/memory-files.ts
   KeteMemoryFiles.Plugin,
+  // kete_change: auto memory (memory tool, /remember, /memory, notes loaded per session); see kete/auto-memory.ts
+  KeteAutoMemory.Plugin,
   ConfigReferencePlugin.Plugin,
   ConfigAgentPlugin.Plugin,
   ConfigCommandPlugin.Plugin,
