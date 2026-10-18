@@ -459,6 +459,26 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
       for (const dir of chain) for (const item of configNames) readOnly.push(path.join(dir, item.name))
     }
 
+    // Folders added with --add-dir get the workspace's protections: their Kete/agent configuration and
+    // their whole git directory stay read-only, so a command can't plant a hook or config that runs, or
+    // loads, outside the sandbox the next time someone uses that repository.
+    for (const root of extraWrite) {
+      const dotGit = path.join(root, ".git")
+      if (linux) {
+        for (const item of configNames) {
+          const target = path.join(root, item.name)
+          releases.push(await placeholders.acquire(target, item.directory ? DIRECTORY : CONFIG_PLACEHOLDER))
+          if (!item.directory && (await placeholders.isPlaceholder(target))) masked.push(target)
+          else readOnly.push(target)
+        }
+        releases.push(await placeholders.acquire(dotGit, DIRECTORY))
+        readOnly.push(dotGit)
+      } else {
+        for (const item of configNames) readOnly.push(path.join(root, item.name))
+        readOnly.push(dotGit)
+      }
+    }
+
     // Credentials, Kete Code's private directories, and configured extras.
     const allowRead = await Promise.all(input.settings.allowRead.map(expand))
     const hiddenPaths = unique([

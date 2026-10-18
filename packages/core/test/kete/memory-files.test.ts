@@ -618,4 +618,3 @@ describe("KeteMemoryFiles security review", () => {
     ),
   )
 })
-

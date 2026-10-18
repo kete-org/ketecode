@@ -213,8 +213,14 @@ so Plan mode still blocks edits; a `deny` rule always wins; an `external_directo
 organization wrote for a specific folder (for example an `ask`) is kept, only the default question is
 skipped; your organization's policies run after and can still deny. Access is checked on the real path
 (symlinks and `..` are resolved), so a link inside an added folder to somewhere else grants nothing,
-and a folder replaced by a symlink after it was added stops counting. The sandbox's protection of Kete
-Code's configuration, `.git` hooks and credentials still applies inside added folders.
+and a folder replaced by a symlink after it was added stops counting. One limit: a catch-all
+`"external_directory": "ask"` you wrote yourself (for every folder, resource `*`) looks the same as the
+default, so an added folder skips it too; write a rule for the specific folder to keep asking there.
+
+In the OS sandbox an added folder's Kete Code configuration (`.kete/`, `kete.json`, `.claude/`, `.agents/`)
+and its whole `.git` folder are read-only, so a command can't plant a hook that runs the next time you use
+that repository. The agent can edit files there but can't commit from the sandboxed shell; commit in that
+repository yourself, or let the command run outside the sandbox when it asks.
 
 What can't be added: a file-system root, your home folder or a folder above it, a folder that holds or is
 a credential folder (`~/.ssh`, `~/.aws`, `~/.config` …) or Kete Code's own, anything inside the workspace,

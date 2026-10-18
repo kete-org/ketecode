@@ -130,6 +130,19 @@ describe.skipIf(!probe.available)("sandbox policy, run for real", () => {
       expect(await exists(path.join(outsideDir, "outside-add-dir.txt"))).toBe(false)
       const without = await sandboxed(env, `echo hi > "${added}/b.txt"`)
       expect(without.exit).not.toBe(0)
+      // Its git directory and Kete configuration stay read-only, as the workspace's do.
+      git(added, "init", "-q")
+      for (const command of [
+        `echo x > "${added}/.git/hooks/post-commit"`,
+        `echo x >> "${added}/.git/config"`,
+        `mkdir -p "${added}/.kete" && echo x > "${added}/.kete/kete.jsonc"`,
+        `echo '{}' > "${added}/kete.json"`,
+      ]) {
+        const blocked = await sandboxed({ ...env, extraWrite: [await fs.realpath(added)] }, command)
+        expect(blocked.exit, command).not.toBe(0)
+      }
+      expect(await exists(path.join(added, ".git", "hooks", "post-commit"))).toBe(false)
+      expect(await exists(path.join(added, ".kete", "kete.jsonc"))).toBe(false)
     } finally {
       await fs.rm(added, { recursive: true, force: true })
       await fs.rm(path.join(outsideDir, "outside-add-dir.txt"), { force: true })
