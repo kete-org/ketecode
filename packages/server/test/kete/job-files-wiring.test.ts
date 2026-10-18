@@ -157,7 +157,9 @@ if (linux)
       yield* Effect.promise(() => s.client.session.wait({ sessionID: session.id }).catch(() => undefined))
       const messages = JSON.stringify(yield* Effect.promise(() => s.client.message.list({ sessionID: session.id })))
       expect(messages).not.toContain("TOP-SECRET-CONTENT")
-      expect(messages).toContain("Unable to read")
+      // This server confines the file system without setting job mode, so FileAccess may meet the refusal
+      // first while following the link; a real job (job mode on) keeps the read tool's own message.
+      expect(messages).toMatch(/Unable to read|refused to follow a symbolic link/)
       expect(messages).toContain("hello")
       expect(yield* Effect.promise(() => fs.readFile(path.join(repoDir, "written.txt"), "utf8"))).toBe("ok\n")
     }),
