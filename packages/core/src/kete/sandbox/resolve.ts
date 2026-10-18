@@ -45,6 +45,8 @@ export interface Input {
   readonly network: boolean
   /** The session's private temp directory (TMPDIR inside the sandbox; Unix sockets may be used there). */
   readonly privateTmp: string
+  /** The session's extra folders (add-dir.ts), as real paths: writable like the workspace, masks still apply. */
+  readonly extraWrite?: readonly string[]
   readonly env?: Record<string, string | undefined>
 }
 
@@ -395,10 +397,13 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
     ? await Promise.all(caches(input.platform, env).map((value) => (path.isAbsolute(value) ? real(value) : homeRelative(value))))
     : []
   const allowWrite = await Promise.all(input.settings.allowWrite.map(expand))
+  // A folder that is no longer its own real path (swapped for a symlink since it was added) is dropped.
+  const extraWrite: string[] = []
+  for (const value of input.extraWrite ?? []) if (path.isAbsolute(value) && (await real(value)) === value) extraWrite.push(value)
   const git = await gitLayout(workspace, home)
   const gitExternal = git.linked ? unique([git.linked.gitdir, git.linked.common]) : []
 
-  let writable = unique([workspace, ...tmp, ...cacheDirs, ...allowWrite, ...gitExternal])
+  let writable = unique([workspace, ...extraWrite, ...tmp, ...cacheDirs, ...allowWrite, ...gitExternal])
   if (linux) writable = (await Promise.all(writable.map(async (value) => ((await exists(value)) ? value : undefined)))).filter(
     (value): value is string => value !== undefined,
   )
@@ -452,6 +457,26 @@ export async function resolve(input: Input, placeholders: Placeholders): Promise
       if (git.hooksPath && !(await exists(git.hooksPath))) await fs.mkdir(git.hooksPath, { recursive: true }).catch(() => undefined)
     } else {
       for (const dir of chain) for (const item of configNames) readOnly.push(path.join(dir, item.name))
+    }
+
+    // Folders added with --add-dir get the workspace's protections: their Kete/agent configuration and
+    // their whole git directory stay read-only, so a command can't plant a hook or config that runs, or
+    // loads, outside the sandbox the next time someone uses that repository.
+    for (const root of extraWrite) {
+      const dotGit = path.join(root, ".git")
+      if (linux) {
+        for (const item of configNames) {
+          const target = path.join(root, item.name)
+          releases.push(await placeholders.acquire(target, item.directory ? DIRECTORY : CONFIG_PLACEHOLDER))
+          if (!item.directory && (await placeholders.isPlaceholder(target))) masked.push(target)
+          else readOnly.push(target)
+        }
+        releases.push(await placeholders.acquire(dotGit, DIRECTORY))
+        readOnly.push(dotGit)
+      } else {
+        for (const item of configNames) readOnly.push(path.join(root, item.name))
+        readOnly.push(dotGit)
+      }
     }
 
     // Credentials, Kete Code's private directories, and configured extras.

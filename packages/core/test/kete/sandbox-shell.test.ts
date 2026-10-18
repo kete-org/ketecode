@@ -148,7 +148,9 @@ interface Run {
 type Command = { readonly command: string; readonly sandbox?: "network" | "off" }
 
 /** Runs each command through the shell tool in one session, in a fresh git repository. */
-const inRepository = <A>(body: (dir: string, run: (input: Command) => Effect.Effect<Run>) => Effect.Effect<A>) =>
+const inRepository = <A>(
+  body: (dir: string, run: (input: Command) => Effect.Effect<Run>, sessionID: Session.ID) => Effect.Effect<A, unknown, Session.Service>,
+) =>
   Effect.acquireUseRelease(
     Effect.promise(() => tmpdir()),
     (tmp) =>
@@ -177,7 +179,7 @@ const inRepository = <A>(body: (dir: string, run: (input: Command) => Effect.Eff
               const output = (settled as { output?: { exit?: number } }).output
               return { text, exit: output?.exit }
             })
-          return yield* body(dir, run)
+          return yield* body(dir, run, session.id)
         }).pipe(Effect.provide(locations.get(location)), Effect.ensuring(locations.invalidate(location)))
       }),
     (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
@@ -186,6 +188,30 @@ const inRepository = <A>(body: (dir: string, run: (input: Command) => Effect.Eff
 const DENIED = /operation not permitted|read-only file system/i
 
 describe.skipIf(!probe.available)("the local OS sandbox through the shell tool", () => {
+  it.live(
+    "a folder in the session's kete.dirs (--add-dir) is writable through the shell tool; its .git is not",
+    () =>
+      inRepository((_dir, run, sessionID) =>
+        Effect.gen(function* () {
+          // Outside the temp folder, which is writable in the sandbox anyway.
+          const base = process.platform === "darwin" ? "/Users/Shared" : path.join(import.meta.dir, "..")
+          const added = yield* Effect.promise(() => fs.mkdtemp(path.join(base, "kete-add-dir-")).then((dir) => fs.realpath(dir)))
+          git(added, "init", "-q")
+          const before = yield* run({ command: `echo hi > "${added}/a.txt"` })
+          expect(before.exit).not.toBe(0)
+          const sessions = yield* Session.Service
+          yield* sessions.setMetadata({ sessionID, metadata: { "kete.dirs": [added] } })
+          const write = yield* run({ command: `echo hi > "${added}/a.txt" && cat "${added}/a.txt"` })
+          expect(write.exit, write.text).toBe(0)
+          const hook = yield* run({ command: `echo x > "${added}/.git/hooks/post-commit"` })
+          expect(hook.exit).not.toBe(0)
+          expect(yield* Effect.promise(() => fs.readFile(path.join(added, "a.txt"), "utf8"))).toBe("hi\n")
+          yield* Effect.promise(() => fs.rm(added, { recursive: true, force: true }))
+        }),
+      ),
+    { timeout: 30_000 },
+  )
+
   it.live(
     "writes inside the workspace and commits with git",
     () =>

@@ -60,7 +60,7 @@ async function setup(name: string) {
 }
 
 async function sandboxed(
-  input: { home: string; workspace: string; kete: string; directory?: string; network?: boolean },
+  input: { home: string; workspace: string; kete: string; directory?: string; network?: boolean; extraWrite?: string[] },
   command: string,
   cwd = input.workspace,
 ) {
@@ -85,6 +85,7 @@ async function sandboxed(
       shellOutput: path.join(kete, "data", "shell", "project"),
       settings,
       network: input.network ?? false,
+      ...(input.extraWrite ? { extraWrite: input.extraWrite } : {}),
       privateTmp: await privateTmp(),
       env: { TMPDIR: process.env.TMPDIR },
     },
@@ -116,6 +117,38 @@ const exists = (value: string) =>
   )
 
 describe.skipIf(!probe.available)("sandbox policy, run for real", () => {
+  test("a folder added with --add-dir is writable; the rest of the outside still isn't", async () => {
+    const env = await setup("add-dir")
+    // Outside the temp folder (writable in the sandbox anyway), like the outside check below.
+    const added = await fs.mkdtemp(path.join(outsideDir, "kete-added-"))
+    try {
+      const ok = await sandboxed({ ...env, extraWrite: [await fs.realpath(added)] }, `echo hi > "${added}/a.txt"`)
+      expect(ok.exit).toBe(0)
+      expect(await exists(path.join(added, "a.txt"))).toBe(true)
+      const denied = await sandboxed({ ...env, extraWrite: [await fs.realpath(added)] }, `echo hi > "${outsideDir}/outside-add-dir.txt"`)
+      expect(denied.exit).not.toBe(0)
+      expect(await exists(path.join(outsideDir, "outside-add-dir.txt"))).toBe(false)
+      const without = await sandboxed(env, `echo hi > "${added}/b.txt"`)
+      expect(without.exit).not.toBe(0)
+      // Its git directory and Kete configuration stay read-only, as the workspace's do.
+      git(added, "init", "-q")
+      for (const command of [
+        `echo x > "${added}/.git/hooks/post-commit"`,
+        `echo x >> "${added}/.git/config"`,
+        `mkdir -p "${added}/.kete" && echo x > "${added}/.kete/kete.jsonc"`,
+        `echo '{}' > "${added}/kete.json"`,
+      ]) {
+        const blocked = await sandboxed({ ...env, extraWrite: [await fs.realpath(added)] }, command)
+        expect(blocked.exit, command).not.toBe(0)
+      }
+      expect(await exists(path.join(added, ".git", "hooks", "post-commit"))).toBe(false)
+      expect(await exists(path.join(added, ".kete", "kete.jsonc"))).toBe(false)
+    } finally {
+      await fs.rm(added, { recursive: true, force: true })
+      await fs.rm(path.join(outsideDir, "outside-add-dir.txt"), { force: true })
+    }
+  })
+
   test("workspace writes work; git internals, Kete configuration and the outside don't", async () => {
     const env = await setup("basic")
     const ok = await sandboxed(env, "echo hi > a.txt && mkdir -p d && echo x > d/b.txt && cat a.txt")

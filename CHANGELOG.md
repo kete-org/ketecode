@@ -6,6 +6,11 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **`--add-dir` and `/add-dir`:** let a session work in folders outside the workspace without being
+  asked each time: `kete --add-dir ../lib`, `kete run --add-dir ../lib "…"`, or `/add-dir <path>` in a
+  session (`/add-dir remove <path>` drops one). Edits there still follow your permission mode, `deny`
+  rules and organization policy; the folders are writable by the OS sandbox too, and last for the session.
+  Your home folder, credential folders and the workspace itself can't be added.
 - **Auto memory and `/remember`:** Kete can save notes for later sessions (your corrections and
   preferences, non-obvious project facts) with a `memory` tool, and `/remember <note>` saves one on
   request. Notes live in Kete's own state folder, not your repository: `MEMORY.md` per project and per

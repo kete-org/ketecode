@@ -1,9 +1,10 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: 52ddc2f9ef
+verified-at: b8e534dfcb
 ---
 ## Quick answers
+- What does `--add-dir` do? Repeatable flag (max 10, `commands/commands.ts:47`) on the default and `run` commands; paths are normalised by `KeteAddDirCli.prepare`, checked via RPC `kete.add-dir`, and written to the session's `kete.dirs` before the first prompt (`run/run.ts:135`). See the `add-dir` card.
 - Which helper runs git clone/fetch/worktree with a timeout and abort signal? `JobGit.run(cwd, args, {timeoutMs, signal, env})` (`packages/cli/src/kete/job-git.ts:37`): no-shell `execFile("git")`, default 30 s (`:30`), worktree add 5 min; timeout resolves `{exitCode:-1, timedOut:true}`, missing git rejects `GitError`, job mode refuses the spawn.
 - What do `kete bug`, `kete completion` and `kete trust` live in? `kete/bug.ts` (deps) + `bug-flow.ts` (flow, asks `QUESTION` before opening a GitHub issue); `kete/completion-command.ts` with `completion.ts` (bash/zsh/fish/powershell, `instructions` when no shell) and `completion-tree.ts` (`script` `:91`, tree from `--help`); `kete/trust.ts` (`list`/`add`/`remove` of trusted folders, exit 0/1/2, `:25`) over `kete/folder-trust.ts` (`inspect` `:141`, `connection` `:236`, which `kete`/`kete run --trust-project-config` use). All registered in `index.ts` Handlers (marked).
 - What do `--permission-mode`, `--auto` and `--dangerously-skip-permissions` do (feature/safe-defaults-modes)? Flags in upstream's `PermissionParams` (`commands/commands.ts`, marked) for `kete` and `kete run`. `kete/permission-mode.ts` `fromFlags` maps `--auto` to the `auto` mode (high-risk still asks; conflicting `--permission-mode` is an error) and `skipsPermissions` keeps the client-side bypass for `--dangerously-skip-permissions`/`--yolo` only. `kete run` sets the mode on the session (GET-merge-PATCH, read back) before the first prompt (`run/run.ts`, marked); the TUI gets it through `Args.permissionMode` (`permissions` card). In `kete run`, any prompt is rejected and the run stops.

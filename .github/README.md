@@ -106,7 +106,8 @@ commands, subcommands and flags, not values such as session IDs or model names.
   databases, `sudo` and credentials. Switch modes with `--permission-mode` or `<leader>p` in the
   terminal UI: **auto** (stops asking except for high-risk commands), **ask** (approve every edit
   and command) or **plan** (read-only). Edits to its own configuration and `.git` always ask. It's
-  a guard, not a sandbox: what it runs runs with your access. See
+  a guard, not a sandbox: what it runs runs with your access. `--add-dir <path>` (or `/add-dir`)
+  lets a session work in another folder without asking each time. See
   [Permissions](../docs/permissions.md).
 - **Plans first when you want it to.** The `plan` agent drafts an approach without touching files;
   the default `build` agent carries it out. Starter role agents (Code Reviewer, QA, Docs Writer,

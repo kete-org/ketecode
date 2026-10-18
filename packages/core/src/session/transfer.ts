@@ -21,6 +21,7 @@ import { SessionEvent } from "./event.js"
 import { SessionMessage } from "./message.js"
 import { SessionProjector } from "./projector.js"
 import { SessionMessageTable, SessionTable } from "./sql.js"
+import { KeteAddDir } from "../kete/add-dir.js" // kete_change
 
 export const Data = SessionTransfer.Data
 export type Data = SessionTransfer.Data
@@ -102,7 +103,7 @@ const layer = Layer.effect(
               title: input.data.info.title,
               agent: input.data.info.agent,
               model: input.data.info.model,
-              metadata: input.data.info.metadata,
+              metadata: KeteAddDir.withoutDirs(input.data.info.metadata), // kete_change: an imported session brings no extra folders (they skip the guard here)
               permissions: input.data.info.permissions,
             },
             {

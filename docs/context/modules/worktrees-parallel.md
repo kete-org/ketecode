@@ -1,10 +1,11 @@
 ---
 module: worktrees-parallel
 paths: [packages/core/src/kete/worktrees.ts, packages/core/src/kete/worktree-lease.ts, packages/core/src/kete/worktree-name.ts, packages/core/src/kete/git.ts, packages/core/src/kete/session-move.ts, packages/core/src/kete/stale-write.ts, packages/core/src/worktree.ts, packages/core/src/worktree/strategies.ts, packages/core/src/session/move.ts, packages/core/src/session.ts, packages/core/src/tool.ts]
-verified-at: d5cd08f36b
+verified-at: b8e534dfcb
 ---
 
 ## Quick answers
+- Why does session_move still ask for a destination inside an added folder? Its `external_directory` request carries `kete.sessionMove` metadata (`session-move.ts:28`, `:90`), which the add-dir grant skips because moving changes what instructions and config load.
 - Branch naming: `kete/agent-<slug>`, `worktrees.ts:44` (`branchPrefix`), slug from `worktrees.ts:223`.
 - Branch base: the parent session's last commit on its repository directory (`worktrees.ts:210-217`), not the parent's uncommitted changes.
 - What keeps two sessions out of the same agent worktree: `KeteWorktreeLease.leasedTo` (`worktree-lease.ts:32-44`), enforced by the model-facing `session_move` tool hook (`session-move.ts:73-77`) and by the HTTP/UI move path (`session/move.ts:120-123`) — both, not just the tool.

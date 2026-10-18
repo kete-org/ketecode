@@ -43,6 +43,12 @@ const PermissionParams = {
     Flag.optional,
   ),
   // kete_change end
+  // kete_change start: extra working directories for the session (kete/add-dir.ts)
+  addDir: Flag.string("add-dir").pipe(
+    Flag.withDescription("Let the session work in another folder besides the workspace (repeat for up to 10)"),
+    Flag.atMost(10),
+  ),
+  // kete_change end
   yolo: Flag.boolean("yolo").pipe(Flag.withDefault(false), Flag.withHidden),
   dangerouslySkipPermissions: Flag.boolean("dangerously-skip-permissions").pipe(
     // kete_change start: the explicit bypass is documented, not hidden

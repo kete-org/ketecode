@@ -1345,3 +1345,22 @@ CLAUDE.md compatibility, `@path` imports and nested CLAUDE.md (`core/src/kete/me
 `global` exclusion rule, the watcher + 100 ms debounce shape) and the nested-folder walk of `read.ts`; if
 upstream changes either, change the copy. It relies on `InstructionDiscovery` render order being map
 insertion order and on transforms running in registration order.
+
+## Extra working directories (feature/add-dir)
+
+`--add-dir`, `/add-dir`, session metadata `kete.dirs`, plugin RPC `kete.add-dir` (`core/src/kete/add-dir.ts`,
+`add-dir-plugin.ts`, `schema/src/kete/add-dir.ts`, `cli/src/kete/add-dir.ts`, `tui/src/kete/add-dir.tsx`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/session/session.ts` | `setMetadata` runs `KeteAddDir.guard` and publishes its result | a session hook can't refuse a write; same lines as `KeteUnattendedPolicy.guardMetadata` |
+| `core/src/session.ts` | `create` guards `input.metadata` before `inheritMetadata`; yields `FSUtil.Service` | `session.create` metadata doesn't pass through `setMetadata` |
+| `core/src/plugin/internal.ts` | Import; `KeteAddDirPlugin.Plugin` right after `KeteUnattended.PolicyPlugin` in `pre` and in `guarded` | internal plugins are only listed here; a loosening hook must precede the tightening ones |
+| `core/src/tool/plugin/shell.ts` | `folders` (`KeteAddDir.live`, re-validated per command) passed to `KeteSandbox.make` so the session's folders are writable; `FSUtil.Service` taken optionally (`Option` import) so upstream's shell tests need no new layer | the sandbox has no other way to learn the session |
+| `core/src/session/transfer.ts` | `import` stores metadata through `KeteAddDir.withoutDirs` | an import publishes `Created` directly, skipping the metadata guard |
+| `cli/src/commands/commands.ts`, `handlers/default.ts`, `handlers/run.ts`, `run/run.ts` | `--add-dir` flag, job-mode refusal, folders applied before the first prompt | upstream's flag spec and handlers; same blocks as `--permission-mode` |
+| `tui/src/context/args.tsx`, `component/prompt/index.tsx`, `app.tsx` | `addDirs` arg; metadata of a new session merged with the permission mode's; startup hook | the TUI's args, new-session `metadata` and hook call site; same lines `--permission-mode` uses |
+
+No protocol or config-schema change: session metadata is free-form and the RPC uses `POST /api/rpc/:rpcID/:method`.
+**Sync checklist:** `Permission.evaluateInput` order (a `deny` is decided before the `evaluate` hooks) and
+`FileAccess.resolve`'s `external_directory` resource shape (`<dir>/*`, forward slashes) are relied on.

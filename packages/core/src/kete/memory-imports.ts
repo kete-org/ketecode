@@ -76,7 +76,7 @@ const SECRET_NAME = [
   /^kubeconfig$/i,
 ]
 /** Folders that hold credentials: in the home folder, and `.git` anywhere (remote URLs can carry tokens). */
-const SECRET_HOME_DIRS = [".ssh", ".aws", ".gnupg", ".kube", ".docker", join(".config", "gh"), join(".config", "gcloud")]
+export const SECRET_HOME_DIRS = [".ssh", ".aws", ".gnupg", ".kube", ".docker", join(".config", "gh"), join(".config", "gcloud")]
 
 /**
  * A root that may serve imports: not the home folder or a folder above it, and not a file system root. A

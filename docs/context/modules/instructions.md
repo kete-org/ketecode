@@ -1,9 +1,10 @@
 ---
 module: instructions
 paths: [packages/core/src/kete/auto-memory.ts, packages/core/src/kete/memory-files.ts, packages/core/src/kete/memory-imports.ts, packages/core/src/config/plugin/instruction.ts, packages/core/src/instruction-discovery.ts, packages/core/src/session/instructions.ts, packages/core/src/tool/plugin/read.ts]
-verified-at: 3c3e792370
+verified-at: b8e534dfcb
 ---
 ## Quick answers
+- Is the credential-folder list shared? Yes: `SECRET_HOME_DIRS` (`memory-imports.ts:79`) is exported and reused by add-dir validation (`add-dir.ts:28`).
 - Which instruction files does the runtime load? `AGENTS.md`, plus `CLAUDE.md` where a folder has no `AGENTS.md` (Kete, below). `ConfigInstructionPlugin` (`core/src/config/plugin/instruction.ts:36-121`): the global `<config>/AGENTS.md`, then every project `AGENTS.md` walking up from the cwd to the project root (nearest first; to the home folder when the cwd is under it), de-duplicated by path (`new Set`, `:51,71`).
 - How is it shown to the model? One block per file, `Instructions from: <path>` then the content (`core/src/instruction-discovery.ts:123-125`, source key `core/instructions` `:17`); the plugin rescans on a watcher event (100 ms debounce, `instruction.ts:110`) and `discovery.reload()` re-renders, a change is sent as a diff (`renderUpdate` `:127`).
 - Are nested `AGENTS.md` files loaded? Yes, lazily: after a successful `read` of a file or directory, `AGENTS.md` files between it and the location root (root excluded, it is already loaded) are found (`core/src/tool/plugin/read.ts:16,82-106`) and handed to `SessionInstructions.load` (`core/src/session/instructions.ts:46-112`), which injects one durable synthetic message per new path (ledger = message metadata, so compaction or revert re-injects). External-directory reads and failures are skipped silently.
