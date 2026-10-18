@@ -1,7 +1,7 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: 99313fa3c1
+verified-at: ecfae5cce7
 ---
 ## Quick answers
 - Which helper runs git clone/fetch/worktree with a timeout and abort signal? `JobGit.run(cwd, args, {timeoutMs, signal, env})` (`packages/cli/src/kete/job-git.ts:37`): no-shell `execFile("git")`, default 30 s (`:30`), worktree add 5 min; timeout resolves `{exitCode:-1, timedOut:true}`, missing git rejects `GitError`, job mode refuses the spawn.
@@ -118,6 +118,9 @@ verified-at: 99313fa3c1
 - Where's the `KETE_*`→`OPENCODE_*` env bridge? `packages/cli/src/kete/env-bridge.ts`, imported first in `packages/cli/src/index.ts:4` (must stay the first import — runs before any other module reads `process.env`).
 - How do I add a new top-level `kete` subcommand? Add a `Spec` to `packages/cli/src/kete/commands.ts`'s `specs` array (it's already spread at `packages/cli/src/commands/commands.ts:493`) and a handler entry in `packages/cli/src/index.ts`'s `Handlers` map.
 - How do I build the `kete` binary? `bun run build --single --skip-install --skip-web-ui` in `packages/cli/` (CLAUDE.md §8) → `packages/cli/dist/cli-<os>-<arch>/bin/kete`; flags read at `packages/cli/script/build.ts:26,29,30`.
+- What is `kete skill`? `add|list|update|remove` (specs `kete/commands.ts:169-203`, handlers `kete/skill.ts:62-79` registered in a marked `Handlers` block in `index.ts`): flows over an injected `Deps` in `kete/skill-flow.ts` (`add` `:385`, `list` `:424`, `remove` `:444`, `update` `:461`). Installs into `.kete/skills/<name>/` (or `--global`: `<config>/skills/`), pinned in `skills.lock.json` v1 (`roles-skills`, `contracts` cards). Exit 0 done, 1 failed, 2 refused (`skill-flow.ts:32`); nothing is written without a yes (`approve` `:147`); files read once, shown (scripts marked), written without the exec bit; `skill.install` org policy via `policyGate` `:132` (`sync` card).
+- Can the CLI import `@opencode/core`? No (`cli/test/import-boundaries.test.ts`). So `skill-flow.ts:80` `match` mirrors core's `Wildcard.match` (always case-insensitive) and util's `KeteSkillSource.frontmatter` mirrors core's front-matter rules; keep them in step (`pitfalls`).
+- Does `JobGit.run` give git an environment? Not unless asked: `env` is only read for job mode; the child inherits the parent's. `childEnv` (`job-git.ts:29,47`) is merged over `process.env` only when given; `kete skill` passes `GIT_TERMINAL_PROMPT=0` and `GIT_LFS_SKIP_SMUDGE=1` (`skill-flow.ts:186`) and disables hooks with `-c core.hooksPath=<empty dir>` (`:179`).
 
 ## Purpose
 Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` against the Kete platform, distinct from upstream's provider-key `auth`), unattended job runs (`job run`), and Kete Code's own verified self-update (`kete upgrade`, ADR 0009) and a disabled `uninstall`. Everything here is a thin wrapper spliced into upstream's `packages/cli/src/index.ts` and `commands/commands.ts` command tree.
@@ -212,6 +215,7 @@ Adding a **nested** `kete <group> <name>` (the `job run` pattern): a `Spec.make(
 - `docs/tasks/2026-10-03-cli-distribution/` (ADR 0009): `UpdaterDisabled`/`upgrade-disabled.ts` replaced by `updater.ts`, `release-verify.ts`, `update-keys.json`, `upgrade.ts`; `index.ts` wiring and the `upgrade` description updated; `uninstall-disabled.ts` names Homebrew/npm.
 
 ## Gotchas
+- `kete skill` runs on a repository-controlled `.kete`: `scopeFor` (`skill-flow.ts:112`) and `targetFor` (`:123`) refuse symlinks and paths resolving outside the project; keep that if you touch the install path. `collect` (`:233`) accepts regular, non-hard-linked files only, max 256 files / 10 MiB.
 - `job-preflight.ts`/`job-serve.ts`/`job-standalone.ts` take injectable `Deps`/options (env,
   dumpable, descriptor reader, command) — tests use them instead of mutating `process.env` or
   calling `prctl`.

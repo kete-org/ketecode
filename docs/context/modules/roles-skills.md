@@ -1,7 +1,7 @@
 ---
 module: roles-skills
-paths: [packages/core/src/kete/roles.ts, packages/core/src/kete/skill.ts, packages/core/src/kete/skill/*.md, packages/kete-tools/src/role-*.ts]
-verified-at: 99313fa3c1
+paths: [packages/cli/src/kete/skill-flow.ts, packages/cli/src/kete/skill.ts, packages/util/src/kete/skill-source.ts, packages/util/src/kete/skill-lock.ts, packages/core/src/kete/roles.ts, packages/core/src/kete/skill.ts, packages/core/src/kete/skill/*.md, packages/kete-tools/src/role-*.ts]
+verified-at: ecfae5cce7
 ---
 ## Quick answers
 - How are skill directories and sources discovered? `core/src/config/plugin/skill.ts:85-100`: for each config directory entry (global `~/.config/kete`, project `.kete`) the sources `<dir>/skill` and `<dir>/skills`; then each `skills:` config item: http(s) URL becomes a URL source, `~/` expands to home, relative paths resolve against the location directory. Directories are scanned with glob `{*.md,**/SKILL.md}` (`skill.ts:121`); frontmatter is parsed by `config/plugin/skill-file.ts`. `.claude`/`.agents` compat roots add `<root>/skills` (`config/plugin/compatibility.ts:41`).
@@ -10,6 +10,10 @@ verified-at: 99313fa3c1
 - What replaces upstream's `opencode`/`report` skills? `packages/core/src/kete/skill.ts`, which removes them and adds a `kete` skill and a Kete-specific `report` skill, so upstream's own skill markdown is never edited and never conflicts on sync.
 - How is role behavior verified end-to-end? `packages/kete-tools/src/role-check.ts` — runs each role against a real model in a throwaway repo/HOME and checks files changed and text said, via scenarios in `role-scenarios.ts`.
 - Is "Plan" one of these starter roles? No — it's upstream's own `plan` agent (`core/src/plugin/plan.ts`, id `"plan"`, primary, not in this card's `roles` array), unaffected by whether starter roles are injected. The web app's chat-panel Auto/Ask/Plan toggle selects it like any other agent (`packages/app/src/kete/mode.ts`, `web-app` card); see the `permissions` card for how that toggle relates to `kete.permissionMode`.
+- How do users install their own skills? `kete skill add <git url|owner/repo|folder> [--path] [--ref] [--name] [--global] [--yes]` (`cli` card) copies a folder with `SKILL.md` to `<project>/.kete/skills/<name>/` or `<config>/skills/<name>/` (`--global`); both are already scanned by the discovery above (`<dir>/skills`), so no core change. Nothing in it runs at install; the person sees all files first.
+- What is `skills.lock.json`? v1, beside the `skills/` folder: `{version: 1, skills: {<name>: {source, path?, ref?, commit?, files: {<rel>: sha256}, installedAt}}}` (`util/src/kete/skill-lock.ts:11-22`; read/upsert/remove re-read before an atomic write; an unreadable or other-version file is refused, exit 2, never overwritten). `update` compares file hashes so edited files ask first; a full commit `ref` is pinned (`skill-source.ts:87`).
+- Why can a `---js` SKILL.md not load? Core refuses any front-matter language but YAML (`core/src/config/markdown.ts`, `SAFE_LANGUAGES`, GHSA-m7hc-g593-r9wg; kete_change). `KeteSkillSource.frontmatter` (`util/src/kete/skill-source.ts:98`) mirrors it for the CLI (which can't import core) and is stricter: YAML only, no colon-sanitize retry; keep both in step.
+- Which paths can a skill not contain? `KeteSyncSkills.safeRelative` (`util/src/kete/sync/skills.ts:49`) refuses absolute, `.`/`..`/empty segments, `.kete-skill.json`, and a root `SKILL.md` (any case; the skill's own is handled separately, `skill-flow.ts:248`). `kete skill` also refuses symlinks, hard links, `.git`, backslash/NUL names (`collect` `:233`).
 
 ## Purpose
 Gives a local, unauthenticated Kete Code install the same five built-in roles the platform provisions for organizations (mirroring kete-code-platform's `create_builtin_agents`), each with least-privilege permission rules; and replaces upstream's OpenCode-specific `opencode`/`report` skills (which would otherwise mislead the model post-rebrand) with Kete-owned equivalents without touching upstream files.

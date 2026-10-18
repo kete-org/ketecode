@@ -21,7 +21,10 @@ const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/
 // one and evil to the other), so the policy and the review could see another host than git fetches.
 const UNSAFE = /[\\%?#\s\x00-\x1f\x7f]/
 
-export const validName = (name: string) => NAME.test(name)
+// Windows reads `con`, `nul`, `com1`… (with any extension) as devices and drops a trailing dot.
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/
+
+export const validName = (name: string) => NAME.test(name) && !name.endsWith(".") && !WINDOWS_RESERVED.test(name)
 
 /** A git URL, `owner/repo` (GitHub), or an existing local folder; throws SourceError otherwise. */
 export async function parse(input: string, cwd: string): Promise<Source> {
@@ -64,17 +67,28 @@ function strip(url: string) {
 /** The source as shown or stored: no credentials. */
 export const display = (source: Source) => (source.kind === "git" ? strip(source.url) : source.path)
 
-const HOST_ALIASES: Record<string, string> = { "www.github.com": "github.com", "www.gitlab.com": "gitlab.com", "www.bitbucket.org": "bitbucket.org" }
+const HOST_ALIASES: Record<string, string> = {
+  "www.github.com": "github.com",
+  "ssh.github.com": "github.com",
+  "www.gitlab.com": "gitlab.com",
+  "altssh.gitlab.com": "gitlab.com",
+  "www.bitbucket.org": "bitbucket.org",
+  "altssh.bitbucket.org": "bitbucket.org",
+}
 
 /**
  * `host/path` for a git source (`github.com/acme/skills`), the folder's absolute path for a local one.
  * Lower-case throughout (GitHub-style hosts ignore case in owner and repo names, so a deny on
- * `github.com/evil/*` must also catch `Evil/repo`), with `www.` aliases of the big hosts folded.
+ * `github.com/evil/*` must also catch `Evil/repo`), with a trailing dot and the big hosts' `www.`/ssh
+ * aliases folded. A raw IP still reads as itself, so write `skill.install` rules as an allow-list.
  */
 export function policyResource(source: Source) {
   if (source.kind === "local") return source.path
   const clean = (value: string) => value.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase()
-  const host = (value: string) => HOST_ALIASES[value.toLowerCase()] ?? value.toLowerCase()
+  const host = (value: string) => {
+    const name = value.toLowerCase().replace(/\.+$/, "")
+    return HOST_ALIASES[name] ?? name
+  }
   if (!/^[a-z]+:\/\//i.test(source.url)) {
     const [, name = "", rest = ""] = /^[^@]+@([^:]+):(.*)$/.exec(source.url) ?? []
     return `${host(name)}/${clean(rest)}`

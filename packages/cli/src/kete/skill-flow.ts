@@ -75,16 +75,17 @@ const refuse = (message: string): never => {
 }
 
 const sha256 = (data: Uint8Array) => createHash("sha256").update(data).digest("hex")
+const inside = (root: string, file: string) => file.startsWith(root + path.sep)
 
-/** Mirrors core/src/util/wildcard.ts `match`, but always case-insensitive: `policyResource` is lower-case, and a pattern written `github.com/Acme/*` must still match. */
-function match(input: string, pattern: string) {
+/** Mirrors core/src/util/wildcard.ts `match`; `ignoreCase` for git sources, whose resource is lower-case (a pattern written `github.com/Acme/*` must still match). */
+function match(input: string, pattern: string, ignoreCase = process.platform === "win32") {
   let escaped = pattern
     .replaceAll("\\", "/")
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*/g, ".*")
     .replace(/\?/g, ".")
   if (escaped.endsWith(" .*")) escaped = escaped.slice(0, -3) + "( .*)?"
-  return new RegExp("^" + escaped + "$", "si").test(input.replaceAll("\\", "/"))
+  return new RegExp("^" + escaped + "$", ignoreCase ? "si" : "s").test(input.replaceAll("\\", "/"))
 }
 
 /** Runs one subcommand's work: a refusal is exit 2, anything else exit 1; messages never carry credentials. */
@@ -129,7 +130,8 @@ async function targetFor(scope: string, name: string) {
 // ---- policy and confirmation ----
 
 /** Whether the person must be asked even with --yes. Throws Refused on a deny or an unreadable policy. */
-async function policyGate(deps: Deps, resource: string): Promise<boolean> {
+async function policyGate(deps: Deps, source: KeteSkillSource.Source): Promise<boolean> {
+  const resource = KeteSkillSource.policyResource(source)
   const policies = await deps.policies().catch((error: unknown) =>
     refuse(`the organization policy can't be read (${error instanceof Error ? error.message : String(error)}); not installing`),
   )
@@ -138,7 +140,10 @@ async function policyGate(deps: Deps, resource: string): Promise<boolean> {
     deps.out(`Your organization's policy hasn't been synced yet, so you'll be asked first. Run \`${cli} sync\` to fetch it.\n`)
     return true
   }
-  const decision = KeteSyncPolicy.evaluate(policies, { action: "skill.install", resources: [resource], environment: "development" }, match).enforced
+  const ignoreCase = source.kind === "git" || process.platform === "win32"
+  const decision = KeteSyncPolicy.evaluate(policies, { action: "skill.install", resources: [resource], environment: "development" }, (input, pattern) =>
+    match(input, pattern, ignoreCase),
+  ).enforced
   if (decision?.effect === "deny") refuse(`your organization's policy "${decision.policy.name}" doesn't allow skills from ${resource}`)
   return decision?.effect === "ask"
 }
@@ -230,10 +235,14 @@ interface Item {
 }
 
 /** Every file of the folder (read once, so what is reviewed is what is written), or Refused. */
-async function collect(root: string): Promise<Item[]> {
+async function collect(folder: string): Promise<Item[]> {
   const items: Item[] = []
   let total = 0
+  const root = await realpath(folder)
   const visit = async (directory: string, prefix: string): Promise<void> => {
+    // A folder swapped for a symlink after its lstat must not pull in files from elsewhere.
+    const real = await realpath(directory)
+    if (real !== root && !inside(root, real)) refuse(`${show(prefix)} moved outside the skill while it was read`)
     for (const entry of (await readdir(directory)).toSorted()) {
       if (entry === ".git") continue
       const rel = prefix === "" ? entry : `${prefix}/${entry}`
@@ -247,9 +256,10 @@ async function collect(root: string): Promise<Item[]> {
       if (!info.isFile()) refuse(`${show(rel)} is a symlink or special file; a skill may only contain regular files`)
       if (rel !== "SKILL.md" && KeteSyncSkills.safeRelative(rel) === undefined) refuse(`${show(rel)} is not an allowed path in a skill`)
       if (items.length >= MAX_FILES) refuse(`the skill has more than ${MAX_FILES} files`)
-      // Open without following a symlink and check what was opened, so a file swapped after lstat can't
-      // smuggle in another one; a hard link could be any file of the person's, so it is refused too.
-      const handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)).catch(() =>
+      // Open without following a symlink (or blocking on a FIFO) and check what was opened, so a file swapped
+      // after lstat can't smuggle in another one; a hard link could be any file of the person's, so it is
+      // refused too. shortcut: Windows has no O_NOFOLLOW, so only the lstat guards it there.
+      const handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)).catch(() =>
         refuse(`${show(rel)} changed while it was read; try again`),
       )
       const data = await (async () => {
@@ -371,7 +381,6 @@ function sourceOf(entry: KeteSkillLock.Entry): KeteSkillSource.Source {
   return { kind: "git", url: KeteSkillSource.gitUrl(entry.source) }
 }
 
-const inside = (root: string, file: string) => file.startsWith(root + path.sep)
 
 function flagChecks(source: KeteSkillSource.Source, input: { ref?: string; path?: string; name?: string }) {
   if (input.ref !== undefined && (input.ref.startsWith("-") || input.ref === "")) refuse("--ref must be a branch, tag or commit")
@@ -386,7 +395,7 @@ export function add(deps: Deps, input: { source: string; path?: string; ref?: st
   return guard(deps, async () => {
     const source = await KeteSkillSource.parse(input.source, deps.cwd)
     flagChecks(source, input)
-    const force = await policyGate(deps, KeteSkillSource.policyResource(source))
+    const force = await policyGate(deps, source)
     const scope = await scopeFor(deps, options)
     const lock = await readLock(scope)
     await withWorkspace(deps, async (workspace) => {
@@ -402,7 +411,9 @@ export function add(deps: Deps, input: { source: string; path?: string; ref?: st
       if (found.items.some((item) => item.script))
         deps.out(`  Files marked [script] can run code if the agent is told to. They are installed without the executable bit.\n`)
       await approve(deps, `Install skill ${found.name}?`, { yes: options.yes, force })
-      // Checked again: a folder made while the question was open must not be replaced.
+      // Checked again: the question may stay open a long time, and the folders may change meanwhile.
+      await scopeFor(deps, options)
+      await targetFor(scope, found.name)
       if (await exists(target)) refuse(`${show(target)} appeared while you were asked; nothing was changed`)
       await install(scope, found.name, found.items)
       await KeteSkillLock.upsert(scope, found.name, {
@@ -452,6 +463,8 @@ export function remove(deps: Deps, name: string, options: Options) {
     }
     const target = await targetFor(scope, name)
     await approve(deps, `Remove skill ${name}?`, { yes: options.yes, force: false })
+    await scopeFor(deps, options)
+    await targetFor(scope, name)
     await rm(target, { recursive: true, force: true })
     await KeteSkillLock.remove(scope, name)
     deps.out(`Removed ${show(name)}.\n`)
@@ -486,7 +499,7 @@ async function updateOne(deps: Deps, scope: string, name: string, entry: KeteSki
   // A project lockfile comes with the repository: copying a folder from elsewhere on this machine into the
   // project is the person's call every time, --yes or not.
   const outside = !options.global && source.kind === "local" && !inside(await realpath(deps.cwd), source.path)
-  const force = (await policyGate(deps, KeteSkillSource.policyResource(source))) || outside
+  const force = (await policyGate(deps, source)) || outside
   const target = await targetFor(scope, name)
   // Files edited (or deleted) since install; a lockfile path that isn't a safe one inside the skill is refused.
   const edited: string[] = []
@@ -517,6 +530,8 @@ async function updateOne(deps: Deps, scope: string, name: string, entry: KeteSki
     deps.out(`  removed:\n`)
     for (const rel of changes.removed) deps.out(`    ${show(rel)}\n`)
     await approve(deps, `Update skill ${name}?`, { yes: options.yes, force: force || edited.length > 0 })
+    await scopeFor(deps, options)
+    await targetFor(scope, name)
     await install(scope, name, next.items)
     await KeteSkillLock.upsert(scope, name, {
       ...entry,

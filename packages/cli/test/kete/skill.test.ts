@@ -483,6 +483,12 @@ describe("kete skill policy", () => {
     expect(await KeteSkillFlow.add(deps(), { source: URL_PLAIN, path: "skills/demo" }, yes)).toBe(0)
   })
 
+  test.skipIf(!posix)("a local folder rule keeps the file system's case", async () => {
+    const dir = await localSkill("cased")
+    policies = [policy("deny", dir.toUpperCase())]
+    expect(await KeteSkillFlow.add(deps(), { source: dir }, yes)).toBe(0)
+  })
+
   test("a deny can't be dodged by changing the case of the owner", async () => {
     await fixture()
     policies = [policy("deny", "example.test/acme/*")]

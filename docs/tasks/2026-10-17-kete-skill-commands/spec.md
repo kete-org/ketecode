@@ -1,7 +1,7 @@
 # Spec: kete skill commands (A9)
 
 - Task: `docs/tasks/2026-10-17-kete-skill-commands` · Size: medium · Created: 2026-10-17
-- Status: agreed 2026-10-17 · plan approved 2026-10-17 <!-- draft → agreed (medium) / approved (large) → built → closed -->
+- Status: built 2026-10-18 (agreed and plan approved 2026-10-17) <!-- draft → agreed (medium) / approved (large) → built → closed -->
 
 ## Goal
 People can install, list, update and remove skills from a git repo or a local folder with one

@@ -52,7 +52,8 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | todo | the session task list: `todowrite` tool, `kete.todo` RPC, TUI sidebar/footer, web dock |
 | config-kete | the `kete` config section, discovery, adding a key end to end |
 | mcp-presets | built-in MCP presets (`kete mcp add harness`, `kete mcp add slack`, `kete mcp presets`): catalogue, stored MCP secrets (`{kete-secret:mcp:<name>}`), permission rules, offline skip |
-| cli | Kete commands in the CLI, disabled self-update |
+| instructions | how `AGENTS.md` instructions are discovered and injected (global, project walk-up, nested after a read); no `CLAUDE.md`; the `InstructionDiscovery` seam |
+| cli | Kete commands in the CLI (account, sync, job, `kete skill`), verified self-update |
 | job-mode | cloud-job runtime flag: process seam, config/plugin/MCP/model restrictions, request enforcement |
 | root-helper | the Go root helper and its TypeScript client: fixed tool user, cgroup isolation, socket protocol v1 |
 | egress | the Go egress proxy and nftables rules for cloud jobs: per-user ports, per-phase host allowlists, per-VM CA, registry rules, capped request log, configuration v2 (upstream proxy, CA bundle, internal ranges) |

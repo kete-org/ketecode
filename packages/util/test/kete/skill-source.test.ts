@@ -56,5 +56,11 @@ describe("review fixes", () => {
     const resource = (url: string) => KeteSkillSource.policyResource({ kind: "git", url })
     expect(resource("https://www.github.com/Evil/Repo.git")).toBe("github.com/evil/repo")
     expect(resource("git@GitHub.com:Evil/Repo")).toBe("github.com/evil/repo")
+    expect(resource("git@github.com.:evil/x")).toBe("github.com/evil/x")
+    expect(resource("ssh://git@ssh.github.com:443/evil/x")).toBe("github.com/evil/x")
+  })
+  test("names Windows can't hold are refused", () => {
+    for (const name of ["con", "nul.md", "com1", "lpt9.x", "foo."]) expect(KeteSkillSource.validName(name)).toBe(false)
+    expect(KeteSkillSource.validName("console")).toBe(true)
   })
 })

@@ -524,6 +524,17 @@ the same PR.
 - `<config>/managed/<organization id>/skills/<slug>/` — synced skill files
   (`packages/util/src/kete/sync/skills.ts:36-42`).
 
+- `<config>/skills.lock.json` and `<project>/.kete/skills.lock.json` (`skill-lock.ts` v1) — written only by
+  `kete skill add|update|remove`: `{version: 1, skills: {<name>: {source, path?, ref?, commit?, files:
+  {<relative path>: sha256}, installedAt}}}` (`packages/util/src/kete/skill-lock.ts:11-22`). Additive-only
+  changes within v1; a file with another version is refused, never rewritten. User skills live in
+  `skills/<name>/` beside it; synced org skills (above) stay under `managed/`.
+- Policy action `skill.install` (runtime-evaluated policy action, like `edit`/`shell`): resource is
+  `host/path` (lower-case, `www.` folded) for a git source or the absolute folder path for a local one
+  (`packages/util/src/kete/skill-source.ts:74`). Evaluated by the **CLI** (`cli/src/kete/skill-flow.ts:132`)
+  with the synced policies from the cache; effect `deny` refuses, `ask` asks even with `--yes`. Not yet
+  in the platform's `docs/platform/sync-v1.md`; the platform must accept the action name in policy rules.
+
 ## 8. Config keys and env var names touching these contracts
 
 | Config key | Env var (user-facing `KETE_*`) | Internal (`OPENCODE_*`, post-bridge) | Where read |
