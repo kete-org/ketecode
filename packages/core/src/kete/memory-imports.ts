@@ -31,8 +31,10 @@ export const note = (token: string, reason: Skip) => `(import of ${token} skippe
 
 export interface Root {
   readonly path: string
-  /** Only `*.md` files may be imported from this root. */
+  /** Only `*.md` files may be imported from this root (when it is the most specific root holding the file). */
   readonly markdownOnly: boolean
+  /** Holds credentials beside markdown (~/.claude, the global config): markdown only, whichever root is more specific. */
+  readonly sensitive?: boolean
 }
 
 /** The `@path` tokens of a memory file, in order. Code fences and inline code spans don't count. */
@@ -97,6 +99,6 @@ export function denied(real: string, roots: readonly Root[], home: string): Skip
   // Relative to the root: the matcher's `.config/kete` pattern would reject every global-config import.
   if (KeteShellRisk.credential(path.relative(root.path, real))) return "secret"
   if (SECRET_NAME.some((pattern) => pattern.test(path.basename(real)))) return "secret"
-  if (inside.some((item) => item.markdownOnly) && !/\.md$/i.test(real)) return "not-markdown"
+  if ((root.markdownOnly || inside.some((item) => item.sensitive)) && !/\.md$/i.test(real)) return "not-markdown"
   return undefined
 }

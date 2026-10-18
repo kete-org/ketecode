@@ -36,6 +36,8 @@ interface Scenario {
   readonly memory?: { claudeMd?: boolean; imports?: boolean }
   /** Run with the home folder as the project root (a cwd with no repository). */
   readonly projectAtHome?: boolean
+  /** No version control: the project root is just the cwd. */
+  readonly noRepository?: boolean
   /** A project kete.json `kete` object, after the global one. */
   readonly projectKete?: Record<string, unknown>
   /** Relative symlinks: [link, target as written], the link relative to the tmp folder. */
@@ -101,7 +103,10 @@ const scenario = (
                 Layer.succeed(
                   Location.Service,
                   Location.Service.of(
-                    location({ directory: AbsolutePath.make(directory) }, { projectDirectory: AbsolutePath.make(project) }),
+                    location(
+                      { directory: AbsolutePath.make(directory) },
+                      { projectDirectory: AbsolutePath.make(project), vcs: input.noRepository ? undefined : { type: "git", store: AbsolutePath.make(path.join(project, ".git")) } },
+                    ),
                   ),
                 ),
               ),
@@ -495,6 +500,7 @@ describe("KeteMemoryFiles security review", () => {
     scenario(
       {
         projectAtHome: true,
+        noRepository: true,
         files: {
           "home/AGENTS.md": "@Documents/taxes.md",
           "home/Documents/taxes.md": "TAXES",
@@ -546,6 +552,49 @@ describe("KeteMemoryFiles security review", () => {
       (world) =>
         Effect.gen(function* () {
           expect(yield* world.text).not.toContain("IMPORTED")
+        }),
+    ),
+  )
+
+  it.live("a plain folder with no repository serves no imports and no nested files", () =>
+    scenario(
+      {
+        noRepository: true,
+        files: {
+          "home/repo/AGENTS.md": "@../bank.md",
+          "home/bank.md": "BANK",
+          "home/repo/evil/CLAUDE.md": "@../other/config.yml",
+          "home/repo/other/config.yml": "DB_PASSWORD",
+          "home/repo/evil/x.ts": "x",
+        },
+      },
+      (world) =>
+        Effect.gen(function* () {
+          expect(yield* world.text).not.toContain("BANK")
+          yield* world.read("evil/x.ts")
+          expect(world.loads.flat()).toEqual([])
+        }),
+    ),
+  )
+
+  it.live("a nested file imports only markdown from outside its own folder", () =>
+    scenario(
+      {
+        files: {
+          "home/repo/config/database.yml": "DB_PASSWORD",
+          "home/repo/docs/guide.md": "GUIDE",
+          "home/repo/.venv/lib/evil/CLAUDE.md": "@../../../config/database.yml @../../../docs/guide.md @local.txt",
+          "home/repo/.venv/lib/evil/local.txt": "LOCAL",
+          "home/repo/.venv/lib/evil/x.py": "x",
+        },
+      },
+      (world) =>
+        Effect.gen(function* () {
+          yield* world.read(".venv/lib/evil/x.py")
+          const loaded = world.loads.flat()
+          expect(loaded.some((file) => file.endsWith("database.yml"))).toBe(false)
+          expect(loaded.some((file) => file.endsWith("guide.md"))).toBe(true)
+          expect(loaded.some((file) => file.endsWith("local.txt"))).toBe(true)
         }),
     ),
   )

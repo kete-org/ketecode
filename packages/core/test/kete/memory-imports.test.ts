@@ -6,8 +6,8 @@ const home = path.resolve("/home/u")
 const project = path.join(home, "proj")
 const roots: KeteMemoryImports.Root[] = [
   { path: project, markdownOnly: false },
-  { path: path.join(home, ".claude"), markdownOnly: true },
-  { path: path.join(home, ".config", "kete"), markdownOnly: true },
+  { path: path.join(home, ".claude"), markdownOnly: true, sensitive: true },
+  { path: path.join(home, ".config", "kete"), markdownOnly: true, sensitive: true },
 ]
 const check = (real: string) => KeteMemoryImports.denied(real, roots, home)
 
@@ -79,5 +79,24 @@ describe("KeteMemoryImports.denied", () => {
 describe("KeteMemoryImports.note", () => {
   test("names the import and the reason", () => {
     expect(KeteMemoryImports.note("@x", "outside")).toBe("(import of @x skipped: outside the allowed folders)")
+  })
+})
+
+describe("KeteMemoryImports sensitive roots", () => {
+  test("a project root that contains ~/.claude still can't import its non-markdown files", () => {
+    const wide: KeteMemoryImports.Root[] = [
+      { path: home, markdownOnly: false },
+      { path: path.join(home, ".claude"), markdownOnly: true, sensitive: true },
+    ]
+    expect(KeteMemoryImports.denied(path.join(home, ".claude", "settings.json"), wide, home)).toBe("not-markdown")
+    expect(KeteMemoryImports.denied(path.join(home, ".claude", "notes.md"), wide, home)).toBeUndefined()
+  })
+  test("a markdown-only outer root doesn't stop a more specific root from serving other files", () => {
+    const nested: KeteMemoryImports.Root[] = [
+      { path: path.join(project, "lib"), markdownOnly: false },
+      { path: project, markdownOnly: true },
+    ]
+    expect(KeteMemoryImports.denied(path.join(project, "lib", "notes.txt"), nested, home)).toBeUndefined()
+    expect(KeteMemoryImports.denied(path.join(project, "config.yml"), nested, home)).toBe("not-markdown")
   })
 })

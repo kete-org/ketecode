@@ -24,7 +24,7 @@
 
 export * as KeteMemoryFiles from "./memory-files.js"
 
-import { dirname, join, parse } from "path"
+import { dirname, join, parse, relative } from "path"
 import { define } from "@opencode/plugin/effect/plugin"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -176,11 +176,13 @@ export const Plugin = define({
       const claudeHome = yield* fs.resolve(join(home, ".claude"))
       const claudeGlobal = join(claudeHome, "CLAUDE.md")
       const userRoots: KeteMemoryImports.Root[] = [
-        { path: claudeHome, markdownOnly: true },
-        { path: yield* fs.resolve(global.config), markdownOnly: true },
+        { path: claudeHome, markdownOnly: true, sensitive: true },
+        { path: yield* fs.resolve(global.config), markdownOnly: true, sensitive: true },
       ]
       // A cwd with no repository makes the cwd the "project root": in `~` that would open all of home.
-      const repository = KeteMemoryImports.usableRoot(root, home)
+      // Only a real repository: a plain folder (~/Downloads, /tmp, a parent of many repos) as the root
+      // would let a downloaded project import its neighbours.
+      const repository = location.vcs !== undefined && KeteMemoryImports.usableRoot(root, home)
       const projectRoot: KeteMemoryImports.Root[] = discovery.project && repository ? [{ path: root, markdownOnly: false }] : []
       const projectRoots: KeteMemoryImports.Root[] = [...projectRoot, ...(discovery.global ? userRoots : [])]
       const globalRoots: KeteMemoryImports.Root[] = [...userRoots, ...projectRoot]
@@ -378,7 +380,7 @@ export const Plugin = define({
           const files: (Memory & { kete: boolean })[] = []
           for (const dir of ancestorDirectories(from, cwd).filter((item) => item !== cwd)) {
             // Dependencies are someone else's code: their memory files don't steer this agent.
-            if (dir.split(/[\\/]/).some((part) => part === "node_modules" || part === "vendor")) continue
+            if (relative(root, dir).split(/[\\/]/).some((part) => part === "node_modules" || part === "vendor")) continue
             const entry = yield* pick(dir, claudeMd)
             if (!entry || known.has(entry.path)) continue
             if (!entry.kete && !imports) continue
@@ -386,7 +388,16 @@ export const Plugin = define({
             const content = yield* fs.readFileStringSafe(entry.path)
             if (content !== undefined) files.push({ ...entry, content })
           }
-          const results = imports ? yield* expand(fs, files, projectRoots, home) : files.map((item) => ({ ...item, imports: [], notes: [] as string[] }))
+          // A nested file may be a dependency's (site-packages, Pods, a submodule…): beyond its own folder it
+          // may import only .md files, never the repository's config.
+          const nestedRoots = (file: string): KeteMemoryImports.Root[] => [
+            { path: dirname(file), markdownOnly: false },
+            ...projectRoots.map((item) => (item.path === root ? { ...item, markdownOnly: true } : item)),
+          ]
+          const results: Expanded[] = []
+          for (const file of files)
+            if (imports) results.push(...(yield* expand(fs, [file], nestedRoots(file.path), home)))
+            else results.push({ ...file, imports: [], notes: [] })
           for (const result of results) for (const note of result.notes) yield* Effect.logDebug("memory import skipped", { note })
           const paths = results.flatMap((result, index) => [
             ...(files[index]!.kete ? [result.path] : []),
