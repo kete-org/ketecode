@@ -20,6 +20,7 @@ Until the folder is trusted, these settings from its project configuration don't
 | `shell` | the shell every command runs in |
 | `worktree` | where worktrees, and their setup script, are created |
 | `skills` URLs and git `references` | they are fetched when they load (local paths still load) |
+| shell commands in commands: ``!`…` `` in a command's template (`.kete/command(s)/**/*.md`, or `commands` in the config) | they run on your computer when you use the command; until you trust the folder, the command still works but its shell commands don't run (the prompt says so) |
 | `{env:…}` and `{file:…}` in any value | they read your environment and files; until you trust the folder they are left as written |
 | `experimental.policies` statements that allow | a repository's allow would outrank a deny set for you; its deny statements still apply |
 | `enabled_providers` (older key) | it becomes an allow for each provider it lists; `disabled_providers` still applies, and both are part of what you trust, so changing either asks again |
@@ -35,7 +36,15 @@ in each agent's `permissions` in its config, and in the front matter of its agen
   otherwise turn your `deny` into a question;
 - every other `deny` and `ask` rule still applies, so a repository can always make things stricter.
 
-**Still loaded, trusted or not:** `AGENTS.md` and other instructions, agents, commands, local skills
+**Commands that run shell commands, once trusted.** Each ``!`…` `` in a command still goes through
+the same permission check as the agent's shell commands (your permission mode, rules and policies
+apply) and runs in the [OS sandbox](sandbox.md), from the folder you opened; it can't `cd` out of the
+workspace. A command file that changes after you trust the folder, or a new one with shell commands,
+doesn't run its shell commands until you trust the folder again. This applies to your own global
+commands too, except the trust part.
+
+**Still loaded, trusted or not:** `AGENTS.md` and other instructions, agents, commands (without their
+shell commands, above), local skills
 and references, the model, LSP settings that turn things off, sandbox settings that tighten it, and
 every other setting. Your global configuration (`~/.config/kete/`), `KETE_CONFIG`, `KETE_CONFIG_CONTENT` and
 your organization's settings are yours and are never held back.

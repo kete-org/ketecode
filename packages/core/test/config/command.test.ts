@@ -57,6 +57,7 @@ const it = testEffect(
       Session.node,
       Job.node,
       Agent.node,
+      Global.node, // kete_change: the command plugin's shell interpolations (kete/command-shell.ts)
     ]),
     [
       Mcp.node.replace(emptyMcpLayer),

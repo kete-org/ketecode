@@ -95,7 +95,7 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   "packages/core/src/formatter/builtins.ts": { category: "seam", reason: "built-in formatter commands" },
   "packages/core/src/worktree.ts": { category: "seam", reason: "worktree commands.start script" },
   "packages/core/src/integration.ts": { category: "seam", reason: "integration auth command" },
-  "packages/core/src/config/plugin/command.ts": { category: "seam", reason: "shell substitution in command templates" },
+  "packages/core/src/kete/command-shell.ts": { category: "seam", reason: "command template shell interpolations, via AppProcess (permission check and OS sandbox)" },
   "packages/core/src/plugin/provider/azure.ts": { category: "seam", reason: "az CLI token (and only the kete provider is usable, D4)" },
   "packages/core/src/workspace.ts": { category: "seam", reason: "remote workspace provider connection; no workspace providers load in job mode" },
 

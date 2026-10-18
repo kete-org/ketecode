@@ -132,6 +132,10 @@ export interface Interface {
    * each is a project document (the others are the machine's own config); and every project config
    * file path the load looked for, so one that exists but couldn't be read shows up. */
   readonly configFiles: () => Effect.Effect<ConfigFiles>
+  /** Whether a project's command may run its shell interpolations: the folder is trusted and (store
+   * trust) the command's markdown file, as the command plugin read it (`sha256` of its text), is the
+   * trusted one. `undefined` for a command a project document defines. Never fails; any error is no. */
+  readonly commandAllowed: (command: { readonly file: string; readonly sha256: string } | undefined) => Effect.Effect<boolean>
 }
 
 export interface ConfigFiles {
@@ -398,6 +402,7 @@ export const layerWith = (options: Options = {}) =>
             readonly plugins: ReadonlyMap<string, string>
             readonly agents: ReadonlyMap<string, string>
             readonly configured: ReadonlyMap<string, string | null>
+            readonly commands: ReadonlyMap<string, string>
           } = "any"
       // Local plugin targets the gated project documents configure (resolved as ConfigPluginSource does).
       let projectTargets = new Set<string>()
@@ -581,6 +586,11 @@ export const layerWith = (options: Options = {}) =>
           }
           documents.push({ path: file, document: parsed.value, text })
           items.push(...KeteFolderTrustRules.describeTokens(tokens, shownPath(file)))
+          items.push(
+            ...Object.keys(KeteFolderTrustRules.documentShellCommands(parsed.value)).map((name) =>
+              KeteFolderTrustRules.describeShellCommand(shownPath(file), name),
+            ),
+          )
           const entry = raw.find((item) => isProjectDocument(item) && item.path === file)
           if (!entry || entry.type !== "document") continue
           const result = strip(entry, machineDeny)
@@ -592,13 +602,16 @@ export const layerWith = (options: Options = {}) =>
         const plugins: string[] = []
         const agents: string[] = []
         const agentsByDirectory = new Map<string, string[]>()
+        const commands: string[] = []
         for (const directory of project.directories) {
           plugins.push(...(yield* Effect.promise(() => KeteFolderTrustRules.pluginDirectories(directory, fs))))
+          commands.push(...(yield* Effect.promise(() => KeteFolderTrustRules.shellCommandFiles(directory, fs))))
           const files = yield* Effect.promise(() => KeteFolderTrustRules.agentFiles(directory, fs))
           agentsByDirectory.set(directory, files)
           agents.push(...files)
         }
         items.push(...plugins.map((directory) => `plugin code in ${KeteFolderTrustRules.shown(shownPath(directory))}`))
+        items.push(...commands.map((file) => KeteFolderTrustRules.describeShellCommand(shownPath(file))))
         for (const file of agents) {
           const read = yield* Effect.promise(() => KeteFolderTrustRules.readBounded(file, fs))
           const where = `agent file ${JSON.stringify(shownPath(file))}`
@@ -632,7 +645,7 @@ export const layerWith = (options: Options = {}) =>
         const key = KeteFolderTrustRules.storeKey(root.root)
         rootKey = key
         const home = yield* Effect.promise(() => fs.realpath(global.home).catch(() => global.home))
-        const fingerprint = yield* Effect.promise(() => KeteFolderTrustRules.fingerprint({ top, documents, plugins, agents }, fs))
+        const fingerprint = yield* Effect.promise(() => KeteFolderTrustRules.fingerprint({ top, documents, plugins, agents, commands }, fs))
         let refusal =
           KeteFolderTrustRules.neverTrusted(key, home) ??
           unparsed ??
@@ -665,6 +678,7 @@ export const layerWith = (options: Options = {}) =>
               ]),
             ),
             configured: fingerprint.configured,
+            commands: fingerprint.commands,
           }
           if (failed !== undefined || substituted === undefined) return { fail: failed ?? Cause.die(new Error("no substituted configuration")) } satisfies Decision
           return { entries: substituted } satisfies Decision
@@ -736,6 +750,24 @@ export const layerWith = (options: Options = {}) =>
         const expected = binding.configured.get(target)
         const now = yield* Effect.promise(() => KeteFolderTrustRules.targetDigest(target, fs))
         if (expected !== undefined && now !== undefined && now === expected) return true
+        yield* invalidate
+        return false
+      }, Effect.catchCause(() => Effect.succeed(false)))
+
+      // A project's command may run its shell interpolations only while the folder is trusted and, for
+      // store trust, its file is the one that was trusted (an edit or a new file since then needs the
+      // folder trusted again). A command from a project document is covered by the document, which
+      // reloads (and re-decides) when it changes.
+      // The hash is of the text the command plugin decoded (what will run), not of the file now, so a
+      // file swapped between the trust read and the plugin's read can't run on the old decision.
+      const commandAllowed = Effect.fn("KeteFolderTrust.commandAllowed")(function* (
+        command: { readonly file: string; readonly sha256: string } | undefined,
+      ) {
+        if (status.kind !== "trusted") return false
+        const binding = bound
+        if (binding === "any" || command === undefined) return true
+        const expected = binding.commands.get(command.file)
+        if (expected !== undefined && command.sha256 === expected) return true
         yield* invalidate
         return false
       }, Effect.catchCause(() => Effect.succeed(false)))
@@ -843,6 +875,7 @@ export const layerWith = (options: Options = {}) =>
         pluginDigests,
         agentDocuments,
         configFiles: () => Effect.sync(() => configFiles),
+        commandAllowed,
         changes: () =>
           Stream.merge(
             memory.trusted().pipe(

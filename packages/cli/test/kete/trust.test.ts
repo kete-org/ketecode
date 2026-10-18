@@ -180,3 +180,27 @@ describe("kete trust: third security review fixes", () => {
     expect(held).toContain('enabled_providers: allows provider "evil"')
   })
 })
+
+// GHSA-3hxr-ggpq-r784: `kete trust` sees the same held-back shell commands, and stores the fingerprint
+// the runtime computes (both pass `commands` to KeteFolderTrustRules.fingerprint).
+describe("kete trust: commands that run shell commands", () => {
+  test("inspect lists a command file with shell and a document command with shell", async () => {
+    const { KeteFolderTrustCli } = await import("../../src/kete/folder-trust")
+    const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "kete-trust-commands-")))
+    try {
+      await mkdir(path.join(root, ".git"), { recursive: true })
+      await mkdir(path.join(root, ".kete", "commands"), { recursive: true })
+      await writeFile(path.join(root, ".kete", "commands", "test.md"), "Run !`touch pwned`")
+      await writeFile(path.join(root, "kete.json"), JSON.stringify({ commands: { go: { template: "Go !`printf go`" } } }))
+      const home = path.join(root, "home")
+      await mkdir(home, { recursive: true })
+      const inspection = await KeteFolderTrustCli.inspect(root, { config: path.join(root, "global"), state: path.join(root, "state"), home })
+      expect(inspection.held).toContain('shell commands in command file ".kete/commands/test.md"')
+      expect(inspection.held).toContain('shell commands in command "go" (kete.json)')
+      expect(inspection.fingerprint.kind).toBe("ok")
+      expect(inspection.trusted).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})

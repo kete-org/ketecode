@@ -175,20 +175,28 @@ export async function inspect(
     }
     documents.push({ path: file, document, text })
     held.push(...KeteFolderTrustRules.describeTokens(tokens, shownPath(file)))
+    held.push(
+      ...Object.keys(KeteFolderTrustRules.documentShellCommands(document)).map((name) =>
+        KeteFolderTrustRules.describeShellCommand(shownPath(file), name),
+      ),
+    )
     if (KeteFolderTrustRules.runtimeGuarded(document).length === 0) continue
     held.push(...KeteFolderTrustRules.describe(document), ...allowRules(document))
   }
   const plugins: string[] = []
   const agents: string[] = []
   const loosening: string[] = []
+  const commands: string[] = []
   for (const project of found.directories) {
     plugins.push(...(await KeteFolderTrustRules.pluginDirectories(project, fs)))
+    commands.push(...(await KeteFolderTrustRules.shellCommandFiles(project, fs)))
     agents.push(...(await KeteFolderTrustRules.agentFiles(project, fs)))
     loosening.push(...(await KeteFolderTrustRules.agentPermissionFiles(project, fs)))
   }
   held.push(...plugins.map((item) => `plugin code in ${KeteFolderTrustRules.shown(shownPath(item))}`))
   held.push(...loosening.map((item) => `permission rules in agent file ${KeteFolderTrustRules.shown(shownPath(item))}`))
-  const fingerprint = await KeteFolderTrustRules.fingerprint({ top, documents, plugins, agents }, fs)
+  held.push(...commands.map((item) => KeteFolderTrustRules.describeShellCommand(shownPath(item))))
+  const fingerprint = await KeteFolderTrustRules.fingerprint({ top, documents, plugins, agents, commands }, fs)
   if (root.kind !== "ok")
     return { directory, root, held, fingerprint, refusal: root.reason, trusted: false }
   const key = KeteFolderTrustRules.storeKey(root.root)

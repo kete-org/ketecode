@@ -65,6 +65,9 @@ export const PLUGIN_DIRECTORIES = ["plugin", "plugins"] as const
 /** Agent markdown directories inside `.kete/` (core/src/config/plugin/agent.ts): recursive, then one level. */
 export const AGENT_DIRECTORIES = { recursive: ["agent", "agents"], flat: ["mode", "modes"] } as const
 
+/** Where core/src/config/plugin/command.ts reads markdown commands: `{command,commands}/**\/*.md`. */
+export const COMMAND_DIRECTORIES = ["command", "commands"] as const
+
 // ---------------------------------------------------------------------------------------------
 // The job list (verbatim from cli/src/kete/job-project-config.ts)
 
@@ -866,6 +869,51 @@ export async function agentPermissionFiles(directory: string, fs: Fs = nodeFs): 
   return result
 }
 
+/** Whether a command template runs shell commands when used: ``!`…` `` (config/plugin/command.ts
+ * `shellRegex`). Matched on the whole text, so a file that only mentions one in its front matter or a
+ * comment counts too. */
+export function hasShellInterpolation(text: string): boolean {
+  return /!`[^`]+`/.test(text)
+}
+
+/** Every markdown command file under one config directory. */
+export async function commandFiles(directory: string, fs: Fs = nodeFs): Promise<string[]> {
+  const seen = new Set<string>()
+  return (await Promise.all(COMMAND_DIRECTORIES.map((name) => markdownFiles(path.join(directory, name), true, fs, seen)))).flat()
+}
+
+/** Project command files that run shell commands when used (`hasShellInterpolation`; a file too large
+ * to read counts). Trust holds them back and fingerprints them; the runtime runs their shell only
+ * while the folder is trusted and the file is the one that was trusted (kete/command-shell.ts). */
+export async function shellCommandFiles(directory: string, fs: Fs = nodeFs): Promise<string[]> {
+  const result: string[] = []
+  for (const file of await commandFiles(directory, fs)) {
+    const read = await readBounded(file, fs)
+    if (read.kind === "large" || (read.kind === "ok" && hasShellInterpolation(read.text))) result.push(file)
+  }
+  return result
+}
+
+/** The commands a raw config document defines (`commands`, and the older `command` the loader still
+ * migrates, core/src/config/normalize.ts) whose template runs shell commands, by name. */
+export function documentShellCommands(document: unknown): Record<string, string> {
+  if (!isRecord(document)) return {}
+  const found: Record<string, string> = {}
+  for (const key of ["command", "commands"]) {
+    const commands = document[key]
+    if (!isRecord(commands)) continue
+    for (const [name, command] of Object.entries(commands))
+      if (isRecord(command) && typeof command.template === "string" && hasShellInterpolation(command.template))
+        found[key === "command" ? `${name} (command)` : name] = command.template
+  }
+  return found
+}
+
+/** How a held-back shell command is named for a person. */
+export function describeShellCommand(where: string, name?: string): string {
+  return name === undefined ? `shell commands in command file ${shown(where)}` : `shell commands in command ${shown(name)} (${safe(where)})`
+}
+
 /** The plugin directories under one `.kete/` directory that have anything in them. */
 export async function pluginDirectories(directory: string, fs: Fs = nodeFs): Promise<string[]> {
   const result: string[] = []
@@ -899,6 +947,9 @@ export interface FingerprintInput {
   readonly plugins: ReadonlyArray<string>
   /** Every project agent file (`agentFiles`). */
   readonly agents: ReadonlyArray<string>
+  /** Project command files that run shell commands (`shellCommandFiles`); none leaves the
+   * fingerprint as it was before commands were covered. */
+  readonly commands?: ReadonlyArray<string>
   /** The home directory `{file:~/…}` resolves against (ConfigVariable uses `os.homedir()`). */
   readonly home?: string
 }
@@ -914,6 +965,8 @@ export type Fingerprint =
       readonly plugins: ReadonlyMap<string, string>
       /** Each agent file (as given) → sha256 of its bytes, from the same read. */
       readonly agents: ReadonlyMap<string, string>
+      /** Each shell command file (as given) → sha256 of its bytes, from the same read. */
+      readonly commands: ReadonlyMap<string, string>
       /** Each local plugin a project document configures (`localPluginTargets`) → `targetDigest`. */
       readonly configured: ReadonlyMap<string, string | null>
     }
@@ -1117,7 +1170,9 @@ export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Pro
         if (data !== undefined) contents.set(target, Buffer.from(data).toString("utf8"))
       }
       const guarded = guardedValues(item.document)
-      if (Object.keys(guarded).length === 0 && !substitutes) continue
+      const shellCommands = documentShellCommands(item.document)
+      const runsShell = Object.keys(shellCommands).length > 0
+      if (Object.keys(guarded).length === 0 && !substitutes && !runsShell) continue
       const targets: Array<{ path: string; sha256: string | null }> = []
       for (const token of guardedFileTokens(tokens, item.document)) {
         const target = fileTarget(token, item.path, home)
@@ -1134,6 +1189,7 @@ export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Pro
         guarded,
         ...(substitutes ? { tokens: { env: [...tokens.env].sort(), files: [...tokens.files].sort() }, targets } : {}),
         ...(local.length > 0 ? { plugins: local } : {}),
+        ...(runsShell ? { commands: shellCommands } : {}),
       })
     }
     documents.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
@@ -1152,14 +1208,25 @@ export async function fingerprint(input: FingerprintInput, fs: Fs = nodeFs): Pro
       agents.push({ path: display(await real(file), input.top), sha256: sum })
       agentHashes.set(file, sum)
     }
+    const commands: Hashed[] = []
+    const commandHashes = new Map<string, string>()
+    for (const file of [...(input.commands ?? [])].sort()) {
+      const sum = await read.hash(file)
+      if (sum === undefined) continue
+      commands.push({ path: display(await real(file), input.top), sha256: sum })
+      commandHashes.set(file, sum)
+    }
     plugins.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
     agents.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    commands.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
     return {
       kind: "ok",
-      value: sha256(canonical({ v: 2, documents, plugins, agents })),
+      // `commands` only when there are any, so a folder trusted before commands were covered keeps its fingerprint.
+      value: sha256(canonical({ v: 2, documents, plugins, agents, ...(commands.length > 0 ? { commands } : {}) })),
       files: contents,
       plugins: pluginDigests,
       agents: agentHashes,
+      commands: commandHashes,
       configured,
     }
   } catch (error) {

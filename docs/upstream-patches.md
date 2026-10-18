@@ -1364,3 +1364,25 @@ insertion order and on transforms running in registration order.
 No protocol or config-schema change: session metadata is free-form and the RPC uses `POST /api/rpc/:rpcID/:method`.
 **Sync checklist:** `Permission.evaluateInput` order (a `deny` is decided before the `evaluate` hooks) and
 `FileAccess.resolve`'s `external_directory` resource shape (`<dir>/*`, forward slashes) are relied on.
+
+## Command shell interpolations (GHSA-3hxr-ggpq-r784)
+
+A command template's ``!`…` `` interpolations (`config/plugin/command.ts` `evaluateTemplate`) used to run
+directly with `AppProcess`: no permission check, no OS sandbox, and for a project's commands even in an
+untrusted folder (commands load either way). They now run through `core/src/kete/command-shell.ts`: the
+`shell` permission check (so permission modes, shell-risk and policy hooks apply), `cd` targets inside the
+workspace, the unattended credential filter, the OS sandbox, a 2-minute timeout. A project's command runs
+none while the folder isn't trusted, or (store trust) when its file isn't the one that was trusted
+(`KeteFolderTrust.commandAllowed`). Folder trust holds back and fingerprints project command files and
+document commands with shell (`KeteFolderTrustRules.shellCommandFiles`, `documentShellCommands`; the
+fingerprint is unchanged for folders without them).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/config/plugin/command.ts` | Imports; each config entry's commands tagged with their origin (machine or project) and, for markdown commands, their file; `evaluateTemplate` gets a `kete` runner and calls it instead of spawning | the interpolation runs inside the plugin's own template evaluation; no hook sees it |
+| `core/test/config/command.test.ts` | `Global.node` in the test graph | the plugin now needs the global paths |
+| `core/test/kete/job-spawn-sites.test.ts` | `kete/command-shell.ts` classified; `config/plugin/command.ts` no longer spawns | Kete-owned test |
+
+**Sync checklist:** if upstream changes how command templates interpolate shell (the regex, the order of
+`$ARGUMENTS` and shell, or adds its own permission check), keep every interpolation going through
+`KeteCommandShell.interpolate`. If upstream adds new command sources, give them an origin.

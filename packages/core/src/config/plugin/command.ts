@@ -15,6 +15,8 @@ import { Location } from "../../location.js"
 import { Session } from "../../session.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 import { KeteSubagents } from "../../kete/subagents.js" // kete_change
+import { KeteCommandShell } from "../../kete/command-shell.js" // kete_change
+import type { SessionSchema } from "../../session/schema.js" // kete_change
 import { ShellSelect } from "../../shell/select.js"
 import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigMarkdown } from "../markdown.js"
@@ -26,11 +28,21 @@ export const Plugin = define({
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const fs = yield* FSUtil.Service
+    const commandShell = yield* KeteCommandShell.make() // kete_change: interpolations run like the shell tool's commands (kete/command-shell.ts)
     const loadEntry = Effect.fnUntraced(function* (entry: Entry) {
-      if (entry.type === "document") return [{ commands: entry.info.commands }]
+      const from = yield* commandShell.originOf(entry) // kete_change: a project's commands can't run shell until the folder is trusted
+      if (entry.type === "document") return [{ commands: entry.info.commands, from }] // kete_change
       if (entry.type !== "directory") return []
       const commands = yield* loadDirectory(fs, entry.path)
-      return [{ commands: Object.fromEntries(commands.map((command) => [command.name, command.info])) }]
+      // kete_change start: each command's file, for the trust check before its shell runs
+      return [
+        {
+          commands: Object.fromEntries(commands.map((command) => [command.name, command.info])),
+          from,
+          files: Object.fromEntries(commands.map((command) => [command.name, command.file])),
+        },
+      ]
+      // kete_change end
     })
     const location = yield* Location.Service
     const processes = yield* AppProcess.Service
@@ -42,7 +54,7 @@ export const Plugin = define({
     const load = Effect.fn("ConfigCommandPlugin.load")(function* () {
       return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))
     })
-    const loaded = { documents: [] as { commands: Info["commands"] }[] }
+    const loaded = { documents: [] as { commands: Info["commands"]; from: KeteCommandShell.Origin; files?: Record<string, KeteCommandShell.Source | undefined> }[] } // kete_change
     const reload = load().pipe(
       Effect.tap((documents) => Effect.sync(() => (loaded.documents = documents))),
       Effect.andThen(ctx.command.reload()),
@@ -96,6 +108,10 @@ export const Plugin = define({
                   location,
                   processes,
                   shell,
+                  // kete_change start: through the permission check and the OS sandbox, never for an untrusted project's command
+                  kete: (source, file) =>
+                    commandShell.interpolate({ source, shell: file, sessionID: input.sessionID, from: document.from, file: document.files?.[name] }),
+                  // kete_change end
                 })
                 if (subagent ?? commandAgent?.mode === "subagent") {
                   const parent = yield* sessions.get(input.sessionID)
@@ -163,12 +179,12 @@ function loadDirectory(fs: FSUtil.Interface, directory: string) {
       .pipe(Effect.orElseSucceed(() => [] as string[]))
     return yield* Effect.forEach(files.toSorted(), (filepath) =>
       fs.readFileStringSafe(filepath).pipe(
-        Effect.map((content) => (content === undefined ? undefined : decode(directory, filepath, content))),
+        Effect.map((content) => (content === undefined ? undefined : KeteCommandShell.withFile(decode(directory, filepath, content), filepath, content))), // kete_change
         Effect.orElseSucceed(() => undefined),
       ),
     ).pipe(
       Effect.map((commands) =>
-        commands.filter((command): command is { name: string; info: ConfigCommand.Info } => command !== undefined),
+        commands.filter((command): command is { name: string; info: ConfigCommand.Info; file: KeteCommandShell.Source } => command !== undefined), // kete_change
       ),
     )
   })
@@ -196,6 +212,7 @@ function evaluateTemplate(
     readonly location: Location.Info
     readonly processes: AppProcess.Interface
     readonly shell: ShellSelect.Interface
+    readonly kete: (source: string, shell: string) => Effect.Effect<string, unknown> // kete_change
   },
 ) {
   return Effect.gen(function* () {
@@ -221,20 +238,16 @@ function evaluateTemplate(
       matches,
       (match) => {
         const source = match[1] ?? ""
-        return services.processes
-          .run(
-            ChildProcess.make(shell, ShellSelect.args(shell, source), {
-              cwd: services.location.directory,
-              stdin: "ignore",
-            }),
-            { combineOutput: true },
-          )
+        // kete_change start: run through kete/command-shell.ts (permission, workspace, sandbox), not directly
+        return services
+          .kete(source, shell)
           .pipe(
-            Effect.map((result) => (result.output ?? Buffer.concat([result.stdout, result.stderr])).toString("utf8")),
             Effect.mapError(
-              (error) => new Error(`Shell interpolation failed for ${JSON.stringify(source)}: ${error.message}`),
+              (error) =>
+                new Error(`Shell interpolation failed for ${JSON.stringify(source)}: ${error instanceof Error ? error.message : String(error)}`),
             ),
           )
+        // kete_change end
       },
       { concurrency: 2 },
     )
