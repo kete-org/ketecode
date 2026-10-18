@@ -212,6 +212,16 @@ in terminals that report it (kitty, WezTerm, Ghostty, Alacritty, foot). Run `ket
 one keybinding to the editor's `keybindings.json`; it asks first and keeps a backup. For iTerm2,
 Apple Terminal, Windows Terminal and tmux it prints the setting to change.
 
+## Installing skills
+
+`kete skill add <source>` installs a skill from a git repository (`owner/repo`, any git URL, with
+`--ref` and `--path` for a tag or subfolder) or a local folder into `.kete/skills/`, or into your
+global config with `--global`. It shows every file first, with scripts marked, and asks before writing
+anything; nothing in the skill runs at install and files are written without the executable bit. The
+exact commit and each file's hash go into `skills.lock.json`, so `kete skill update` shows what
+changed. `kete skill list` and `kete skill remove` manage them. Skills synced from your organization
+are read-only, and an organization policy can limit where skills come from.
+
 ## Committing and opening pull requests
 
 `/commit [notes]` asks the agent to commit the current changes. It stages only the files that belong

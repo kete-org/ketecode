@@ -1312,3 +1312,19 @@ JSONC-preserving, with a backup.
 
 **Sync checklist:** if upstream changes `input.newline`'s default keys or stops asking for the kitty
 keyboard protocol, update the guidance.
+
+## Skill commands (feature/kete-skill-commands)
+
+`kete skill add|list|update|remove` (`cli/src/kete/skill.ts`, `skill-flow.ts`; util `skill-source.ts`,
+`skill-lock.ts`) install skills from a git repository or a local folder into `.kete/skills/` (or the global
+config's `skills/`) after showing every file, with `skills.lock.json` v1 beside it. Core's skill loading is
+unchanged.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `cli/src/index.ts` | `skill` handlers → `kete/skill.ts` (one marked block) | the handler map is the only place a command's handler is registered |
+
+**Sync checklist:** the CLI can't import core, so `skill-flow.ts` copies `Wildcard.match`
+(`core/src/util/wildcard.ts`) and util `skill-source.ts` `frontmatter` mirrors
+`core/src/config/markdown.ts`; if either changes upstream, change the copy. If upstream starts scanning
+skills from other folders, update `list`.

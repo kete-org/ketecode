@@ -166,6 +166,42 @@ export const specs = [
       }),
     ],
   }),
+  Spec.make("skill", {
+    description: "Install, list, update and remove skills from a git repository or a local folder",
+    commands: [
+      Spec.make("add", {
+        description: `Install a skill after showing what it contains; pinned to the commit in skills.lock.json. Nothing in it runs at install`,
+        params: {
+          source: Argument.string("source").pipe(Argument.withDescription("A git URL (https://, ssh://, git@host:path), owner/repo on GitHub, or a local folder")),
+          path: Flag.string("path").pipe(Flag.withDescription("Folder inside the source that holds SKILL.md"), Flag.optional),
+          ref: Flag.string("ref").pipe(Flag.withDescription("Branch, tag or commit of a git source (default: its default branch)"), Flag.optional),
+          name: Flag.string("name").pipe(Flag.withDescription("Name to install it as (default: the name in SKILL.md, else the folder name)"), Flag.optional),
+          global: Flag.boolean("global").pipe(Flag.withDescription("Install for every project (the global config folder)"), Flag.withDefault(false)),
+          yes: Flag.boolean("yes").pipe(Flag.withDescription("Install without asking (an organization policy can still require it)"), Flag.withDefault(false)),
+        },
+      }),
+      Spec.make("list", {
+        description: "List installed skills, other local skills, and skills your organization manages",
+        params: { global: Flag.boolean("global").pipe(Flag.withDescription("List the global skills"), Flag.withDefault(false)) },
+      }),
+      Spec.make("update", {
+        description: "Update installed skills to the latest commit of their ref, showing what changed first",
+        params: {
+          name: Argument.string("name").pipe(Argument.withDescription("Skill to update (default: all)"), Argument.optional),
+          global: Flag.boolean("global").pipe(Flag.withDescription("Update the global skills"), Flag.withDefault(false)),
+          yes: Flag.boolean("yes").pipe(Flag.withDescription("Update without asking (edited files and organization policy still ask)"), Flag.withDefault(false)),
+        },
+      }),
+      Spec.make("remove", {
+        description: "Remove a skill installed with `kete skill add`",
+        params: {
+          name: Argument.string("name").pipe(Argument.withDescription("Skill to remove")),
+          global: Flag.boolean("global").pipe(Flag.withDescription("Remove a global skill"), Flag.withDefault(false)),
+          yes: Flag.boolean("yes").pipe(Flag.withDescription("Remove without asking"), Flag.withDefault(false)),
+        },
+      }),
+    ],
+  }),
   Spec.make("completion", {
     description: `Print a shell completion script for ${Brand.cliName} (run without a shell for install lines)`,
     params: {

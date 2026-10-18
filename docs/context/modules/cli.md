@@ -1,9 +1,11 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: f3d1b962ee
+verified-at: ecfae5cce7
 ---
 ## Quick answers
+- Which helper runs git clone/fetch/worktree with a timeout and abort signal? `JobGit.run(cwd, args, {timeoutMs, signal, env})` (`packages/cli/src/kete/job-git.ts:37`): no-shell `execFile("git")`, default 30 s (`:30`), worktree add 5 min; timeout resolves `{exitCode:-1, timedOut:true}`, missing git rejects `GitError`, job mode refuses the spawn.
+- What do `kete bug`, `kete completion` and `kete trust` live in? `kete/bug.ts` (deps) + `bug-flow.ts` (flow, asks `QUESTION` before opening a GitHub issue); `kete/completion-command.ts` with `completion.ts` (bash/zsh/fish/powershell, `instructions` when no shell) and `completion-tree.ts` (`script` `:91`, tree from `--help`); `kete/trust.ts` (`list`/`add`/`remove` of trusted folders, exit 0/1/2, `:25`) over `kete/folder-trust.ts` (`inspect` `:141`, `connection` `:236`, which `kete`/`kete run --trust-project-config` use). All registered in `index.ts` Handlers (marked).
 - What do `--permission-mode`, `--auto` and `--dangerously-skip-permissions` do (feature/safe-defaults-modes)? Flags in upstream's `PermissionParams` (`commands/commands.ts`, marked) for `kete` and `kete run`. `kete/permission-mode.ts` `fromFlags` maps `--auto` to the `auto` mode (high-risk still asks; conflicting `--permission-mode` is an error) and `skipsPermissions` keeps the client-side bypass for `--dangerously-skip-permissions`/`--yolo` only. `kete run` sets the mode on the session (GET-merge-PATCH, read back) before the first prompt (`run/run.ts`, marked); the TUI gets it through `Args.permissionMode` (`permissions` card). In `kete run`, any prompt is rejected and the run stops.
 - How does `kete job run` treat the repository's own config? B1 (task 2026-10-05-unattended-secret-hygiene): `JobRun.run` calls `Deps.inspectProjectConfig(realCwd, realRoot ?? realCwd)` before `location.get` (`job-run.ts:496`) and again on the worktree before `session.create` (`:558`, cleaning it up on refusal); any finding refuses (exit 2) with `projectConfigMessage` (`:217`), an inspection error too. `job.ts:222` wires `KeteJobProjectConfig.inspect` (`kete/job-project-config.ts:131`: `kete.json(c)`, `.kete/kete.json(c)`, `.kete/plugin(s)/` per directory up to the repo root; `guardedKeys` `:74`: `providers`/`provider`/`mcp` entries, `plugins`/`plugin`/`enterprise`, `share`/`autoshare` unless off, `kete.integrations`/`platform`/`unattended`/`hooks`; unparseable = finding). `--trust-project-config` (`kete/commands.ts:143`) or `KETE_TRUST_PROJECT_CONFIG=1` (`trusted`, `:59`) skips it; job mode skips it.
 - How are built-in prompt slash commands added (`/init`, `/review`, `/commit`, `/pr`)? A plugin calls `ctx.command.transform((editor) => editor.add({ name, description, execute }))`, and `execute` sends `ctx.session.prompt({ ...input.prompt, sessionID, text, delivery })`. Upstream's are in `core/src/plugin/command.ts` (templates in `plugin/command/*.txt`); Kete's `/commit` and `/pr` are in `core/src/kete/git-commands.ts`. Config commands (`ConfigCommandPlugin`, in `post`) load later, so a configured command with the same name wins. The TUI and VS Code list them from the server's command list.
@@ -51,7 +53,7 @@ verified-at: f3d1b962ee
   (F1, `docs/tasks/2026-09-30-job-entrypoint/`). No git call at all (`repoRoot`/`headSha`/
   `worktreeAdd`/cleanup skipped, `job-run.ts:426-434,455-458,484`); `spec.branch` and `<cwd>/.git`
   are required (else exit 2 `refused`, before any session); the result says `isolated: true`,
-  `worktree` = `directory` = cwd, `branch` = `spec.branch`. `job-git.ts:36`'s
+  `worktree` = `directory` = cwd, `branch` = `spec.branch`. `job-git.ts:37`'s
   `KeteJobMode.refuseSpawn("git")` guard stays as defence in depth. See the `job-mode` card,
   `contracts.md` §6d, `docs/jobs.md` "Job mode".
 - What are `kete serve`'s flags and where do they go? `commands/commands.ts:518-532` (`--hostname`,
@@ -116,6 +118,9 @@ verified-at: f3d1b962ee
 - Where's the `KETE_*`→`OPENCODE_*` env bridge? `packages/cli/src/kete/env-bridge.ts`, imported first in `packages/cli/src/index.ts:4` (must stay the first import — runs before any other module reads `process.env`).
 - How do I add a new top-level `kete` subcommand? Add a `Spec` to `packages/cli/src/kete/commands.ts`'s `specs` array (it's already spread at `packages/cli/src/commands/commands.ts:493`) and a handler entry in `packages/cli/src/index.ts`'s `Handlers` map.
 - How do I build the `kete` binary? `bun run build --single --skip-install --skip-web-ui` in `packages/cli/` (CLAUDE.md §8) → `packages/cli/dist/cli-<os>-<arch>/bin/kete`; flags read at `packages/cli/script/build.ts:26,29,30`.
+- What is `kete skill`? `add|list|update|remove` (specs `kete/commands.ts:169-203`, handlers `kete/skill.ts:62-79` registered in a marked `Handlers` block in `index.ts`): flows over an injected `Deps` in `kete/skill-flow.ts` (`add` `:385`, `list` `:424`, `remove` `:444`, `update` `:461`). Installs into `.kete/skills/<name>/` (or `--global`: `<config>/skills/`), pinned in `skills.lock.json` v1 (`roles-skills`, `contracts` cards). Exit 0 done, 1 failed, 2 refused (`skill-flow.ts:32`); nothing is written without a yes (`approve` `:147`); files read once, shown (scripts marked), written without the exec bit; `skill.install` org policy via `policyGate` `:132` (`sync` card).
+- Can the CLI import `@opencode/core`? No (`cli/test/import-boundaries.test.ts`). So `skill-flow.ts:80` `match` mirrors core's `Wildcard.match` (always case-insensitive) and util's `KeteSkillSource.frontmatter` mirrors core's front-matter rules; keep them in step (`pitfalls`).
+- Does `JobGit.run` give git an environment? Not unless asked: `env` is only read for job mode; the child inherits the parent's. `childEnv` (`job-git.ts:29,47`) is merged over `process.env` only when given; `kete skill` passes `GIT_TERMINAL_PROMPT=0` and `GIT_LFS_SKIP_SMUDGE=1` (`skill-flow.ts:186`) and disables hooks with `-c core.hooksPath=<empty dir>` (`:179`).
 
 ## Purpose
 Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` against the Kete platform, distinct from upstream's provider-key `auth`), unattended job runs (`job run`), and Kete Code's own verified self-update (`kete upgrade`, ADR 0009) and a disabled `uninstall`. Everything here is a thin wrapper spliced into upstream's `packages/cli/src/index.ts` and `commands/commands.ts` command tree.
@@ -210,6 +215,7 @@ Adding a **nested** `kete <group> <name>` (the `job run` pattern): a `Spec.make(
 - `docs/tasks/2026-10-03-cli-distribution/` (ADR 0009): `UpdaterDisabled`/`upgrade-disabled.ts` replaced by `updater.ts`, `release-verify.ts`, `update-keys.json`, `upgrade.ts`; `index.ts` wiring and the `upgrade` description updated; `uninstall-disabled.ts` names Homebrew/npm.
 
 ## Gotchas
+- `kete skill` runs on a repository-controlled `.kete`: `scopeFor` (`skill-flow.ts:112`) and `targetFor` (`:123`) refuse symlinks and paths resolving outside the project; keep that if you touch the install path. `collect` (`:233`) accepts regular, non-hard-linked files only, max 256 files / 10 MiB.
 - `job-preflight.ts`/`job-serve.ts`/`job-standalone.ts` take injectable `Deps`/options (env,
   dumpable, descriptor reader, command) — tests use them instead of mutating `process.env` or
   calling `prctl`.

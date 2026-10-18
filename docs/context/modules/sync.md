@@ -1,9 +1,10 @@
 ---
 module: sync
 paths: [packages/util/src/kete/sync/**, packages/core/src/kete/sync/**, packages/cli/src/kete/sync.ts, packages/schema/src/kete/sync.ts]
-verified-at: a6f140247e
+verified-at: ecfae5cce7
 ---
 ## Quick answers
+- How are synced skills marked on disk? Each lives in `managed/<org>/skills/<slug>/` with a manifest `.kete-skill.json` (`util/src/kete/sync/skills.ts:19`: id, version, per-file SHA-256); `present(config, organization)` (`:92`) lists only slugs that have a manifest and no `.tmp-`/`.old-` name, so half-written skills are ignored and stale ones are removed.
 - How does a client learn whether managed agents exist? Plugin RPC `kete.sync` method `status` (`schema/src/kete/sync.ts` `KeteSyncRpc.Definition`; registered at `core/src/kete/sync/plugin.ts:222-232`, served by the existing `POST /api/rpc/:rpcID/:method`) returns `{ signedIn, managedAgents, offline }` and nothing else (no org or agent names). `managedAgents` is `state.cached.response.agents.length`: the agents in the loaded sync cache, 0 when none is cached. `signedIn` is read fresh from the account file on every call (`readAccount`; no OS key store) because a running server keeps `state.cached` after `kete logout` (a signed-out sync leaves it alone; `state.account` only changes on the next tick, which offline mode skips), so clients must require `signedIn && !offline && managedAgents > 0` (the TUI home portal notice does, `tui/src/kete/home-notices.tsx:56`). Managed agents themselves also keep applying after logout until restart (existing behaviour).
 - Can a client tell managed agents apart on `Agent.Info`? Only by the description suffix "Managed by <org>" (`plugin.ts:499-500`); there is no flag, so use the `status` RPC's count instead.
 - Testing the sync plugin: it now registers an RPC, so any test building it through `core/test/plugin/host.ts` must pass `rpc: rpc().host` (`core/test/kete/sync-fixture.ts:78` `rpc()`); the default test host dies on `rpc.register`.
@@ -26,6 +27,8 @@ verified-at: a6f140247e
 - Where's the cache? `<config>/managed/<organization id>/agents.json`, written atomically (`util/src/kete/sync/cache.ts:52-61`).
 - What does "delegable" map to? `mode: "primary", delegable: true` on the wire → Kete's own `mode: "all"` (`core/src/kete/sync/plugin.ts:501`, ADR 0017, docs/platform/requests/agent-mode-all.md).
 - What headers tag a managed agent's model calls? `x-kete-agent-id` / `x-kete-agent-version` (`plugin.ts:80-81`, hooks `:299-313`).
+- Is there a policy action for installing skills? `skill.install` (resource `host/path` lower-cased for git sources, absolute path for local ones: `util/src/kete/skill-source.ts:74`), evaluated by `kete skill add|update` in the CLI, not the runtime (`cli/src/kete/skill-flow.ts:132-145`): not signed in = no policy; signed in with no cache = forced ask; unreadable cache = refuse; `deny` refuses, `ask` asks even with `--yes`. It uses `KeteSyncPolicy.evaluate` with the CLI's mirrored matcher (`:80`).
+- How are org skills protected from `kete skill`? By slug: `orgSkills` (`cli/src/kete/skill.ts:42`) = `KeteSyncSkills.present` over every `managed/<org>/`, i.e. folders with a `.kete-skill.json` manifest; `add`/`update`/`remove` refuse those names (`skill-flow.ts:394,450,468`) and `list` shows them read-only. `safeRelative` (`util/src/kete/sync/skills.ts:49`) refuses a `.kete-skill.json` path, and `skill-flow` `collect` refuses it in a source, so a user skill can't pose as an org one.
 
 ## Purpose
 Brings an organization's platform-managed agents, skills, MCP servers and policies into the local runtime, keeps them current on a schedule, enforces the org's policies on permission decisions, and translates the gateway's per-agent error codes into clear, non-retried failures. Implements architecture §44 "Configuration Synchronization" (current implementation: agents, sync v1).

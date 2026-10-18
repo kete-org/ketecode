@@ -1,7 +1,7 @@
 ---
 module: account-login
 paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts]
-verified-at: a6f140247e
+verified-at: ecfae5cce7
 ---
 ## Quick answers
 - What colour is the `kete login` callback page? Brand violet `#6e47f5` / dark `#a38cfa` in the page's inline CSS (`cli-login.ts` `page()`, `--brand`), moved from `#7c3aed`/`#a78bfa` on 2026-10-10; see the `ui-branding` card.
@@ -22,7 +22,7 @@ verified-at: a6f140247e
 Signs a user in to a Kete Code account through the platform's browser-based CLI login (`kete login`), stores the resulting API key OS-natively, and exposes it to `kete logout`/`kete whoami`/the gateway provider/the sync plugin. Implements docs/platform/cli-login-v1.md end to end on the client.
 
 ## Entry points
-- `packages/cli/src/kete/login.ts:9-25`, `logout.ts:9-18`, `whoami.ts:9-18` — Effect `Runtime.handler`s wired into the CLI command tree via `commands.ts:70-119` (`login`/`logout`/`sync`/`whoami` specs, part of `KeteCommands.specs`), spread into `cli/src/commands/commands.ts` (upstream seam) and `cli/src/index.ts` (handler map entries). `commands.ts` also defines the unrelated `sandbox` (`:121`) and `job` (`:131`) specs — see the `cli` card; this card only covers the account-sign-in specs in the same file.
+- `packages/cli/src/kete/login.ts:9-25`, `logout.ts:9-18`, `whoami.ts:9-18` — Effect `Runtime.handler`s wired into the CLI command tree via `commands.ts:82-131` (`login`/`logout`/`sync`/`whoami` specs, part of `KeteCommands.specs`), spread into `cli/src/commands/commands.ts` (upstream seam) and `cli/src/index.ts` (handler map entries). `commands.ts` also defines the unrelated `sandbox` (`:133`), `trust` (`:143`), `skill` (`:169`) and `job` (`:246`) specs — see the `cli` card; this card only covers the account-sign-in specs in the same file.
 - `account-flow.ts:32` `login()`, `:241` `logout()`, `:298` `whoami()` / `:274` `whoamiJSON()`, `:105` `sync()` (see the `sync` module card) — plain functions over injected `IO`, so tests run them end to end against a fake platform (`account-flow.ts:1-2`).
 - `account-io.ts:24-33` `AccountIO.make()` — the real terminal I/O: stdout/stderr, `KeteAccount.defaults()`, and a reload of the background service only if one is already running.
 
@@ -61,7 +61,7 @@ Signs a user in to a Kete Code account through the platform's browser-based CLI 
 - docs/upstream-patches.md "VS Code extension" (feature/vscode-extension) — added `kete whoami --format json` for the extension's account display.
 
 ## Gotchas
-- `kete auth` (upstream, model-provider keys) and `kete login` (Kete platform account) are separate systems; the login `--help` text points at the other (`commands.ts:71`). Check on sync that upstream hasn't added its own top-level `login`/`logout`/`whoami` command, which would collide with the spread.
+- `kete auth` (upstream, model-provider keys) and `kete login` (Kete platform account) are separate systems; the login `--help` text points at the other (`commands.ts:82`). Check on sync that upstream hasn't added its own top-level `login`/`logout`/`whoami` command, which would collide with the spread.
 - `whoami`'s live status check calls `/api/v1/me`; `whoamiJSON` deliberately makes no network request, so the two can disagree if the key was just revoked (`account-flow.ts:275-296` vs `299-339`). The runtime-type line has a matching split: `whoami` reads and prints it, `whoamiJSON` doesn't carry it at all (a separate decision, not an oversight — see the plan in `docs/tasks/2026-09-28-runtime-type`).
 - A signed-in account's gateway URL/key take precedence over hand-configured `providers.kete` settings or `OPENCODE_GATEWAY_*` env vars while signed in (`account-flow.ts:29-30,350-357`); see the `gateway` module card for the consuming side.
 - `resolvePlatform()` precedence: `--platform-url` > `KETE_PLATFORM_URL` > `kete.platform.url` in global config > the previous account's platform > `Brand.urls.platform` (undefined today) (`account-flow.ts:344-354`). `globalConfig()` (`:367-391`) also now returns the raw `kete.runtime.type` value (later config file wins, same merge rule as `platform`) for `whoami` to resolve — it reads only the *global* config, so a project-level `kete.runtime.type` is invisible to `whoami` even though the sync plugin's registration call (which reads full `Config.entries()`) sees it; documented in the schema description (`packages/schema/src/config/kete.ts`'s `Runtime.type`).

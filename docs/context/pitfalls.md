@@ -165,6 +165,14 @@ Mistakes to avoid, grouped. Each item cites where the rule lives or where it bit
   variables out of any env whose process talks to a local socket server over `http://` (the job's
   `kete` has `HTTPS_PROXY` only; `server-sdk` card).
 
+- The CLI can't import `@opencode/core` (`cli/test/import-boundaries.test.ts`), so `kete skill` mirrors two
+  core pieces: the wildcard matcher (`cli/src/kete/skill-flow.ts:80` vs `core/src/util/wildcard.ts`) and the
+  YAML-only SKILL.md front-matter rule (`util/src/kete/skill-source.ts:98` vs `core/src/config/markdown.ts`,
+  GHSA-m7hc-g593-r9wg). Change one, change the other.
+- A project's `.kete` (and `.kete/skills`, the lockfile) is repository-controlled: never follow a symlink
+  there when installing, updating or removing (`skill-flow.ts:112` `scopeFor`, `:123` `targetFor`); realpath
+  must stay inside the project. Same for source files (`collect` `:233`: lstat plus `O_NOFOLLOW`, no hard links).
+
 ## VS Code
 
 - Bundle the CLI binary and spawn `kete serve`; use only public extension APIs so the
