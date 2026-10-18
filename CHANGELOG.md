@@ -6,6 +6,21 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+## 0.2.7
+
+- **Security:** agent, command and skill markdown files only accept YAML front matter. Front matter in
+  another language (such as `---js`) is no longer evaluated, so a repository's `.kete/` files can't run
+  code when a folder opens (GHSA-m7hc-g593-r9wg). Update if you open repositories you don't trust.
+- **Security (VS Code extension):** `kete.cliPath`, `kete.gateway.url` and `kete.platform.url` are
+  machine settings; a repository's `.vscode/settings.json` can no longer set them (GHSA-43vv-qhh9-p4cv).
+- **Security:** shell commands written into a slash command's markdown (``!`cmd` ``) ask permission
+  like any other command the agent runs and run in the OS sandbox; a repository's own commands run
+  none until you trust the folder (GHSA-3hxr-ggpq-r784).
+- **Security:** symlinks in a repository can no longer reach files outside the workspace without
+  asking. An `AGENTS.md` loads only when it really is a Markdown file inside the repository, and the
+  file tools (read, write, edit, patch, glob, grep) ask before following a link to a file or folder
+  outside it (GHSA-96qv-q98x-hrm4). Rules and saved approvals for folders outside the workspace now
+  match the folder's real path: on macOS a rule for `/tmp/…` may need `/private/tmp/…`.
 - **One first-run setup screen:** the first time you run `kete` with nothing set up (no provider key,
   no account, no model), one screen offers to sign in, use your own API key, or use a local model
   (Ollama, LM Studio, vLLM), or to skip. It shows once; `/setup` reopens it. The sidebar's "Connect
@@ -49,14 +64,6 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
   load either way. `kete trust` lists, adds and removes trusted folders, and `kete run` holds the
   settings back unless you pass `--trust-project-config`. After this update every folder with such
   settings asks once, including folders you used before. Details: `docs/folder-trust.md`.
-
-## 0.2.7
-
-- **Security:** agent, command and skill markdown files only accept YAML front matter. Front matter in
-  another language (such as `---js`) is no longer evaluated, so a repository's `.kete/` files can't run
-  code when a folder opens (GHSA-m7hc-g593-r9wg). Update if you open repositories you don't trust.
-- **Security (VS Code extension):** `kete.cliPath`, `kete.gateway.url` and `kete.platform.url` are
-  machine settings; a repository's `.vscode/settings.json` can no longer set them (GHSA-43vv-qhh9-p4cv).
 - **Status line:** the row under the prompt shows the directory, git branch, permission mode and
   how much context is left. Choose and order its items (model, cost, sandbox, credit balance, task
   progress, …) with `/statusline`, or `statusline` in `cli.json`. Details: `docs/statusline.md`.
