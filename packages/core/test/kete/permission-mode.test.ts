@@ -321,3 +321,18 @@ describe("KetePermissionMode modes", () => {
     })
   })
 })
+
+describe("KetePermissionMode memory through apply", () => {
+  test("Plan denies changes, Ask asks, a user-wide change asks unless saved, project changes pass", () => {
+    expect(decision("plan", "memory", "project/MEMORY.md:append")).toBe("deny")
+    expect(decision("plan", "memory", "user/MEMORY.md:view")).toBe("allow")
+    expect(decision("ask", "memory", "project/MEMORY.md:write")).toBe("ask")
+    for (const mode of ["default", "accept-edits", "auto"] as const) {
+      expect(decision(mode, "memory", "user/MEMORY.md:append")).toBe("ask")
+      expect(decision(mode, "memory", "project/MEMORY.md:append")).toBe("allow")
+    }
+    const saved: Permission.Ruleset = [{ action: "memory", resource: "user/*", effect: "allow" }]
+    expect(decision("default", "memory", "user/MEMORY.md:append", { approved: saved })).toBe("allow")
+  })
+})
+

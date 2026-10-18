@@ -304,7 +304,8 @@ export const apply = Effect.fnUntraced(function* (
   },
 ) {
   if (event.effect === "deny") return
-  if (!guarded.has(event.action)) {
+  // `memory` takes the full path below: its decision needs each resource's source (catch-all or not).
+  if (!guarded.has(event.action) && event.action !== "memory") {
     // The sandbox's own checks (kete/sandbox.ts) decide Plan mode themselves: a command that runs
     // unsandboxed because the platform has no sandbox is still a read-only command there.
     if (KeteSandboxActions.isSandboxAction(event.action)) return

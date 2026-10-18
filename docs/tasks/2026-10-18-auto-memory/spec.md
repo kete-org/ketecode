@@ -1,7 +1,7 @@
 # Spec: quick "remember this" and auto memory (A2b)
 
 - Task: `docs/tasks/2026-10-18-auto-memory` · Size: large · Created: 2026-10-18
-- Status: approved 2026-10-18, plan approved 2026-10-18 (the user said to carry on through every remaining item without stopping, 2026-10-18; recorded in handoff.md) <!-- draft → agreed (medium) / approved (large) → built → closed -->
+- Status: built 2026-10-18 (spec and plan approved 2026-10-18) (the user said to carry on through every remaining item without stopping, 2026-10-18; recorded in handoff.md) <!-- draft → agreed (medium) / approved (large) → built → closed -->
 
 ## Goal
 Kete remembers what matters across sessions without anyone editing files. The person can say
