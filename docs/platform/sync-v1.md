@@ -73,6 +73,12 @@ Every response carries `x-kete-request-id`. Errors use the platform error shape.
   whose `environment_kinds` is non-empty and doesn't include it. **Fail closed:** a
   runtime that is signed in but has never loaded its organization's policies asks before
   every edit, command and web request until it has.
+- **Session sharing:** `share: { mode: "disabled" | "org" | "link", max_days }` says whether
+  `/share` may upload a session snapshot (`docs/platform/session-shares-v1.md`). `disabled`
+  refuses every share, `org` allows organization-only shares, `link` also allows anyone-with-the-link
+  shares. Absent means `org` with 30 days. Sent to user keys only. The runtime uses it only for an early, clear message;
+  the platform enforces it. A cached copy from before this field is never revalidated with its ETag
+  (cache version 3), so the field is always read from a fresh response.
 - **Compatibility:** v1 only gains optional fields. Ignore unknown fields; anything
   breaking ships as `/api/v2`.
 
@@ -304,6 +310,11 @@ export const SyncResponse = z.object({
    * every edit, command and web request until it has.
    */
   policies: z.array(SyncedPolicy).default([]),
+  /**
+   * The organization's session sharing policy (`session-shares-v1.md`). Absent means `org` with
+   * 30 days. Sent to user keys only; a job key's response leaves it out.
+   */
+  share: z.object({ mode: z.enum(['disabled', 'org', 'link']), max_days: z.number().int().min(1).max(365) }).optional(),
 })
 export type SyncResponse = z.infer<typeof SyncResponse>
 

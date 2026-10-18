@@ -5,6 +5,7 @@ verified-at: 3c3e792370
 ---
 
 ## Quick answers
+- Is `KeteRedact` used elsewhere? Yes, a second user: the session-share snapshot (`core/src/kete/share/snapshot.ts`) uses the same window -> redact -> cap order. Card `session-share`.
 - Where does the log live in a job (piece A3)? Nowhere on disk: with job mode on, `storageFor()`
   (`audit.ts:229`) picks the **sink** storage (`sinkStorage`, `:226`), whose destination is the
   process's audit fd (`KeteJobAuditSink.get`, set by `KeteJobServe.prepare`); outside job mode the file

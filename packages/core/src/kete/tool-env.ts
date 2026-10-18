@@ -23,6 +23,7 @@ export * as KeteToolEnv from "./tool-env.js"
 
 import { Effect } from "effect"
 import type { ConfigKete } from "@opencode/schema/config/kete"
+import { KeteEnv } from "@opencode/util/kete/env"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
 import { KeteJobSecrets } from "@opencode/util/kete/job-secrets"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
@@ -125,5 +126,7 @@ export const forSession = Effect.fnUntraced(function* (lookup: Lookup, sessionID
   const state = jobMode ? undefined : yield* KeteUnattendedPolicy.resolve(lookup.session, sessionID)
   const unattended = jobMode || state?.kind === "unattended"
   const passEnv = unattended ? (yield* lookup.config)?.unattended?.passEnv : undefined
-  return filter(env, { unattended, passEnv, platform: lookup.platform })
+  // Marks the shell as the agent's, so `kete share` started from it is refused (KeteEnv.inAgentShell).
+  const result: Environment = { ...filter(env, { unattended, passEnv, platform: lookup.platform }), [KeteEnv.agentShell]: "1" }
+  return result
 })

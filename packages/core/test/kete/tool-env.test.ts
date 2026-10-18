@@ -146,14 +146,14 @@ describe("KeteToolEnv.forSession", () => {
 
   test("interactive session: provider keys kept, passEnv irrelevant", async () => {
     const result = await Effect.runPromise(KeteToolEnv.forSession(lookup(undefined), sessionID, env))
-    expect(result).toEqual({ PATH: "/bin", ANTHROPIC_API_KEY: "a", NPM_TOKEN: "n" })
+    expect(result).toEqual({ PATH: "/bin", ANTHROPIC_API_KEY: "a", NPM_TOKEN: "n", KETE_AGENT_SHELL: "1" }) // marked as the agent's
   })
 
   test("unattended family: credentials removed, passEnv honoured", async () => {
     const result = await Effect.runPromise(
       KeteToolEnv.forSession(lookup({ "kete.unattended": { version: 1 } }), sessionID, env),
     )
-    expect(result).toEqual({ PATH: "/bin", NPM_TOKEN: "n" })
+    expect(result).toEqual({ PATH: "/bin", NPM_TOKEN: "n", KETE_AGENT_SHELL: "1" })
   })
 
   test("job mode counts as unattended even without session metadata (and an invalid flag fails closed)", async () => {
@@ -161,7 +161,7 @@ describe("KeteToolEnv.forSession", () => {
       const result = await Effect.runPromise(
         KeteToolEnv.forSession(lookup(undefined, { OPENCODE_JOB_MODE: value }), sessionID, env),
       )
-      expect(result).toEqual({ PATH: "/bin", NPM_TOKEN: "n" })
+      expect(result).toEqual({ PATH: "/bin", NPM_TOKEN: "n", KETE_AGENT_SHELL: "1" })
     }
   })
 

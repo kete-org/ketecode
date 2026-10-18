@@ -55,6 +55,7 @@ import { registerMcpView } from "./mcp-view"
 import { before as beforeContent } from "./review"
 import { authorized, handle as handleMcp, SERVER_NAME, type Diagnostic } from "./editor-tools"
 import { ago, isSessionID, parseSessions, sessionFromLink, sessionLink, type SessionItem } from "./sessions"
+import * as Share from "./share"
 import { fileReference } from "./reference"
 import { Server } from "./server"
 import { applySettings, configDirectory, httpUrl, machineSetting, type KeteSettings } from "./settings"
@@ -209,6 +210,8 @@ export function activate(context: ExtensionContext) {
       await env.clipboard.writeText(sessionLink(env.uriScheme, context.extension.id, id))
       window.showInformationMessage("Session link copied.")
     }),
+    commands.registerCommand("kete.shareSession", (item?: unknown) => shareSession(state, isSessionItem(item) ? item.id : activeSession(state))),
+    commands.registerCommand("kete.unshareSession", (item?: unknown) => unshareSession(state, isSessionItem(item) ? item.id : activeSession(state))),
     window.registerWebviewViewProvider(
       "kete.chat",
       {
@@ -1031,6 +1034,78 @@ async function listSessions(state: State): Promise<SessionItem[]> {
   })
   if (!response.ok) throw new Error(`listing sessions failed: HTTP ${response.status}`)
   return parseSessions(await response.json())
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Session sharing (src/share.ts, docs/sharing.md): a modal preview of what would be sent; the upload
+// happens only when the person picks a button, and the link is copied afterwards.
+
+async function shareCall(state: State, method: Share.Method, directory: string, body: object): Promise<unknown> {
+  const connection = await state.server.connection()
+  const response = await fetch(Share.rpcUrl(connection.url, method, directory), {
+    method: "POST",
+    headers: { authorization: basic(connection.password), "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.json()
+}
+
+function shareTarget(state: State, id: string | undefined) {
+  const directory = workspace.workspaceFolders?.[0]?.uri.fsPath
+  if (!id || !directory || state.server.state.state !== "running") {
+    window.showInformationMessage("Open a session in a workspace first, or use the share button on a session in the Kete Code list.")
+    return undefined
+  }
+  return { id, directory }
+}
+
+async function shareSession(state: State, id: string | undefined) {
+  const target = shareTarget(state, id)
+  if (!target) return
+  try {
+    const preview = Share.parsePreview(await shareCall(state, "preview", target.directory, Share.previewRequest(target.id)))
+    if (!preview) throw new Error("the runtime sent an answer this version does not understand")
+    if ("refusal" in preview) return void window.showErrorMessage(Share.refusalText(preview.refusal))
+    const { ok } = preview
+    const labels = ok.existing
+      ? { org: "Update share", link: undefined }
+      : { org: ok.linkAllowed ? "Share with my organization" : "Share", link: ok.linkAllowed ? "Share with anyone with the link" : undefined }
+    const choice = await window.showInformationMessage(
+      Share.previewText(ok),
+      { modal: true },
+      ...[labels.org, labels.link].filter((label) => label !== undefined),
+    )
+    if (choice === undefined) return
+    const visibility = choice === labels.link ? "link" : ok.existing ? ok.visibility : "org"
+    const shared = Share.parseShare(await shareCall(state, "share", target.directory, Share.shareRequest(target.id, visibility, ok.digest)))
+    if (!shared) throw new Error("the runtime sent an answer this version does not understand")
+    if ("refusal" in shared) return void window.showErrorMessage(Share.refusalText(shared.refusal))
+    await env.clipboard.writeText(shared.ok.url)
+    window.showInformationMessage(`Session shared. The link is copied: ${shared.ok.url}`)
+  } catch (error) {
+    window.showErrorMessage(`Couldn't share the session: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+async function unshareSession(state: State, id: string | undefined) {
+  const target = shareTarget(state, id)
+  if (!target) return
+  const choice = await window.showWarningMessage(
+    "Delete this session's shared copy from the Kete portal? The link stops working.",
+    { modal: true },
+    "Unshare",
+  )
+  if (choice !== "Unshare") return
+  try {
+    const result = Share.parseUnshare(await shareCall(state, "unshare", target.directory, Share.unshareRequest(target.id)))
+    if (!result) throw new Error("the runtime sent an answer this version does not understand")
+    if ("refusal" in result) return void window.showErrorMessage(Share.refusalText(result.refusal))
+    window.showInformationMessage(result.ok.removed ? "Share deleted." : "This session isn't shared.")
+  } catch (error) {
+    window.showErrorMessage(`Couldn't unshare the session: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 function sessionTree(state: State): TreeDataProvider<SessionItem> {

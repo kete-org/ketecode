@@ -86,6 +86,7 @@ import { collapseShellOutput, collapseToolOutput } from "../../util/collapse-too
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { useLocation } from "../../context/location"
+import * as KeteShare from "../../kete/share" // kete_change
 import { Slot } from "../../plugin/render"
 import { usePlugin } from "../../plugin/context"
 import {
@@ -869,7 +870,7 @@ export function Session(props: {
       suggested: route.type === "session",
       group: "Session",
       slash: { name: "share" },
-      run: () => unavailable("Sharing"),
+      run: () => void KeteShare.share({ dialog, api: client.api, location: location(), toast, clipboard, sessionID: route.sessionID }), // kete_change: /share uploads a redacted snapshot to the Kete portal (kete/share.tsx)
     },
     {
       title: "Rename session",
@@ -946,9 +947,8 @@ export function Session(props: {
       title: "Unshare session",
       id: "session.unshare",
       group: "Session",
-      enabled: false,
       slash: { name: "unshare" },
-      run: () => unavailable("Unsharing"),
+      run: () => KeteShare.unshare({ dialog, api: client.api, location: location(), toast, clipboard, sessionID: route.sessionID }), // kete_change: /unshare deletes the share (kete/share.tsx); enabled: false dropped
     },
     {
       title: "Undo previous message",

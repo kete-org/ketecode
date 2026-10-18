@@ -1,10 +1,12 @@
 ---
 module: vscode-extension
 paths: [packages/kete-vscode/**, packages/app/src/kete/vscode-*.ts, packages/app/src/kete/vscode-*.tsx]
-verified-at: a6f140247e
+verified-at: 063cfce610
 ---
 
 ## Quick answers
+- How do the share commands call the runtime? `kete.shareSession`/`kete.unshareSession` (`extension.ts:213-214`, `1064-1107`) use a raw `fetch` of `POST /api/rpc/kete.share/<method>` with the same auth headers as other session calls (`extension.ts:1043`); request/response shaping is vscode-free in `src/share.ts`. Offered on `session` tree items and the palette. See card `session-share`.
+- Which settings can a workspace not override (GHSA-43vv-qhh9-p4cv)? `cliPath`, `gateway.url`, `platform.url` are `"scope": "machine"` in `package.json` and read through `machineSetting` (`src/settings.ts:68`, user value or default only), used at `extension.ts:342,921-922`; read any new program/URL setting the same way.
 
 - What do the extension's docs say about the sandbox and the task list? `packages/kete-vscode/CHANGELOG.md` 0.2.6 (the previous "Unreleased"; `package.json` stays `0.0.0`, the release workflow stamps the version) describes the OS sandbox for agent shell commands (macOS `sandbox-exec`, Linux bubblewrap, `kete sandbox` for status, `sandbox: off` always asks); `README.md` describes the task list shown above the message box (the web UI's todo dock, `todo` card). Both are documentation only: the extension has no sandbox or todo code; it frames the web UI, so the runtime and web UI do the work. Forms (questions the runtime asks) are rendered by the web UI too (`server-sdk` card).
 - **How does the extension talk to the agent?** It spawns its own `kete serve --stdio` (never the

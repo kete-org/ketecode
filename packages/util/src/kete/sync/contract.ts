@@ -146,6 +146,13 @@ export const SyncResponse = Schema.Struct({
    * `integrations.slack.client_id`. Loosely typed so a shape this runtime doesn't know never fails a
    * sync; read it through ./integrations.ts. Absent means none. */
   integrations: Schema.optional(Schema.Unknown),
+  /** Session sharing policy (docs/platform/session-shares-v1.md). Absent means `org`, 30 days. */
+  share: Schema.optional(
+    Schema.Struct({
+      mode: Schema.Literals(["disabled", "org", "link"]),
+      max_days: Schema.Int.check(Schema.isGreaterThan(0)),
+    }),
+  ),
 })
 
 /** GET /api/v1/sync/skills/{id}/files → 200 */

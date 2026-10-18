@@ -6,6 +6,11 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Share a session:** `/share` (or `kete share`) uploads a redacted copy of a session to the Kete
+  portal for your organization to read, after showing what will be sent (secrets masked, no
+  reasoning, no file contents). `/unshare` (or `kete unshare`) deletes it. You need `kete login`;
+  `share: "disabled"` in config turns it off, and your organization can too. Details: `docs/sharing.md`.
+
 ## 0.2.7
 
 - **Security:** agent, command and skill markdown files only accept YAML front matter. Front matter in

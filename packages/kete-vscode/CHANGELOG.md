@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Share a session:** "Kete Code: Share Session" and "Kete Code: Unshare Session" (Command Palette
+  and the sessions list). A modal message shows what will be sent before anything is uploaded; the
+  link is copied afterwards. Needs a signed-in account. Details: `docs/sharing.md`.
+
 ## 0.2.7
 
 - Security: `kete.cliPath`, `kete.gateway.url` and `kete.platform.url` are machine settings. A

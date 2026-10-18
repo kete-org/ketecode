@@ -4,6 +4,7 @@ paths: [packages/core/src/kete/attribution.ts, packages/core/src/kete/hosted.ts]
 verified-at: 604889ab32
 ---
 ## Quick answers
+- Is session sharing (`/share`, `/unshare`, `share` config) wired? Yes: a redacted snapshot goes to the Kete portal only (`/api/v1/shares`), never to opencode.ai; `share: "disabled"` in config or org policy refuses it. `packages/enterprise` is still unused. See card `session-share`.
 - What does `attribution.ts` do? Rewrites the app-attribution headers upstream's provider plugins (OpenRouter, Vercel, Kilo, LLM Gateway, ZenMux, NVIDIA, Cerebras) set for OpenCode, replacing them with Kete Code's values, but only when the header still holds upstream's exact default — a user-configured value is left alone.
 - What does `hosted.ts` do? Holds the single switch, `anonymousOpencodeZen = false`, that disables upstream's out-of-the-box anonymous access to OpenCode Zen (the `opencode` provider), per ADR 0003.
 - Where's the seam into upstream? `packages/core/src/plugin/provider/opencode.ts:261-262` — the anonymous-enable branch is gated on `KeteHosted.anonymousOpencodeZen`.

@@ -26,6 +26,13 @@ export const marker = `${envPrefix}ENV_BRIDGED`
 
 export type Environment = Record<string, string | undefined>
 
+/** Set to "1" on the shells the agent runs (core/src/kete/tool-env.ts), so a command can tell it was not started by the person. */
+export const agentShell = `${envPrefix}AGENT_SHELL`
+
+/** Whether `env` is an agent shell's, before or after `bridge` (which renames it to OPENCODE_AGENT_SHELL). */
+export const inAgentShell = (env: Environment) =>
+  env[agentShell] === "1" || env[upstreamPrefix + agentShell.slice(envPrefix.length)] === "1"
+
 // Windows environment names are case-insensitive, and upstream reads such as
 // `process.env.OPENCODE_X` would match `opencode_x` there, so compare case-insensitively.
 const hasPrefix = (name: string, prefix: string) => name.toUpperCase().startsWith(prefix)

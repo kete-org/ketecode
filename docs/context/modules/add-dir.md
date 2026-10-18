@@ -1,12 +1,13 @@
 ---
 module: add-dir
 paths: [packages/core/src/kete/add-dir.ts, packages/core/src/kete/add-dir-plugin.ts, packages/schema/src/kete/add-dir.ts, packages/cli/src/kete/add-dir.ts, packages/tui/src/kete/add-dir.tsx]
-verified-at: b8e534dfcb
+verified-at: 063cfce610
 ---
 
 ## Quick answers
-- How does a session get extra working folders? Session metadata key `kete.dirs` (list of real paths; `add-dir.ts:30`), set by `kete --add-dir <path>` (repeat, max 10), `kete run --add-dir`, or the `/add-dir` command (`add-dir-plugin.ts:133`). Subagents inherit the root session's folders.
-- Where is a folder validated? `KeteAddDir.validate` (`add-dir.ts:97`), called by `guard` (`:128`), which `Session.setMetadata` and `Session.create` run (`session/session.ts:84`, `session.ts:263`); a refusal is a defect (`RefusedError`), so clients pre-check through RPC `kete.add-dir` `check` (`schema/src/kete/add-dir.ts`). Refused: file-system root, home or above, credential folders (`SECRET_HOME_DIRS`, `memory-imports.ts:79`, plus sandbox `credentials`), PATH folders, anything inside the workspace, wildcard characters, more than `MAX`; always refused in job mode.
+- Does import stripping chain? Yes: `session/transfer.ts` wraps it as `KeteShareRecord.without(KeteAddDir.withoutDirs(...))`, so an import brings neither extra folders nor a share record.
+- How does a session get extra working folders? Session metadata key `kete.dirs` (list of real paths; `add-dir.ts:30`), set by `kete --add-dir <path>` (repeat, max 10), `kete run --add-dir`, or the `/add-dir` command (`add-dir-plugin.ts:133` (`ctx.command.transform`)). Subagents inherit the root session's folders.
+- Where is a folder validated? `KeteAddDir.validate` (`add-dir.ts:97`), called by `guard` (`:128`), which `Session.setMetadata` and `Session.create` run (`session/session.ts:84`, `session.ts:263`); a refusal is a defect (`RefusedError`), so clients pre-check through RPC `kete.add-dir` `check` (`schema/src/kete/add-dir.ts`). Refused: file-system root, home or above, credential folders (`SECRET` in `add-dir.ts:26`: `SECRET_HOME_DIRS` `memory-imports.ts:79`, sandbox `credentials`, `Library`), PATH folders, anything inside the workspace, wildcard characters, more than `MAX`; always refused in job mode.
 - What does a folder grant? (1) The default `external_directory` ask becomes allow for paths inside it (`granted`, `add-dir-plugin.ts:54`; a path-specific ask or a deny stands; the session_move request is excluded). (2) The sandbox treats it as writable (see the sandbox card). (3) Subagents get allow rules via the ceiling (`permission-ceiling.ts:137`).
 - Are folders trusted forever? No: `KeteAddDir.live` (`add-dir.ts:186`) re-checks them on every use, so a folder swapped for a symlink or gone invalid drops out.
 - Imported sessions? `withoutDirs` strips `kete.dirs` on import (`session/transfer.ts`, `add-dir.ts:155`), since imports skip the guard.

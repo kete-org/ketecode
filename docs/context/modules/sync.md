@@ -1,9 +1,11 @@
 ---
 module: sync
 paths: [packages/util/src/kete/sync/**, packages/core/src/kete/sync/**, packages/cli/src/kete/sync.ts, packages/schema/src/kete/sync.ts]
-verified-at: ecfae5cce7
+verified-at: 063cfce610
 ---
 ## Quick answers
+- Does the sync response carry a sharing policy? Optionally `share: { mode: "disabled"|"org"|"link", max_days }` (`util/src/kete/sync/contract.ts:149`); absent means org, 30 days (`KeteShareClient.policy`, `util/src/kete/share.ts:63`). The cache is now version 3 and an ETag is resent only from a v3 cache, so a pre-`share` copy is refetched (`sync/cache.ts:17-18`, `sync/sync.ts:101`). See card `session-share`.
+- How are policy rules for non-permission actions evaluated (e.g. `skill.install`)? `KeteSyncPolicy.evaluate` against the cached policies (`cli/src/kete/skill-flow.ts:132-145`).
 - How are synced skills marked on disk? Each lives in `managed/<org>/skills/<slug>/` with a manifest `.kete-skill.json` (`util/src/kete/sync/skills.ts:19`: id, version, per-file SHA-256); `present(config, organization)` (`:92`) lists only slugs that have a manifest and no `.tmp-`/`.old-` name, so half-written skills are ignored and stale ones are removed.
 - How does a client learn whether managed agents exist? Plugin RPC `kete.sync` method `status` (`schema/src/kete/sync.ts` `KeteSyncRpc.Definition`; registered at `core/src/kete/sync/plugin.ts:222-232`, served by the existing `POST /api/rpc/:rpcID/:method`) returns `{ signedIn, managedAgents, offline }` and nothing else (no org or agent names). `managedAgents` is `state.cached.response.agents.length`: the agents in the loaded sync cache, 0 when none is cached. `signedIn` is read fresh from the account file on every call (`readAccount`; no OS key store) because a running server keeps `state.cached` after `kete logout` (a signed-out sync leaves it alone; `state.account` only changes on the next tick, which offline mode skips), so clients must require `signedIn && !offline && managedAgents > 0` (the TUI home portal notice does, `tui/src/kete/home-notices.tsx:56`). Managed agents themselves also keep applying after logout until restart (existing behaviour).
 - Can a client tell managed agents apart on `Agent.Info`? Only by the description suffix "Managed by <org>" (`plugin.ts:499-500`); there is no flag, so use the `status` RPC's count instead.

@@ -243,6 +243,31 @@ export const specs = [
       format: Flag.choice("format", ["default", "json"]).pipe(Flag.withDescription("Output format"), Flag.withDefault("default")),
     },
   }),
+  Spec.make("share", {
+    description: `Share a session's redacted transcript with your organization on the ${Brand.displayName} portal, after showing what is sent (docs/sharing.md)`,
+    params: {
+      sessionID: Argument.string("session-id").pipe(
+        Argument.withDescription("Session to share (default: the newest session in this folder)"),
+        Argument.optional,
+      ),
+      link: Flag.boolean("link").pipe(
+        Flag.withDescription("Let anyone with the link read it (only if your organization allows it)"),
+        Flag.withDefault(false),
+      ),
+      yes: Flag.boolean("yes").pipe(Flag.withDescription("Upload without asking"), Flag.withDefault(false)),
+      ...ServerParams,
+    },
+  }),
+  Spec.make("unshare", {
+    description: "Delete a session's shared copy from the portal",
+    params: {
+      sessionID: Argument.string("session-id").pipe(
+        Argument.withDescription("Session to unshare (default: the newest session in this folder)"),
+        Argument.optional,
+      ),
+      ...ServerParams,
+    },
+  }),
   Spec.make("job", {
     description: "Run unattended jobs (ADR 0005/0008)",
     commands: [

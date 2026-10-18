@@ -4,6 +4,7 @@ paths: [packages/util/src/kete/brand.ts, packages/util/src/kete/env.ts, packages
 verified-at: 604889ab32
 ---
 ## Quick answers
+- What marks an agent shell? `KeteEnv.agentShell` (`KETE_AGENT_SHELL`, `util/src/kete/env.ts:30`) is set to `1` by `core/src/kete/tool-env.ts:130`; `KeteEnv.inAgentShell(env)` (`env.ts:33`) also accepts the bridged `OPENCODE_` name. `kete share` uses it to refuse.
 - Which local-model env vars exist? `KETE_OFFLINE`, `KETE_OLLAMA_HOST`, `KETE_LMSTUDIO_HOST`, `KETE_VLLM_HOST` are bridged like any `KETE_*` (internal `OPENCODE_OFFLINE`, `OPENCODE_OLLAMA_HOST`, ...); Ollama's own `OLLAMA_HOST` is read unbridged as the fallback (`core/src/kete/local-hosts.ts:27`). See the `local-models` card.
 - What are `KETE_JOB_MODE`/`KETE_JOB_MAX_OUTPUT_TOKENS`/`KETE_JOB_TOOL_SOCKET`? The cloud-job
   runtime image's own env contract (not defined in this card's files —

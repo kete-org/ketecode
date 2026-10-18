@@ -144,6 +144,14 @@
         "icon": "$(kete-mark)"
       },
       {
+        "command": "kete.shareSession",
+        "title": "Kete Code: Share Session"
+      },
+      {
+        "command": "kete.unshareSession",
+        "title": "Kete Code: Unshare Session"
+      },
+      {
         "command": "kete.askBeforeEdits",
         "title": "Kete Code: Ask Before Edits in This Chat",
         "icon": "$(kete-mark)"
@@ -297,6 +305,16 @@
           "command": "kete.copySessionLink",
           "when": "view == kete.sessions && viewItem == session",
           "group": "inline"
+        },
+        {
+          "command": "kete.shareSession",
+          "when": "view == kete.sessions && viewItem == session",
+          "group": "kete@1"
+        },
+        {
+          "command": "kete.unshareSession",
+          "when": "view == kete.sessions && viewItem == session",
+          "group": "kete@2"
         },
         {
           "command": "kete.mcp.approve",
