@@ -140,3 +140,21 @@ describe.skipIf(process.platform === "win32")("FileAccess and symlinks: kernel o
     }).pipe(Effect.scoped, provide(requests))
   })
 })
+
+describe.skipIf(process.platform === "win32")("FileAccess and symlinks: job mode", () => {
+  it.live("in job mode the written path decides; the job's file system refuses the link itself", () => {
+    const requests: Permission.AssertInput[] = []
+    return Effect.gen(function* () {
+      const access = yield* FileAccess.Service
+      const location = yield* Location.Service
+      const dir = yield* outside
+      yield* Effect.promise(() => fs.symlink(path.join(dir, "secret"), path.join(location.directory, "leak.txt")))
+      process.env.OPENCODE_JOB_MODE = "1"
+      const target = yield* access.resolve({ path: "leak.txt", kind: "file" }).pipe(
+        Effect.ensuring(Effect.sync(() => void delete process.env.OPENCODE_JOB_MODE)),
+      )
+      expect(target.externalDirectory).toBeUndefined()
+      expect(target.resource).toBe("leak.txt")
+    }).pipe(Effect.scoped, provide(requests))
+  })
+})
