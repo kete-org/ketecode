@@ -176,6 +176,9 @@ export class Memory extends Schema.Class<Memory>("ConfigKete.Memory")({
   imports: Schema.Boolean.pipe(optional).annotate({
     description: "Expand @path imports in AGENTS.md and CLAUDE.md (default on)",
   }),
+  auto: Schema.Boolean.pipe(optional).annotate({
+    description: "Auto memory: the memory tool, /remember, and notes from earlier sessions loaded at start (default on)",
+  }),
 }) {}
 
 export class Info extends Schema.Class<Info>("ConfigKete.Info")({
@@ -204,7 +207,7 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
       "Shell commands run at points of the agent loop (docs/hooks.md). Hooks in a project's config run only after you trust them.",
   }),
   memory: Memory.pipe(optional).annotate({
-    description: "Memory files: CLAUDE.md compatibility and @path imports in AGENTS.md and CLAUDE.md",
+    description: "Memory: CLAUDE.md compatibility, @path imports in AGENTS.md and CLAUDE.md, and auto memory",
   }),
   lsp: Lsp.pipe(optional).annotate({
     description: "Kete Code's language server settings; the servers themselves are configured under the top-level `lsp` key (docs/lsp.md)",

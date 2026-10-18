@@ -123,10 +123,15 @@ Edits to Kete Code's configuration and `.git` ask in every mode but Plan, which 
 - **`ask`** asks even when a rule or an earlier "Always allow" would allow the request.
 - **`plan`** is enforced by the runtime: no edit and no command that changes anything runs, even
   one a rule allows. Only reading and searching, questions, skills, read-only commands, web
-  requests (asked), MCP resource reads and subagents (which run in Plan mode too) are available;
+  requests (asked), MCP resource reads, the task list, auto memory (the `memory` action, which writes
+  only Kete's own notes folder) and subagents (which run in Plan mode too) are available;
   MCP tools and worktrees are blocked, because the runtime can't tell a read-only MCP tool from one
   that changes things. The clients' Plan also switches to the read-only **Plan** agent for its
   planning prompt.
+
+Auto memory (the `memory` tool) uses the permission action `memory`, with resources `project/<file>`
+or `user/<file>`. It is allowed by default; set it to `ask` or `deny` in `permissions` to review or
+stop saved notes. It does not exist in unattended runs or job mode.
 
 A subagent follows its root session's mode (the root-most session that has one). Unattended runs
 (`kete job run`, cloud jobs) don't use these defaults: they keep their own fail-closed policy

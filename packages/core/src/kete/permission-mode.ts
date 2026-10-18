@@ -75,7 +75,7 @@ const network: ReadonlySet<string> = new Set(["webfetch", "websearch"])
  */
 export const planAllowed: ReadonlySet<string> = new Set([
   "read", "glob", "grep", "question", "skill", "budget", "external_directory", "webfetch", "websearch",
-  "shell", "subagent", "opencode_list_mcp_resources", "opencode_read_mcp_resource", "todowrite",
+  "shell", "subagent", "opencode_list_mcp_resources", "opencode_read_mcp_resource", "todowrite", "memory",
 ])
 
 export const parse = KetePermissionModes.parse

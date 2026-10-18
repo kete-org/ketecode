@@ -6,6 +6,12 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Auto memory and `/remember`:** Kete can save notes for later sessions (your corrections and
+  preferences, non-obvious project facts) with a `memory` tool, and `/remember <note>` saves one on
+  request. Notes live in Kete's own state folder, not your repository: `MEMORY.md` per project and per
+  user, loaded at the start of every session under a header that marks them as context, not
+  instructions. Secrets are redacted before saving. `/memory` shows what is loaded. Off with
+  `kete.memory.auto: false`; not available in unattended runs.
 - **`CLAUDE.md` and `@path` imports:** where a folder has no `AGENTS.md`, its `CLAUDE.md` (or
   `.claude/CLAUDE.md`) is loaded, `~/.claude/CLAUDE.md` joins your global instructions, and nested
   `CLAUDE.md` files load when you read a file below them. `@path` lines in `AGENTS.md` and `CLAUDE.md`
