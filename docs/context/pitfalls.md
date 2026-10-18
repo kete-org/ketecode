@@ -113,6 +113,7 @@ Mistakes to avoid, grouped. Each item cites where the rule lives or where it bit
   card.
 
 ## Tests (additions)
+- **On-start dialogs show in every whole-app TUI test:** the fixture client answers no providers/models (`tui/test/fixture/tui-client.ts:150`), so the first-run setup screen appears unless the test seeds the `kete-setup` storage key as done.
 
 - A JS default parameter applies to an explicit `undefined`: a test helper `setup(name, undefined)` for "no agent" got the default `"developer"` and ran a real job (`cli/test/kete/job-socket.subprocess.test.ts`). Use `null` as the "none" sentinel.
 - Internal plugins activate lazily in a forked fiber (`core/src/plugin/supervisor.ts:225-236`); `agent.list`/`agent.get`/`session.create` don't await activation, only prompt/LLM/shell/command do.

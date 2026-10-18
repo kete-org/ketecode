@@ -27,6 +27,14 @@ export async function fetchStatus(
   return decode(response.output)
 }
 
+/** Asks the runtime to look for local servers again (the setup screen's "Check again"). */
+export async function rediscover(client: Pick<OpenCodeClient, "rpc">, location: LocationRef | undefined): Promise<void> {
+  await client.rpc.call(
+    { rpcID: KeteLocalModelsRpc.ID, method: "rediscover", input: {}, location },
+    { signal: AbortSignal.timeout(15_000) },
+  )
+}
+
 type RuntimeModel = {
   readonly providerID: string
   readonly capabilities: { readonly tools: boolean }

@@ -1104,6 +1104,24 @@ trusted; never in job mode. The config schema change regenerated `protocol/opena
 before keeping both. If upstream changes `tool.execute.before/after`, `session.prompt` or the
 session execution/permission/form events, re-check the event mapping in `kete/hooks.ts`.
 
+## First-run setup (feature/first-run-setup)
+
+One setup screen (sign in, own key, local model) when nothing is set up, `/setup`, and a `kete run`
+no-model hint (`docs/tasks/2026-10-18-first-run-setup`). The logic is Kete-owned (`tui/src/kete/setup.tsx`,
+`setup-login.ts`, `local-offer.tsx`, `util/src/kete/setup.ts`); sign-in runs `kete login` as a child.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/feature-plugins/sidebar/footer.tsx` | "Connect provider" dispatches `kete.setup` instead of `provider.connect` (1 marked line) | the target is a literal command ID |
+| `tui/src/component/prompt/index.tsx` | Import; `promptModelWarning` opens `<KeteSetupDialog />` instead of `<DialogIntegration />` (2 marked lines) | no hook for "prompt without a provider" |
+| `cli/src/run/noninteractive.ts` | Import; both `UI.error(event.data.error.message)` use `KeteSetup.withHint(event.data.error)` | the error is printed inline from the event stream |
+| `tui/test/feature-plugins/sidebar-footer.test.tsx` | Expects `kete.setup` | follows the footer change |
+| `tui/test/fixture/tui-client.ts` | The default `kete.sync/status` answer is signed in (was signed out) | the fixture has no providers, so the first-run setup screen would open in every whole-app test; tests that need signed out answer it themselves |
+
+**Sync checklist:** if upstream changes the sidebar's getting-started card, `promptModelWarning`, or where
+`kete run` prints session errors, keep the three redirections. `core/test/kete/setup-hint.test.ts` pins the
+no-model error that the hint matches.
+
 ## Folder trust (feature/folder-trust)
 
 An untrusted folder's guarded project settings (MCP, providers, plugins, sharing, `kete.*`

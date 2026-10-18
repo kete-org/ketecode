@@ -43,7 +43,7 @@ import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
-import { DialogIntegration } from "../dialog-integration"
+import { KeteSetupDialog } from "../../kete/setup" // kete_change
 import { useConnected } from "../use-connected"
 import { useToast } from "../../ui/toast"
 import { createFadeIn } from "../../util/signal"
@@ -324,7 +324,7 @@ export function Prompt(props: PromptProps) {
       duration: 3000,
     })
     if (!connected()) {
-      dialog.replace(() => <DialogIntegration />)
+      dialog.replace(() => <KeteSetupDialog />) // kete_change
     }
   }
 

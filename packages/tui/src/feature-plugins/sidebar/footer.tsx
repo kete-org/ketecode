@@ -65,7 +65,7 @@ export function SidebarOnboarding(props: { context: Plugin.Context; sessionID: s
             flexDirection="row"
             gap={1}
             justifyContent="space-between"
-            onMouseUp={() => props.context.keymap.dispatch("provider.connect")}
+            onMouseUp={() => props.context.keymap.dispatch("kete.setup")} // kete_change
           >
             <text fg={props.context.theme.text.base}>Connect provider</text>
             <text fg={props.context.theme.text.muted}>/connect</text>
