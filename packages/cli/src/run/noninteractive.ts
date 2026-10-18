@@ -13,6 +13,7 @@ import { readFile } from "node:fs/promises"
 import { nonEmptyToolContent, toolOutputText, type MiniToolPart } from "@opencode/tui/mini/tool"
 import { UI } from "./ui"
 import { KeteFolderTrustCli } from "../kete/folder-trust" // kete_change
+import { KeteSetup } from "@opencode/util/kete/setup" // kete_change
 
 type Model = {
   providerID: string
@@ -479,7 +480,7 @@ export async function runNonInteractivePrompt(input: Input) {
         flushStep()
         emittedError = true
         process.exitCode = 1
-        if (!emit("error", time, { error: event.data.error })) UI.error(event.data.error.message)
+        if (!emit("error", time, { error: event.data.error })) UI.error(KeteSetup.withHint(event.data.error)) // kete_change
         continue
       }
       if (event.type === "session.execution.failed") {
@@ -488,7 +489,7 @@ export async function runNonInteractivePrompt(input: Input) {
         if (!emittedError && !formCancelled) {
           emittedError = true
           process.exitCode = 1
-          if (!emit("error", time, { error: event.data.error })) UI.error(event.data.error.message)
+          if (!emit("error", time, { error: event.data.error })) UI.error(KeteSetup.withHint(event.data.error)) // kete_change
         }
         return
       }

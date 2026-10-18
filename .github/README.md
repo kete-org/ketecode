@@ -79,6 +79,9 @@ kete auth login                   # add a model provider key (Anthropic, OpenAI,
 kete login                        # or sign in to a Kete account to use the gateway
 ```
 
+The first time you run `kete` with nothing set up (no provider key, no account, no model), a setup
+screen offers to sign in, use your own API key, or use a local model. `/setup` reopens it any time.
+
 ### Shell completions
 
 Tab completion for `kete`'s commands and flags. `kete completion` prints these lines; add the one for

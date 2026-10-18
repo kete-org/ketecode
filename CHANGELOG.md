@@ -6,6 +6,11 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **One first-run setup screen:** the first time you run `kete` with nothing set up (no provider key,
+  no account, no model), one screen offers to sign in, use your own API key, or use a local model
+  (Ollama, LM Studio, vLLM), or to skip. It shows once; `/setup` reopens it. The sidebar's "Connect
+  provider" button and the "Connect an integration" prompt warning open it too. `kete run` with no
+  model now says how to set one up.
 - **`--add-dir` and `/add-dir`:** let a session work in folders outside the workspace without being
   asked each time: `kete --add-dir ../lib`, `kete run --add-dir ../lib "…"`, or `/add-dir <path>` in a
   session (`/add-dir remove <path>` drops one). Edits there still follow your permission mode, `deny`

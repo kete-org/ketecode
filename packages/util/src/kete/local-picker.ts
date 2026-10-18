@@ -114,7 +114,7 @@ export function offer(input: {
 /** The model to select when the offer is accepted: the provider's first listed model, preferring one that can call tools. */
 export function pick<T extends { readonly providerID: string; readonly tools: boolean }>(
   models: readonly T[],
-  providerID: ProviderID,
+  providerID: string,
 ): T | undefined {
   const own = models.filter((model) => model.providerID === providerID)
   return own.find((model) => model.tools) ?? own[0]

@@ -23,8 +23,10 @@ server answers (it checks again every 30 seconds):
 | LM Studio | `http://127.0.0.1:1234` | `/api/v1/models` |
 | vLLM | `http://127.0.0.1:8000` | `/v1/models` |
 
-On first run, if you haven't picked a model yet and a local server is running with models, the
-terminal UI and the web/VS Code panel offer **"Use local models (Ollama, N models)"** once.
+In the terminal UI, the first-run setup screen (sign in, your own key, or a local model; `/setup`
+reopens it) comes first when nothing is set up, and its "Use a local model" row lists the running
+servers. Otherwise, on first run, if you haven't picked a model yet and a local server is running
+with models, the terminal UI and the web/VS Code panel offer **"Use local models (Ollama, N models)"** once.
 Accepting selects one of that server's models (one that can call tools, if any can) the same way
 the model picker does; it doesn't write your config.
 

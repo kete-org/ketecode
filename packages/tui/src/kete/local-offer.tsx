@@ -18,6 +18,7 @@ import { useStorage } from "../context/storage"
 import { DialogConfirm } from "../ui/dialog-confirm"
 import { useDialog } from "../ui/dialog"
 import { useToast } from "../ui/toast"
+import { useKeteSetup } from "./setup"
 import { canCallTools, fetchStatus, firstRunOffer, hasLocalModels, KeteLocalPicker, noToolsTracker } from "./local-models"
 
 export function useKeteLocalModels() {
@@ -31,9 +32,13 @@ export function useKeteLocalModels() {
   const toast = useToast()
   const [state, update] = useStorage().store<{ offered: boolean }>("kete-local-offer", { initial: { offered: false } })
 
+  // The offer comes after the setup decision, and not in a launch where the setup screen showed.
+  const setup = useKeteSetup()
+
   let checked = false
   createEffect(() => {
-    if (checked || !local.model.ready || !local.model.catalogReady) return
+    if (checked || !setup.decided() || !local.model.ready || !local.model.catalogReady) return
+    if (setup.shown()) return void (checked = true)
     const config = data.location.config.list(location.ref)
     if (config === undefined) return
     checked = true

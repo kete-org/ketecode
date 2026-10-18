@@ -1,9 +1,10 @@
 ---
 module: cli
-paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts]
-verified-at: b8e534dfcb
+paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts, packages/util/src/kete/setup.ts, packages/cli/src/run/noninteractive.ts]
+verified-at: 41ddef7737
 ---
 ## Quick answers
+- Where does `kete run` print session errors, and what does the no-model hint do? `run/noninteractive.ts:482,491` print `KeteSetup.withHint(error)` (`util/src/kete/setup.ts:57`, marked), which appends `HINT` (`:10`) only when `isNoModel` (`:53`). `ModelNotSelectedError` reaches clients as `provider.no-route` carrying only its message (`core/src/session/to-session-error.ts:56-64`), so the match is on that code plus a message prefix, pinned by `core/test/kete/setup-hint.test.ts`.
 - What does `--add-dir` do? Repeatable flag (max 10, `commands/commands.ts:47`) on the default and `run` commands; paths are normalised by `KeteAddDirCli.prepare`, checked via RPC `kete.add-dir`, and written to the session's `kete.dirs` before the first prompt (`run/run.ts:135`). See the `add-dir` card.
 - Which helper runs git clone/fetch/worktree with a timeout and abort signal? `JobGit.run(cwd, args, {timeoutMs, signal, env})` (`packages/cli/src/kete/job-git.ts:37`): no-shell `execFile("git")`, default 30 s (`:30`), worktree add 5 min; timeout resolves `{exitCode:-1, timedOut:true}`, missing git rejects `GitError`, job mode refuses the spawn.
 - What do `kete bug`, `kete completion` and `kete trust` live in? `kete/bug.ts` (deps) + `bug-flow.ts` (flow, asks `QUESTION` before opening a GitHub issue); `kete/completion-command.ts` with `completion.ts` (bash/zsh/fish/powershell, `instructions` when no shell) and `completion-tree.ts` (`script` `:91`, tree from `--help`); `kete/trust.ts` (`list`/`add`/`remove` of trusted folders, exit 0/1/2, `:25`) over `kete/folder-trust.ts` (`inspect` `:141`, `connection` `:236`, which `kete`/`kete run --trust-project-config` use). All registered in `index.ts` Handlers (marked).

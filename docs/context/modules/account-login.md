@@ -1,9 +1,10 @@
 ---
 module: account-login
-paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts]
-verified-at: ecfae5cce7
+paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts, packages/tui/src/kete/setup-login.ts, packages/util/src/kete/setup.ts]
+verified-at: 41ddef7737
 ---
 ## Quick answers
+- Can sign-in start from the TUI? Yes: the first-run setup screen runs `kete login` as a child process (`tui/src/kete/setup-login.ts:34`, 6 min `TIMEOUT` `:20`), reads the browser URL with `KeteSetup.parseLoginURL` (`util/src/kete/setup.ts:39`, only a line that is just a URL) and reloads the location on success; the key never passes through the TUI. The TUI can't import the CLI's `selfCommand` (`cli/src/util/process.ts:5`), so the command is mirrored. See the `ui-branding` card.
 - What colour is the `kete login` callback page? Brand violet `#6e47f5` / dark `#a38cfa` in the page's inline CSS (`cli-login.ts` `page()`, `--brand`), moved from `#7c3aed`/`#a78bfa` on 2026-10-10; see the `ui-branding` card.
 - Do MCP presets share the account's secret store? The same `KeteSecretStore` module and `kete-code` service, under separate `mcp:<server>` entries (`util/src/kete/mcp-secret.ts`); `kete logout` doesn't remove them. See the `mcp-presets` card.
 - Does `kete login` work offline? No: `login.ts` calls `KeteCliOffline.refused` first (exit 2); `logout`/`whoami` are unchanged. See the `local-models` card.

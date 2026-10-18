@@ -114,7 +114,7 @@ test("sidebar onboarding opens integrations and can be dismissed", async () => {
   try {
     const connect = app.renderer.root.findDescendantById("sidebar.footer.getting-started.connect")!
     await app.mockMouse.click(connect.x, connect.y)
-    expect(dispatched).toEqual(["provider.connect"])
+    expect(dispatched).toEqual(["kete.setup"]) // kete_change
 
     const dismiss = app.renderer.root.findDescendantById("sidebar.footer.getting-started.dismiss")!
     await app.mockMouse.click(dismiss.x, dismiss.y)
