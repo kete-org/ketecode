@@ -1,10 +1,10 @@
 ---
 module: local-models
 paths: [packages/core/src/kete/local-hosts.ts, packages/core/src/kete/local-models.ts, packages/core/src/kete/offline.ts, packages/util/src/kete/offline.ts, packages/util/src/kete/local-picker.ts, packages/schema/src/kete/local-models.ts, packages/cli/src/kete/offline.ts, packages/cli/src/kete/offline-startup.ts, packages/cli/src/kete/models-pull.ts, packages/cli/src/kete/models-list.ts, packages/tui/src/kete/local-models.ts, packages/tui/src/kete/local-offer.tsx, packages/tui/src/kete/local-status.tsx, packages/app/src/kete/local-models.ts, packages/app/src/kete/local-ui.tsx]
-verified-at: 41ddef7737
+verified-at: 063cfce610
 ---
 ## Quick answers
-- How does the first-run local-model offer relate to setup? It waits for the setup decision and is skipped in a launch where the setup screen showed (`tui/src/kete/local-offer.tsx`, `useKeteSetup().decided()/shown()`); `KeteLocalPicker.pick` takes any provider ID (`util/src/kete/local-picker.ts`); the setup screen's "Check again" calls `rediscover` (`tui/src/kete/local-models.ts:30`). See the `ui-branding` card.
+- How does the first-run local-model offer relate to setup? It waits for the setup decision and is skipped in a launch where the setup screen showed (`tui/src/kete/local-offer.tsx`, `useKeteSetup().decided()/shown()`); `KeteLocalPicker.pick` takes any provider ID (`util/src/kete/local-picker.ts`); the setup screen's "Check again" calls `rediscover` (`tui/src/kete/local-models.ts:31`). See the `ui-branding` card.
 - Where do the no-provider entry points go? The sidebar "Getting started" card dispatches `provider.connect` (`tui/src/feature-plugins/sidebar/footer.tsx:68`); the no-provider prompt toast opens `DialogIntegration` (`tui/src/component/prompt/index.tsx:320-328`); `provider.connect` is `/connect` (`tui/src/app.tsx:968-980`).
 - Model fallback and reload in the TUI? With no chosen model the TUI falls back to the first catalog model (`tui/src/context/local.tsx:181-206`); `/reload` is `location.reload` (`tui/src/app.tsx:1043`), which setup sign-in uses to pick up the new account.
 - Where should an unattended run's local-server address go? The global config: `kete job run` refuses a repository config that sets `providers` unless `--trust-project-config` (`docs/local-models.md` "Environment variables", `docs/jobs.md`).

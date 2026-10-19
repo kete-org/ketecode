@@ -1087,6 +1087,29 @@ Fixing the formatter means changing upstream code; left for a separate change.
 resolved), compare and drop Kete's in favour of upstream's, keeping the sandboxing and the
 project-config restriction. If upstream changes the `lsp` config schema, update `lsp/servers.ts`.
 
+## Session sharing (feature/session-share)
+
+`/share`, `/unshare`, `kete share|unshare` and the VS Code commands upload a redacted snapshot to the
+Kete portal (`docs/sharing.md`, `docs/platform/session-shares-v1.md`). The logic is Kete-owned:
+`core/src/kete/share/*`, `schema/src/kete/share.ts`, `util/src/kete/share.ts`, `tui/src/kete/share.tsx`,
+`cli/src/kete/share*.ts`, `kete-vscode/src/share.ts`. The RPC `kete.share` is served by the generic
+plugin RPC route, so there is no protocol or client regeneration. The `share` config field already
+existed upstream and was read by nothing.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteShare.Plugin` in `post` after `KeteJobPlugin.Plugin` (so `KeteUnattended.Plugin` stays last; not in `guarded`) | internal plugin registration list |
+| `core/src/session/transfer.ts` | Import; the existing marked `metadata:` line in `import` wraps `KeteAddDir.withoutDirs(...)` in `KeteShareRecord.without(...)` | a session import skips `setMetadata`, so this marked line is the only strip point (the `kete.dirs` precedent): an imported session must not claim someone else's share |
+| `tui/src/routes/session/index.tsx` | Import; the `/share` and `/unshare` commands' `run:` bodies call `KeteShare.share` / `KeteShare.unshare`; `enabled: false` dropped from `/unshare`. The `unavailable` helper stays, now unused | the commands are defined inline in the route |
+| `cli/src/index.ts` | Two `Handlers` entries, `share` and `unshare` | the handler map is the only routing seam |
+
+The sync cache moved to version 3 (`util/src/kete/sync/cache.ts`, `sync.ts`): a cache written before the
+`share` field is never revalidated with its ETag.
+
+**Sync checklist:** if upstream starts sharing sessions again (`share` config, `/share`), compare it
+with Kete's, which must keep going only to the Kete portal. Keep the strip in `transfer.ts` if
+`import` is reshaped. Tests: `core/test/kete/share*.test.ts`, `tui/test/kete/share.test.tsx`.
+
 ## Config hooks (feature/wave1a-hooks)
 
 `kete.hooks` (shell commands at PreToolUse, PostToolUse, UserPromptSubmit, Stop, SessionStart,

@@ -127,6 +127,7 @@ import { KeteDoctor } from "../kete/doctor.js" // kete_change
 import { KeteGitCommands } from "../kete/git-commands.js" // kete_change
 import { KeteAutoMemory } from "../kete/auto-memory.js" // kete_change
 import { KeteMemoryFiles } from "../kete/memory-files.js" // kete_change
+import { KeteShare } from "../kete/share/plugin.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
@@ -354,6 +355,8 @@ const post = [
   KeteOffline.Plugin,
   // kete_change: before KeteUnattended.Plugin; job mode disables every MCP server and every non-kete model
   KeteJobPlugin.Plugin,
+  // kete_change: the `kete.share` RPC (/share, /unshare: a redacted session snapshot to the Kete portal); see kete/share/plugin.ts
+  KeteShare.Plugin,
   // kete_change: last, after every hook that could still turn "ask" into "allow"; see kete/unattended.ts
   KeteUnattended.Plugin,
   // kete_change: after every other hook: marks a shell request a person will approve (network in the OS sandbox); see kete/sandbox.ts

@@ -511,6 +511,14 @@ the same PR.
   an invalid/missing review never fails the result; uploads `bundle: false`, finish without `push_error`.
   `kete job` spec v1 optional `review` section (job mode only). See the `job-entrypoint` and `job-mode` cards.
 
+## 6i. Session shares v1 (`/api/v1/shares`)
+
+- **Doc:** `docs/platform/session-shares-v1.md` (an exact copy of the platform's `docs/contracts/session-shares-v1.md`; update both together). Runtime side: `docs/sharing.md`.
+- **Client:** `packages/util/src/kete/share.ts` (`create`/`update`/`remove`, `ShareError`); the snapshot is built by `packages/core/src/kete/share/snapshot.ts` (v1, at most 2 MiB). Calls use the account key only, refuse redirects, time out at 15 s.
+- **Sync field:** optional `share: { mode, max_days }` in `GET /api/v1/sync` (`docs/platform/sync-v1.md`, `util/src/kete/sync/contract.ts:149`); absent = org, 30 days. The sync cache is v3 because of it.
+- **Relies on:** the platform returning `/shares/{id}` as `url` on a link re-share (the runtime keeps the original link in its record); `share_disabled`/`share_link_not_allowed` error codes.
+- **Change rule:** additive only; client, snapshot, mirror doc and `docs/sharing.md` change together. See card `session-share`.
+
 ## 7. Local account state files (not wire contracts, but part of the shared surface)
 
 - `<config>/account.json` — `packages/util/src/kete/account.ts:18-28` (`Account`

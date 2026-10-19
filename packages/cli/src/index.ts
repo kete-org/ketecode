@@ -37,6 +37,8 @@ const Handlers = Runtime.handlers(Commands, {
   completion: () => import("./kete/completion-command"), // kete_change
   bug: () => import("./kete/bug"), // kete_change
   doctor: () => import("./kete/doctor"), // kete_change
+  share: () => import("./kete/share"), // kete_change
+  unshare: () => import("./kete/share").then((module) => ({ default: module.unshareCommand })), // kete_change
   "terminal-setup": () => import("./kete/terminal-setup"), // kete_change
   sync: () => import("./kete/sync"), // kete_change
   // kete_change start: `kete job run` (kete/job.ts)

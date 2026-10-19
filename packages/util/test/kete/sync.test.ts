@@ -194,11 +194,11 @@ describe("KeteSync", () => {
     expect(rejectingOutcome.kind === "failed" && rejectingOutcome.error.message).toContain("unexpected sync response")
   })
 
-  test("a version-1 cache is used but refetched without If-None-Match; the new copy is version 2", async () => {
+  test.each([1, 2] as const)("a version-%i cache is used but refetched without If-None-Match; the new copy is version 3", async (old) => {
     const fake = platform([ok('"e2"', [agent("developer", 2)])])
     const options = await home(fake.url)
     const legacy: KeteSyncCache.Cached = {
-      version: 1,
+      version: old,
       etag: '"e1"',
       synced_at: "2026-09-25T20:00:00.000Z",
       response: {
@@ -209,12 +209,12 @@ describe("KeteSync", () => {
     }
     await KeteSyncCache.write(options.config, legacy)
     const before = await KeteSync.load(options)
-    expect(before?.cached.version).toBe(1)
+    expect(before?.cached.version).toBe(old)
     const outcome = await KeteSync.sync(options)
     expect(outcome.kind).toBe("updated")
     expect(fake.seen).toEqual([{ authorization: `Bearer ${key}`, ifNoneMatch: null }])
     const after = await KeteSync.load(options)
-    expect(after?.cached.version).toBe(2)
+    expect(after?.cached.version).toBe(3)
   })
 })
 

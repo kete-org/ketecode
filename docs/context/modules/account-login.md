@@ -1,7 +1,7 @@
 ---
 module: account-login
 paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts, packages/tui/src/kete/setup-login.ts, packages/util/src/kete/setup.ts]
-verified-at: 41ddef7737
+verified-at: 063cfce610
 ---
 ## Quick answers
 - Can sign-in start from the TUI? Yes: the first-run setup screen runs `kete login` as a child process (`tui/src/kete/setup-login.ts:34`, 6 min `TIMEOUT` `:20`), reads the browser URL with `KeteSetup.parseLoginURL` (`util/src/kete/setup.ts:39`, only a line that is just a URL) and reloads the location on success; the key never passes through the TUI. The TUI can't import the CLI's `selfCommand` (`cli/src/util/process.ts:5`), so the command is mirrored. See the `ui-branding` card.

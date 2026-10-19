@@ -42,6 +42,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | add-dir | extra working folders for a session: `--add-dir`, `/add-dir`, `kete.dirs`, permission grant, sandbox write access |
 | roles-skills | starter role agents, built-in skills, role-check |
 | attribution-hosted | provider attribution headers, hosted services off by default |
+| session-share | `/share`, `kete share`: redacted session snapshot to the Kete portal, refusals, share record |
 | local-models | local model servers (Ollama, LM Studio, vLLM): env hosts, `kete.local-models` status RPC, `kete models pull`, no-tools models, offline mode, pickers and first-run offer |
 | subagents | subagent timeout, concurrency limit, stop cascade, subtask checks |
 | unattended | unattended-run fail-closed policy (ADR 0008): `kete.unattended` metadata, the policy-allow/deny hooks, required budget and time limit |
