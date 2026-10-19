@@ -216,7 +216,7 @@ async function addPlaywright(io: IO, input: Input): Promise<Exit> {
     `MCP server "playwright" added to ${input.configPath} (${KeteMcpPresets.playwrightPackage}@${KeteMcpPresets.playwrightVersion}).`,
   )
   io.print(
-    "Each session starts a browser with a fresh profile. Reading the page is allowed; navigating, clicking, typing, running scripts and uploading files ask first.",
+    "Each session starts a browser with a fresh profile. Every browser action asks first (only waiting doesn't); allow the ones you trust with permission rules.",
   )
   io.print("It uses your installed Google Chrome; see docs/integrations/playwright.md for another browser or headless mode.")
   if (offline(io)) io.print(offlineNote("playwright"))

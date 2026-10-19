@@ -19,16 +19,19 @@ kete mcp add playwright --global   # global config instead of the project's
   default, Google Chrome installed.
 - `--isolated`: the browser profile lives in memory. Each session starts logged out, and nothing
   (cookies, logins, local storage) is kept afterwards.
-- The server runs in the project directory, and Playwright limits its own file access (uploads,
-  saved files, `file://` pages) to the project.
+- The server runs in the project directory. Files it saves (screenshots, snapshots, response
+  bodies) go into the project, or Playwright's output folder; `file://` pages are blocked.
 - Permission rules in the same config file:
-  - `browser_snapshot`, `browser_take_screenshot`, `browser_console_messages`,
-    `browser_network_requests`, `browser_network_request`, `browser_find` and `browser_wait_for`
-    run without asking. They only look at (or wait on) the page that is already open.
-  - Everything else asks first: navigating, clicking, typing and form filling, tabs, dialogs, and
-    any other or future tool. `browser_navigate`, `browser_evaluate`, `browser_run_code_unsafe` and
-    `browser_file_upload` are listed explicitly, so they still ask under a broader `allow` rule of
-    your own placed before them.
+  - Only `browser_wait_for` runs without asking.
+  - Everything else asks first, including the tools that only read the page (`browser_snapshot`,
+    `browser_take_screenshot`, `browser_console_messages`, `browser_network_requests`,
+    `browser_network_request`, `browser_find`): each can save its result to a file name the model
+    picks anywhere in the project, so a hostile page could get one to overwrite your config or a
+    script. Allow them yourself if you accept that, for example
+    `{ "action": "playwright_browser_snapshot", "resource": "*", "effect": "allow" }`.
+  - `browser_navigate`, `browser_evaluate`, `browser_run_code_unsafe` and `browser_file_upload` are
+    listed explicitly, so they still ask under a broader `allow` rule of your own placed before
+    them.
   - Rules match on `playwright_<tool>` (MCP tool permissions are `<server>_<tool>`).
 
 Running `kete mcp add playwright` again replaces these rules instead of adding copies, keeps any

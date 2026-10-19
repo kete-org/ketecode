@@ -72,19 +72,12 @@ export const slackWriteTools = [
   "slack_complete_file_upload",
 ] as const
 
-// Playwright's core tools (default capabilities) that its own docs mark read-only: they look at the
-// open page and don't navigate, type, run code or upload files. Everything else asks first; the ones
-// that reach a new site, run JavaScript or read local files are listed so they ask even under a broad
-// allow rule.
-export const playwrightReadTools = [
-  "browser_snapshot",
-  "browser_take_screenshot",
-  "browser_console_messages",
-  "browser_network_requests",
-  "browser_network_request",
-  "browser_find",
-  "browser_wait_for",
-] as const
+// Only `browser_wait_for` runs without asking. The other tools Playwright marks read-only (snapshot,
+// screenshot, console, network requests, find) take a `filename` and write it anywhere in the project,
+// e.g. a response body a hostile page chose over `.kete/kete.jsonc`, so they ask like everything else.
+// The tools that reach a new site, run JavaScript or read local files are listed so they ask even
+// under a broad allow rule.
+export const playwrightReadTools = ["browser_wait_for"] as const
 export const playwrightWriteTools = [
   "browser_navigate",
   "browser_evaluate",
@@ -122,7 +115,7 @@ export const catalogue: readonly Preset[] = [
   {
     name: "playwright",
     title: "Playwright",
-    description: `Drive a browser (Microsoft's server, ${playwrightPackage}@${playwrightVersion}); fresh profile each session, page reads allowed, the rest asks first`,
+    description: `Drive a browser (Microsoft's server, ${playwrightPackage}@${playwrightVersion}); fresh profile each session, every action asks first`,
     transport: "local",
     network: true,
     docs: "docs/integrations/playwright.md",
@@ -210,7 +203,7 @@ export function harness(options: HarnessOptions): Expansion {
 export function playwright(): Expansion {
   return {
     // --isolated keeps the browser profile in memory: no cookies or logins carry over between sessions.
-    // The server runs in the project directory, which also limits its file access to the project.
+    // No secret, so it runs in the project directory like any other server; its saved files land there.
     server: decodeServer({ type: "local", command: ["npx", "-y", `${playwrightPackage}@${playwrightVersion}`, "--isolated"] }),
     permissions: permissions("playwright"),
   }

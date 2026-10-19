@@ -120,11 +120,18 @@ describe("Playwright preset", () => {
     expect(decodeInfo(JSON.parse(JSON.stringify({ mcp: { servers: { playwright: server } }, permissions })))).toBeDefined()
   })
 
-  test("page reads are allowed; navigating, scripts, uploads, input and unknown tools ask", () => {
+  test("only waiting is allowed; tools that can save a file, navigate, run scripts or upload ask", () => {
     const { permissions } = KeteMcpPresets.playwright()
-    for (const tool of ["browser_snapshot", "browser_take_screenshot", "browser_console_messages", "browser_network_requests", "browser_wait_for"])
-      expect(effect(permissions, "playwright", tool)).toBe("allow")
+    // Every other tool Playwright marks read-only takes a `filename` it writes into the project.
+    expect(KeteMcpPresets.playwrightReadTools).toEqual(["browser_wait_for"])
+    expect(effect(permissions, "playwright", "browser_wait_for")).toBe("allow")
     for (const tool of [
+      "browser_snapshot",
+      "browser_take_screenshot",
+      "browser_console_messages",
+      "browser_network_requests",
+      "browser_network_request",
+      "browser_find",
       "browser_navigate",
       "browser_evaluate",
       "browser_run_code_unsafe",

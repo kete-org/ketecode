@@ -11,9 +11,9 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
   reasoning, no file contents). `/unshare` (or `kete unshare`) deletes it. You need `kete login`;
   `share: "disabled"` in config turns it off, and your organization can too. Details: `docs/sharing.md`.
 - **Browser automation preset:** `kete mcp add playwright` sets up Microsoft's Playwright MCP server
-  (pinned version, a fresh browser profile each session). Reading the open page runs without asking;
-  navigating, clicking, typing, running scripts and uploading files ask first. Details:
-  `docs/integrations/playwright.md`.
+  (pinned version, a fresh browser profile each session). Every browser action asks first, including
+  snapshots and screenshots, since they can save files into the project. Offline mode now also skips
+  any `@playwright/mcp` server you set up by hand. Details: `docs/integrations/playwright.md`.
 - **NVIDIA models through the Kete Gateway:** when your organization's gateway serves NVIDIA
   (build.nvidia.com), its models appear under the `kete` provider like the others.
 
