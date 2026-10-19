@@ -35,7 +35,16 @@
 ## Acceptance criteria
 - [x] AC1 to AC7: `core/test/kete/share-snapshot.test.ts`, `core/test/kete/share.test.ts`, `util/test/kete/share.test.ts`, `tui/test/kete/share.test.tsx`, `cli/test/kete/share.test.ts`, `kete-vscode/test/share.test.ts`.
 - [x] AC8: the checks above.
-- [ ] AC9, end to end against a local platform: waits for kete-org/ketecode-portal#86 to merge.
+- [x] AC9, end to end against a local platform: PASS, 2026-10-19.
+  - **Setup:** local Supabase and the portal from platform commit fcd1790. Runtime 92d8130596 run from source with an isolated HOME. A scripted fake OpenAI-compatible model through the vllm provider, so no paid model was used.
+  - **Login:** `kete login` completed the real PKCE exchange. No browser was available, so approval went through the same `create_cli_auth_code` RPC that the portal's Approve button calls.
+  - **Share:** the session had a write tool call, a shell tool call that echoed a fake `sk-test-…` key, and a hello.txt diff. `kete share <id> --yes` returned POST 201.
+  - **View:** the signed-in `/shares/<id>` page rendered the share. The DB snapshot recorded 2 redactions, and the key appeared in neither the page nor the DB.
+  - **Re-share:** after a new turn, re-sharing sent PUT to the same id and updated the snapshot.
+  - **Link share:** with org policy `link`, `/s/<token>` rendered for an anonymous viewer and a bad token gave 404. Before a `kete sync`, `--link` was refused with exit 2, which is the intended fail-closed behaviour.
+  - **Unshare:** `kete unshare` deleted both shares (204), removed the rows and cleared `kete.share` from the session metadata. The pages then returned not-found.
+  - **Not checked:** audit rows, the interactive preview, and a real browser.
+  - **Follow-up:** the shared redactor's `envSecretField` pattern (`util/src/kete/redact.ts:52`) runs to the end of the token. It cut the closing `"}` off a JSON tool input. That is over-redaction, not a leak.
 
 ## Review
 - **Code review:** approved. Two minor findings fixed:
