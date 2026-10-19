@@ -10,6 +10,8 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
   portal for your organization to read, after showing what will be sent (secrets masked, no
   reasoning, no file contents). `/unshare` (or `kete unshare`) deletes it. You need `kete login`;
   `share: "disabled"` in config turns it off, and your organization can too. Details: `docs/sharing.md`.
+- **NVIDIA models through the Kete Gateway:** when your organization's gateway serves NVIDIA
+  (build.nvidia.com), its models appear under the `kete` provider like the others.
 
 ## 0.2.7
 

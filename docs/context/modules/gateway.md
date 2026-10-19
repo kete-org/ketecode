@@ -46,7 +46,7 @@ Discovers which models a configured Kete Model Gateway allows (one native route 
   (`gateway.ts:105-136`) publishes one native per-provider route each, and the wire protocol is a
   property of the *route*, not something this file states directly: `/anthropic/v1` speaks Anthropic
   Messages; `/openai/v1` speaks OpenAI Responses (`…/responses`) or Chat Completions
-  (`…/chat/completions`) depending on path; `/compat/{deepseek,openrouter}/v1` speak OpenAI Chat
+  (`…/chat/completions`) depending on path; `/compat/{deepseek,openrouter,nvidia}/v1` speak OpenAI Chat
   Completions (with openrouter's own extras); `/gemini/v1beta` speaks Gemini's `generateContent`/
   `streamGenerateContent`. Transport is a separate axis from protocol: it comes from
   `provider.settings.transport` (`core/src/model-resolver.ts:392`), and only the `openai` provider
@@ -55,7 +55,7 @@ Discovers which models a configured Kete Model Gateway allows (one native route 
   explicit in code, for job mode's own request-conformance checks — see the `job-mode` card.
 
 ## Key files
-- `gateway.ts:105-136` `routes` — the gateway's four route prefixes (`/anthropic/v1`, `/openai/v1`, `/gemini/v1beta`, `/compat/{deepseek,openrouter}/v1`) mapped to catalog provider IDs, auth header shape, and response parser.
+- `gateway.ts:105-136` `routes` — the gateway's route prefixes (`/anthropic/v1`, `/openai/v1`, `/gemini/v1beta`, `/compat/{deepseek,openrouter,nvidia}/v1`) mapped to catalog provider IDs, auth header shape, and response parser.
 - `gateway.ts:232-269` `discover` — calls `GET <prefix>/models` per route (5s timeout, concurrency = route count); a route's failure keeps its last known models, only a total failure fails discovery.
 - `gateway.ts:271-302` `pricing` — `GET <platform>/api/v1/models`, mapped by `route.prefix + model_id`.
 - `gateway.ts:304-318` `me` — `GET <platform>/api/v1/me`, mapped to `{balance_micros, currency, organization}`.

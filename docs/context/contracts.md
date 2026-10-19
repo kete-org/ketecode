@@ -101,7 +101,7 @@ the same PR.
 - **Client:** `packages/core/src/kete/gateway.ts` — decision recorded in
   `docs/adr/0004-gateway-client.md`. Routes table (model-ID precedence order):
   `routes` (:97-128) — `/anthropic/v1`, `/openai/v1`, `/gemini/v1beta`,
-  `/compat/deepseek/v1`, `/compat/openrouter/v1`. Model discovery: `GET
+  `/compat/deepseek/v1`, `/compat/openrouter/v1`, `/compat/nvidia/v1`. Model discovery: `GET
   <prefix>/models` per route (:217-254, `discover`), allowlisted per provider — one
   route failing keeps its last known models (:215-216, :241-246). Auth headers per
   route: `auth` field of each `Route` (:47, e.g. `x-api-key` for Anthropic :101,
