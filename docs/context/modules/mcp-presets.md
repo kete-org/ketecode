@@ -6,6 +6,7 @@ verified-at: 8421b4e431
 ## Quick answers
 - What is a preset? A named template that expands to an ordinary upstream `mcp.servers` entry plus top-level `permissions` rules (`schema/src/kete/mcp-presets.ts:147` `harness`, `:185` `slack`). `kete mcp add <preset>` writes both into the same file upstream's `kete mcp add` writes; nothing about a preset exists at runtime.
 - Why is the catalogue in `@opencode/schema`, not core? The CLI doesn't depend on core, and both the CLI (writes the expansion) and core (offline skip) need it; schema also has the `Mcp.ServerConfig`/`Permission.Ruleset` schemas the expansion is validated with.
+- What does the Playwright preset write? `npx -y @playwright/mcp@<playwrightVersion> --isolated` (in-memory browser profile), no environment and no secret, so it runs in the project directory like any other server; only `browser_wait_for` allows (the page-reading tools take a `filename` that writes into the project, so they ask), `browser_navigate`/`browser_evaluate`/`browser_run_code_unsafe`/`browser_file_upload` and everything unlisted ask (`playwright()` in `mcp-presets.ts`, docs/integrations/playwright.md).
 - Which Harness version runs? An exact pin, `harnessVersion` (`mcp-presets.ts:26`), as `npx -y harness-mcp-v2@<pin>`; never `@latest`. Upgrading = change the pin, run the tests, re-run `kete mcp add harness` (docs/integrations/harness.md).
 - How are MCP tool permissions named? `<server>_<tool>` (`core/src/tool/mcp.ts:17`; `action` at `mcp-presets.ts:35` mirrors it). Harness tools already start with `harness_`, so rules read `harness_harness_create`. Rules: catch-all `<server>_*` ask, known reads allow, known writes ask (last match wins, `core/src/permission.ts:86`).
 - How does config refer to a stored secret? `{kete-secret:mcp:<server>}` as a whole `environment` value (`util/src/kete/mcp-secret.ts:38`). `core/src/mcp/client.ts:200-210` (marked) calls `KeteMcpSecrets.prepare` (`core/src/kete/mcp-secrets.ts:57`) before the spawn; only `mcp:` entries resolve, so config can't name the account key. Not `ConfigVariable` (`{env:}`/`{file:}`), which substitutes into the config the config API returns.
@@ -19,7 +20,7 @@ verified-at: 8421b4e431
 - What does offline mode do? `KeteOffline.skip` (`core/src/kete/offline.ts:94`) disables remote servers and any local server `KeteMcpPresets.detect` recognises, and the plugin logs `offlineMessage` once per distinct set. The CLI still writes config offline and says the server is skipped; Slack skips the sign-in.
 
 ## Purpose
-Built-in MCP presets for Harness and Slack (docs/tasks/2026-10-05-mcp-presets): one command connects a session to them, read-only or ask-first by default, with credentials in the OS secret store, never in config or logs.
+Built-in MCP presets for Harness, Slack and Playwright (docs/tasks/2026-10-05-mcp-presets; Playwright is parity-plan F1): one command connects a session to them, read-only or ask-first by default, with credentials in the OS secret store, never in config or logs.
 
 ## Entry points
 - `kete mcp add <name>` — upstream handler `cli/src/commands/handlers/mcp/add.ts:27-42` (marked) calls `KeteMcpPreset.route` (`cli/src/kete/mcp-preset.ts:90`) and, for a preset, `KeteMcpPreset.add` (`:111`) with `KeteMcpPresetIO.make` (`mcp-preset-io.ts:101`).
@@ -29,11 +30,11 @@ Built-in MCP presets for Harness and Slack (docs/tasks/2026-10-05-mcp-presets): 
 ## Key files
 | File | Role |
 | --- | --- |
-| `packages/schema/src/kete/mcp-presets.ts` | Catalogue, tool lists, `harness`/`slack` expansions (validated), `permissions`, `detect`, `offlineMessage`, `mergePermissions` |
+| `packages/schema/src/kete/mcp-presets.ts` | Catalogue, tool lists, `harness`/`slack`/`playwright` expansions (validated), `permissions`, `detect`, `offlineMessage`, `mergePermissions` |
 | `packages/util/src/kete/mcp-secret.ts` | `entry`/`reference`/`parse`, `stores`, `fingerprint`, `encode`/`decode`, `save` (bound to a definition), `read`, `resolve` (binding checks) |
 | `packages/util/src/kete/sync/integrations.ts` | `slackClientId(response)` — lenient reader of the sync response's `integrations` |
 | `packages/core/src/kete/mcp-secrets.ts` | `resolve` (Effect wrapper with the real stores), `prepare` (environment + isolated cwd for secret-using servers) |
-| `packages/cli/src/kete/mcp-preset.ts` | Flows over an injected `IO`: `route`, `add` (Harness/Slack), `edit` (JSONC write keeping comments), `list` |
+| `packages/cli/src/kete/mcp-preset.ts` | Flows over an injected `IO`: `route`, `add` (Harness/Slack/Playwright), `edit` (JSONC write keeping comments), `list` |
 | `packages/cli/src/kete/mcp-preset-io.ts` | Real IO: clack `password`, secret store, config/sync reads, sign-in (reload, OAuth connect, bounded poll) |
 
 ## Data flow
@@ -46,7 +47,7 @@ Built-in MCP presets for Harness and Slack (docs/tasks/2026-10-05-mcp-presets): 
 - Local server API via `@opencode/client`: `location.reload`, `mcp.list`, `integration.get`, `integration.oauth.connect/status`.
 
 ## Rules that must not break
-- Never write `@latest` or an unpinned Harness version.
+- Never write `@latest` or an unpinned Harness or Playwright version.
 - The Harness key never reaches config, stdout/stderr, logs or errors (`cli/test/kete/mcp-preset.test.ts` checks every output and file); errors name entries, never values.
 - Write/execute tools stay `ask` even with `--write`; unknown preset tools fall under the catch-all `ask`.
 - Preset flags on a non-preset `mcp add` are an error, never ignored (`route`).
@@ -65,6 +66,7 @@ Built-in MCP presets for Harness and Slack (docs/tasks/2026-10-05-mcp-presets): 
 
 ## Gotchas
 - `KeteSecretStore`'s Keychain label reads "Kete Code account key" and its file fallback is named `account-key-mcp_<server>` — shared module wording, not a different secret.
+- `detect` matches any local server running `@playwright/mcp`, so offline mode also skips one a user configured by hand.
 - Slack's tool names come from its published list and may change; anything unlisted asks.
 - Upstream's MCP OAuth listens on a random port unless `redirect_uri`/`callback_port` is set; the Slack preset pins `http://127.0.0.1:34561/callback` so the Slack app can list it.
 - `{env:HARNESS_API_KEY}` (non-TTY path) is substituted at config load, in any config file (a project's too, into any field), so it is visible to the config API like any `{env:}` value; the stored-secret path is not.

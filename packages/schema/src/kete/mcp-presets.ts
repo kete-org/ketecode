@@ -6,7 +6,7 @@
 // Lives in @opencode/schema so both the CLI (which writes the expansion) and core (offline mode's
 // skip) can use it; the CLI doesn't depend on core.
 //
-// Safety defaults (spec docs/tasks/2026-10-05-mcp-presets):
+// Safety defaults (spec docs/tasks/2026-10-05-mcp-presets; Playwright added for parity-plan F1):
 // - Harness runs an exact pinned version of the official npm package, never `@latest`, read-only
 //   unless `--write`. Its write and execute tools stay on `ask` even with `--write`.
 // - Every tool from a preset server asks first unless it is known to be read-only: the rules start
@@ -19,12 +19,16 @@ import { Schema } from "effect"
 import { Mcp } from "../mcp.js"
 import { Permission } from "../permission.js"
 
-export type Name = "harness" | "slack"
+export type Name = "harness" | "slack" | "playwright"
 
 /** The official Harness MCP server (MIT, github.com/harness/mcp-server). Upgrade by changing this pin. */
 export const harnessPackage = "harness-mcp-v2"
 export const harnessVersion = "3.2.32"
 export const harnessDefaultBaseUrl = "https://app.harness.io"
+
+/** Microsoft's Playwright MCP server (Apache-2.0, github.com/microsoft/playwright-mcp). Upgrade by changing this pin. */
+export const playwrightPackage = "@playwright/mcp"
+export const playwrightVersion = "0.0.83"
 
 /** Slack's official remote MCP server (OAuth v2 user flow, PKCE). */
 export const slackUrl = "https://mcp.slack.com/mcp"
@@ -68,6 +72,19 @@ export const slackWriteTools = [
   "slack_complete_file_upload",
 ] as const
 
+// Only `browser_wait_for` runs without asking. The other tools Playwright marks read-only (snapshot,
+// screenshot, console, network requests, find) take a `filename` and write it anywhere in the project,
+// e.g. a response body a hostile page chose over `.kete/kete.jsonc`, so they ask like everything else.
+// The tools that reach a new site, run JavaScript or read local files are listed so they ask even
+// under a broad allow rule.
+export const playwrightReadTools = ["browser_wait_for"] as const
+export const playwrightWriteTools = [
+  "browser_navigate",
+  "browser_evaluate",
+  "browser_run_code_unsafe",
+  "browser_file_upload",
+] as const
+
 export interface Preset {
   readonly name: Name
   readonly title: string
@@ -94,6 +111,14 @@ export const catalogue: readonly Preset[] = [
     transport: "remote",
     network: true,
     docs: "docs/integrations/slack.md",
+  },
+  {
+    name: "playwright",
+    title: "Playwright",
+    description: `Drive a browser (Microsoft's server, ${playwrightPackage}@${playwrightVersion}); fresh profile each session, every action asks first`,
+    transport: "local",
+    network: true,
+    docs: "docs/integrations/playwright.md",
   },
 ]
 
@@ -125,9 +150,9 @@ function rules(server: string, reads: readonly string[], writes: readonly string
 
 /** The preset's permission rules for a server named `server` (the preset's own name by default). */
 export function permissions(name: Name, server: string = name): Permission.Ruleset {
-  return name === "harness"
-    ? rules(server, harnessReadTools, harnessWriteTools)
-    : rules(server, slackReadTools, slackWriteTools)
+  if (name === "harness") return rules(server, harnessReadTools, harnessWriteTools)
+  if (name === "slack") return rules(server, slackReadTools, slackWriteTools)
+  return rules(server, playwrightReadTools, playwrightWriteTools)
 }
 
 const identifier = /^[A-Za-z0-9_-]{1,128}$/
@@ -175,6 +200,15 @@ export function harness(options: HarnessOptions): Expansion {
   }
 }
 
+export function playwright(): Expansion {
+  return {
+    // --isolated keeps the browser profile in memory: no cookies or logins carry over between sessions.
+    // No secret, so it runs in the project directory like any other server; its saved files land there.
+    server: decodeServer({ type: "local", command: ["npx", "-y", `${playwrightPackage}@${playwrightVersion}`, "--isolated"] }),
+    permissions: permissions("playwright"),
+  }
+}
+
 /** Slack app client IDs look like `1234567890.1234567890123`. */
 const clientIdPattern = /^[A-Za-z0-9._-]{1,128}$/
 
@@ -201,10 +235,10 @@ export function detect(server: {
   readonly command?: readonly string[]
   readonly url?: string
 }): Name | undefined {
-  if (server.type === "local" && server.command)
-    return server.command.some((part) => part === harnessPackage || part.startsWith(`${harnessPackage}@`))
-      ? "harness"
-      : undefined
+  if (server.type === "local" && server.command) {
+    const runs = (pkg: string) => server.command?.some((part) => part === pkg || part.startsWith(`${pkg}@`))
+    return runs(harnessPackage) ? "harness" : runs(playwrightPackage) ? "playwright" : undefined
+  }
   if (server.type === "remote" && server.url !== undefined && URL.canParse(server.url))
     return new URL(server.url).host === new URL(slackUrl).host ? "slack" : undefined
   return undefined

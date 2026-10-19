@@ -1,4 +1,4 @@
-// `kete mcp add harness|slack` and `kete mcp presets` (docs/integrations/). A preset expands to an
+// `kete mcp add harness|slack|playwright` and `kete mcp presets` (docs/integrations/). A preset expands to an
 // ordinary MCP server entry plus permission rules (@opencode/schema/kete/mcp-presets) and is written
 // into the same config file upstream's `kete mcp add` writes to. The flows run over an injected `IO`
 // so tests need no terminal, OS secret store or server.
@@ -106,10 +106,13 @@ export function route(name: string, hasServer: boolean, flags: readonly string[]
 const allowed: Record<KeteMcpPresets.Name, readonly string[]> = {
   harness: ["--write", "--org", "--project", "--base-url", "--new-key"],
   slack: ["--client-id"],
+  playwright: [],
 }
 
 export async function add(io: IO, input: Input): Promise<Exit> {
-  return input.name === "harness" ? addHarness(io, input) : addSlack(io, input)
+  if (input.name === "harness") return addHarness(io, input)
+  if (input.name === "slack") return addSlack(io, input)
+  return addPlaywright(io, input)
 }
 
 function offline(io: IO) {
@@ -199,6 +202,24 @@ async function addHarness(io: IO, input: Input): Promise<Exit> {
       : "Read-only: the server can't create, update, delete or execute anything. Add --write to allow it (each use still asks first).",
   )
   if (offline(io)) io.print(offlineNote("harness"))
+  return 0
+}
+
+async function addPlaywright(io: IO, input: Input): Promise<Exit> {
+  try {
+    await writeConfig(io, input.configPath, "playwright", KeteMcpPresets.playwright())
+  } catch (error) {
+    io.warn(message(error))
+    return 1
+  }
+  io.print(
+    `MCP server "playwright" added to ${input.configPath} (${KeteMcpPresets.playwrightPackage}@${KeteMcpPresets.playwrightVersion}).`,
+  )
+  io.print(
+    "Each session starts a browser with a fresh profile. Every browser action asks first (only waiting doesn't); allow the ones you trust with permission rules.",
+  )
+  io.print("It uses your installed Google Chrome; see docs/integrations/playwright.md for another browser or headless mode.")
+  if (offline(io)) io.print(offlineNote("playwright"))
   return 0
 }
 
