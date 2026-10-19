@@ -111,6 +111,34 @@ describe("Slack preset", () => {
   })
 })
 
+describe("Playwright preset", () => {
+  test("expands to a valid local server pinned to the exact package version, with an in-memory profile", () => {
+    const { server, permissions } = KeteMcpPresets.playwright()
+    expect(server).toEqual({ type: "local", command: ["npx", "-y", "@playwright/mcp@0.0.83", "--isolated"] })
+    expect(KeteMcpPresets.playwrightVersion).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(JSON.stringify(server)).not.toContain("latest")
+    expect(decodeInfo(JSON.parse(JSON.stringify({ mcp: { servers: { playwright: server } }, permissions })))).toBeDefined()
+  })
+
+  test("page reads are allowed; navigating, scripts, uploads, input and unknown tools ask", () => {
+    const { permissions } = KeteMcpPresets.playwright()
+    for (const tool of ["browser_snapshot", "browser_take_screenshot", "browser_console_messages", "browser_network_requests", "browser_wait_for"])
+      expect(effect(permissions, "playwright", tool)).toBe("allow")
+    for (const tool of [
+      "browser_navigate",
+      "browser_evaluate",
+      "browser_run_code_unsafe",
+      "browser_file_upload",
+      "browser_click",
+      "browser_type",
+      "browser_fill_form",
+      "browser_tabs",
+      "browser_cookie_set",
+    ])
+      expect(effect(permissions, "playwright", tool)).toBe("ask")
+  })
+})
+
 describe("mergePermissions", () => {
   test("re-adding replaces the preset's earlier rules and keeps the user's other rules in order", () => {
     const user = [
@@ -149,6 +177,9 @@ describe("detect", () => {
   test("recognises the presets by package and URL only", () => {
     expect(KeteMcpPresets.detect(KeteMcpPresets.harness({ apiKey: reference }).server)).toBe("harness")
     expect(KeteMcpPresets.detect(KeteMcpPresets.slack({ clientId: "1.2" }).server)).toBe("slack")
+    expect(KeteMcpPresets.detect(KeteMcpPresets.playwright().server)).toBe("playwright")
+    expect(KeteMcpPresets.detect({ type: "local", command: ["npx", "@playwright/mcp@1.0.0"] })).toBe("playwright")
+    expect(KeteMcpPresets.detect({ type: "local", command: ["npx", "-y", "@playwright/mcp-extra"] })).toBeUndefined()
     expect(KeteMcpPresets.detect({ type: "local", command: ["npx", "-y", "other-mcp"] })).toBeUndefined()
     expect(KeteMcpPresets.detect({ type: "remote", url: "https://mcp.example.com" })).toBeUndefined()
   })
@@ -258,6 +289,7 @@ describe("offline mode (AC4)", () => {
       servers: {
         harness: KeteMcpPresets.harness({ apiKey: reference }).server as never,
         slack: KeteMcpPresets.slack({ clientId: "1.2" }).server as never,
+        playwright: KeteMcpPresets.playwright().server as never,
         stdio: { type: "local", command: ["server"] } as never,
       },
     })
@@ -274,11 +306,12 @@ describe("offline mode (AC4)", () => {
     )
   }
 
-  test("skips both presets; other stdio servers keep working", async () => {
+  test("skips the presets; other stdio servers keep working", async () => {
     process.env.OPENCODE_OFFLINE = "1"
     const mcp = await start()
     expect(mcp.servers.get("harness")).toMatchObject({ disabled: true })
     expect(mcp.servers.get("slack")).toMatchObject({ disabled: true })
+    expect(mcp.servers.get("playwright")).toMatchObject({ disabled: true })
     expect(mcp.servers.get("stdio")?.disabled).not.toBe(true)
   })
 

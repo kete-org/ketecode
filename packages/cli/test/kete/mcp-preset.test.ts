@@ -305,6 +305,30 @@ describe("kete mcp add slack", () => {
   })
 })
 
+describe("kete mcp add playwright", () => {
+  test("writes the pinned server and its rules; no prompt, no secret", async () => {
+    const world = fake()
+    expect(await KeteMcpPreset.add(world.io, input("playwright"))).toBe(0)
+    expect(world.config().mcp.servers.playwright).toEqual(JSON.parse(JSON.stringify(KeteMcpPresets.playwright().server)))
+    expect(world.config().permissions).toEqual(JSON.parse(JSON.stringify(KeteMcpPresets.playwright().permissions)))
+    expect(world.prompts).toHaveLength(0)
+    expect(world.secrets.size).toBe(0)
+    expect(world.out.join("\n")).toContain("@playwright/mcp@0.0.83")
+  })
+
+  test("an unreadable config is refused and left alone", async () => {
+    const world = fake({ files: { [CONFIG]: "{ not json" } })
+    expect(await KeteMcpPreset.add(world.io, input("playwright"))).toBe(1)
+    expect(world.files.get(CONFIG)).toBe("{ not json")
+  })
+
+  test("offline: configured, with a note that it's skipped", async () => {
+    const world = fake({ environment: { OPENCODE_OFFLINE: "1" } })
+    expect(await KeteMcpPreset.add(world.io, input("playwright"))).toBe(0)
+    expect(world.out.join("\n")).toContain("Offline mode is on: the playwright server is skipped")
+  })
+})
+
 describe("routing kete mcp add", () => {
   test("a preset name without --url or a command is the preset", () => {
     expect(KeteMcpPreset.route("harness", false, [])).toEqual({ kind: "preset", name: "harness" })
@@ -318,23 +342,25 @@ describe("routing kete mcp add", () => {
     expect(KeteMcpPreset.route("mine", true, ["--write"]).kind).toBe("error")
     expect(KeteMcpPreset.route("slack", false, ["--write"]).kind).toBe("error")
     expect(KeteMcpPreset.route("harness", false, ["--client-id"]).kind).toBe("error")
+    expect(KeteMcpPreset.route("playwright", false, ["--write"]).kind).toBe("error")
   })
 })
 
 describe("kete mcp presets", () => {
-  test("lists both presets with the pinned version", () => {
+  test("lists the presets with their pinned versions", () => {
     const out: string[] = []
     KeteMcpPreset.list({ print: (line) => out.push(line), environment: {} })
     const text = out.join("\n")
     expect(text).toContain("harness")
     expect(text).toContain("harness-mcp-v2@3.2.32")
     expect(text).toContain("slack")
+    expect(text).toContain("@playwright/mcp@0.0.83")
     expect(text).not.toContain("offline")
   })
   test("offline marks them skipped", () => {
     const out: string[] = []
     KeteMcpPreset.list({ print: (line) => out.push(line), environment: { OPENCODE_OFFLINE: "1" } })
-    expect(out.filter((line) => line.includes("[skipped: offline mode]"))).toHaveLength(2)
+    expect(out.filter((line) => line.includes("[skipped: offline mode]"))).toHaveLength(3)
   })
 })
 

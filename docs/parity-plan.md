@@ -99,7 +99,7 @@ Goal: lead on context efficiency and safe autonomy, the any-model advantage.
 ### Milestone F — Reach (Wave 4)
 | # | Item | Source | Status | Size |
 |---|---|---|---|---|
-| F1 | Browser automation preset (Playwright MCP) | Claude Code | planned (4) | S |
+| F1 | Browser automation preset (Playwright MCP) | Claude Code | done (`kete mcp add playwright`) | S |
 | F2 | IDE pre-apply diff review everywhere; JetBrains Marketplace listing | Claude Code | planned (4) | M |
 | F3 | Desktop app | Claude Code | planned (4, later) | L |
 | F4 | **Jupyter notebook editing tool** | Claude Code | *new* | S |
