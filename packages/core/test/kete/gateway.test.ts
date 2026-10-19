@@ -232,6 +232,10 @@ describe("KeteGateway", () => {
             headers: { "x-api-key": null, authorization: null, "x-goog-api-key": key },
           })
           expect(requests.map((request) => request.path)).toContain("/compat/deepseek/v1/models")
+          expect(requests).toContainEqual({
+            path: "/compat/nvidia/v1/models",
+            headers: { "x-api-key": null, authorization: `Bearer ${key}`, "x-goog-api-key": null },
+          })
         }),
       ({ server }) => Effect.promise(() => server.stop(true)),
     ),

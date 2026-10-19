@@ -130,7 +130,7 @@ export const routes: Route[] = [
         context: item.inputTokenLimit,
       })),
   },
-  ...(["deepseek", "openrouter"] as const).map((id) => ({
+  ...(["deepseek", "openrouter", "nvidia"] as const).map((id) => ({
     prefix: `/compat/${id}/v1`,
     catalog: Provider.ID.make(id),
     auth: (key: string) => ({ authorization: `Bearer ${key}` }),
