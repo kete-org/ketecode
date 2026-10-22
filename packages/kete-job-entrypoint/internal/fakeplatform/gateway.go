@@ -90,7 +90,8 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		s.record(kind, []byte(r.URL.Path), 200)
 		s.mu.Unlock()
 		writeJSON(w, 200, map[string]any{"data": []map[string]string{{"id": Model, "display_name": "Claude Haiku 4.5"}}})
-	case r.Method == http.MethodGet && (r.URL.Path == "/openai/v1/models" || r.URL.Path == "/compat/deepseek/v1/models" || r.URL.Path == "/compat/openrouter/v1/models"):
+	// Any /compat/<id>/v1/models: kete discovers every compat route it knows, and the list grows (nvidia, byteplus).
+	case r.Method == http.MethodGet && (r.URL.Path == "/openai/v1/models" || strings.HasPrefix(r.URL.Path, "/compat/") && strings.HasSuffix(r.URL.Path, "/v1/models")):
 		s.record(kind, []byte(r.URL.Path), 200)
 		s.mu.Unlock()
 		writeJSON(w, 200, map[string]any{"object": "list", "data": []any{}})
