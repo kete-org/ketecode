@@ -41,6 +41,7 @@ function platform() {
     skills: [] as ReturnType<typeof skill>[],
     contents: new Map<string, File[]>(),
     fileRequests: [] as string[],
+    fileProviders: [] as Array<string | null>,
     tamper: false,
     etag: 1,
   }
@@ -52,6 +53,7 @@ function platform() {
       const match = /^\/api\/v1\/sync\/skills\/([^/]+)\/files$/.exec(url.pathname)
       if (match) {
         state.fileRequests.push(match[1]!)
+        state.fileProviders.push(request.headers.get("x-kete-sync-providers"))
         const found = state.skills.find((item) => item.id === match[1])
         const files = state.contents.get(found?.slug ?? "") ?? []
         return Response.json({
@@ -136,6 +138,7 @@ describe("managed skills on disk", () => {
     if (process.platform !== "win32")
       expect((await stat(path.join(folder, "scripts", "bump.sh"))).mode & 0o111).toBe(0)
     expect([...(await KeteSyncSkills.present(options.config, org))]).toEqual(["release"])
+    expect(fake.state.fileProviders).toEqual(["byteplus"])
     // Nothing is left behind from staging.
     expect((await readdir(path.dirname(folder))).toSorted()).toEqual(["release"])
   })

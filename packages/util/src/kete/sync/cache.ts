@@ -14,8 +14,9 @@ export const Cached = Schema.Struct({
   // 1: the format before `delegable` (sync v1's "all" mapping, ADR 0017). A cached copy at 1 is
   // still read (it decodes the same way), but ./sync.ts never sends its ETag, so the next sync
   // fetches a fresh 200 rather than getting 304 for a delegable flag it stripped before it existed.
-  // 2: before `share` (session sharing): the same reasoning, so ./sync.ts only resends a version-3 ETag.
-  version: Schema.Literals([1, 2, 3]),
+  // 2: before `share` (session sharing): the same reasoning.
+  // 3: before BytePlus agents (x-kete-sync-providers): the same reasoning, so ./sync.ts only resends a version-4 ETag.
+  version: Schema.Literals([1, 2, 3, 4]),
   /** The response's ETag, sent back as If-None-Match. */
   etag: Schema.String,
   /** When this copy was fetched (ISO 8601). */

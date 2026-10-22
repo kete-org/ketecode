@@ -2,6 +2,7 @@ import { Config } from "@opencode/core/config"
 import { Integration } from "@opencode/core/integration"
 import { KeteGateway } from "@opencode/core/kete/gateway"
 import { Model } from "@opencode/core/model"
+import { ModelResolver } from "@opencode/core/model-resolver"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { Provider } from "@opencode/core/provider"
@@ -91,7 +92,7 @@ const seedCatalog = Effect.fn(function* () {
   })
 })
 
-function gateway(platform: "prices" | "down" = "prices") {
+function gateway(platform: "prices" | "down" = "prices", byteplus?: string[]) {
   const requests: Array<{ path: string; headers: Record<string, string | null> }> = []
   const server = Bun.serve({
     port: 0,
@@ -108,6 +109,8 @@ function gateway(platform: "prices" | "down" = "prices") {
       if (path === "/anthropic/v1/models")
         return Response.json({ data: [{ id: "claude-sonnet-4-5", display_name: "Claude Sonnet 4.5 (Kete)" }] })
       if (path === "/openai/v1/models") return Response.json({ object: "list", data: [{ id: "gpt-4.1" }] })
+      if (path === "/compat/byteplus/v1/models" && byteplus)
+        return Response.json({ object: "list", data: byteplus.map((id) => ({ id })) })
       if (path === "/api/v1/me")
         return platform === "down"
           ? Response.json({ error: { code: "internal" } }, { status: 500 })
@@ -236,6 +239,52 @@ describe("KeteGateway", () => {
             path: "/compat/nvidia/v1/models",
             headers: { "x-api-key": null, authorization: `Bearer ${key}`, "x-goog-api-key": null },
           })
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("byteplus: models listed on /compat/byteplus/v1 get its baseURL and the OpenAI-compatible package", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => gateway("prices", ["glm-5-2-260617"])),
+      ({ requests, server }) =>
+        Effect.gen(function* () {
+          const models = yield* Model.Service
+          const config = yield* Config.Test
+          yield* seedCatalog()
+          yield* config.setEntries([settings({ baseURL: server.url.origin, apiKey: key })])
+          yield* addPlugin()
+          const glm = yield* eventually(
+            models.get(KeteGateway.providerID, Model.ID.make("glm-5-2-260617")),
+            (model) => model !== undefined,
+          )
+          expect(glm?.settings?.baseURL).toBe(`${server.url.origin}/compat/byteplus/v1`)
+          // The model service rewrites @ai-sdk/openai-compatible to its native provider (aisdk-native.ts).
+          expect(glm?.package).toContain("openai-compatible")
+          // No catalog entry for byteplus: without the fallback package the resolver would skip it.
+          expect(ModelResolver.hasPackage(glm!)).toBe(true)
+          expect(requests).toContainEqual({
+            path: "/compat/byteplus/v1/models",
+            headers: { "x-api-key": null, authorization: `Bearer ${key}`, "x-goog-api-key": null },
+          })
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("byteplus: a 404 on its route offers no byteplus models", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => gateway("prices")),
+      ({ requests, server }) =>
+        Effect.gen(function* () {
+          const models = yield* Model.Service
+          const config = yield* Config.Test
+          yield* seedCatalog()
+          yield* config.setEntries([settings({ baseURL: server.url.origin, apiKey: key })])
+          yield* addPlugin()
+          yield* eventually(models.get(KeteGateway.providerID, Model.ID.make("gpt-4.1")), (model) => model !== undefined)
+          expect(requests.map((request) => request.path)).toContain("/compat/byteplus/v1/models")
+          expect(yield* models.get(KeteGateway.providerID, Model.ID.make("glm-5-2-260617"))).toBeUndefined()
         }),
       ({ server }) => Effect.promise(() => server.stop(true)),
     ),

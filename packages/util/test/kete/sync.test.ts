@@ -10,14 +10,14 @@ import { KeteSync } from "../../src/kete/sync/sync.js"
 const key = "kete_test_SYNC0123456789abcdef"
 const org = "573b7e15-80c5-4db4-9e43-a8841b97f055"
 
-const agent = (slug: string, version = 1, overrides: { delegable?: boolean } = {}) => ({
+const agent = (slug: string, version = 1, overrides: { delegable?: boolean; model?: { provider: string; model_id: string } } = {}) => ({
   id: `3f1c2b7e-8a4d-4c1e-9b2f-5d6e7a8b9c${String(slug.length).padStart(2, "0")}`,
   slug,
   version,
   name: slug,
   description: `The ${slug} agent.`,
   mode: "primary" as const,
-  model: { provider: "anthropic" as const, model_id: "claude-sonnet-4-5" },
+  model: { provider: "anthropic", model_id: "claude-sonnet-4-5" },
   instructions: `You are ${slug}.`,
   tools: { edit: true, shell: false, web: false, skills: [], subagents: [], mcp: {} },
   permissions: [
@@ -39,11 +39,13 @@ afterEach(async () => {
 
 function platform(replies: Reply[]) {
   const seen: Array<{ authorization: string | null; ifNoneMatch: string | null }> = []
+  const providers: Array<string | null> = []
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch: (request) => {
       seen.push({ authorization: request.headers.get("authorization"), ifNoneMatch: request.headers.get("if-none-match") })
+      providers.push(request.headers.get("x-kete-sync-providers"))
       const reply = replies[Math.min(seen.length - 1, replies.length - 1)]!
       const headers: Record<string, string> = { "x-kete-request-id": `req-${seen.length}` }
       if (reply.etag) headers.etag = reply.etag
@@ -52,7 +54,7 @@ function platform(replies: Reply[]) {
     },
   })
   cleanup.push(() => server.stop(true))
-  return { url: `http://127.0.0.1:${server.port}`, seen, stop: () => server.stop(true) }
+  return { url: `http://127.0.0.1:${server.port}`, seen, providers, stop: () => server.stop(true) }
 }
 
 const ok = (etag: string, agents: unknown[]): Reply => ({
@@ -194,7 +196,27 @@ describe("KeteSync", () => {
     expect(rejectingOutcome.kind === "failed" && rejectingOutcome.error.message).toContain("unexpected sync response")
   })
 
-  test.each([1, 2] as const)("a version-%i cache is used but refetched without If-None-Match; the new copy is version 3", async (old) => {
+  test("x-kete-sync-providers: every sync request declares byteplus", async () => {
+    const fake = platform([ok('"e1"', [agent("developer")]), { status: 304, etag: '"e1"' }])
+    const options = await home(fake.url)
+    await KeteSync.sync(options)
+    await KeteSync.sync(options)
+    expect(fake.providers).toEqual(["byteplus", "byteplus"])
+  })
+
+  test("byteplus: an agent on a byteplus model decodes and is cached; an unknown provider is still rejected", async () => {
+    const model = { provider: "byteplus" as const, model_id: "glm-5-2-260617" }
+    const fake = platform([ok('"e1"', [agent("developer", 1, { model })])])
+    const options = await home(fake.url)
+    expect((await KeteSync.sync(options)).kind).toBe("updated")
+    expect((await KeteSync.load(options))?.cached.response.agents[0]?.model).toEqual(model)
+
+    const rejecting = platform([ok('"e2"', [agent("developer", 1, { model: { provider: "foo", model_id: "x" } })])])
+    const outcome = await KeteSync.sync(await home(rejecting.url))
+    expect(outcome.kind === "failed" && outcome.error.message).toContain("unexpected sync response")
+  })
+
+  test.each([1, 2, 3] as const)("a version-%i cache is used but refetched without If-None-Match; the new copy is version 4", async (old) => {
     const fake = platform([ok('"e2"', [agent("developer", 2)])])
     const options = await home(fake.url)
     const legacy: KeteSyncCache.Cached = {
@@ -214,7 +236,8 @@ describe("KeteSync", () => {
     expect(outcome.kind).toBe("updated")
     expect(fake.seen).toEqual([{ authorization: `Bearer ${key}`, ifNoneMatch: null }])
     const after = await KeteSync.load(options)
-    expect(after?.cached.version).toBe(3)
+    expect(after?.cached.version).toBe(4)
+    expect(after?.cached.etag).toBe('"e2"')
   })
 })
 

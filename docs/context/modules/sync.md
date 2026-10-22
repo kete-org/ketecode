@@ -1,14 +1,18 @@
 ---
 module: sync
 paths: [packages/util/src/kete/sync/**, packages/core/src/kete/sync/**, packages/cli/src/kete/sync.ts, packages/schema/src/kete/sync.ts]
-verified-at: 063cfce610
+verified-at: 0ee47ec668
 ---
 ## Quick answers
-- Does the sync response carry a sharing policy? Optionally `share: { mode: "disabled"|"org"|"link", max_days }` (`util/src/kete/sync/contract.ts:149`); absent means org, 30 days (`KeteShareClient.policy`, `util/src/kete/share.ts:63`). The cache is now version 3 and an ETag is resent only from a v3 cache, so a pre-`share` copy is refetched (`sync/cache.ts:17-18`, `sync/sync.ts:101`). See card `session-share`.
+- Where is the sync contract, and what does an unknown model provider do? `util/src/kete/sync/contract.ts` (`SyncResponse` `:137`, mirrors the platform's `packages/shared/src/api/v1/sync.ts`). `ProviderId` (`:36`) is a strict `Schema.Literals` enum (`anthropic`, `openai`, `gemini`, `deepseek`, `openrouter`, `byteplus`; no `nvidia`; a comment at `:36` pairs any extra id with `providersHeader` in `client.ts:22`) used by `SyncedAgent.model.provider` (`:48`), so one agent with any other provider fails the whole decode: the client throws `SyncError` `invalid_response` ("unexpected sync response", `client.ts:57-59`) and nothing from that response (agents, skills, MCP, policies) is applied; the last cache stays in use. A cache file holding such a provider fails `KeteSyncCache.read` ("not a valid managed-agent cache", `cache.ts:54`): `load()` reports it, `sync()` treats it as absent and refetches (`sync.ts:70-72`).
+- Which cache format version is current, and where is it checked? Version 4 (`cache.ts:19` accepts 1-4; 2 predates `share`, 1 predates `delegable`, 3 predates BytePlus agents). Every write is at 4 (`sync.ts:121`), and the ETag is resent only when `cached?.version === 4` (`sync.ts:103`), so an older copy is refetched with a 200 instead of risking a 304.
+- Which headers does the sync client send? `authorization: Bearer <key>`, `accept: application/json`, `x-kete-sync-providers: byteplus` (`providersHeader`, `client.ts:22,39`; opt-in so the platform includes BytePlus agents), and `if-none-match` when there is a v4 cached ETag; `redirect: "error"`, 15 s timeout. It reads `etag` and `x-kete-request-id` from the response. Skill file downloads send `authorization`/`accept` plus the same `providersHeader` (`skills.ts:179`, via `KeteSyncClient.providersHeader`).
+- How do I test a managed agent on a given provider, and what does `apply()` do with `model.provider`? Fixture `managed(slug, overrides)` (`core/test/kete/agent-sync.test.ts:35`); pass `{ model: { provider, model_id } }` and assert `developer?.model` `toMatchObject({ providerID: "kete", id })` (BytePlus example `:224-235`). `apply()` ignores `model.provider` entirely and always maps to `kete/<model_id>` (`core/src/kete/sync/plugin.ts:503`).
+- Does the sync response carry a sharing policy? Optionally `share: { mode: "disabled"|"org"|"link", max_days }` (`util/src/kete/sync/contract.ts:149`); absent means org, 30 days (`KeteShareClient.policy`, `util/src/kete/share.ts:63`). The cache is now version 4 and an ETag is resent only from a v4 cache, so a pre-`share` copy is refetched (`sync/cache.ts:19`, `sync/sync.ts:103`). See card `session-share`.
 - How are policy rules for non-permission actions evaluated (e.g. `skill.install`)? `KeteSyncPolicy.evaluate` against the cached policies (`cli/src/kete/skill-flow.ts:132-145`).
 - How are synced skills marked on disk? Each lives in `managed/<org>/skills/<slug>/` with a manifest `.kete-skill.json` (`util/src/kete/sync/skills.ts:19`: id, version, per-file SHA-256); `present(config, organization)` (`:92`) lists only slugs that have a manifest and no `.tmp-`/`.old-` name, so half-written skills are ignored and stale ones are removed.
 - How does a client learn whether managed agents exist? Plugin RPC `kete.sync` method `status` (`schema/src/kete/sync.ts` `KeteSyncRpc.Definition`; registered at `core/src/kete/sync/plugin.ts:222-232`, served by the existing `POST /api/rpc/:rpcID/:method`) returns `{ signedIn, managedAgents, offline }` and nothing else (no org or agent names). `managedAgents` is `state.cached.response.agents.length`: the agents in the loaded sync cache, 0 when none is cached. `signedIn` is read fresh from the account file on every call (`readAccount`; no OS key store) because a running server keeps `state.cached` after `kete logout` (a signed-out sync leaves it alone; `state.account` only changes on the next tick, which offline mode skips), so clients must require `signedIn && !offline && managedAgents > 0` (the TUI home portal notice does, `tui/src/kete/home-notices.tsx:56`). Managed agents themselves also keep applying after logout until restart (existing behaviour).
-- Can a client tell managed agents apart on `Agent.Info`? Only by the description suffix "Managed by <org>" (`plugin.ts:499-500`); there is no flag, so use the `status` RPC's count instead.
+- Can a client tell managed agents apart on `Agent.Info`? Only by the description suffix "Managed by <org>" (`plugin.ts:497-500`); there is no flag, so use the `status` RPC's count instead.
 - Testing the sync plugin: it now registers an RPC, so any test building it through `core/test/plugin/host.ts` must pass `rpc: rpc().host` (`core/test/kete/sync-fixture.ts:78` `rpc()`); the default test host dies on `rpc.register`.
 - Does the sync response carry integration settings? Optionally: `integrations` (`util/src/kete/sync/contract.ts:148`, `Schema.Unknown` so an unknown shape never fails a sync), being added by the platform's Slack task; `util/src/kete/sync/integrations.ts` `slackClientId` reads `integrations.slack.client_id` for `kete mcp add slack`. Not yet in docs/platform/sync-v1.md.
 - What does sync do offline? `core/src/kete/sync/plugin.ts:147` `offline()` = `KeteOffline.active` (env flag or `kete.offline` as loaded now), re-checked on every tick: the cached copy (and its policies and fail-closed guard) is always loaded; the periodic and on-demand sync go through `whenOnline` (skipped while offline, logged once) and each registration tick returns early (`:448`). Turning `kete.offline` on in config pauses both from the next tick; off resumes them. `kete sync` is refused offline (exit 2) except `--status`/`--approve` (`cli/src/kete/sync.ts`).
@@ -42,9 +46,9 @@ Brings an organization's platform-managed agents, skills, MCP servers and polici
 
 ## Key files
 - `util/src/kete/sync/contract.ts` — the v1 response schema (agents, skills, mcp_servers, policies), kept identical to the platform's `packages/shared/src/api/v1/sync.ts` (docs/platform/sync-v1.md).
-- `util/src/kete/sync/client.ts:23-63` `fetchAgents()` — `GET /api/v1/sync` with `If-None-Match`; maps 401/429/5xx/other to a typed `SyncError`.
-- `util/src/kete/sync/cache.ts:13-24` `Cached` schema, `version: 1 | 2` (2 adds `delegable`); `:52-61` atomic write, `:70-76` Windows rename retry (EPERM/EBUSY/EACCES).
-- `util/src/kete/sync/sync.ts:88-130` `attempt()` — a version-1 cache's ETag is never resent (would risk a 304 missing `delegable` forever); every new write is at version 2 (`sync.ts:55-58,76`).
+- `util/src/kete/sync/client.ts:23-72` `fetchAgents()` — `GET /api/v1/sync` with `If-None-Match`; maps 401/429/5xx/other to a typed `SyncError`.
+- `util/src/kete/sync/cache.ts:13-25` `Cached` schema, `version: 1 | 2 | 3 | 4` (2 adds `delegable`, 3 adds `share`, 4 adds BytePlus agents); `:58-67` atomic write, `:74-82` Windows rename retry (EPERM/EBUSY/EACCES).
+- `util/src/kete/sync/sync.ts:88-130` `attempt()` — only a version-4 cache's ETag is resent (`:103`; an older one would risk a 304 missing `delegable`, `share` or BytePlus agents forever); every new write is at version 4 (`:121`).
 - `util/src/kete/sync/policy.ts:37-59` `evaluate()` — pure: within a policy `deny`/`ask` accumulate, a matching `allow` clears prior matches; across policies the most restrictive result wins; only `enforced` policies decide, `audit_only` ones are reported as "would".
 - `util/src/kete/sync/approvals.ts:32-38` `approve()` / `:28-30` `approved()` — SHA-256 of the exact approved stdio command, per server key, in `<org>/approved.json`.
 - `util/src/kete/sync/mcp-status.ts:19-45` `status()` — what a synced MCP server needs (`approval`/`oauth`/`credential`/`invalid`) before it can run; `:57-89` `split()` shell-like command splitting without a shell.
@@ -70,8 +74,8 @@ Server start (or `kete sync`, or right after `kete login`) → `KeteSync.load()`
 - Fail closed while signed in without loaded policies: `edit`/`shell`/`webfetch` ask first (`plugin.ts:118,353-360`).
 - A stdio MCP server never runs until its exact command is approved, and a changed command needs approval again (`mcp-status.ts:26-33`, `approvals.ts`).
 - No secret is ever synced: OAuth servers sign in via `kete mcp auth <key>`; `api_key`/`service_account` servers stay disabled until the contract defines delivery (`mcp-status.ts:47-49`).
-- A version-1 cache's ETag must never be resent after the `delegable` field existed, to avoid a 304 that permanently drops it (`sync.ts:55-58`).
-- Offline or on any sync error, the last cached copy stays in use; the cache is never deleted on error (`sync.ts:43-45`, `plugin.ts:431-434`).
+- A cache older than the current format (now 4) must never have its ETag resent, to avoid a 304 that permanently drops a newer field (`sync.ts:99-103`); bump the version on any response-schema addition the runtime relies on.
+- Offline or on any sync error, the last cached copy stays in use; the cache is never deleted on error (`sync.ts:41-42,72-74`, `plugin.ts:431-434`).
 
 ## Testing
 - Core (plugin, agent mapping, gateway errors, policy enforcement): `bun run test ./test/kete/agent-sync.test.ts`, `./test/kete/policy-sync.test.ts`, `./test/kete/skill-mcp-sync.test.ts` inside `packages/core/` (isolates HOME/XDG — CLAUDE.md §8).
@@ -83,9 +87,10 @@ Server start (or `kete sync`, or right after `kete login`) → `KeteSync.load()`
 - docs/upstream-patches.md "Gateway agent errors" (feature/agent-request-tagging) — `http.response`/`retry` hooks, no upstream edits.
 - docs/upstream-patches.md "Skills and MCP servers" (feature/skill-mcp-sync) — `util/src/kete/sync/skills.ts`, `core/src/kete/sync/mcp.ts`, `util/src/kete/sync/mcp-status.ts`, `approvals.ts`.
 - docs/platform/requests/agent-mode-all.md — `delegable` field and the `mode: "all"` mapping (cache format version 2); ADR 0017 is on the platform side.
+- Session sharing (#56): optional `share` in `SyncResponse` (`contract.ts:149-155`), cache format version 3; BytePlus agents (`byteplus` in `ProviderId`, `x-kete-sync-providers`): cache version 4.
 
 ## Gotchas
-- `cache.ts:14-16` comment explains exactly why the ETag isn't resent for a v1 cache — re-verify this on any cache schema change.
+- `cache.ts:14-18` comment explains exactly why the ETag isn't resent for a v1-v3 cache — re-verify this on any cache schema change.
 - `plugin.ts:337` only the three "stale" codes trigger a resync; the budget code does not (an over-budget agent isn't fixed by syncing).
 - `account-flow.ts` (see the `account-login` card) also contains `sync()`/`syncStatus()`/`approve()` — the actual `AccountFlow` orchestration for `kete sync` lives there, not in `cli/src/kete/sync.ts`, which is only the command wiring.
 - `mcp.ts:2-3` — the runtime's MCP client speaks Streamable HTTP only, so a synced `sse` server is registered anyway but with a warning note.

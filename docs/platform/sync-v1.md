@@ -19,6 +19,12 @@ If-None-Match: "k7Hq2y1ZfV0mYc8Q3xRtVb6sPpLwN9aE4uJ5dGhT0oI"
   `/api/v1/me`: missing, malformed, unknown, revoked or expired keys get
   `401 invalid_key`.
 - `If-None-Match` (optional): the `ETag` from the last `200`.
+- `x-kete-sync-providers` (optional): comma-separated provider ids the runtime can run beyond
+  the default five (`anthropic`, `openai`, `gemini`, `deepseek`, `openrouter`), for example
+  `byteplus`. Agents whose model is on any other non-default provider are left out, so a
+  runtime that doesn't send it never receives a provider it can't decode. Unknown ids are
+  ignored; a value over 256 characters is ignored whole. Send it on the skill-files requests
+  too.
 
 ## Responses
 
@@ -149,6 +155,25 @@ export const AgentTools = z.object({
 })
 export type AgentTools = z.infer<typeof AgentTools>
 
+/**
+ * The providers every runtime can run, always sent. Released runtimes decode the model's provider
+ * strictly, so an agent on any other provider is synced only to a runtime that declares it in
+ * `SYNC_PROVIDERS_HEADER`. The cloud providers (ADR 0030) are never synced.
+ */
+export const SyncProviderId = z.enum(['anthropic', 'openai', 'gemini', 'deepseek', 'openrouter'])
+export type SyncProviderId = z.infer<typeof SyncProviderId>
+
+/**
+ * Request header: comma-separated provider ids (beyond `SyncProviderId`) the runtime can run, for
+ * example `byteplus`. Agents whose model is on another non-default provider are left out of the
+ * response. Unknown ids are ignored; a value over 256 characters is ignored whole.
+ */
+export const SYNC_PROVIDERS_HEADER = 'x-kete-sync-providers'
+
+/** Every provider a synced agent's model may name: `SyncProviderId` plus the opt-in key providers. */
+export const SyncModelProviderId = z.enum(['anthropic', 'openai', 'gemini', 'deepseek', 'openrouter', 'nvidia', 'byteplus'])
+export type SyncModelProviderId = z.infer<typeof SyncModelProviderId>
+
 export const SyncedAgent = z.object({
   id: z.guid(),
   slug: AgentSlug,
@@ -165,7 +190,7 @@ export const SyncedAgent = z.object({
    */
   delegable: z.boolean().optional(),
   /** The concrete model, resolved from the agent's tier or override. */
-  model: z.object({ provider: ProviderId, model_id: z.string().min(1).max(200) }),
+  model: z.object({ provider: SyncModelProviderId, model_id: z.string().min(1).max(200) }),
   /** Markdown; the agent's system prompt. */
   instructions: z.string().max(20000),
   tools: AgentTools,
@@ -326,7 +351,8 @@ export const SkillFilesResponse = z.object({
 export type SkillFilesResponse = z.infer<typeof SkillFilesResponse>
 ```
 
-`ProviderId` is `z.enum(['anthropic', 'openai', 'gemini', 'deepseek', 'openrouter'])`.
+`SyncModelProviderId` is `SyncProviderId` plus the opt-in providers (`nvidia`, `byteplus`). This
+runtime declares `byteplus` (`packages/util/src/kete/sync/client.ts`, `providersHeader`).
 The error body:
 
 ```ts

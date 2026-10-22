@@ -176,7 +176,7 @@ async function fetchFiles(input: Parameters<typeof sync>[0], id: string) {
   const send = input.fetch ?? fetch
   const response = await send(`${input.platform}/api/v1/sync/skills/${encodeURIComponent(id)}/files`, {
     method: "GET",
-    headers: { authorization: `Bearer ${input.key}`, accept: "application/json" },
+    headers: { authorization: `Bearer ${input.key}`, accept: "application/json", ...KeteSyncClient.providersHeader },
     redirect: "error",
     signal: AbortSignal.timeout(30_000),
   }).catch(() => {

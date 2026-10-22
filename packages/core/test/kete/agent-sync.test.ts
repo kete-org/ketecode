@@ -221,6 +221,19 @@ describe("KeteAgentSync", () => {
     }),
   )
 
+  it.live("an agent on a byteplus model runs on the gateway as kete/<model_id>", () =>
+    Effect.gen(function* () {
+      const model = { provider: "byteplus", model_id: "glm-5-2-260617" }
+      const fake = platform([{ status: 200, etag: '"e1"', agents: [managed("developer", { model })] }])
+      const options = yield* account(fake.url)
+      const { agents } = yield* start(options)
+      const developer = yield* eventually(agents.get(Agent.ID.make("developer")), (agent) =>
+        agent?.description?.includes("Managed by") ?? false,
+      )
+      expect(developer?.model).toMatchObject({ providerID: "kete", id: "glm-5-2-260617" })
+    }),
+  )
+
   it.live("a delegable managed agent becomes mode \"all\"; without it stays primary; a subagent is unchanged", () =>
     Effect.gen(function* () {
       const fake = platform([

@@ -18,6 +18,8 @@ export class SyncError extends Error {
 }
 
 type Fetch = (input: string, init: RequestInit) => Promise<Response>
+/** Providers beyond the default five whose agents this client can run (sync v1 opt-in header). */
+export const providersHeader = { "x-kete-sync-providers": "byteplus" }
 const timeout = 15_000
 
 export async function fetchAgents(input: {
@@ -34,6 +36,7 @@ export async function fetchAgents(input: {
     headers: {
       authorization: `Bearer ${input.key}`,
       accept: "application/json",
+      ...providersHeader,
       ...(input.etag ? { "if-none-match": input.etag } : {}),
     },
     redirect: "error",
