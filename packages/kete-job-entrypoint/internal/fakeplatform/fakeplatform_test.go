@@ -149,6 +149,12 @@ func TestGatewayAuthAndAgentHeaders(t *testing.T) {
 	if rec := do(s, "GET", "https://"+GatewayHost+"/gemini/v1beta/models", nil, map[string]string{"x-goog-api-key": j.GatewayKey}); rec.Code != 200 {
 		t.Fatalf("gemini models: %d", rec.Code)
 	}
+	// kete discovers every compat route (core/src/kete/gateway.ts); a 404 fails the e2e's proxy-log check.
+	for _, id := range []string{"deepseek", "openrouter", "nvidia", "byteplus"} {
+		if rec := do(s, "GET", "https://"+GatewayHost+"/compat/"+id+"/v1/models", nil, map[string]string{"Authorization": "Bearer " + j.GatewayKey}); rec.Code != 200 {
+			t.Fatalf("%s models: %d", id, rec.Code)
+		}
+	}
 }
 
 func TestLifecycleScript(t *testing.T) {
