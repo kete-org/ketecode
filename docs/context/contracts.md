@@ -35,7 +35,7 @@ the same PR.
   ignores unknown fields ("v1 only gains optional fields"); this falls out of Effect
   `Schema.Struct` dropping excess properties by default, exercised via
   `Schema.decodeUnknownOption(SyncResponse)` in `packages/util/src/kete/sync/client.ts:50`.
-  Key shapes: `SyncedAgent` (:38-57, `mode`/`delegable` at :44-46), `AgentTools` (:22-34),
+  Key shapes: `SyncedAgent` (:39-58, `ProviderId` :37 incl. `byteplus`, `mode`/`delegable` at :44-46), `AgentTools` (:22-34),
   `SyncedMcpServer` (:63-86), `SyncedSkill` (:97-107, files manifest), `SyncedPolicy`
   (:122-134), `SyncResponse` (:136-145, optional `mcp_servers`/`skills`/`policies` for
   older platforms).
@@ -48,8 +48,9 @@ the same PR.
   `packages/util/src/kete/sync/sync.ts:55-56` refuses to send a v1 cache's ETag so a
   fresh 200 is always fetched once, rather than risking a 304 for a flag that was never
   cached).
-- **Client:** `packages/util/src/kete/sync/client.ts` — `fetchAgents` (:23-63): sends
-  `Authorization: Bearer <key>` and `If-None-Match`, handles 304/200/401/5xx/429, never
+- **Client:** `packages/util/src/kete/sync/client.ts` — `fetchAgents` (:25-72; `providersHeader` :22): sends
+  `Authorization: Bearer <key>`, `x-kete-sync-providers: byteplus` (`providersHeader`, also on
+  skill-file requests) and `If-None-Match`, handles 304/200/401/5xx/429, never
   logs the key, decodes with `Schema.decodeUnknownOption`.
 - **Skills client:** `packages/util/src/kete/sync/skills.ts` — `sync` (:58-89) writes
   skills to `<config>/managed/<organization id>/skills/<slug>/`; `present` (:92-101)
@@ -100,14 +101,15 @@ the same PR.
 
 - **Client:** `packages/core/src/kete/gateway.ts` — decision recorded in
   `docs/adr/0004-gateway-client.md`. Routes table (model-ID precedence order):
-  `routes` (:97-128) — `/anthropic/v1`, `/openai/v1`, `/gemini/v1beta`,
-  `/compat/deepseek/v1`, `/compat/openrouter/v1`, `/compat/nvidia/v1`. Model discovery: `GET
-  <prefix>/models` per route (:217-254, `discover`), allowlisted per provider — one
+  `routes` (:110-145) — `/anthropic/v1`, `/openai/v1`, `/gemini/v1beta`,
+  `/compat/deepseek/v1`, `/compat/openrouter/v1`, `/compat/nvidia/v1`, `/compat/byteplus/v1`
+  (not in the models.dev catalog: its `Route.package` fallback, `gateway.ts:60,141`, is `@ai-sdk/openai-compatible`). Model discovery: `GET
+  <prefix>/models` per route (:244-, `discover`), allowlisted per provider — one
   route failing keeps its last known models (:215-216, :241-246). Auth headers per
   route: `auth` field of each `Route` (:47, e.g. `x-api-key` for Anthropic :101,
   `Authorization: Bearer` for OpenAI-compatible :108/:125). Prices:
-  `GET /api/v1/models` (`pricing`, :256-287, schema `PlatformModels` :57-70, prices are
-  micro-USD per million tokens per :56). Balance: `GET /api/v1/me` (`me`, :289-303,
+  `GET /api/v1/models` (`pricing`, :283-, schema `PlatformModels` :57-70, prices are
+  micro-USD per million tokens per :56). Balance: `GET /api/v1/me` (`me`, :316-,
   schema `PlatformMe` :72-76), published as the `kete` integration's metadata
   (`balance_micros`, `currency`, `organization`) at :172-179 for clients (e.g. the TUI
   sidebar) to show.

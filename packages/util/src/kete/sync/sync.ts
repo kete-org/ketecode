@@ -98,8 +98,9 @@ async function attempt(
     credential: kind,
     // A version-1 cache predates `delegable` (cache.ts): its ETag was earned by a response that
     // never had the field, so sending it back risks a 304 that leaves `delegable` missing forever.
-    // Fetch fresh instead; the new copy is written at version 3 (version 2 predates `share`, same reason).
-    etag: cached?.version === 3 ? cached.etag : undefined,
+    // Fetch fresh instead; the new copy is written at version 4 (version 2 predates `share`, version 3
+    // predates BytePlus agents: same reason).
+    etag: cached?.version === 4 ? cached.etag : undefined,
     fetch: options.fetch,
   })
   // Skill files are brought in line on a 304 too, so a download that failed earlier is retried.
@@ -117,7 +118,7 @@ async function attempt(
     return { kind: "unchanged", cached, skills: await skills(cached.response) }
   }
   const next: KeteSyncCache.Cached = {
-    version: 3,
+    version: 4,
     etag: fetched.etag,
     synced_at: (options.now?.() ?? new Date()).toISOString(),
     response: fetched.response,

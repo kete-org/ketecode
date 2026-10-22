@@ -1,7 +1,7 @@
 # Spec: BytePlus models from platform sync
 
 - Task: `docs/tasks/2026-10-20-byteplus-sync` · Size: large · Created: 2026-10-20
-- Status: draft <!-- draft → agreed (medium) / approved (large) → built → closed -->
+- Status: closed 2026-10-20 <!-- draft → agreed (medium) / approved (large) → built → closed -->
 
 ## Goal
 When a platform admin makes BytePlus (ByteDance ModelArk) models the tier defaults, the `kete`
@@ -34,6 +34,8 @@ platform task `kete-code-platform/docs/tasks/2026-10-20-byteplus-tiers`; Phase A
 - **Catalog entry**: the models.dev snapshot has no `byteplus` provider, so discovered models get
   no SDK package and `model-resolver.ts:397-407` skips them. Add a `byteplus` provider entry
   using `@ai-sdk/openai-compatible` (pattern: the `nvidia` provider plugin / catalog override).
+  *Built as:* an optional `Route.package` fallback on the byteplus compat route in `gateway.ts`
+  (plan.md), which avoids an upstream edit.
 - Docs: this repo's `docs/platform/` sync notes and `docs/context` cards for sync and gateway.
 
 ## Out of scope

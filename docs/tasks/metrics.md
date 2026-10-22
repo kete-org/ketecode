@@ -34,3 +34,4 @@ about 10 tasks, drop any agent that isn't saving calls.
 | 2026-10-18 | kete-skill-commands (A9) | medium (plan treated as large) | planner, implementer, verifier, reviewer, upstream-guard, security review, librarian ×2 | 1 | 0 | 0% | n/a | ~3 h |
 | 2026-10-18 | memory-files (A2a) | large | planner ×2, implementer, reviewer, upstream-guard, security review ×3, librarian ×3 | 1 | 0 | 0% | n/a | ~3 h |
 | 2026-10-18 | auto-memory (A2b) | large | planner, implementer, reviewer, upstream-guard, security review ×2, librarian ×3 | 0 | – | – | n/a | ~2 h |
+| 2026-10-20 | byteplus-sync | large | planner, implementer, reviewer, verifier (no shell), librarian | 0 | – | – | n/a | n/a |

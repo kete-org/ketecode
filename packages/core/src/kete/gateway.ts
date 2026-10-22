@@ -57,6 +57,8 @@ type Route = {
   catalog: Provider.ID
   auth: (key: string) => Record<string, string>
   parse: (body: unknown) => Listed[]
+  /** The SDK package for a provider the models.dev catalog doesn't know. */
+  package?: string
 }
 type Discovered = Listed & { route: Route }
 type Price = Model.Info["cost"][number]
@@ -130,11 +132,13 @@ export const routes: Route[] = [
         context: item.inputTokenLimit,
       })),
   },
-  ...(["deepseek", "openrouter", "nvidia"] as const).map((id) => ({
+  ...(["deepseek", "openrouter", "nvidia", "byteplus"] as const).map((id) => ({
     prefix: `/compat/${id}/v1`,
     catalog: Provider.ID.make(id),
     auth: (key: string) => ({ authorization: `Bearer ${key}` }),
     parse: (body: unknown) => Schema.decodeUnknownSync(OpenAIList)(body).data.map((item) => ({ id: item.id })),
+    // models.dev has no byteplus provider; its gateway route is OpenAI-compatible.
+    ...(id === "byteplus" ? { package: "@ai-sdk/openai-compatible" } : {}),
   })),
 ]
 
@@ -216,7 +220,7 @@ export function make(
             if (base) Object.assign(model, structuredClone(base))
             model.modelID = Model.ID.make(item.id)
             model.name = item.name ?? base?.name ?? item.id
-            model.package = base?.package ?? origin?.provider.package
+            model.package = base?.package ?? origin?.provider.package ?? item.route.package
             model.canonical = origin?.provider.canonical ?? item.route.catalog
             model.settings = Provider.mergeOverlay(model.settings, { baseURL: `${url}${item.route.prefix}` })
             if (item.context !== undefined) model.limit.context = item.context

@@ -33,7 +33,8 @@ export const AgentTools = Schema.Struct({
   ),
 })
 
-export const ProviderId = Schema.Literals(["anthropic", "openai", "gemini", "deepseek", "openrouter"])
+// Extra ids beyond the platform's default five must also be declared in client.ts `providersHeader`.
+export const ProviderId = Schema.Literals(["anthropic", "openai", "gemini", "deepseek", "openrouter", "byteplus"])
 
 export const SyncedAgent = Schema.Struct({
   id: Guid,
