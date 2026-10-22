@@ -6,6 +6,8 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+## 0.2.8
+
 - **Share a session:** `/share` (or `kete share`) uploads a redacted copy of a session to the Kete
   portal for your organization to read, after showing what will be sent (secrets masked, no
   reasoning, no file contents). `/unshare` (or `kete unshare`) deletes it. You need `kete login`;
@@ -16,6 +18,9 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
   any `@playwright/mcp` server you set up by hand. Details: `docs/integrations/playwright.md`.
 - **NVIDIA models through the Kete Gateway:** when your organization's gateway serves NVIDIA
   (build.nvidia.com), its models appear under the `kete` provider like the others.
+- **BytePlus models through the Kete Gateway:** managed agents your organization puts on BytePlus
+  (ByteDance ModelArk) models now sync and run through the gateway as `kete/<model>`. Earlier
+  versions don't receive those agents.
 
 ## 0.2.7
 
