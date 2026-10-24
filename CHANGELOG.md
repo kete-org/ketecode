@@ -6,6 +6,13 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+## 0.2.10
+
+- **Your organization's default model:** a signed-in `kete` now starts on the model your
+  organization chose for its Default coding tier (set in the Kete portal), instead of whichever
+  model happened to be listed first. A `model` in your config, `--model`, or a model you picked in a
+  session still wins.
+
 ## 0.2.9
 
 - **Gateway address follows your organization:** when the Kete Gateway moves to a new address, a
