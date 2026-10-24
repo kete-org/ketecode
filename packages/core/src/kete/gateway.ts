@@ -88,6 +88,10 @@ const PlatformMe = Schema.Struct({
   currency: Schema.String,
   // The gateway the platform names for this account now; optional, as older platforms may omit it.
   gateway_url: Schema.String.pipe(Schema.optional),
+  // The organization's Default coding model (null when none resolves; older platforms omit it).
+  default_model: Schema.NullOr(Schema.Struct({ provider: Schema.String, model_id: Schema.String })).pipe(
+    Schema.optional,
+  ),
 })
 type Account = { balance_micros: number; currency: string; organization: string }
 
@@ -195,6 +199,8 @@ export function make(
       const source = { current: yield* load() }
       const loaded = { models: [] as Discovered[], prices: new Map<string, Price>(), hash: "[]" }
       const account = { current: undefined as Account | undefined }
+      // The organization's default model id on this provider (signed in only), from /api/v1/me.
+      const preferred = { current: undefined as string | undefined }
       const lock = Semaphore.makeUnsafe(1)
 
       yield* ctx.integration.transform((integrations) => {
@@ -230,6 +236,14 @@ export function make(
             if (price) model.cost = [price]
           })
         }
+      })
+
+      // The organization's default model is the default only when nothing else (the config's `model`)
+      // set one, and only once the gateway serves it; `--model` and a session's own model always win.
+      yield* ctx.model.transform((models) => {
+        const id = preferred.current
+        if (id === undefined || models.default.get() !== undefined) return
+        if (models.get(providerID, Model.ID.make(id))) models.default.set(providerID, Model.ID.make(id))
       })
 
       const key = Effect.fn("KeteGateway.key")(function* () {
@@ -331,6 +345,7 @@ export function make(
         return {
           account: { balance_micros: body.balance_micros, currency: body.currency, organization: body.organization.name },
           gateway: httpURL(body.gateway_url),
+          model: body.default_model?.model_id,
         }
       })
 
@@ -355,6 +370,11 @@ export function make(
             yield* Effect.logInfo(`${Brand.displayName} gateway moved`, { url: moved })
             yield* reload()
           }
+        }
+        const model = source.current.signedIn ? next?.model : undefined
+        if (model !== preferred.current) {
+          preferred.current = model
+          yield* ctx.model.reload()
         }
         if (JSON.stringify(next?.account) === JSON.stringify(account.current)) return
         account.current = next?.account

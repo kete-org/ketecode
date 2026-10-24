@@ -92,7 +92,11 @@ const seedCatalog = Effect.fn(function* () {
   })
 })
 
-function gateway(platform: "prices" | "down" = "prices", byteplus?: string[]) {
+function gateway(
+  platform: "prices" | "down" = "prices",
+  byteplus?: string[],
+  defaultModel?: { provider: string; model_id: string } | null,
+) {
   const requests: Array<{ path: string; headers: Record<string, string | null> }> = []
   const server = Bun.serve({
     port: 0,
@@ -120,6 +124,7 @@ function gateway(platform: "prices" | "down" = "prices", byteplus?: string[]) {
               balance_micros: 12_500_000,
               currency: "USD",
               gateway_url: "ignored",
+              ...(defaultModel === undefined ? {} : { default_model: defaultModel }),
             })
       if (path === "/api/v1/models")
         return platform === "down"
@@ -432,6 +437,66 @@ describe("KeteGateway", () => {
         ),
       ({ server }) => Effect.promise(() => server.stop(true)),
     ),
+  )
+
+  // The organization's default model from /api/v1/me (its Default coding tier).
+  const defaultModelCase = (
+    name: string,
+    named: { provider: string; model_id: string },
+    configured: string | undefined,
+    expected: (model: Model.Info | undefined) => void,
+  ) =>
+    it.live(name, () =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => gateway("prices", undefined, named)),
+        ({ server }) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const models = yield* Model.Service
+              const integrations = yield* Integration.Service
+              yield* seedCatalog()
+              // Another transform (as the config's `model` does) set the default first: it must stay.
+              if (configured)
+                yield* models.transform((editor) =>
+                  editor.default.set(KeteGateway.providerID, Model.ID.make(configured.split("/").slice(1).join("/"))),
+                )
+              yield* addPlugin({}, yield* signIn(server.url.origin, "account-key"))
+              // Both gateway models are discovered and /api/v1/me has answered.
+              yield* eventually(models.get(KeteGateway.providerID, Model.ID.make("gpt-4.1")), (model) => model !== undefined)
+              yield* eventually(integrations.get(KeteGateway.integrationID), (item) => item?.metadata?.balance_micros !== undefined)
+              expected(
+                yield* eventually(models.default(), (model) =>
+                  configured !== undefined || named.model_id === "not-served" || model?.id === named.model_id,
+                ).pipe(Effect.orElseSucceed(() => undefined)),
+              )
+            }),
+          ),
+        ({ server }) => Effect.promise(() => server.stop(true)),
+      ),
+    )
+
+  defaultModelCase(
+    "a signed-in CLI defaults to the model the platform names for its organization",
+    { provider: "openai", model_id: "gpt-4.1" },
+    undefined,
+    (model) => expect(model).toMatchObject({ providerID: "kete", id: "gpt-4.1" }),
+  )
+
+  defaultModelCase(
+    "a default set elsewhere (the config's `model`) wins over the platform's",
+    { provider: "openai", model_id: "gpt-4.1" },
+    "kete/claude-sonnet-4-5",
+    (model) => expect(model).toMatchObject({ providerID: "kete", id: "claude-sonnet-4-5" }),
+  )
+
+  defaultModelCase(
+    "a default the gateway doesn't serve is ignored",
+    { provider: "byteplus", model_id: "not-served" },
+    undefined,
+    (model) => {
+      expect(model).toBeDefined()
+      expect(model?.id).not.toBe("not-served")
+    },
   )
 
   it.live("a signed-in account follows the gateway URL the platform now names, without signing in again", () =>
