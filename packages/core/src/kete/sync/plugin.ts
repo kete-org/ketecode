@@ -84,14 +84,25 @@ export const errorCodeHeader = "x-kete-error-code"
 /** Gateway agent errors (kete-code-platform apps/gateway/src/errors/errors.ts). */
 export const agentErrors = {
   budget: "kete_agent_budget_exceeded",
+  model: "kete_agent_model_not_allowed",
   stale: ["kete_agent_paused", "kete_agent_not_found", "kete_agent_model_not_allowed"],
 } as const
 
-/** The message the user sees for a gateway agent error, or undefined for any other error code. */
-export function agentErrorMessage(code: string, agentName: string | undefined) {
+/**
+ * The message the user sees for a gateway agent error, or undefined for any other error code. `models`
+ * (as `provider/model`) names the agent's model and the one the request used, for a model refusal.
+ */
+export function agentErrorMessage(
+  code: string,
+  agentName: string | undefined,
+  models?: { readonly agent: string | undefined; readonly request: string },
+) {
   const agent = agentName ? `“${agentName}”` : "This agent"
   if (code === agentErrors.budget)
     return `Agent budget reached: ${agent} has used its monthly budget. Ask an admin in your organization to raise it in the ${Brand.displayName} portal.`
+  // The agent still exists: only the request's model is wrong (ADR 0008).
+  if (code === agentErrors.model && models)
+    return `Agent model not allowed: ${agent} ${models.agent ? `runs ${models.agent}, but this request used ${models.request}` : `doesn't run ${models.request}`}. Choose the agent's model, or run \`${Brand.cliName} sync\` if your organization changed it.`
   if ((agentErrors.stale as readonly string[]).includes(code))
     return `Agent unavailable: ${agent} was paused or changed by your organization. It is being removed from your agents; choose another agent.`
   return undefined
@@ -320,7 +331,10 @@ export function make(
             const code = evt.response.headers.get(errorCodeHeader)
             if (!code) return
             const managed = state.cached?.response.agents.find((agent) => agent.slug === evt.agent)
-            const message = agentErrorMessage(code, managed?.name)
+            const message = agentErrorMessage(code, managed?.name, {
+              agent: managed && `${KeteGateway.providerID}/${managed.model.model_id}`,
+              request: `${evt.model.providerID}/${evt.model.id}`,
+            })
             if (!message) return
             const body = yield* Effect.promise(() => evt.response.text().catch(() => ""))
             const headers = new Headers(evt.response.headers)
