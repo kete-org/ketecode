@@ -86,6 +86,8 @@ const PlatformMe = Schema.Struct({
   organization: Schema.Struct({ name: Schema.String }),
   balance_micros: Schema.Finite,
   currency: Schema.String,
+  // The gateway the platform names for this account now; optional, as older platforms may omit it.
+  gateway_url: Schema.String.pipe(Schema.optional),
 })
 type Account = { balance_micros: number; currency: string; organization: string }
 
@@ -326,7 +328,10 @@ export function make(
             Effect.flatMap(HttpClientResponse.schemaBodyJson(PlatformMe)),
             Effect.timeout("5 seconds"),
           )
-        return { balance_micros: body.balance_micros, currency: body.currency, organization: body.organization.name }
+        return {
+          account: { balance_micros: body.balance_micros, currency: body.currency, organization: body.organization.name },
+          gateway: httpURL(body.gateway_url),
+        }
       })
 
       // The balance changes with every request, so it refreshes more often than the model list.
@@ -336,8 +341,23 @@ export function make(
         const apiKey = yield* key()
         const next = platform && apiKey ? yield* me(platform, apiKey) : undefined
         if (source.current.platform !== platform) return
-        if (JSON.stringify(next) === JSON.stringify(account.current)) return
-        account.current = next
+        // `kete login` saves the gateway URL once; follow the platform when its gateway moves, so a
+        // signed-in user needn't sign in again. Hand-configured and job-mode gateways are never moved.
+        if (source.current.signedIn && next?.gateway && next.gateway !== source.current.url) {
+          const moved = next.gateway
+          const saved = yield* Effect.tryPromise(() => KeteAccount.updateGateway(accountOptions, moved)).pipe(
+            Effect.as(true),
+            Effect.catch((cause) =>
+              Effect.logWarning(`${Brand.displayName} could not save the new gateway URL`, { cause }).pipe(Effect.as(false)),
+            ),
+          )
+          if (saved) {
+            yield* Effect.logInfo(`${Brand.displayName} gateway moved`, { url: moved })
+            yield* reload()
+          }
+        }
+        if (JSON.stringify(next?.account) === JSON.stringify(account.current)) return
+        account.current = next?.account
         yield* ctx.integration.reload()
       })
 
@@ -405,7 +425,6 @@ export function make(
       const balanced = balance().pipe(
         Effect.catch((cause) => Effect.logWarning(`${Brand.displayName} balance unavailable`, { cause })),
       )
-      yield* balanced.pipe(Effect.repeat(Schedule.spaced(balanceInterval)), Effect.forkScoped)
 
       const reload = Effect.fn("KeteGateway.reload")(function* () {
         const next = yield* load()
@@ -425,6 +444,8 @@ export function make(
         yield* ctx.provider.reload()
         yield* logged
       })
+      // Started after `reload` exists: a balance check reloads when the platform moves the gateway.
+      yield* balanced.pipe(Effect.repeat(Schedule.spaced(balanceInterval)), Effect.forkScoped)
       yield* ctx.event.subscribe().pipe(
         Stream.filter((event) =>
           ["config.updated", "integration.updated", "credential.updated", "credential.switched"].includes(event.type),

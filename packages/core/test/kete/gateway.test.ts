@@ -45,7 +45,7 @@ function memoryStore(): KeteSecretStore.Store {
 }
 
 // A signed-in account (as `kete login` leaves it) in a temporary directory.
-const signIn = (gatewayURL: string, secret: string | undefined) =>
+const signIn = (gatewayURL: string, secret: string | undefined, platformURL = gatewayURL) =>
   Effect.acquireRelease(
     Effect.promise(async () => {
       const root = await mkdtemp(path.join(os.tmpdir(), "kete-account-"))
@@ -53,7 +53,7 @@ const signIn = (gatewayURL: string, secret: string | undefined) =>
       const saved = await KeteAccount.save(
         options,
         {
-          platform_url: gatewayURL,
+          platform_url: platformURL,
           gateway_url: gatewayURL,
           organization: { id: "o", name: "Acme" },
           key_id: "00000000-0000-4000-8000-000000000001",
@@ -431,6 +431,80 @@ describe("KeteGateway", () => {
           }),
         ),
       ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("a signed-in account follows the gateway URL the platform now names, without signing in again", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const moved = gateway()
+        // The platform, and the gateway address saved at sign-in: it serves no gateway routes any more.
+        const platform = Bun.serve({
+          port: 0,
+          fetch: (request) =>
+            new URL(request.url).pathname === "/api/v1/me"
+              ? Response.json({
+                  key: { id: "k", name: "CLI", kind: "cli" },
+                  organization: { id: "o", name: "Acme" },
+                  balance_micros: 1,
+                  currency: "USD",
+                  gateway_url: moved.server.url.origin,
+                })
+              : new Response("Redirecting...", { status: 307, headers: { location: "/login" } }),
+        })
+        return { moved, platform }
+      }),
+      ({ moved, platform }) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const models = yield* Model.Service
+            yield* seedCatalog()
+            const account = yield* signIn(platform.url.origin, "account-key")
+            yield* addPlugin({}, account)
+
+            const model = yield* eventually(
+              models.get(KeteGateway.providerID, Model.ID.make("claude-sonnet-4-5")),
+              (model) => model !== undefined,
+            )
+            expect(model?.settings?.baseURL).toBe(`${moved.server.url.origin}/anthropic/v1`)
+            expect(moved.requests.find((request) => request.path === "/anthropic/v1/models")?.headers["x-api-key"]).toBe(
+              "account-key",
+            )
+            // Saved, so `kete whoami` and the next start use it too.
+            expect((yield* Effect.promise(() => KeteAccount.read(account)))?.gateway_url).toBe(moved.server.url.origin)
+          }),
+        ),
+      ({ moved, platform }) => Effect.promise(() => Promise.all([moved.server.stop(true), platform.stop(true)])),
+    ),
+  )
+
+  it.live("a gateway URL the platform names that isn't http(s) is not adopted", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          port: 0,
+          fetch: () =>
+            Response.json({
+              key: { id: "k", name: "CLI", kind: "cli" },
+              organization: { id: "o", name: "Acme" },
+              balance_micros: 1,
+              currency: "USD",
+              gateway_url: "file:///etc/passwd",
+            }),
+        }),
+      ),
+      (server) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const integrations = yield* Integration.Service
+            const account = yield* signIn(server.url.origin, "account-key")
+            yield* addPlugin({}, account)
+            // The balance from the same response is applied, so the URL was seen and refused.
+            yield* eventually(integrations.get(KeteGateway.integrationID), (item) => item?.metadata?.balance_micros === 1)
+            expect((yield* Effect.promise(() => KeteAccount.read(account)))?.gateway_url).toBe(server.url.origin)
+          }),
+        ),
+      (server) => Effect.promise(() => server.stop(true)),
     ),
   )
 
