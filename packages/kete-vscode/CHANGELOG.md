@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.2.9
+
+- Gateway address follows your organization: when the Kete Gateway moves to a new address, the
+  extension's signed-in runtime picks it up from the platform, so you don't need to sign in again.
+- Clearer error when a request uses a model an agent isn't allowed: the message names both models
+  instead of saying the agent was paused.
+
 ## 0.2.8
 
 - **Share a session:** "Kete Code: Share Session" and "Kete Code: Unshare Session" (Command Palette

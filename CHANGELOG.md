@@ -6,6 +6,16 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+## 0.2.9
+
+- **Gateway address follows your organization:** when the Kete Gateway moves to a new address, a
+  signed-in `kete` picks it up from the platform and saves it, so you don't need to `kete login` again.
+  The first command right after the move may still report a model as unavailable; the next one works.
+- **`kete run --agent` uses the agent's model:** without `--model`, a session now runs its agent's own
+  model instead of the default one. Managed agents on the gateway failed this way before.
+- **Clearer error for a model an agent can't use:** the gateway's refusal now names the agent's model
+  and the one the request used, instead of saying the agent was paused.
+
 ## 0.2.8
 
 - **Share a session:** `/share` (or `kete share`) uploads a redacted copy of a session to the Kete
