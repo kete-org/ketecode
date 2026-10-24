@@ -1443,3 +1443,18 @@ An `AGENTS.md` is loaded (at start, and nested after a `read`) only when its rea
 **Sync checklist:** if upstream changes either walk, keep the filter on the found path (before `fs.resolve`
 follows the link). If upstream changes `FileAccess.resolve`, keep the real-path decision before the
 internal branch. Report upstream.
+
+## A Session without a model runs its agent's model (fix/run-agent-model)
+
+`kete run --agent <name>` creates a Session with no model, and upstream's runner then falls back to the
+server default model even when the agent has its own. For a managed agent the gateway refuses that call
+(`kete_agent_model_not_allowed`, ADR 0008); for any agent it silently runs the wrong model. The TUI avoids
+it by choosing the agent's model on the client; `run` can't do the same reliably, because a fresh server
+loads managed agents a few seconds after a folder's first request.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/session/context.ts` | `load` resolves the agent's model when the Session has none (marked block); the Session's own model still wins, and with neither the server default applies | the turn's model is resolved here from the Session alone; no hook sees the selected agent and the model together |
+
+**Sync checklist:** if upstream changes how `SessionContext.load` picks the model, keep the order Session
+model → agent model → server default. Report upstream.
