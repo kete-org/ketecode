@@ -285,6 +285,27 @@ describe("gateway agent errors", () => {
     }),
   )
 
+  it.live("a model the agent isn't allowed names both models instead of claiming the agent was paused", () =>
+    Effect.gen(function* () {
+      const fake = platform(() => [developer])
+      const { agents, run } = yield* start(yield* signedIn(fake.url))
+      yield* eventually(agents.get(Agent.ID.make("developer")), (agent) => agent?.model?.providerID === "kete")
+
+      const refused = {
+        error: { type: "invalid_request_error", code: "kete_agent_model_not_allowed", message: "gateway text" },
+      }
+      const evt = yield* run("http.response", {
+        ...responseEvent(gatewayError(403, "kete_agent_model_not_allowed", refused)),
+        model: { id: "z-ai/glm-5", providerID: "kete" },
+      } as unknown as SessionHttpResponse)
+      const surfaced = yield* surface(evt.response)
+      expect(surfaced.error.message).toBe(
+        "Agent model not allowed: “Developer” runs kete/claude-sonnet-4-5, but this request used kete/z-ai/glm-5. Choose the agent's model, or run `kete sync` if your organization changed it.",
+      )
+      expect(isRetryable(surfaced.error)).toBe(false)
+    }),
+  )
+
   it.live("other responses and other providers pass through untouched", () =>
     Effect.gen(function* () {
       const fake = platform(() => [developer])
@@ -319,6 +340,10 @@ describe("agent error text", () => {
       expect(JSON.parse(KeteAgentSync.rewriteErrorBody("not json", "new"))).toEqual({ error: { message: "new" } })
       expect(KeteAgentSync.agentErrorMessage("kete_agent_budget_exceeded", undefined)).toContain("This agent has used")
       expect(KeteAgentSync.agentErrorMessage("kete_unknown", "X")).toBeUndefined()
+      // No cached copy of the agent: its model is unknown, so only the request's is named.
+      expect(
+        KeteAgentSync.agentErrorMessage("kete_agent_model_not_allowed", undefined, { agent: undefined, request: "kete/x" }),
+      ).toStartWith("Agent model not allowed: This agent doesn't run kete/x.")
     }),
   )
 })
