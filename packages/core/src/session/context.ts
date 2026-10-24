@@ -158,7 +158,14 @@ const layer = Layer.effect(
     })
 
     const load = Effect.fn("SessionContext.load")(function* (selection: Selection) {
-      const model = yield* resolveModel(selection.session)
+      // kete_change start: a Session without a model runs its agent's model before the server default
+      // (`kete run --agent`); a managed agent's gateway calls must name the agent's model (ADR 0008)
+      const model = yield* resolveModel(
+        selection.session.model || !selection.agent.info.model
+          ? selection.session
+          : { ...selection.session, model: selection.agent.info.model },
+      )
+      // kete_change end
       const history = yield* SessionHistory.entriesForRunner(
         db,
         selection.session.id,
