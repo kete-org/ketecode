@@ -70,6 +70,24 @@ export async function save(options: Options, details: Details, secret: string) {
     storage: saved.store.kind,
     created_at: new Date().toISOString(),
   })
+  await write(options, account)
+  return { account, store: saved.store, skipped: saved.skipped }
+}
+
+/**
+ * Records the gateway URL the platform now names for this account (it moves when the platform's gateway
+ * does). The key is untouched: its entry is named by the platform host. Returns the updated account, or
+ * `undefined` when nobody is signed in or the URL is unchanged.
+ */
+export async function updateGateway(options: Pick<Options, "config">, gatewayURL: string) {
+  const account = await read(options)
+  if (!account || account.gateway_url === gatewayURL) return undefined
+  const updated = Account.make({ ...account, gateway_url: gatewayURL })
+  await write(options, updated)
+  return updated
+}
+
+async function write(options: Pick<Options, "config">, account: Account) {
   await mkdir(options.config, { recursive: true, mode: 0o700 })
   // Write-then-rename, so a reader never sees half a file.
   const location = file(options)
@@ -77,7 +95,6 @@ export async function save(options: Options, details: Details, secret: string) {
   await writeFile(temporary, JSON.stringify(account, null, 2) + "\n", { mode: 0o600 })
   await chmod(temporary, 0o600)
   await rename(temporary, location)
-  return { account, store: saved.store, skipped: saved.skipped }
 }
 
 /** The account's key, or `undefined` when its store no longer has it. */

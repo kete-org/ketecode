@@ -101,6 +101,27 @@ describe("KeteAccount files", () => {
       if (process.platform !== "win32") expect((await stat(KeteAccount.file(options))).mode & 0o777).toBe(0o600)
     }))
 
+  test("updateGateway moves the account to a new gateway URL and keeps everything else, the key included", () =>
+    withDirectory(async (directories) => {
+      const options = { ...directories, native: memoryStore() }
+      const { account } = await KeteAccount.save(options, details, secret)
+      const updated = await KeteAccount.updateGateway(options, "https://gateway.new.example")
+      expect(updated).toEqual({ ...account, gateway_url: "https://gateway.new.example" })
+      expect(await KeteAccount.read(options)).toEqual(updated)
+      expect(await KeteAccount.key(options, account)).toBe(secret)
+      if (process.platform !== "win32") expect((await stat(KeteAccount.file(options))).mode & 0o777).toBe(0o600)
+    }))
+
+  test("updateGateway does nothing when the URL is unchanged or nobody is signed in", () =>
+    withDirectory(async (directories) => {
+      const options = { ...directories, native: memoryStore() }
+      expect(await KeteAccount.updateGateway(options, "https://gateway.example")).toBeUndefined()
+      await KeteAccount.save(options, details, secret)
+      const before = await readFile(KeteAccount.file(options), "utf8")
+      expect(await KeteAccount.updateGateway(options, details.gateway_url)).toBeUndefined()
+      expect(await readFile(KeteAccount.file(options), "utf8")).toBe(before)
+    }))
+
   test("clear removes the key and account.json", () =>
     withDirectory(async (directories) => {
       const native = memoryStore()
