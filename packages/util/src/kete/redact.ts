@@ -27,7 +27,7 @@ export function isSecretKey(name: string): boolean {
 }
 
 // Known secret-value shapes: OpenAI/Anthropic-style `sk-...`, Stripe keys, GitHub, GitLab, npm and
-// Slack tokens, AWS access key ids, Google API keys, and JWT-looking three-segment base64url strings.
+// Slack tokens, AWS access key ids, Google API keys, Kete Code's own keys, and JWT-looking three-segment base64url strings.
 // (`auth` in NAME skips "author…", so "author: Jane" stays readable.)
 const keyShapes = new RegExp(
   [
@@ -40,6 +40,7 @@ const keyShapes = new RegExp(
     "\\bxox[abprs]-[A-Za-z0-9-]{10,}\\b",
     "\\bAKIA[A-Z0-9]{16}\\b",
     "\\bAIza[A-Za-z0-9_-]{20,}\\b",
+    "\\bkete_(?:live|test)_[A-Za-z0-9_-]{10,}",
     "\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b",
   ].join("|"),
   "g",

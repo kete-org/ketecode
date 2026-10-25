@@ -4,7 +4,8 @@
 // Sent: user text and attached file NAMES, assistant text, tool name/status/input/output, `!` shell
 // commands and output, compaction markers, and the session's diffs. Never sent: reasoning, system and
 // synthetic messages, skill bodies, compaction summaries, file contents, instructions, memory, the
-// system prompt, the contents of secret files (`.env`, keys, credentials: diffs and reads). Absolute
+// system prompt, the contents of secret files (`.env`, keys, credentials: diffs, and the output of
+// reads, greps and shell commands that name one, and the content of edits, writes and patches to one). Absolute
 // workspace and home paths in every string become `.` and `~`. Every string is cut to a window, redacted (KeteRedact), then cut to its cap, so
 // redaction always runs before truncation and a secret straddling a cut is never half-exposed. The
 // field caps are the platform's Zod limits: the builder cuts to them so a share never gets a 400.
@@ -158,17 +159,42 @@ function toolOutput(state: SessionMessage.AssistantTool["state"]): string {
   return ""
 }
 
-/** The read tool's target when it is a secret file (`.env`, keys, credentials): its output is not sent. */
-const secretRead = (item: SessionMessage.AssistantTool) => {
+// Words of a shell command that could be file paths; enough to spot `cat .env` or `source ./.env`.
+const words = (command: string) => command.split(/[\s;&|<>()'"`=]+/)
+const patchFiles = (patch: string) => [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].flatMap((match) => (match[1] ? [match[1].trim()] : []))
+
+/** Whether a tool call touches a secret file (`.env`, keys, credentials): its output is not sent, nor an edit's content. */
+const secretTool = (item: SessionMessage.AssistantTool) => {
   const input: unknown = item.state.status === "streaming" ? undefined : item.state.input
-  const target = input !== null && typeof input === "object" && "path" in input ? input.path : undefined
-  return item.name === "read" && typeof target === "string" && KeteShellRisk.credential(target)
+  if (input === null || typeof input !== "object") return false
+  const fields = new Map<string, unknown>(Object.entries(input))
+  const field = (key: string) => {
+    const value = fields.get(key)
+    return typeof value === "string" ? [value] : []
+  }
+  const targets =
+    item.name === "shell"
+      ? field("command").flatMap(words)
+      : item.name === "patch"
+        ? field("patchText").flatMap(patchFiles)
+        : ["read", "edit", "write", "grep", "glob"].includes(item.name)
+          ? [...field("path"), ...field("include")]
+          : []
+  return targets.some((target) => KeteShellRisk.credential(target))
 }
 
+// The tools whose input holds the file's new content: only the path is sent.
+const CONTENT_TOOLS = new Set(["edit", "write", "patch"])
+
+/** An edit's input without its content: the path when it has one. */
+const secretInput = (input: unknown) =>
+  input !== null && typeof input === "object" && "path" in input && typeof input.path === "string" ? { path: input.path } : SECRET_FILE
+
 function tool(item: SessionMessage.AssistantTool, counter: Counter): Tool {
-  const secret = secretRead(item)
+  const secret = secretTool(item)
   if (secret) counter.secretFiles = true
-  const raw = item.state.status === "streaming" ? item.state.input : JSON.stringify(counter.value(item.state.input))
+  const shown = secret && CONTENT_TOOLS.has(item.name) && item.state.status !== "streaming" ? secretInput(item.state.input) : item.state.input
+  const raw = item.state.status === "streaming" ? item.state.input : JSON.stringify(counter.value(shown))
   return {
     name: counter.field(item.name, CAPS.name),
     status: counter.field(item.state.status, CAPS.status),

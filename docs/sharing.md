@@ -50,15 +50,16 @@ home folder starting with `~`, so your user name and folder layout are not sent.
 Reasoning, system and synthetic messages, skill bodies, the summary of a compacted conversation,
 attached file contents (only their names), instructions (`AGENTS.md`, `CLAUDE.md`), memory notes, the
 system prompt and your environment. The contents of secret files (`.env`, `.env.*` other than
-examples and templates, keys, certificates and other credential files) are never sent: their changes
-and what the agent read from them show "[contents not shared: secret file]", and the share is marked
-truncated.
+examples and templates, keys, certificates and other credential files) are never sent: their changes,
+what the agent read or searched in them, the output of shell commands that name one (`cat .env`),
+and the content of edits, writes and patches to one show "[contents not shared: secret file]" (an
+edit keeps only its path), and the share is marked truncated.
 
 ## Secrets
 
 Every piece of text is passed through the same redactor as the audit log before it is cut to size, so
 a secret is masked even where a cut would have split it. The preview shows how many were masked. This
-is a best effort: it recognizes common key formats and secret-looking names (`password`, `token`,
+is a best effort: it recognizes common key formats (including Kete Code's own `kete_live_` and `kete_test_` keys) and secret-looking names (`password`, `token`,
 `api_key`, ...), and it over-redacts on purpose (a value like `pass: 42` is masked too). Read the
 transcript of a sensitive session before sharing it.
 

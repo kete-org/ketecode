@@ -6,6 +6,13 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Security:** Kete Code's own API keys (`kete_live_…`, `kete_test_…`) are now masked wherever text
+  is redacted: session shares, the audit log, memory notes and bug reports. Before, one printed by a
+  command (for example `env`) was kept as it was.
+- **Security:** a session share no longer sends a secret file's contents that reached the session
+  another way than a read: the output of a shell command or search that names the file (`cat .env`),
+  or the content of an edit, write or patch to it. Before, only the read tool's output was held back.
+
 ## 0.2.11
 
 - **Build and Plan start on your organization's model:** in the terminal UI, agents without a model

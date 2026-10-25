@@ -131,4 +131,10 @@ describe("KeteRedact more key shapes", () => {
     expect(KeteRedact.text("author: Jane Doe")).toBe("author: Jane Doe")
     expect(KeteRedact.text("auth_token: abc123")).toBe("auth_token: [REDACTED]")
   })
+
+  test("Kete Code's own live and test keys are masked under any name", () => {
+    for (const secret of ["kete_live_abcdefghijklmnop1234", "kete_test_ABCDEFGHIJ_klmnop-1234"])
+      expect(KeteRedact.text(`KETE_GATEWAY_KEY=${secret}`)).not.toContain(secret)
+    expect(KeteRedact.text("the kete_live_ prefix")).toBe("the kete_live_ prefix")
+  })
 })
