@@ -184,4 +184,39 @@ describe("share snapshot", () => {
     expect((built.snapshot.messages[0] as { tools: { output: string }[] }).tools[0]!.output).toBe(KeteShareSnapshot.SECRET_FILE)
     expect(built.snapshot.truncated).toBe(true)
   })
+
+  test("secret file contents seen through the shell, edit, write, patch and grep are not sent", () => {
+    // A value the pattern redactor doesn't recognise, so only the secret-file check can hide it.
+    const plain = "ENCRYPTION_KEY=0123456789abcdef"
+    const built = build([
+      assistant([
+        tool("shell", completed({ command: "cat .env" }, plain)),
+        tool("shell", completed({ command: "source ./.env && ./run.sh" }, plain)),
+        tool("edit", completed({ path: ".env", oldString: "A=1", newString: plain }, "edited")),
+        tool("write", completed({ path: path.join(workspace, "config", ".env.production"), content: plain }, "written")),
+        tool("patch", completed({ patchText: `*** Begin Patch\n*** Update File: .env\n+${plain}\n*** End Patch` }, "applied")),
+        tool("grep", completed({ pattern: "KEY", path: ".env" }, `.env:1: ${plain}`)),
+      ]),
+    ])!
+    expect(JSON.stringify(built.snapshot)).not.toContain("0123456789abcdef")
+    const tools = (built.snapshot.messages[0] as { tools: { input: string; output: string }[] }).tools
+    expect(tools.map((item) => item.output)).toEqual(Array(6).fill(KeteShareSnapshot.SECRET_FILE))
+    // The command and the file still show, so a reader sees what happened.
+    expect(tools[0]!.input).toContain("cat .env")
+    expect(tools[2]!.input).toContain(".env")
+    expect(built.snapshot.truncated).toBe(true)
+  })
+
+  test("ordinary shell commands and edits keep their input and output", () => {
+    const built = build([
+      assistant([
+        tool("shell", completed({ command: "cat .env.example" }, "EXAMPLE=1")),
+        tool("edit", completed({ path: "src/env.ts", oldString: "a", newString: "b" }, "edited")),
+      ]),
+    ])!
+    const tools = (built.snapshot.messages[0] as { tools: { input: string; output: string }[] }).tools
+    expect(tools.map((item) => item.output)).toEqual(["EXAMPLE=1", "edited"])
+    expect(tools[1]!.input).toContain("newString")
+    expect(built.snapshot.truncated).toBe(false)
+  })
 })
