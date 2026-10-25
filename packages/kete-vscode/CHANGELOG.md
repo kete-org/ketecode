@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.11
+
+- Bundles the 0.2.11 `kete` runtime. No changes to the extension itself.
+
 ## 0.2.10
 
 - New sessions start on your organization's default model (its Default coding tier in the Kete
