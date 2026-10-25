@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.12
+
+- Bundles the 0.2.12 `kete` runtime. No changes to the extension itself.
+
 ## 0.2.11
 
 - Bundles the 0.2.11 `kete` runtime. No changes to the extension itself.
