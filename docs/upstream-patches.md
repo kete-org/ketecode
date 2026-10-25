@@ -1458,3 +1458,19 @@ loads managed agents a few seconds after a folder's first request.
 
 **Sync checklist:** if upstream changes how `SessionContext.load` picks the model, keep the order Session
 model → agent model → server default. Report upstream.
+
+## The TUI starts agents without a model on the server's default model (fix/tui-default-model)
+
+Upstream's TUI picks the model for an agent without one of its own (Build, Plan) on the client: `--model`,
+the config `model`, a recent model, then the first model in the catalog. It never asks the server for its
+default model, so a signed-in CLI's platform default (`/api/v1/me` `default_model`, applied by the gateway
+plugin's model transform) never reached the TUI, and Build and Plan started on whichever model the catalog
+listed first, such as a direct OpenAI model picked up from `OPENAI_API_KEY`. `kete run` and the mini TUI
+already use the server default.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/context/local.tsx` | asks `model.default` (re-asked when the catalog changes) and uses it after recent models, before the first catalog model (marked lines) | the fallback order lives in this memo; no TUI plugin hook takes part in it |
+
+**Sync checklist:** if upstream changes `fallbackModel`, keep the order `--model` → config `model` →
+recent → server default → first catalog model. Report upstream.

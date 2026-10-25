@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
-import { batch, createMemo, onCleanup } from "solid-js"
+import { batch, createMemo, createResource, onCleanup } from "solid-js" // kete_change
 import { useEvent } from "./event"
 import path from "path"
 import { useTuiPaths } from "./runtime"
@@ -24,6 +24,7 @@ import { useRoute } from "./route"
 import { useData } from "./data"
 import { usePermission } from "./permission"
 import { useLocation } from "./location"
+import { useClient } from "./client" // kete_change
 import { parse } from "../util/model"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
@@ -41,6 +42,25 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const models = () => data.location.model.list(location.ref)
     const providers = () => data.location.provider.list(location.ref)
+    // kete_change start: the runtime's default model (a signed-in CLI's comes from the platform), asked
+    // again whenever the catalog changes; agents without a model of their own start on it
+    const client = useClient()
+    const [serverDefault] = createResource(
+      () => ({
+        location: location.ref,
+        catalog: models()
+          ?.map((item) => `${item.providerID}/${item.id}`)
+          .join(","),
+      }),
+      (source) =>
+        client.api.model
+          .default({ location: source.location })
+          .then((response) =>
+            response.data ? { providerID: response.data.providerID, modelID: response.data.id } : undefined,
+          )
+          .catch(() => undefined),
+    )
+    // kete_change end
 
     function isModelValid(model: ModelPreferenceModel) {
       return !!models()?.some((item) => item.providerID === model.providerID && item.id === model.modelID)
@@ -197,6 +217,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             return item
           }
         }
+
+        const preferred = serverDefault.latest // kete_change
+        if (preferred && isModelValid(preferred)) return preferred // kete_change
 
         const model = models()?.[0]
         if (!model) return undefined

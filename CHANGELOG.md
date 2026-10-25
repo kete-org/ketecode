@@ -6,6 +6,10 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Build and Plan start on your organization's model:** in the terminal UI, agents without a model
+  of their own (Build, Plan) now start on your organization's default model too, instead of the first
+  model listed, which could be a model from another provider. A model you picked recently still wins.
+
 ## 0.2.10
 
 - **Your organization's default model:** a signed-in `kete` now starts on the model your
