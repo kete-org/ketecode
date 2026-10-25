@@ -6,6 +6,8 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+## 0.2.12
+
 - **Security:** Kete Code's own API keys (`kete_live_…`, `kete_test_…`) are now masked wherever text
   is redacted: session shares, the audit log, memory notes and bug reports. Before, one printed by a
   command (for example `env`) was kept as it was.
