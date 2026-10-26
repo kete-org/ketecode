@@ -1030,14 +1030,16 @@ export function Session(props: {
   ]
 
   const baseCommands = createMemo(() => [
+    // kete_change start: /share uploads a redacted snapshot to the Kete portal (kete/share.tsx); upstream dropped its share commands in v2.1.4
     {
       title: "Share session",
       id: "session.share",
       suggested: route.type === "session",
       group: "Session",
       slash: { name: "share" },
-      run: () => void KeteShare.share({ dialog, api: client.api, location: location(), toast, clipboard, sessionID: route.sessionID }), // kete_change: /share uploads a redacted snapshot to the Kete portal (kete/share.tsx)
+      run: () => void KeteShare.share({ dialog, api: client.api, location: location(), toast, clipboard, sessionID: route.sessionID }),
     },
+    // kete_change end
     {
       title: "Rename session",
       id: "session.rename",
@@ -1109,13 +1111,15 @@ export function Session(props: {
         dialog.clear()
       },
     },
+    // kete_change start: /unshare deletes the share (kete/share.tsx)
     {
       title: "Unshare session",
       id: "session.unshare",
       group: "Session",
       slash: { name: "unshare" },
-      run: () => KeteShare.unshare({ dialog, api: client.api, location: location(), toast, clipboard, sessionID: route.sessionID }), // kete_change: /unshare deletes the share (kete/share.tsx); enabled: false dropped
+      run: () => KeteShare.unshare({ dialog, api: client.api, location: location(), toast, clipboard, sessionID: route.sessionID }),
     },
+    // kete_change end
     {
       title: "Undo previous message",
       id: "session.undo",

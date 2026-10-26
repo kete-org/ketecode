@@ -1,3 +1,24 @@
 # OpenCode-name literals that intentionally stay in engine sources after a sync.
 # One entry per line: <file>:<pattern-id>, where pattern-id is project-dir,
 # config-file or display-name (see packages/kete-tools/src/lib.ts). Say why in a comment.
+
+# Upstream v2.1.4 sync (2026-10-26)
+# Unreachable: the Updater service is KeteUpdater.layer (cli/src/kete/updater.ts); these strings describe OpenCode's own installers.
+packages/cli/src/services/updater.ts:display-name
+packages/cli/src/services/updater.ts:config-file
+# The OpenCode Console provider: "OpenCode Console" is that hosted service's product name (opt-in, ADR 0003);
+# the project-dir hit is the console.opencode.ai host in a regular expression, not a project directory.
+packages/core/src/plugin/provider/opencode.ts:display-name
+packages/core/src/plugin/provider/opencode.ts:project-dir
+# ".opencode-probe" is a throwaway pathspec git checks against, never a file or folder users see.
+packages/core/src/git.ts:project-dir
+# "OpenCode Go" is the hosted plan's product name; these show only after the opt-in free allowance runs out (ADR 0003).
+packages/core/src/session/to-session-error.ts:display-name
+packages/tui/src/component/dialog-go-upsell.tsx:display-name
+packages/tui/src/routes/session/index.tsx:display-name
+# The display name of the "opencode" (OpenCode Zen) hosted provider.
+packages/tui/src/util/tool-display.ts:display-name
+# Storybook is a development tool, registered only for OPENCODE_STORY runs (tui/src/plugin/builtins.ts).
+packages/tui/src/feature-plugins/system/storybook/highlights.tsx:display-name
+# The SDK client's identifier in an import (`import { OpenCode }`), not user-facing text.
+packages/cli/src/commands/handlers/pair.ts:display-name

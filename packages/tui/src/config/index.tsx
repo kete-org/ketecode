@@ -10,6 +10,7 @@ import path from "path"
 import { TuiKeybind } from "./keybind"
 import { KeteStatusLineConfig } from "../kete/statusline-config" // kete_change
 import { keteHistorySearchKeys } from "../kete/history-search" // kete_change
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 export interface Interface {
   readonly path?: string
@@ -251,7 +252,7 @@ export const Info = Schema.Struct({
   }),
   animations: Schema.optional(Schema.Boolean).annotate({ description: "Enable interface animations" }),
   highlights: Schema.optional(Schema.Boolean).annotate({
-    description: "Show the release highlights once after OpenCode updates",
+    description: `Show the release highlights once after ${Brand.displayName} updates`, // kete_change
   }),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
   cursor: Schema.optional(Cursor),

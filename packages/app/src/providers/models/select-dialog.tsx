@@ -706,10 +706,11 @@ export function ModelSelectorPopoverView(props: {
                         <ProviderModelIcon provider={group.items[0].provider} class="shrink-0" />
                         <Show
                           when={managedIDs().has(group.category) ? managed() : undefined}
+                          // kete_change start: local server groups read "Local · Ollama"
                           fallback={
-                            // kete_change: local server groups read "Local · Ollama"
                             <span class="min-w-0 truncate">{groupTitle(group.items[0].provider, group.items[0].provider.name)}</span>
                           }
+                          // kete_change end
                         >
                           {(workspace) => (
                             <>

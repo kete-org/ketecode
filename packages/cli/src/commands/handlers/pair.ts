@@ -16,7 +16,7 @@ export default Runtime.handler(
     const config = yield* ServiceConfig.read()
     if (config.disabled === true)
       return yield* Effect.fail(
-        new Error("Pairing requires the background service; run `opencode service unset disabled` first"),
+        new Error(`Pairing requires the background service; run \`${Brand.cliName} service unset disabled\` first` /* kete_change */),
       )
     if (input.remote && Option.isSome(input.url))
       return yield* Effect.fail(new Error("--remote cannot be combined with --url"))
@@ -71,9 +71,9 @@ export default Runtime.handler(
 )
 
 export const remoteWarning = [
-  "This will expose your OpenCode server to the internet.",
+  `This will expose your ${Brand.displayName} server to the internet.`, // kete_change
   "Traffic is end-to-end encrypted, and access requires your server password.",
-  "To pair locally instead, run `opencode pair` without the --remote flag.",
+  `To pair locally instead, run \`${Brand.cliName} pair\` without the --remote flag.`, // kete_change
 ].join(EOL)
 
 export interface RemoteConsentPrompt {
@@ -103,12 +103,12 @@ export const remoteConsent = Effect.fn("cli.pair.remote-consent")(function* (
   if (!input.yes) {
     const accepted = yield* Effect.promise(terminal.confirm)
     if (isCancel(accepted)) {
-      cancel("Remote access was not enabled. To pair locally, run `opencode pair`.")
+      cancel(`Remote access was not enabled. To pair locally, run \`${Brand.cliName} pair\`.`) // kete_change
       process.exitCode = 130
       return false
     }
     if (accepted !== true) {
-      log.info("Remote access was not enabled. To pair locally, run `opencode pair`.")
+      log.info(`Remote access was not enabled. To pair locally, run \`${Brand.cliName} pair\`.`) // kete_change
       return false
     }
   }
@@ -140,7 +140,7 @@ const remoteURL = Effect.fnUntraced(function* (client: ReturnType<typeof OpenCod
     Effect.timeoutOrElse({
       duration: "3 minutes",
       orElse: () =>
-        Effect.fail(new Error("Timed out waiting for the remote tunnel; run `opencode pair --remote` again to retry")),
+        Effect.fail(new Error(`Timed out waiting for the remote tunnel; run \`${Brand.cliName} pair --remote\` again to retry` /* kete_change */)),
     }),
   )
 })

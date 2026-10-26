@@ -85,7 +85,7 @@ inherit the bridged values. Consequences for future merges:
 `cli/src/mini-host.ts`, `cli/src/commands/handlers/pair.ts`,
 `cli/src/commands/handlers/stats.ts`, `cli/src/services/service-config.ts`,
 `cli/src/services/server-connection.ts`, `cli/src/services/update-preflight.tsx`,
-`cli/src/acp/event.ts`, `cli/src/acp/service.ts`, `cli/src/acp/agent.ts`,
+`cli/src/acp/translate.ts`, `cli/src/acp/service.ts`, `cli/src/acp/agent.ts`, `cli/src/acp/error.ts`,
 `cli/src/config/schema.ts`, `server/src/process.ts`, `server/src/routes.ts`,
 `core/src/mcp/client.ts`, `core/src/tool/plugin/webfetch.ts`,
 `core/src/tool/plugin/websearch.ts`, `core/src/pty.ts`, `core/src/shell.ts`,
@@ -238,7 +238,7 @@ wordmark until Kete Code has a designed logo.
 | `app/src/settings/about/about.tsx`                                                                                       | The opencode.ai website link is shown only once `Brand.urls.docs` exists                         |
 | `app/vite.config.ts`, `app/src/entry.tsx`                                                                                | About shows the Kete release version (`OPENCODE_VERSION` from the release build)                 |
 | `app/src/providers/catalog/order.ts`, `app/src/providers/connect/dialog.tsx`, `app/src/settings/providers/providers.tsx` | OpenCode Go/Zen listed after the other popular providers, without a "Recommended" tag (ADR 0003) |
-| `app/src/providers/catalog/order.test.ts`                                                                                | Asserts the new order                                                                            |
+| `app/src/kete/provider-order.test.ts` (Kete-owned)                                                                       | Asserts the new order (moved here when upstream dropped `order.test.ts` in v2.1.4)               |
 
 Not yet rebranded: the PWA/app icons (`packages/desktop/icons`, raster), which need the
 designed logo. About keeps OpenCode's colophon and credits, as attribution.
@@ -292,7 +292,8 @@ extension's frame.
 | `server/src/process.ts`                                 | `KeteLocalGuard.middleware` wraps the served app, outside CORS and auth                           |
 | `app/src/app.tsx`                                       | Mounts `KeteVSCodeShell` in the router root                                                        |
 | `app/src/session/route.tsx`, `app/src/new-session/route.tsx` | Mount `KeteVSCodeBridge` inside the composer providers                                        |
-| `app/src/session/review/view.tsx`                       | Selecting a file in the review (or a diff in the timeline) also calls `openDiff`                  |
+| `gui-extensions/src/review/panel.tsx`                   | Selecting a file in the review panel also dispatches `kete:open-diff` (`gui-extensions/src/kete/contract.ts`; extensions import each other only through a contract); `KeteVSCodeShell` listens and calls `openDiff`. Upstream moved the review into `gui-extensions` in v2.0.22, which cannot import the app, hence the window event |
+| `gui-extensions/package.json`                           | Exports `./kete/open-diff` so the app imports the event name instead of repeating it              |
 
 **Behaviour change.** Upstream accepted cross-origin requests from any `http://localhost:*` or
 `127.0.0.1:*` page and from `https://*.opencode.ai` (still password-protected). Kete Code accepts
@@ -484,8 +485,9 @@ session's running subagents when the user stops the session.
 
 | File                                  | Change                                                                                                                                 |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `core/src/session/subagent-job.ts`    | Wraps each subagent job's work in `KeteSubagents.bound` (timeout; `make` now needs `Config.Service`). A cancelled subagent's completion notice is delivered with `resume: false`, so it no longer restarts a parent the user stopped |
-| `core/src/tool/plugin/subagent.ts`    | Asks `KeteSubagents.admit` for a place before creating or continuing a child, binds it to the child, and releases it when the call ends (`Effect.scoped`) |
+| `core/src/session/subagent-job.ts`    | `start(recovery, bound?)`: an optional `SubagentJob.Bound` wraps the job's work. Since v2.1.4 the service is global and has no config, so the callers below pass `KeteSubagents.bound` (timeout, worktree note). A cancelled subagent's completion notice is delivered with `resume: false`, so it no longer restarts a parent the user stopped |
+| `core/src/config/plugin/command.ts`   | Builds `KeteSubagents.make` and passes `controls.bound` to `subagents.start`, so slash-command subtasks get the timeout too |
+| `core/src/tool/plugin/subagent.ts`    | Asks `KeteSubagents.admit` for a place before creating or continuing a child, binds it to the child, and releases it when the call ends (`Effect.scoped`); passes `controls.bound` to `subagents.start` |
 | `core/src/plugin/internal.ts`         | Registers `KeteSubagents.Plugin` in `pre`, after `KetePermissionMode`: on `session.execution.interrupted` with reason `user`, stops the session's running subagents |
 
 ### Subagent worktrees (feature/subagent-worktrees)
@@ -966,9 +968,9 @@ panel.css,composer-controls.tsx}`.
 
 | File | Change | Why no seam |
 | --- | --- | --- |
-| `core/src/plugin/provider/{ollama,lmstudio,vllm}.ts` | Import; the exported plugin is `make(KeteLocalHosts.origin("<id>"))` instead of `make()` (1 line each) | `origin` is the plugins' only host input apart from config (which still wins); the instances are built at module load |
-| `core/src/plugin/provider/{ollama,lmstudio,vllm}.ts` | Import of `KeteOffline` (core); one marked line at the start of `discover`: `if (yield* KeteOffline.blocks(config, current.baseURL)) return undefined` (offline mode on and the base URL isn't on this machine or a private network: no discovery request, no API key sent; checked on every tick, so a project `kete.offline` counts) | discovery is closure-private and runs on the plugin's own timer; no hook can stop its requests |
-| `core/src/plugin/provider/ollama.ts` | Marked block in `make`: a second `ctx.event` subscription clears this host's discovery cache entry and calls `refresh()` on `rpc.kete.local-models.rediscover` | the discovery cache and `refresh` are closure-private; no hook triggers them |
+| `core/src/plugin/provider/{ollama,lmstudio,vllm}.ts` | Import; the exported plugin is `make(KeteLocalHosts.envOrigin("<id>"))` instead of `make()` (1 line each). `envOrigin` is undefined unless a `KETE_*_HOST`/`OLLAMA_HOST` is set, so upstream's default (none in a remote workspace, v2.1.4) still applies | `origin` is the plugins' only host input apart from config (which still wins); the instances are built at module load |
+| `core/src/plugin/provider/local.ts` (shared by the three since v2.1.4) | Import of `KeteOffline` (core); one marked line at the start of `discover`: `if (yield* KeteOffline.blocks(config, current.baseURL)) return undefined` (offline mode on and the base URL isn't on this machine or a private network: no discovery request, no API key sent; checked on every tick, so a project `kete.offline` counts) | discovery is closure-private and runs on the plugin's own timer; no hook can stop its requests |
+| `core/src/plugin/provider/local.ts` | Marked block in `make`: a second `ctx.event` subscription clears this host's discovery cache entry and calls `refresh()` on `rpc.kete.local-models.rediscover` (for any of the three; the RPC names the provider) | the discovery cache and `refresh` are closure-private; no hook triggers them |
 | `core/src/plugin/internal.ts` | Imports; `KeteLocalModels.Plugin` and `KeteOffline.Plugin` in `post` after `ConfigPolicyPlugin`, before `KeteJobPlugin`; `KeteOffline.Plugin.id` in `guarded` | internal plugins can only be registered here; repository config must not be able to remove offline mode |
 | `core/src/session/runner/llm.ts` | The existing marked `checks({...})` call also passes `model: loaded.model` | the runner check needs the resolved model; no hook can fail a step |
 | `core/src/session/runner/model.ts` | Import; `ModelUnavailableError.message` appends `KeteOffline.unavailableHint()` (empty unless offline) | a model removed by offline mode fails here, before any Kete code runs |
@@ -1474,3 +1476,24 @@ already use the server default.
 
 **Sync checklist:** if upstream changes `fallbackModel`, keep the order `--model` → config `model` →
 recent → server default → first catalog model. Report upstream.
+
+## Upstream v2.1.4 sync (upstream/v2.1.4)
+
+Patches that changed shape in the v2.0.16 → v2.1.4 sync, beyond the rows updated above.
+
+| File | Change | Why |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Upstream's `TodoTool.Plugin` (and its import) is commented out | v2.1.4 added its own `todowrite` tool; `KeteTodo` already registers one with that name plus the `kete.todo` RPC the TUI and VS Code read. **Follow-up:** compare the two and drop one |
+| `tui/src/plugin/builtins.ts` | Upstream's `SidebarTodo` is not registered | `KeteTodo` shows the task list; two lists would show. Same follow-up |
+| `server/src/auth.ts` | The password comparison in `authorized` uses `KeteConstantTime.equal`; upstream's new session tokens (`verifySession`) already use `timingSafeEqual` | upstream compares the password with `===` again |
+| `cli/test/acp/subprocess.ts` | `spawn(extraEnv)` and `...extraEnv` kept | upstream dropped them with the only test that used them; that test moved to `cli/test/kete/acp-initialize-auth.subprocess.test.ts` (Kete agent name, auth secret never echoed) |
+| `tui/src/component/prompt/index.tsx` | The status line row replaces the footer label; the old `props.hint` fallback is gone | upstream removed the `hint` prop |
+| `tui/src/component/dialog-model.tsx` | `dialogFields` and `localFooter` on upstream's new rows (favorites, free group, detail); unreachable local servers after the free group | upstream rewrote the picker |
+| `app/src/settings/about/about.tsx` | The wordmark font licence line sits after upstream's new third-party notices button | both kept |
+| `CHANGELOG.md` | Kept Kete's | upstream now commits a root `CHANGELOG.md` of OpenCode notes, read only by its own `script/publish.ts` (never run here) |
+| `cli/script/build.ts` | Kete defines kept next to upstream's `OPENCODE_RELEASE_HIGHLIGHTS` | highlights are embedded only when `OPENCODE_RELEASE_NOTES` is set at build time, which Kete's release does not do. **Follow-up:** compare upstream's highlights view with `/release-notes` and drop one (Release notes sync checklist) |
+| `kete-{tools,vscode,harness-plugin}/package.json` | `@typescript/native-preview` pinned to `7.0.0-dev.20251207.1` instead of `catalog:` | upstream removed it from the catalog (typecheck is now `bun check`, TypeScript 6). **Follow-up:** move these packages to `bun check` |
+
+Toolchain: v2.1.4 needs Bun 1.4.4 (`packageManager`) and Effect's moved modules (`effect/http`, `effect/cli`,
+`effect/process`; `Flag.Boolean`/`String`/`Literals`). Kete-owned code was updated to match in the same PR.
+
