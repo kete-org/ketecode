@@ -13,6 +13,7 @@ import { InstructionDiscovery } from "../../instruction-discovery.js"
 import { Instructions } from "../../instructions/index.js"
 import { Location } from "../../location.js"
 import { KeteInstructionFiles } from "../../kete/instruction-files.js" // kete_change
+import { KeteOffline } from "../../kete/offline.js" // kete_change
 
 type Loaded =
   | { readonly type: "available"; readonly files: InstructionDiscovery.File[] }
@@ -122,7 +123,11 @@ export const Plugin = define({
             continue
           }
           for (const item of (yield* match(source)).toSorted()) {
-            const resolved = yield* fs.resolve(item)
+            // kete_change start: a project-relative entry never follows a symlink out of its folder (kete/instruction-files.ts)
+            const relative = project && !path.isAbsolute(source.startsWith("~/") ? path.join(global.home, source.slice(2)) : source)
+            const resolved = relative ? yield* KeteInstructionFiles.allowed(fs, item, root, home) : yield* fs.resolve(item)
+            if (resolved === undefined) continue
+            // kete_change end
             if (watched.has(resolved)) continue
             watched.add(resolved)
             const file = yield* read(resolved)
@@ -149,8 +154,15 @@ export const Plugin = define({
           const sources = Array.from(
             new Set(entries.flatMap((entry) => (entry.type === "document" ? (entry.info.instructions ?? []) : []))),
           )
+          // kete_change start: offline mode fetches no instruction URL off this machine or a private network (kete/offline.ts)
+          const urls = yield* Effect.filter(sources.filter(isUrl), (url) =>
+            KeteOffline.blocks(config, url).pipe(Effect.map((blocked) => !blocked)),
+          )
+          if (urls.length < sources.filter(isUrl).length)
+            yield* Effect.logWarning("offline mode: instruction URLs not fetched")
+          // kete_change end
           const fetched = yield* Effect.forEach(
-            sources.filter(isUrl),
+            urls, // kete_change
             (url) =>
               HttpClientRequest.get(url).pipe(
                 http.execute,

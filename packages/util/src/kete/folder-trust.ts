@@ -15,7 +15,8 @@
 //   binaries), `shell`, `worktree` (where worktrees and their setup script run), remote `skills` URLs
 //   and git `references` (fetched when they load), permission rules that loosen (`allow` rules, and an
 //   `ask` rule overlapping a machine-level `deny`: rules are last-match-wins, so that ask would turn the
-//   deny into a question), `experimental.policies` and top-level `policies` allow statements and the v1 `enabled_providers`
+//   deny into a question), `experimental.policies` and top-level `policies` allow statements, `instructions` entries that leave the
+//   project (URLs, absolute, `~` or `..` paths) and the v1 `enabled_providers`
 //   (which normalizes into `provider.use` allows; `disabled_providers`, its deny-only sibling, is
 //   fingerprinted too, so dropping a denied provider asks again). Legacy keys (`permission`,
 //   `tools`, `agent`, `mode`) count too. `{env:…}`/`{file:…}` substitution in a project document is
@@ -123,6 +124,20 @@ function exempt(key: string, value: unknown): boolean {
   return false
 }
 
+/** Whether an `instructions` entry reaches outside the project (core/src/config/plugin/instruction.ts): a URL
+ * it fetches, or a path that is absolute, under `~`, or climbs out with `..`. Those read files elsewhere on
+ * the machine into the prompt, or fetch from the network, so a project's wait for trust. */
+export function instructionLeaves(source: unknown): boolean {
+  if (typeof source !== "string") return false
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source) || source.startsWith("~") || /^(?:[a-zA-Z]:)?[\\/]/.test(source)) return true
+  return source.split(/[\\/]/).includes("..")
+}
+
+/** The `instructions` entries that reach outside the project. */
+export function outsideInstructions(value: unknown): unknown[] {
+  return Array.isArray(value) ? value.filter(instructionLeaves) : []
+}
+
 /** Whether a `skills` item is fetched from the network (core/src/config/plugin/skill.ts). */
 export function remoteSkill(item: unknown): boolean {
   if (typeof item !== "string" || !URL.canParse(item)) return false
@@ -185,6 +200,7 @@ export function guardedValues(document: unknown): Record<string, unknown> {
   const policy = policies(document)
   if (policy !== undefined) found["experimental.policies"] = policy
   if (document.policies !== undefined) found.policies = document.policies
+  if (document.instructions !== undefined) found.instructions = document.instructions
   for (const group of AGENT_KEYS) {
     const agents = document[group]
     if (!isRecord(agents)) continue
@@ -285,6 +301,7 @@ export function runtimeGuarded(document: unknown): string[] {
   if (enabledProviders(document).length > 0) found.push("enabled_providers")
   if (allowPolicies(policies(document)).length > 0) found.push("experimental.policies")
   if (allowPolicies(document.policies).length > 0) found.push("policies")
+  if (outsideInstructions(document.instructions).length > 0) found.push("instructions")
   for (const key of PERMISSION_KEYS)
     if (key in document && rawRules(key, document[key]).some((rule) => rule.effect === "allow")) found.push(key)
   for (const group of AGENT_KEYS) {
@@ -446,6 +463,7 @@ export function describe(document: unknown): string[] {
   if (enabled.length > 0) items.push(`enabled_providers: allows provider ${enabled.map((name) => shown(name)).join(", ")} (provider.use)`)
   for (const policy of [...allowPolicies(policies(document)), ...allowPolicies(document.policies)])
     items.push(`policy: ${shown(policy.action)} ${shown(policy.resource)} → ${safe(policy.effect)}`)
+  for (const source of outsideInstructions(document.instructions)) items.push(`instructions: ${shown(source)}`)
   return items
 }
 

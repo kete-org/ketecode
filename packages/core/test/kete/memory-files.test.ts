@@ -43,6 +43,10 @@ interface Scenario {
   readonly projectKete?: Record<string, unknown>
   /** Relative symlinks: [link, target as written], the link relative to the tmp folder. */
   readonly relLinks?: readonly [string, string][]
+  /** A project kete.json `instructions` list. */
+  readonly instructions?: readonly string[]
+  /** `kete.offline` in the global config. */
+  readonly offline?: boolean
 }
 
 interface World {
@@ -52,6 +56,8 @@ interface World {
   readonly global: string
   readonly discovery: InstructionDiscovery.Interface
   readonly loads: string[][]
+  /** URLs the instruction plugin fetched. */
+  readonly requests: string[]
   readonly text: Effect.Effect<string, unknown>
   /** Runs the read tool's execute.after hook for `target` (a path relative to the project). */
   readonly read: (target: string) => Effect.Effect<void>
@@ -90,6 +96,7 @@ const scenario = (
         })
         const directory = path.join(project, input.directory ?? "")
         const loads: string[][] = []
+        const requests: string[] = []
         const hooks: ((event: never) => Effect.Effect<void>)[] = []
         const watcher = Watcher.testLayer
         const layer = Layer.mergeAll(
@@ -115,13 +122,21 @@ const scenario = (
             ],
           ),
           watcher,
-          // Upstream's instruction plugin can fetch instruction URLs; these tests configure none, so any request is a 404.
+          // Upstream's instruction plugin fetches configured instruction URLs: answer each with a marker, and record it.
           Layer.succeed(
             HttpClient.HttpClient,
-            HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 404 })))),
+            HttpClient.make((request) =>
+              Effect.sync(() => {
+                requests.push(request.url)
+                return HttpClientResponse.fromWeb(request, new Response("REMOTE RULE"))
+              }),
+            ),
           ),
           Config.testLayer([
-            { type: "document", path: path.join(global, "kete.json"), info: { kete: { memory: input.memory } } } as never,
+            { type: "document", path: path.join(global, "kete.json"), info: { kete: { memory: input.memory, ...(input.offline ? { offline: true } : {}) } } } as never,
+            ...(input.instructions
+              ? [{ type: "document", path: path.join(project, "kete.json"), info: { instructions: input.instructions } } as never]
+              : []),
             ...(input.projectKete
               ? [{ type: "document", path: path.join(project, "kete.json"), info: { kete: input.projectKete } } as never]
               : []),
@@ -164,6 +179,7 @@ const scenario = (
             global,
             discovery,
             loads,
+            requests,
             text: discovery.load().pipe(
               Effect.flatMap(readInitial),
               Effect.map((initial) => initial.text),
@@ -205,6 +221,42 @@ function emitAndWait(update: Watcher.Update) {
 }
 
 const block = (file: string, content: string) => `Instructions from: ${file}\n${content}`
+
+describe("configured instructions", () => {
+  it.live("a URL is fetched online and not at all in offline mode", () =>
+    Effect.gen(function* () {
+      yield* scenario({ project: true, instructions: ["https://example.com/rules.md"] }, ({ requests, text }) =>
+        Effect.gen(function* () {
+          expect(yield* text).toContain("REMOTE RULE")
+          expect(requests).toEqual(["https://example.com/rules.md"])
+        }),
+      )
+      yield* scenario({ project: true, offline: true, instructions: ["https://example.com/rules.md"] }, ({ requests, text }) =>
+        Effect.gen(function* () {
+          expect(yield* text).not.toContain("REMOTE RULE")
+          expect(requests).toEqual([])
+        }),
+      )
+    }),
+  )
+
+  it.live("a project file that links outside the project doesn't load; one inside does", () =>
+    scenario(
+      {
+        project: true,
+        instructions: ["docs/*.md"],
+        files: { "elsewhere/secret.md": "TOP SECRET", "home/repo/docs/rules.md": "PROJECT RULE" },
+        links: [["home/repo/docs/leak.md", "elsewhere/secret.md"]],
+      },
+      ({ text }) =>
+        Effect.gen(function* () {
+          const loaded = yield* text
+          expect(loaded).toContain("PROJECT RULE")
+          expect(loaded).not.toContain("TOP SECRET")
+        }),
+    ),
+  )
+})
 
 describe("KeteMemoryFiles.Plugin", () => {
   it.live("loads CLAUDE.md where there is no AGENTS.md, and .claude/CLAUDE.md after it", () =>

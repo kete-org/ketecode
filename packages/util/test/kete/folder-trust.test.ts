@@ -640,3 +640,20 @@ describe("commands that run shell commands", () => {
     expect((await take([command], "Go !`printf go`")).value).not.toBe(base.value)
   })
 })
+
+describe("instructions that leave the project", () => {
+  test("URLs, absolute, home and parent paths leave; project-relative ones stay", () => {
+    for (const source of ["https://example.com/x.md", "HTTP://x", "file:///etc/passwd", "~/.ssh/id_ed25519", "~", "/etc/passwd", "C:\\Users\\me\\secret.md", "c:/x.md", "\\\\server\\share\\x.md", "../other/AGENTS.md", "docs/../../x.md", "docs\\..\\..\\x.md"])
+      expect(Rules.instructionLeaves(source)).toBe(true)
+    for (const source of ["docs/rules.md", "**/*.md", ".kete/rules.md", "a..b.md", "docs/..hidden.md"])
+      expect(Rules.instructionLeaves(source)).toBe(false)
+  })
+
+  test("they count as guarded, are fingerprinted and are described", () => {
+    const document = { instructions: ["docs/rules.md", "~/.aws/credentials"] }
+    expect(Rules.runtimeGuarded(document)).toContain("instructions")
+    expect(Rules.guardedValues(document).instructions).toEqual(document.instructions)
+    expect(Rules.describe(document)).toContain('instructions: "~/.aws/credentials"')
+    expect(Rules.runtimeGuarded({ instructions: ["docs/rules.md"] })).not.toContain("instructions")
+  })
+})

@@ -636,6 +636,24 @@ describe("folder trust", () => {
     ),
   )
 
+  it.live("instructions that leave the project wait for trust; ones inside it load", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), {
+          instructions: ["docs/rules.md", "~/.ssh/id_ed25519", "/etc/passwd", "../other/AGENTS.md", "https://example.com/x.md"],
+        })
+      },
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "instructions")).toEqual(["docs/rules.md"])
+          const description = (yield* formText).description
+          for (const item of ["~/.ssh/id_ed25519", "/etc/passwd", "../other/AGENTS.md", "https://example.com/x.md"])
+            expect(description).toContain(`instructions: "${item}"`)
+        }),
+    ),
+  )
+
   it.live("minor4b: a top-level policy allow is held back; its deny applies", () =>
     setup(
       async (fixture) => {
