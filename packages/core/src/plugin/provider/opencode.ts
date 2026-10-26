@@ -257,10 +257,11 @@ export const OpencodePlugin = define<
         Effect.flatMap((credential) => {
           if (!credential || credential.type === "external")
             return Effect.succeed({ config: undefined, connection, organization: undefined, mcp: undefined })
-          // kete_change start: offline mode makes no Console request; the config stays as it was, as when a fetch fails
+          // kete_change start: offline mode makes no Console request; the config stays as it was, as when a fetch
+          // fails, except hosted voice, which would reach the Console
           if (offline)
             return Effect.succeed({
-              config: snapshot.config,
+              config: snapshot.config && { ...snapshot.config, voice: undefined },
               connection,
               organization: snapshot.organization,
               mcp: snapshot.mcp,

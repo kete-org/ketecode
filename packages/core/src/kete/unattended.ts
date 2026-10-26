@@ -40,6 +40,7 @@ import { KeteAudit } from "./audit.js"
 import { KeteBudget } from "./budget.js"
 import { KetePermissionCeiling } from "./permission-ceiling.js"
 import { KeteSandboxActions } from "./sandbox/actions.js"
+import { KeteSubagents } from "./subagents.js"
 import { KeteUnattendedPolicy } from "./unattended-policy.js"
 
 /** Longest family cost walk; mirrors unattended-policy.ts's ancestor-chain guard. */
@@ -282,8 +283,8 @@ export const Plugin = define({
 
     const auditLookup: Lookup = {
       session: get,
-      // No cursor is passed, so the cursor error can't happen.
-      children: (parentID) => sessions.list({ parentID }).pipe(Effect.orDie, Effect.map((result) => result.data)),
+      // Every child, as `make`'s check counts them; Session.list alone returns one page.
+      children: (parentID) => KeteSubagents.children(sessions, parentID),
       config: Effect.map(config.entries(), (entries) => Config.latest(entries, "kete")),
       now: Effect.sync(() => Date.now()),
     }

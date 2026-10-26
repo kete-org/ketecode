@@ -301,6 +301,25 @@ describe("KeteSubagents", () => {
     }),
   )
 
+  it.live("stopping a session stops a running subagent even past the first 50 children", () =>
+    Effect.gen(function* () {
+      const { sessions, parent } = yield* setup({})
+      const jobs = yield* Job.Service
+      const running = yield* sessions.create({ parentID: parent.id, title: "hold", agent: Agent.ID.make("reviewer") })
+      yield* jobs.start({ id: running.id, type: SubagentTool.name, run: Effect.never })
+      // Newer, finished children push the running one past a 50-row page.
+      yield* Effect.forEach(Array.from({ length: 55 }, (_, n) => n), (n) =>
+        sessions.create({ parentID: parent.id, title: `done ${n}`, agent: Agent.ID.make("reviewer") }),
+      )
+
+      const bus = yield* Bus.Service
+      yield* bus.publish(SessionEvent.Execution.Interrupted, { sessionID: parent.id, reason: "user" })
+
+      yield* eventually(() => jobs.get(running.id).pipe(Effect.map((job) => job?.status === "cancelled")))
+      expect(calls.interrupted).toContain(running.id)
+    }),
+  )
+
   it.live("slash-command subtasks get the subagent tool's depth and permission checks", () =>
     Effect.gen(function* () {
       const { sessions, parent } = yield* setup({})

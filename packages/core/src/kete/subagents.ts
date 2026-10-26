@@ -35,6 +35,20 @@ import { KeteWorktrees } from "./worktrees.js"
 
 export const defaults = { timeout: 60, maxConcurrent: 4 } as const
 
+/** Every child of `parentID`, page by page: Session.list returns one page (50 rows by default), and a running
+ * or over-budget child can sit past it. No cursor parse can fail here (each comes from the previous page). */
+export const children = Effect.fnUntraced(function* (sessions: Session.Interface, parentID: SessionSchema.ID) {
+  const limit = 200
+  const found: Array<(typeof Session.Info)["Type"]> = []
+  let page = yield* sessions.list({ parentID, limit }).pipe(Effect.orDie)
+  found.push(...page.data)
+  while (page.data.length === limit && page.cursor.next !== undefined) {
+    page = yield* sessions.list({ cursor: page.cursor.next, limit }).pipe(Effect.orDie)
+    found.push(...page.data)
+  }
+  return found
+})
+
 export type Limits = {
   /** Undefined means no limit. */
   readonly timeout: Duration.Duration | undefined
@@ -113,10 +127,8 @@ export const make: Effect.Effect<
   const current = Effect.map(config.entries(), (entries) => limits(Config.latest(entries, "kete")?.subagents))
 
   const running = Effect.fnUntraced(function* (parentID: SessionSchema.ID) {
-    // No cursor is passed, so the cursor error can't happen.
-    const children = yield* sessions.list({ parentID }).pipe(Effect.orDie)
     const ids: SessionSchema.ID[] = []
-    for (const child of children.data) {
+    for (const child of yield* children(sessions, parentID)) {
       const job = yield* jobs.get(child.id)
       if (job?.type === "subagent" && job.status === "running") ids.push(child.id)
     }
@@ -270,9 +282,8 @@ export const subtaskCheck = Effect.gen(function* () {
 export const stopChildren = Effect.fnUntraced(function* (parentID: SessionSchema.ID) {
   const sessions = yield* Session.Service
   const jobs = yield* Job.Service
-  const children = yield* sessions.list({ parentID })
   yield* Effect.forEach(
-    children.data,
+    yield* children(sessions, parentID),
     Effect.fnUntraced(function* (child) {
       const job = yield* jobs.get(child.id)
       if (job?.type !== "subagent" || job.status !== "running") return

@@ -2135,6 +2135,38 @@ describe("OpencodePlugin hosted voice", () => {
     ),
   )
 
+  // kete_change start: offline mode withdraws the Console's hosted voice (kete/offline.ts)
+  it.effect("offline mode withdraws hosted voice and makes no Console voice request", () =>
+    Effect.acquireUseRelease(
+      voiceConsole(() => Response.json({ session: { id: "sess_console" }, transport: { sdp: "answer:console" } })),
+      ({ server, requests }) =>
+        Effect.gen(function* () {
+          const voice = yield* Voice.Service
+          yield* connect(server)
+          const live = Effect.map(voice.models(), (list) => list.models.find((item) => item.model === "gpt-live-1"))
+          expect((yield* live)?.integration).toBe("opencode")
+
+          const previous = process.env.OPENCODE_OFFLINE
+          process.env.OPENCODE_OFFLINE = "1"
+          yield* Effect.gen(function* () {
+            yield* TestClock.adjust("1 minute")
+            yield* drain
+            expect((yield* live)?.integration).not.toBe("opencode")
+            expect(requests).toEqual([])
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (previous === undefined) delete process.env.OPENCODE_OFFLINE
+                else process.env.OPENCODE_OFFLINE = previous
+              }),
+            ),
+          )
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+  // kete_change end
+
   for (const item of [
     {
       name: "a refusal's reason",
