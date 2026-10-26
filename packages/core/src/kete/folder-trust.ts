@@ -248,6 +248,17 @@ export function strip(document: Document, machineDeny: ReadonlyArray<Rule>) {
       held.experimental = { policies: allows }
     }
   }
+  // Top-level `policies` (upstream v2.1.4 normalizes `experimental.policies` into it): allows wait for trust too.
+  if (info.policies) {
+    const allows = info.policies.filter((policy) => policy.effect !== "deny")
+    if (allows.length > 0) {
+      const kept = info.policies.filter((policy) => policy.effect === "deny")
+      if (kept.length > 0) next.policies = kept
+      else delete next.policies
+      removed.push("policies")
+      held.policies = allows
+    }
+  }
   if (info.permissions) {
     const split = KeteFolderTrustRules.loosening(info.permissions, machineDeny, Wildcard.match)
     if (split.held.length > 0) {

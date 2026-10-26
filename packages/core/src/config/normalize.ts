@@ -14,6 +14,7 @@ import { ConfigModel } from "@opencode/schema/config/model"
 import { ConfigMCP } from "@opencode/schema/config/mcp"
 import { ConfigPlugin } from "@opencode/schema/config/plugin"
 import { ConfigPolicy } from "@opencode/schema/config/policy"
+import { KetePolicyCompat } from "../kete/policy-compat.js" // kete_change
 import { ConfigProvider } from "@opencode/schema/config/provider"
 import { ConfigReference } from "@opencode/schema/config/reference"
 import { ConfigExperimental } from "@opencode/schema/config/experimental"
@@ -428,14 +429,14 @@ function normalizePolicies(
   )
   const experimental = isRecord(input.experimental)
     ? decodeList(
-        input.experimental.policies,
+        KetePolicyCompat.upgrade(input.experimental.policies), // kete_change: legacy "permission" reads as "tool.use"
         ConfigPolicy.Info,
         ["experimental", "policies"],
         diagnostics,
         decodeEncoded,
       )
     : []
-  const native = decodeList(input.policies, ConfigPolicy.Info, ["policies"], diagnostics, decodeEncoded)
+  const native = decodeList(KetePolicyCompat.upgrade(input.policies), ConfigPolicy.Info, ["policies"], diagnostics, decodeEncoded) // kete_change: legacy "permission" reads as "tool.use"
   if (
     generated.length ||
     experimental.length ||

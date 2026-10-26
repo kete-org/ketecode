@@ -9,7 +9,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { Effect, Exit, Layer, PubSub, Scope, Stream } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
@@ -88,7 +88,7 @@ describe("settings", () => {
     expect(KeteHooksSettings.placement(project, { ...none, projectOptIn: true, policyDeniesSandboxOff: true }).kind).toBe("refused")
     expect(KeteHooksSettings.placement(user, { ...none, mode: "required" }).kind).toBe("refused")
     expect(KeteHooksSettings.placement(project, { ...base, mode: "off", projectOptIn: false }).kind).toBe("refused")
-    expect(KeteHooksSettings.sandboxOffDenied([{ action: "permission", resource: "sandbox_off:*", effect: "deny" }])).toBe(true)
+    expect(KeteHooksSettings.sandboxOffDenied([{ action: "tool.use", resource: "sandbox_off:*", effect: "deny" }])).toBe(true)
   })
 
   test("commands that can't be shown faithfully are refused; the trust question escapes", () => {
@@ -123,13 +123,13 @@ describe("settings", () => {
   })
 
   test("a policy can turn hooks off", () => {
-    expect(KeteHooksSettings.disabledByPolicy([{ action: "permission", resource: "hooks:*", effect: "deny" }], "Stop")).toBe(true)
-    expect(KeteHooksSettings.disabledByPolicy([{ action: "permission", resource: "hooks:Stop", effect: "deny" }], "PreToolUse")).toBe(false)
+    expect(KeteHooksSettings.disabledByPolicy([{ action: "tool.use", resource: "hooks:*", effect: "deny" }], "Stop")).toBe(true)
+    expect(KeteHooksSettings.disabledByPolicy([{ action: "tool.use", resource: "hooks:Stop", effect: "deny" }], "PreToolUse")).toBe(false)
     expect(
       KeteHooksSettings.disabledByPolicy(
         [
-          { action: "permission", resource: "hooks:*", effect: "deny" },
-          { action: "permission", resource: "hooks:Stop", effect: "allow" },
+          { action: "tool.use", resource: "hooks:*", effect: "deny" },
+          { action: "tool.use", resource: "hooks:Stop", effect: "allow" },
         ],
         "Stop",
       ),
@@ -436,7 +436,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
     expect(h.asked).toEqual([])
     const forbidden = await setup({
       kete: { hooks: { unsandboxed: true } },
-      policies: [{ action: "permission", resource: "sandbox_off:*", effect: "deny" }],
+      policies: [{ action: "tool.use", resource: "sandbox_off:*", effect: "deny" }],
       project: { PreToolUse: [{ command: "exit 2" }] },
     })
     expect(Exit.isSuccess(await forbidden.before("read"))).toBe(true)
@@ -446,7 +446,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
   test("a user hook a policy keeps in the sandbox blocks PreToolUse when it can't run", async () => {
     const h = await setup({
       user: { PreToolUse: [{ command: "true", sandbox: false }] },
-      policies: [{ action: "permission", resource: "sandbox_off:*", effect: "deny" }],
+      policies: [{ action: "tool.use", resource: "sandbox_off:*", effect: "deny" }],
     })
     expect(message(await h.before("read"))).toContain("not run")
   })
@@ -474,7 +474,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
   test("project hooks policies are ignored; global ones apply", async () => {
     const h = await setup({
       user: { PreToolUse: [{ command: "exit 2" }] },
-      projectPolicies: [{ action: "permission", resource: "hooks:*", effect: "deny" }],
+      projectPolicies: [{ action: "tool.use", resource: "hooks:*", effect: "deny" }],
     })
     expect(Exit.isFailure(await h.before("read"))).toBe(true)
   })
@@ -540,7 +540,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
   test("a policy denying hooks turns them off", async () => {
     const h = await setup({
       user: { PreToolUse: [{ command: "exit 2" }] },
-      policies: [{ action: "permission", resource: "hooks:*", effect: "deny" }],
+      policies: [{ action: "tool.use", resource: "hooks:*", effect: "deny" }],
     })
     expect(Exit.isSuccess(await h.before("read"))).toBe(true)
   })

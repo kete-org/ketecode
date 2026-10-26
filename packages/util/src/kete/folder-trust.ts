@@ -15,7 +15,7 @@
 //   binaries), `shell`, `worktree` (where worktrees and their setup script run), remote `skills` URLs
 //   and git `references` (fetched when they load), permission rules that loosen (`allow` rules, and an
 //   `ask` rule overlapping a machine-level `deny`: rules are last-match-wins, so that ask would turn the
-//   deny into a question), `experimental.policies` allow statements and the v1 `enabled_providers`
+//   deny into a question), `experimental.policies` and top-level `policies` allow statements and the v1 `enabled_providers`
 //   (which normalizes into `provider.use` allows; `disabled_providers`, its deny-only sibling, is
 //   fingerprinted too, so dropping a denied provider asks again). Legacy keys (`permission`,
 //   `tools`, `agent`, `mode`) count too. `{env:…}`/`{file:…}` substitution in a project document is
@@ -184,6 +184,7 @@ export function guardedValues(document: unknown): Record<string, unknown> {
   for (const key of PROVIDER_LIST_KEYS) if (key in document) found[key] = document[key]
   const policy = policies(document)
   if (policy !== undefined) found["experimental.policies"] = policy
+  if (document.policies !== undefined) found.policies = document.policies
   for (const group of AGENT_KEYS) {
     const agents = document[group]
     if (!isRecord(agents)) continue
@@ -283,6 +284,7 @@ export function runtimeGuarded(document: unknown): string[] {
   if ("references" in document && gitReferences(document.references).length > 0) found.push("references")
   if (enabledProviders(document).length > 0) found.push("enabled_providers")
   if (allowPolicies(policies(document)).length > 0) found.push("experimental.policies")
+  if (allowPolicies(document.policies).length > 0) found.push("policies")
   for (const key of PERMISSION_KEYS)
     if (key in document && rawRules(key, document[key]).some((rule) => rule.effect === "allow")) found.push(key)
   for (const group of AGENT_KEYS) {
@@ -442,7 +444,7 @@ export function describe(document: unknown): string[] {
       items.push(`reference ${shown(name)}: git ${shown(isRecord(entry) ? entry.repository : entry)}${isRecord(entry) && entry.branch !== undefined ? ` (branch ${shown(entry.branch)})` : ""}`)
   const enabled = enabledProviders(document)
   if (enabled.length > 0) items.push(`enabled_providers: allows provider ${enabled.map((name) => shown(name)).join(", ")} (provider.use)`)
-  for (const policy of allowPolicies(policies(document)))
+  for (const policy of [...allowPolicies(policies(document)), ...allowPolicies(document.policies)])
     items.push(`policy: ${shown(policy.action)} ${shown(policy.resource)} → ${safe(policy.effect)}`)
   return items
 }

@@ -9,7 +9,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { Effect, Exit, Layer, Scope } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
@@ -191,7 +191,7 @@ describe("finding programs", () => {
   })
 
   test("unsandboxed only with the opt-in, not when required, never against a sandbox_off policy", () => {
-    const deny = [{ action: "permission", resource: "sandbox_off:*", effect: "deny" }]
+    const deny = [{ action: "tool.use", resource: "sandbox_off:*", effect: "deny" }]
     expect(KeteLsp.unsandboxedAllowed({ mode: "off", optedIn: false, policies: [] })).toBe(false)
     expect(KeteLsp.unsandboxedAllowed({ mode: "off", optedIn: true, policies: [] })).toBe(true)
     expect(KeteLsp.unsandboxedAllowed({ mode: "auto", optedIn: true, policies: deny })).toBe(false)

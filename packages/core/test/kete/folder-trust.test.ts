@@ -629,8 +629,28 @@ describe("folder trust", () => {
       },
       () =>
         Effect.gen(function* () {
-          expect(Config.latest(yield* entries, "experimental")?.policies).toEqual([{ action: "permission", resource: "edit:*", effect: "deny" }])
-          expect((yield* formText).description).toContain('policy: "permission" "shell:*" → allow')
+          // The legacy "permission" action reads as "tool.use" and lands in top-level policies (kete/policy-compat.ts).
+          expect(Config.latest(yield* entries, "policies")).toEqual([{ action: "tool.use", resource: "edit:*", effect: "deny" }])
+          expect((yield* formText).description).toContain('policy: "tool.use" "shell:*" → allow')
+        }),
+    ),
+  )
+
+  it.live("minor4b: a top-level policy allow is held back; its deny applies", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), {
+          policies: [
+            { action: "tool.use", resource: "shell:*", effect: "allow" },
+            { action: "tool.use", resource: "edit:*", effect: "deny" },
+          ],
+        })
+      },
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "policies")).toEqual([{ action: "tool.use", resource: "edit:*", effect: "deny" }])
+          expect((yield* formText).description).toContain('policy: "tool.use" "shell:*" → allow')
         }),
     ),
   )

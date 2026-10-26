@@ -79,11 +79,13 @@ describe("ConfigNormalize", () => {
         ],
       },
     })
-    expect(Schema.decodeUnknownSync(Info)(result.encoded).policies).toEqual([supported])
-    expect(result.diagnostics.map((diagnostic) => diagnostic.path)).toEqual([
-      ["experimental", "policies", "0"],
-      ["experimental", "policies", "2"],
+    // kete_change start: the legacy "permission" action reads as "tool.use" (kete/policy-compat.ts); only the unknown action drops
+    expect(Schema.decodeUnknownSync(Info)(result.encoded).policies).toEqual([
+      { action: "tool.use", effect: "allow", resource: "*" },
+      supported,
     ])
+    expect(result.diagnostics.map((diagnostic) => diagnostic.path)).toEqual([["experimental", "policies", "2"]])
+    // kete_change end
   })
 
   test("rejects every non-object root with one root diagnostic", () => {
