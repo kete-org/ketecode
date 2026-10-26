@@ -13,6 +13,7 @@ import KeteReleaseNotes from "../kete/release-notes" // kete_change
 import KeteFeedback from "../kete/feedback" // kete_change
 import KeteDoctor from "../kete/doctor" // kete_change
 import KeteTerminalSetup from "../kete/terminal-setup" // kete_change
+// import SidebarTodo from "../feature-plugins/sidebar/todo" // kete_change: KeteTodo shows the task list
 import DiffViewer from "../feature-plugins/system/diff-viewer"
 import Notifications from "../feature-plugins/system/notifications"
 import Plugins from "../feature-plugins/system/plugins"
@@ -36,6 +37,7 @@ export const builtins = [
   KeteDoctor, // kete_change: /doctor, the setup checks dialog
   KeteTerminalSetup, // kete_change: /terminal-setup, Shift+Enter guidance
   SidebarMcp,
+  // SidebarTodo, // kete_change: KeteTodo shows the task list
   SidebarFooter,
   Notifications,
   Plugins,

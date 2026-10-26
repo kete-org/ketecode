@@ -78,7 +78,7 @@ export const Plugin = {
     const config = yield* Config.Service
     const permission = yield* Permission.Service
     const models = yield* Model.Service
-    const subagents = yield* SubagentJob.make
+    const subagents = yield* SubagentJob.Service
     const controls = yield* KeteSubagents.make // kete_change
     const worktrees = yield* KeteWorktrees.optional // kete_change
 
@@ -222,7 +222,7 @@ export const Plugin = {
                   .create({
                     parentID: context.sessionID,
                     title: input.description,
-                    agent: Agent.ID.make(input.agent),
+                    agent: agent.id,
                     model,
                     ...(isolated ? { id: childID, location: isolated.location, metadata: isolated.metadata } : {}), // kete_change
                   })
@@ -260,7 +260,7 @@ export const Plugin = {
                 agent: agent.name,
                 description: input.description,
               }
-              yield* subagents.start(recovery)
+              yield* subagents.start(recovery, controls.bound) // kete_change: KeteSubagents timeout
 
               if (background) {
                 yield* subagents.background(recovery)

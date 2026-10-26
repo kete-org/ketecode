@@ -15,7 +15,6 @@ import {
   BusyError,
   CompactionConflictError,
   InboxConflictError,
-  MessageNotFoundError,
   NotFoundError,
   PromptConflictError,
   SyntheticConflictError,
@@ -74,6 +73,16 @@ export const make = Effect.fn("Session.make")(function* () {
   const rename = Effect.fn("Session.rename")(function* (sessionID: SessionSchema.ID, input: { title: string }) {
     yield* get(sessionID)
     yield* bus.publish(SessionEvent.Renamed, { sessionID, title: input.title })
+  })
+  const archive = Effect.fn("Session.archive")(function* (sessionID: SessionSchema.ID) {
+    const session = yield* get(sessionID)
+    if (session.time.archived) return
+    yield* bus.publish(SessionEvent.Archived, { sessionID })
+  })
+  const unarchive = Effect.fn("Session.unarchive")(function* (sessionID: SessionSchema.ID) {
+    const session = yield* get(sessionID)
+    if (!session.time.archived) return
+    yield* bus.publish(SessionEvent.Unarchived, { sessionID })
   })
   const setMetadata = Effect.fn("Session.setMetadata")(function* (
     sessionID: SessionSchema.ID,
@@ -299,7 +308,7 @@ export const make = Effect.fn("Session.make")(function* () {
               description: input.description,
               metadata: input.metadata,
             }),
-            delivery: SessionInbox.Delivery.make(input.delivery ?? "steer"),
+            delivery: input.delivery ?? "steer",
           } satisfies SessionInbox.Item
           const admitted = yield* admission
             .admit({
@@ -354,6 +363,8 @@ export const make = Effect.fn("Session.make")(function* () {
     message,
     view,
     rename,
+    archive,
+    unarchive,
     setMetadata,
     setPermissions,
     switchAgent,
@@ -378,6 +389,8 @@ export const make = Effect.fn("Session.make")(function* () {
     const message = operations.message.bind(undefined, sessionID)
     const view = operations.view.bind(undefined, sessionID)
     const rename = operations.rename.bind(undefined, sessionID)
+    const archive = operations.archive.bind(undefined, sessionID)
+    const unarchive = operations.unarchive.bind(undefined, sessionID)
     const setMetadata = operations.setMetadata.bind(undefined, sessionID)
     const setPermissions = operations.setPermissions.bind(undefined, sessionID)
     const switchAgent = operations.switchAgent.bind(undefined, sessionID)
@@ -405,6 +418,8 @@ export const make = Effect.fn("Session.make")(function* () {
       message,
       view,
       rename,
+      archive,
+      unarchive,
       setMetadata,
       setPermissions,
       switchAgent,

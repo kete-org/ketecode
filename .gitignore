@@ -36,6 +36,7 @@ RELEASE_REVIEW.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+/artifacts/
 
 # kete_change start: local status reports are never committed
 docs/status/

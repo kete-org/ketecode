@@ -6,7 +6,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { httpClient } from "@opencode/util/effect/app-node-platform"
 import { AppProcess } from "@opencode/util/process"
 import { Context, Effect, Scope } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 import { Agent } from "../agent.js"
 import { Model } from "../model.js"
 import { Provider } from "../provider.js"
@@ -57,10 +57,12 @@ import { Npm } from "@opencode/util/npm"
 import { Permission } from "../permission.js"
 import { Reference } from "../reference.js"
 import { WebSearch } from "../websearch.js"
+import { Voice } from "../voice.js"
 import { Ripgrep } from "../ripgrep.js"
 import { Session } from "../session.js"
 import { SessionCompaction } from "../session/compaction.js"
 import { SessionInstructions } from "../session/instructions.js"
+import { SubagentJob } from "../session/subagent-job.js"
 import { Shell } from "../shell.js"
 import { ShellSelect } from "../shell/select.js"
 import { Snapshot } from "../snapshot.js"
@@ -79,6 +81,7 @@ import { ReadTool } from "../tool/plugin/read.js"
 import { ShellTool } from "../tool/plugin/shell.js"
 import { SkillTool } from "../tool/plugin/skill.js"
 import { SubagentTool } from "../tool/plugin/subagent.js"
+// import { TodoTool } from "../tool/plugin/todo.js" // kete_change: not registered (KeteTodo owns todowrite)
 import { Tool } from "../tool.js"
 import { ToolOutput } from "../tool-output.js"
 import { WebFetchTool } from "../tool/plugin/webfetch.js"
@@ -88,7 +91,6 @@ import { WriteTool } from "../tool/plugin/write.js"
 import { AgentPlugin } from "./agent.js"
 import BrowserPlugin from "@opencode/plugin-browser"
 import { CommandPlugin } from "./command.js"
-import { NativeCompactionPlugin } from "./compaction.js"
 import { IdentityPlugin } from "./identity.js"
 import { PlanPlugin } from "./plan.js"
 import { ModelsDevPlugin } from "./models-dev.js"
@@ -132,6 +134,7 @@ import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
 import { VcsGitPlugin } from "./vcs/git.js"
+import { VerbosityPlugin } from "./verbosity.js"
 import { WarmingPlugin } from "./warming.js"
 import { WellKnownPlugin } from "../wellknown/plugin.js"
 
@@ -176,6 +179,7 @@ const services = [
   Session.Service,
   SessionCompaction.Service,
   SessionInstructions.Service,
+  SubagentJob.Service,
   Shell.Service,
   ShellSelect.Service,
   Snapshot.Service,
@@ -183,6 +187,7 @@ const services = [
   SkillDiscovery.Service,
   Tool.Service,
   ToolOutput.Service,
+  Voice.Service,
   Watcher.Service,
   WellKnown.Service,
   Worktree.Service,
@@ -232,6 +237,7 @@ export const requirements = LayerNode.group([
   Session.node,
   SessionCompaction.node,
   SessionInstructions.node,
+  SubagentJob.node,
   Shell.node,
   ShellSelect.node,
   Snapshot.node,
@@ -239,6 +245,7 @@ export const requirements = LayerNode.group([
   SkillDiscovery.node,
   Tool.node,
   ToolOutput.node,
+  Voice.node,
   Watcher.node,
   WellKnown.node,
   Worktree.node,
@@ -250,7 +257,6 @@ export type InternalPlugin = Plugin<Requirements | Scope.Scope>
 const pre = [
   ToolInputRepairPlugin.Plugin,
   ConfigWorktreePlugin.Plugin,
-  BrowserPlugin,
   ConfigMcpPlugin.Plugin,
   McpCodeModeDefaultsPlugin.Plugin,
   WellKnownPlugin.Plugin,
@@ -261,12 +267,12 @@ const pre = [
   SkillPlugin.Plugin,
   VcsHgPlugin.Plugin,
   ModelsDevPlugin,
-  NativeCompactionPlugin.Plugin,
   ...ProviderPlugins,
   ...WebSearchPlugins,
   PatchTool.Plugin,
   // Render model prompts after the patch plugin selects the available editing tools.
   ...OptimizePlugin.Plugins,
+  VerbosityPlugin.Plugin,
   IdentityPlugin.Plugin,
   EditTool.Plugin,
   GlobTool.Plugin,
@@ -278,6 +284,7 @@ const pre = [
   ShellTool.Plugin,
   SkillTool.Plugin,
   SubagentTool.Plugin,
+  // TodoTool.Plugin, // kete_change: KeteTodo (below) owns the `todowrite` tool and the kete.todo RPC; see docs/upstream-patches.md
   WebFetchTool.Plugin,
   WebSearchTool.Plugin,
   WriteTool.Plugin,
@@ -334,6 +341,7 @@ const post = [
   KeteAutoMemory.Plugin,
   ConfigReferencePlugin.Plugin,
   ConfigAgentPlugin.Plugin,
+  BrowserPlugin,
   ConfigCommandPlugin.Plugin,
   ConfigCompactionPlugin.Plugin,
   ConfigFormatterPlugin.Plugin,

@@ -4,7 +4,6 @@ import { Instance } from "@opencode/core/instance"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { Plugin } from "@opencode/core/plugin"
 import type { InstancePlugins } from "@opencode/core/plugin/instance"
-import { Location } from "@opencode/schema/location"
 import type { Session } from "@opencode/schema/session"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import type { LayerNode } from "@opencode/util/effect/layer-node"
@@ -57,12 +56,16 @@ export function layer(options: Options, replacements: () => LayerNode.Replacemen
         ...LocationServiceMap.canonical(session.location),
       })
       const provide = (session: Session.Info) => Effect.provide(instances.get(key(session)))
-      const instances: LayerMap.LayerMap<ReturnType<typeof key>, Instance.Services> = yield* LayerMap.make(
+      const instances: LayerMap.LayerMap<
+        ReturnType<typeof key>,
+        Instance.Services,
+        Instance.Error
+      > = yield* LayerMap.make(
         (input: ReturnType<typeof key>) =>
           Layer.unwrap(
             Effect.gen(function* () {
               const configuration = yield* options.configure(input.key).pipe(Effect.orDie)
-              return Instance.layer(Location.Ref.make({ directory: input.directory, workspaceID: input.workspaceID }), {
+              return Instance.layer(input, {
                 plugins: configuration.plugins,
                 replacements: [
                   ...replacements(),

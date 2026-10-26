@@ -1,20 +1,13 @@
-import {
-  migrateV1,
-  parseThemeDocument,
-  resolveThemeDocument,
-  type ThemeDocument,
-  type ModeDefinition,
-} from "@opencode/theme/tui"
+import { migrateV1, parseThemeDocument, type ThemeDocument, type ModeDefinition } from "@opencode/theme/tui"
 import { resolveThemeColors } from "./resolve"
 import { DEFAULT_THEMES, type Theme, type ThemeV1Json } from "./v1"
 import opencode from "../kete/theme.json" with { type: "json" } // kete_change: the default theme, in Kete Code's violet (kete/theme.ts)
+import opencode2 from "./assets/v2/opencode2.json" with { type: "json" }
 
-export { DEFAULT_THEMES, generateSyntax, selectedForeground, type Theme, type ThemeV1Json } from "./v1"
-export { resolveThemeDocument, type ThemeDocument }
+export { DEFAULT_THEMES, type Theme, type ThemeV1Json } from "./v1"
 
 export type ThemeDocumentSource = Record<string, unknown>
 
-const pluginThemes: Record<string, ThemeDocumentSource> = {}
 let customThemes: Record<string, ThemeDocumentSource> = {}
 let systemTheme: ThemeDocumentSource | undefined
 const listeners = new Set<(themes: Record<string, ThemeDocumentSource>) => void>()
@@ -31,13 +24,21 @@ export function getOpenCodeTheme() {
   return document
 }
 
+let opencode2Theme: ThemeDocument | undefined
+
+// Temporary theme for the "new-designs" experiment. It is not part of allThemes(), so only the
+// TUI theme context offers it, and only while the experiment is enabled.
+export function getOpenCode2Theme() {
+  opencode2Theme ??= parseThemeDocument(opencode2, "opencode2")
+  return opencode2Theme
+}
+
 function listThemes(): Record<string, ThemeDocumentSource> {
-  // Priority: defaults < plugin installs < custom files < generated system.
+  // Priority: defaults < custom files < generated system.
   const themes: Record<string, ThemeDocumentSource> = {
     ...DEFAULT_THEMES,
     opencode: getOpenCodeTheme(),
     kete: getOpenCodeTheme(), // kete_change: the default theme's Kete name ("opencode" stays an alias; kete/theme.ts)
-    ...pluginThemes,
     ...customThemes,
   }
   return {
@@ -90,27 +91,6 @@ export function setSystemTheme(theme: ThemeDocumentSource | undefined) {
 export function hasTheme(name: string) {
   if (!name) return false
   return allThemes()[name] !== undefined
-}
-
-export function addTheme(name: string, theme: unknown) {
-  if (!name) return false
-  if (!isThemeSource(theme)) return false
-  if (hasTheme(name)) return false
-  pluginThemes[name] = theme
-  syncThemes()
-  return true
-}
-
-export function upsertTheme(name: string, theme: unknown) {
-  if (!name) return false
-  if (!isThemeSource(theme)) return false
-  if (customThemes[name] !== undefined) {
-    customThemes[name] = theme
-  } else {
-    pluginThemes[name] = theme
-  }
-  syncThemes()
-  return true
 }
 
 export function resolveTheme(theme: ThemeV1Json, mode: "dark" | "light"): Theme {

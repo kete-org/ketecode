@@ -21,6 +21,8 @@ import {
   QuotaExceededError,
   RateLimitError,
   RouteID,
+  TimeoutError,
+  ToolOutput,
   ToolResultValue,
   TransportError,
   UnknownProviderError,
@@ -28,6 +30,7 @@ import {
   Usage,
 } from "../src/schema/index.js"
 import { ProviderShared } from "../src/protocols/shared.js"
+import { Framing } from "../src/route/framing.js"
 import { it } from "./lib/effect.js"
 
 const model = new LanguageModel({
@@ -114,6 +117,28 @@ describe("ToolResultValue", () => {
       }),
     ).toBe(true)
   })
+
+  test("fromResultValue encodes text results and falls back to String for non-JSON values", () => {
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+
+    expect(ToolOutput.fromResultValue({ type: "text", value: "plain" })).toEqual({
+      structured: {},
+      content: [{ type: "text", text: "plain" }],
+    })
+    expect(ToolOutput.fromResultValue({ type: "text", value: { ok: true } })).toEqual({
+      structured: {},
+      content: [{ type: "text", text: '{"ok":true}' }],
+    })
+    expect(ToolOutput.fromResultValue({ type: "text", value: undefined })).toEqual({
+      structured: {},
+      content: [{ type: "text", text: "undefined" }],
+    })
+    expect(ToolOutput.fromResultValue({ type: "text", value: circular })).toEqual({
+      structured: {},
+      content: [{ type: "text", text: "[object Object]" }],
+    })
+  })
 })
 
 describe("AI.Usage", () => {
@@ -137,7 +162,7 @@ describe("AI.Usage", () => {
 
   it.effect("sseFraming maps decoder failures to AI errors", () =>
     Effect.gen(function* () {
-      const error = yield* ProviderShared.sseFraming(
+      const error = yield* Framing.sseFraming(
         Stream.make(new TextEncoder().encode(`data: ${"x".repeat(10 * 1024 * 1024)}`)),
       ).pipe(Stream.runCollect, Effect.flip)
 
@@ -149,7 +174,7 @@ describe("AI.Usage", () => {
   it.effect("sseFraming ignores retry directives without ending the stream", () =>
     Effect.gen(function* () {
       const encoder = new TextEncoder()
-      const frames = yield* ProviderShared.sseFraming(
+      const frames = yield* Framing.sseFraming(
         Stream.make(
           encoder.encode("retry: 1000\n\n"),
           encoder.encode('data: {"first":true}\n\n'),
@@ -165,7 +190,7 @@ describe("AI.Usage", () => {
   it.effect("sseFraming preserves event data around retry directives", () =>
     Effect.gen(function* () {
       const encoder = new TextEncoder()
-      const frames = yield* ProviderShared.sseFraming(
+      const frames = yield* Framing.sseFraming(
         Stream.make(
           encoder.encode("event: update\ndata: first\n"),
           encoder.encode("retry: 1000\n"),
@@ -180,7 +205,7 @@ describe("AI.Usage", () => {
 
   it.effect("sseFraming drops bare null frames and keeps other payloads", () =>
     Effect.gen(function* () {
-      const frames = yield* ProviderShared.sseFraming(
+      const frames = yield* Framing.sseFraming(
         Stream.make(
           new TextEncoder().encode(
             'data: {"first":true}\n\ndata: null\n\nevent: update\ndata: null\n\ndata: "null"\n\ndata: 0\n\ndata: {"second":true}\n\ndata: [DONE]\n\ndata: null\n\n',
@@ -194,7 +219,7 @@ describe("AI.Usage", () => {
 
   it.effect("sseFraming drops keepalive comments sent as data and keeps other payloads", () =>
     Effect.gen(function* () {
-      const frames = yield* ProviderShared.sseFraming(
+      const frames = yield* Framing.sseFraming(
         Stream.make(
           new TextEncoder().encode(
             'data: {"first":true}\n\ndata: : keepalive\n\n: keepalive\n\ndata: : ping\n\ndata: {"second":true}\n\n',
@@ -325,6 +350,7 @@ test("AI error reasons are tagged Errors with required messages", () => {
     new TransportError({ message: "Connection failed", transport: "http", operation: "request" }),
     new InvalidProviderOutputError({ message: "Invalid output" }),
     new UnknownProviderError({ message: "Unknown failure" }),
+    new TimeoutError({ message: "Timed out", timeoutMs: 5000 }),
   ]
   expect(reasons.map((reason) => reason._tag)).toEqual([
     "InvalidRequest",
@@ -338,7 +364,14 @@ test("AI error reasons are tagged Errors with required messages", () => {
     "Transport",
     "InvalidProviderOutput",
     "UnknownProvider",
+    "Timeout",
   ])
+  expect(Schema.decodeUnknownOption(TimeoutError)({ _tag: "Timeout", message: "Timed out", timeoutMs: -1 })._tag).toBe(
+    "None",
+  )
+  expect(Schema.decodeUnknownOption(TimeoutError)({ _tag: "Timeout", message: "Timed out", timeoutMs: 1.5 })._tag).toBe(
+    "None",
+  )
   reasons.forEach((reason) => {
     expect(reason).toBeInstanceOf(Error)
     const encoded = Schema.encodeSync(AIErrorReason)(reason)

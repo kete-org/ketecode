@@ -1,5 +1,6 @@
-import { Effect, JsonSchema, Schema } from "effect"
-import { LLMClient, Service } from "./route/client.js"
+import { Effect, JsonSchema, Schema, Stream } from "effect"
+import { tryRequest } from "./media-model.js"
+import { LLMClient, Service, type StreamOptions } from "./route/client.js"
 import {
   GenerationOptions,
   HttpOptions,
@@ -35,9 +36,24 @@ export type RequestInput<SelectedLanguageModel extends LanguageModel = LanguageM
   readonly http?: HttpOptions.Input
 }
 
-export const generate = LLMClient.generate
+export function generate<const Model extends LanguageModel>(
+  input: RequestInput<Model> | LLMRequest,
+  options?: StreamOptions,
+): Effect.Effect<LLMResponse, AIError, Service>
+export function generate(input: RequestInput | LLMRequest, options?: StreamOptions) {
+  return requestEffect(input).pipe(Effect.flatMap((request) => LLMClient.generate(request, options)))
+}
 
-export const stream = LLMClient.stream
+export function stream<const Model extends LanguageModel>(
+  input: RequestInput<Model> | LLMRequest,
+  options?: StreamOptions,
+): Stream.Stream<LLMEvent, AIError, Service>
+export function stream(input: RequestInput | LLMRequest, options?: StreamOptions) {
+  return Stream.unwrap(requestEffect(input).pipe(Effect.map((request) => LLMClient.stream(request, options))))
+}
+
+const requestEffect = (input: RequestInput | LLMRequest) =>
+  input instanceof LLMRequest ? Effect.succeed(input) : tryRequest(() => request(input))
 
 export const request = <const SelectedLanguageModel extends LanguageModel>(
   input: RequestInput<SelectedLanguageModel>,
@@ -61,7 +77,7 @@ export const request = <const SelectedLanguageModel extends LanguageModel>(
     toolChoice: requestToolChoice ? ToolChoice.make(requestToolChoice) : undefined,
     generation: requestGeneration === undefined ? undefined : GenerationOptions.make(requestGeneration),
     providerOptions: requestProviderOptions,
-    http: requestHttp === undefined ? undefined : HttpOptions.make(requestHttp),
+    http: HttpOptions.make(requestHttp),
   })
 }
 
@@ -112,10 +128,8 @@ const runGenerateObject = Effect.fn("LLM.generateObject")(function* (
     toolChoice: ToolChoice.named(GENERATE_OBJECT_TOOL_NAME),
   })
   const response = yield* LLMClient.generate(generateRequest)
-  const call = response.toolCalls.find(
-    (event) => LLMEvent.is.toolCall(event) && event.name === GENERATE_OBJECT_TOOL_NAME,
-  )
-  if (!call || !LLMEvent.is.toolCall(call))
+  const call = response.toolCalls.find((event) => event.name === GENERATE_OBJECT_TOOL_NAME)
+  if (!call)
     return yield* new AIError({
       reason: new InvalidProviderOutputError({
         message: `generateObject: model did not call the forced \`${GENERATE_OBJECT_TOOL_NAME}\` tool`,

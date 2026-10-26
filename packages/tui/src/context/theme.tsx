@@ -9,17 +9,13 @@ import {
   type SurfaceName,
 } from "@opencode/theme/tui"
 import {
-  DEFAULT_THEMES,
-  addTheme,
   allThemes,
+  getOpenCode2Theme,
   hasTheme,
   parseTheme,
-  selectedForeground,
   setCustomThemes,
   setSystemTheme,
   subscribeThemes,
-  upsertTheme,
-  type Theme,
   type ThemeDocumentSource,
 } from "../theme"
 import { generateSystem, terminalMode } from "../theme/system"
@@ -28,7 +24,7 @@ import { createComponentTheme, type ComponentTheme } from "../theme/component"
 import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
-import { useConfig } from "../config"
+import { useConfig, useNewDesigns } from "../config"
 import { useStorageOptional } from "./storage"
 import { DevTools } from "../devtools"
 import { configDirectories } from "../util/config-directories"
@@ -80,19 +76,6 @@ export const createThemeSource = (config: string): ThemeSource => ({
   },
 })
 
-export { discoverThemes } from "../theme/discovery"
-
-export {
-  DEFAULT_THEMES,
-  addTheme,
-  allThemes,
-  generateSyntax,
-  hasTheme,
-  selectedForeground,
-  upsertTheme,
-  type Theme,
-} from "../theme"
-
 const THEME_REFRESH_DELAYS = [250, 1000] as const
 
 type State = {
@@ -143,6 +126,7 @@ const themeContext = createSimpleContext({
   init: (props: { mode: "dark" | "light"; source: ThemeSource }): ThemeContextValue => {
     const renderer = useRenderer()
     const configState = useConfig()
+    const newDesigns = useNewDesigns()
     const config = configState.data
     const themes = props.source
     const cache = useStorageOptional()?.store<{ colors?: TerminalColors }>("system-theme", { initial: {} })
@@ -308,9 +292,15 @@ const themeContext = createSimpleContext({
       themeRefreshTimeouts.length = 0
     })
 
+    const available = createMemo(
+      (): Record<string, ThemeDocumentSource> =>
+        newDesigns() ? { opencode2: getOpenCode2Theme(), ...themeSources() } : themeSources(),
+    )
+    const has = (name: string) => Boolean(name) && available()[name] !== undefined
+
     const initStarted = performance.now()
     const selected = createMemo(() => {
-      const sources = themeSources()
+      const sources = available()
       // kete_change start: the default theme is "kete"
       const name = sources[store.active] ? store.active : KeteTheme.defaultTheme
       try {
@@ -332,7 +322,7 @@ const themeContext = createSimpleContext({
 
     createEffect(() => renderer.setBackgroundColor(tokens().background.base))
 
-    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens()))
+    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens(), renderer.nativeScene))
     const service: Themes = {
       current,
       currentTokens: tokens,
@@ -340,8 +330,8 @@ const themeContext = createSimpleContext({
       get selected() {
         return store.active
       },
-      all: allThemes,
-      has: hasTheme,
+      all: available,
+      has,
       mode,
       modes,
       supports: (requested) => modes().includes(requested),
@@ -355,9 +345,9 @@ const themeContext = createSimpleContext({
       },
       // kete_change start: "opencode" is an alias of "kete"
       set(requested: string) {
-        const theme = KeteTheme.canonicalTheme(requested, themeSources())
+        const theme = KeteTheme.canonicalTheme(requested, available())
         // kete_change end
-        if (!hasTheme(theme)) return false
+        if (!has(theme)) return false
         setStore("active", theme)
         if (theme === "system") refreshPalette()
         void configState

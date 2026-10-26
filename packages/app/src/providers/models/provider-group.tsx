@@ -14,7 +14,9 @@ import "@/settings/settings.css"
 import { groupTitle } from "@/kete/local-models" // kete_change
 
 type ModelProvider = { id: string; canonical?: string; name: string }
+
 type ModelItem = { provider: ModelProvider & { integrationID?: string }; cost?: { input: number } }
+
 type ModelGroup<T> = { category: string; items: T[] }
 
 export const CONSOLE_GROUP_KEY = "console:opencode"
@@ -68,19 +70,26 @@ export function ProviderModelSections<T extends ModelItem>(props: {
     group?: ModelGroup<T>
     managed?: { group: NonNullable<ReturnType<typeof consoleModelGroup<T>>>; providers: ModelGroup<T>[] }
   }
+
   const language = useLanguage()
+
   const sections = createMemo<Section[]>(() => {
     const managed = props.managed
     const ids = new Set(managed?.providers.map((provider) => provider.id))
     const nested = props.groups.filter((group) => ids.has(group.category))
+
     if (!managed || nested.length === 0) return props.groups.map((group) => ({ group }))
     const first = props.groups.findIndex((group) => ids.has(group.category))
+
     return props.groups.flatMap<Section>((group, index) => {
       if (!ids.has(group.category)) return [{ group }]
+
       if (index !== first) return []
+
       return [{ managed: { group: managed, providers: nested } }]
     })
   })
+
   // Only the keyless catalog is free; a Zen key or Console account keeps the provider's own name.
   const name = (group: ModelGroup<T>) =>
     group.category === "opencode" && group.items.every((item) => !item.cost?.input)
@@ -191,6 +200,7 @@ export function ProviderModelGroup(props: {
   onExpandedChange: (expanded: boolean) => void
 }) {
   const language = useLanguage()
+
   return (
     <section
       ref={props.ref}

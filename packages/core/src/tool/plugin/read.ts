@@ -92,28 +92,28 @@ export const Plugin = {
                 if (result.target.externalDirectory !== undefined) return
                 const resolved = yield* fs.resolve(result.target.absolute)
                 const root = yield* fs.resolve(location.directory)
-                // up() searches its stop directory, so the Location-root AGENTS.md (already
-                // supplied by core initial instructions) is dropped by the dirname filter.
+                // The Location and its ancestors are already supplied by initial instructions,
+                // even when an upward walk from elsewhere in the project cannot reach root.
                 const discovered = yield* fs.up({
                   targets: [FILENAME],
                   start: result.content.type === "list-page" ? resolved : dirname(resolved),
                   stop: root,
+                  type: "file",
                 })
-                const candidates = (yield* Effect.forEach(discovered, (file) => KeteInstructionFiles.allowed(fs, file, location.project.directory, home))).filter( // kete_change: never follow an AGENTS.md symlink out of its folder (kete/instruction-files.ts)
-                  (file): file is string => file !== undefined && dirname(file) !== root, // kete_change
+                // kete_change start: never follow an AGENTS.md symlink out of its folder (kete/instruction-files.ts)
+                const candidates = (yield* Effect.forEach(discovered, (file) =>
+                  KeteInstructionFiles.allowed(fs, file, location.project.directory, home),
+                )).filter(
+                  (file): file is string =>
+                    file !== undefined && !FSUtil.contains(dirname(file), root) && file !== resolved,
                 )
+                // kete_change end
                 if (candidates.length === 0) return
                 yield* sessionInstructions.load({ sessionID: context.sessionID, paths: candidates })
               }).pipe(
                 Effect.catch(() => Effect.void),
                 Effect.catchDefect(() => Effect.void),
               )
-              if (
-                result.content.type === "file" &&
-                result.content.encoding === "base64" &&
-                !ReadToolFileSystem.MEDIA_MIMES.has(result.content.mime)
-              )
-                return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource: result.target.resource }))
               return { output: result.content, path: result.path }
             }).pipe(
               Effect.map((result) => ({

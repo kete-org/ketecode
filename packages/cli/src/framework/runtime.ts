@@ -1,5 +1,5 @@
 import { Effect, FileSystem, Scope } from "effect"
-import { Command } from "effect/unstable/cli"
+import { Command } from "effect/cli"
 import { PrintLogs } from "../commands/commands"
 import { KeteCommands } from "../kete/commands" // kete_change
 import { Spec } from "./spec"

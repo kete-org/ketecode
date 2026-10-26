@@ -469,7 +469,7 @@
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@types/vscode": "1.94.0",
-    "@typescript/native-preview": "catalog:",
+    "@typescript/native-preview": "7.0.0-dev.20251207.1",
     "jsonc-parser": "3.3.1"
   },
   "extensionKind": [

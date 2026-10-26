@@ -26,6 +26,10 @@ function load(content: string) {
 }
 // kete_change end
 export function parse(content: string) {
+  // Passing options bypasses gray-matter's module-global content cache, which
+  // it populates before parsing: a failed YAML parse poisons the entry and
+  // every later parse of the same content replays it without throwing, so the
+  // sanitize fallback below never runs. Upstream: jonschlinkert/gray-matter#166.
   try {
     return load(content) // kete_change
   } catch {

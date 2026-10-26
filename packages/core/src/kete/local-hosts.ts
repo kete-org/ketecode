@@ -1,7 +1,7 @@
 // Where the local model servers live. The upstream provider plugins (plugin/provider/{ollama,
-// lmstudio,vllm}.ts) take an `origin` and prefer `providers.<id>.settings.baseURL` over it, so
-// feeding them the origin from the environment gives the order: config, then environment, then the
-// provider's default (docs/local-models.md).
+// lmstudio,vllm}.ts, built on local.ts) take an `origin` and prefer `providers.<id>.settings.baseURL`
+// over it, so feeding them the origin from the environment gives the order: config, then environment,
+// then the provider's default (docs/local-models.md).
 //
 // - Ollama: KETE_OLLAMA_HOST (bridged to OPENCODE_OLLAMA_HOST), then Ollama's own OLLAMA_HOST.
 // - LM Studio: KETE_LMSTUDIO_HOST. vLLM: KETE_VLLM_HOST.
@@ -80,11 +80,17 @@ export function origin(provider: ProviderID, env: Environment = process.env): st
   return resolve(provider, env).origin
 }
 
+/** The origin from the environment, else undefined so the plugin keeps upstream's default (none in a remote workspace). */
+export function envOrigin(provider: ProviderID, env: Environment = process.env): string | undefined {
+  const resolved = resolve(provider, env)
+  return resolved.source === "env" ? resolved.origin : undefined
+}
+
 /** The plugin event the `kete.local-models` RPC's `rediscover` method emits (`rpc.<rpc id>.<event>`). */
 export const rediscoverEvent = "rpc.kete.local-models.rediscover"
 
 /** Whether `event` asks `provider` to look at its server again. Accepts any event shape. */
-export function isRediscover(event: { readonly type: string; readonly data?: unknown }, provider: ProviderID): boolean {
+export function isRediscover(event: { readonly type: string; readonly data?: unknown }, provider: string): boolean {
   if (event.type !== rediscoverEvent || !("data" in event)) return false
   const data: unknown = event.data
   return typeof data === "object" && data !== null && "provider" in data && data.provider === provider
