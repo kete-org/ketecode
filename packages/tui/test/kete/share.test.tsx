@@ -30,7 +30,7 @@ test("previewLines say what is sent, what is not, and the expiry", () => {
 
 test("/share previews then shares and shows the link; /unshare is enabled and asks first", async () => {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 110, height: 34, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 110, height: 34, kittyKeyboard: true })
   setup.renderer.start()
   Object.defineProperty(setup.renderer, "capabilities", { get: () => null })
   const sessionID = "ses_share"

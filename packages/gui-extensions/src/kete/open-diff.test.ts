@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { OPEN_DIFF_EVENT, openDiffPath } from "./open-diff"
+import { OPEN_DIFF_EVENT, openDiffPath } from "./contract"
 
 describe("openDiffPath", () => {
   test("returns the path an open-diff event carries", () => {

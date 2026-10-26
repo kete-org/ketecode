@@ -12,7 +12,7 @@
 // Preflight requests are checked too, so a rejected origin never learns what the API allows.
 
 import { Effect } from "effect"
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
 
 /** Internal name of KETE_SERVER_ALLOWED_HOSTS (the CLI's env bridge renames KETE_* to OPENCODE_*). */
 export const allowedHostsVariable = "OPENCODE_SERVER_ALLOWED_HOSTS"

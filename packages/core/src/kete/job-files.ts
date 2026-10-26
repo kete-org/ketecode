@@ -16,7 +16,7 @@ import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { KeteConfinedFs } from "@opencode/util/kete/confined-fs"
 import { Effect, Layer } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { Environment } from "../environment/index.js"
 import { Location } from "../location.js"
 

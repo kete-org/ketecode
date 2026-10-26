@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Option } from "effect"
-import { HttpServerRequest } from "effect/unstable/http"
+import { HttpServerRequest } from "effect/http"
 import { KeteConstantTime } from "../../src/kete/constant-time"
 import { authorizedRequest } from "../../src/middleware/authorization"
 

@@ -33,7 +33,6 @@ import { Money } from "@opencode/schema/money"
 import { KeteHosted } from "../../kete/hosted.js" // kete_change
 import { Config } from "../../config.js" // kete_change
 import { KeteOffline } from "../../kete/offline.js" // kete_change
-import { Option } from "effect" // kete_change
 
 const defaultServer = "https://opencode.ai/console"
 const clientID = "opencode-cli"

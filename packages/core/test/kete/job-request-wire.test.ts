@@ -7,7 +7,7 @@
 // gateway admits for a job key (kete-code-platform `apps/gateway/src/jobs/`).
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { LLM, LLMClient, Message, ToolCallPart, ToolDefinition, type LanguageModel } from "@opencode/ai"
 import * as Anthropic from "@opencode/ai/providers/anthropic"
 import * as Google from "@opencode/ai/providers/google"

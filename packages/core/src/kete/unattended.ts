@@ -282,7 +282,8 @@ export const Plugin = define({
 
     const auditLookup: Lookup = {
       session: get,
-      children: (parentID) => sessions.list({ parentID }).pipe(Effect.map((result) => result.data)),
+      // No cursor is passed, so the cursor error can't happen.
+      children: (parentID) => sessions.list({ parentID }).pipe(Effect.orDie, Effect.map((result) => result.data)),
       config: Effect.map(config.entries(), (entries) => Config.latest(entries, "kete")),
       now: Effect.sync(() => Date.now()),
     }

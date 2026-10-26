@@ -61,7 +61,7 @@ const setup = Effect.fn(function* (input: {
       directory: "/project",
       title: "mode",
       version: "test",
-      agent: "test",
+      agent: Agent.ID.make("test"),
       metadata: input.mode === undefined ? null : { [KetePermissionMode.metadataKey]: input.mode },
     })
     .onConflictDoNothing()

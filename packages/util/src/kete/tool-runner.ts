@@ -11,8 +11,8 @@ export * as KeteToolRunner from "./tool-runner.js"
 
 import { Effect, Layer, PlatformError } from "effect"
 import type { Scope } from "effect"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner, make, type ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner, make, type ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import { KeteJobMode } from "./job-mode.js"
 
 export interface Interface {

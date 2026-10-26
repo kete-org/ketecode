@@ -10,7 +10,7 @@
 export * as KeteJobRequest from "./job-request.js"
 
 import { Context, Effect, Layer } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { AIError, InvalidRequestError } from "@opencode/ai"
 import {
   RequestExecutor,

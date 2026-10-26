@@ -1,7 +1,7 @@
 // AC1, AC2, AC6, AC7: the kete.local-models plugin: status of the local servers, the insecure-host
 // warning, models without tools, the Ollama context warning, and rediscovery.
 import { Config } from "@opencode/core/config"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { KeteLocalModels } from "@opencode/core/kete/local-models"
 import { Model } from "@opencode/core/model"
 import { Plugin } from "@opencode/core/plugin"

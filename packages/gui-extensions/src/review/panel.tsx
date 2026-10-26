@@ -32,7 +32,7 @@ import {
 } from "./kinds"
 import type { ReviewModel } from "./model"
 import { ReviewPanelEmpty, ReviewTitle } from "./parts"
-import { requestOpenDiff } from "../kete/open-diff" // kete_change
+import { requestOpenDiff } from "../kete/contract" // kete_change
 
 type ReviewPanelState = {
   sidebar: PanelSidebar

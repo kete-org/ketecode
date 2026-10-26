@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import fs from "fs/promises"
 import path from "path"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -114,6 +115,11 @@ const scenario = (
             ],
           ),
           watcher,
+          // Upstream's instruction plugin can fetch instruction URLs; these tests configure none, so any request is a 404.
+          Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 404 })))),
+          ),
           Config.testLayer([
             { type: "document", path: path.join(global, "kete.json"), info: { kete: { memory: input.memory } } } as never,
             ...(input.projectKete

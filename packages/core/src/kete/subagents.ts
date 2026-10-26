@@ -113,7 +113,8 @@ export const make: Effect.Effect<
   const current = Effect.map(config.entries(), (entries) => limits(Config.latest(entries, "kete")?.subagents))
 
   const running = Effect.fnUntraced(function* (parentID: SessionSchema.ID) {
-    const children = yield* sessions.list({ parentID })
+    // No cursor is passed, so the cursor error can't happen.
+    const children = yield* sessions.list({ parentID }).pipe(Effect.orDie)
     const ids: SessionSchema.ID[] = []
     for (const child of children.data) {
       const job = yield* jobs.get(child.id)

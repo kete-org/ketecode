@@ -12,7 +12,7 @@ import { make as makeVLLM } from "@opencode/core/plugin/provider/vllm"
 import { Document, type Entry, Info } from "@opencode/schema/config"
 import { describe, expect } from "bun:test"
 import { Effect, Layer, Schema } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "../plugin/fixture"
 

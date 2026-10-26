@@ -35,6 +35,7 @@ import { tempGlobalLayer } from "../fixture/global"
 import { offlineModels } from "../fixture/models"
 import { testEffect } from "../lib/effect"
 import { executeTool, registerToolPlugin, toolIdentity } from "../lib/tool"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
 
 const childText = "child final response"
 const childModel = Model.Ref.make({ id: Model.ID.make("child"), providerID: Provider.ID.make("test") })
@@ -109,6 +110,7 @@ const plugins = makeLocationNode({
     Permission.node,
     Session.node,
     Job.node,
+    SubagentJob.node,
     Tool.node,
     PluginHooks.node,
   ],

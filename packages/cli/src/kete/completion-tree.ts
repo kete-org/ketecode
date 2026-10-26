@@ -5,7 +5,7 @@
 // only reachable through Effect internals otherwise; the help doc is the public route.
 import { NodeServices } from "@effect/platform-node"
 import { Console, Effect } from "effect"
-import { CliOutput, Command, type HelpDoc } from "effect/unstable/cli"
+import { CliOutput, Command, type HelpDoc } from "effect/cli"
 import { PrintLogs } from "../commands/commands"
 import type { Spec } from "../framework/spec"
 import { KeteCommands } from "./commands"

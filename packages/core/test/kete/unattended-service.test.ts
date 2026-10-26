@@ -85,7 +85,7 @@ const setup = Effect.fn(function* (input: {
       directory: "/project",
       title: root,
       version: "test",
-      agent: "rootAgent",
+      agent: Agent.ID.make("rootAgent"),
       metadata: input.policy === undefined ? null : { "kete.unattended": input.policy },
     })
     .onConflictDoNothing()
@@ -101,7 +101,7 @@ const setup = Effect.fn(function* (input: {
       directory: "/project",
       title: child,
       version: "test",
-      agent: "childAgent",
+      agent: Agent.ID.make("childAgent"),
       // No copy of its own; resolve must walk up to the root to find the policy.
       metadata: {},
     })
@@ -270,7 +270,7 @@ describe("KeteUnattended with the permission service", () => {
           directory: "/project",
           title: orphan,
           version: "test",
-          agent: "rootAgent",
+          agent: Agent.ID.make("rootAgent"),
         })
         .onConflictDoNothing()
         .run()
@@ -317,7 +317,7 @@ describe("KeteUnattended with the permission service", () => {
           directory: "/project",
           title: orphanChild,
           version: "test",
-          agent: "rootAgent",
+          agent: Agent.ID.make("rootAgent"),
           metadata: { "kete.unattended": policy },
         })
         .onConflictDoNothing()
@@ -387,7 +387,7 @@ describe("KeteRunChecks: job mode implies unattended", () => {
           directory: "/project",
           title: jobRoot,
           version: "test",
-          agent: "rootAgent",
+          agent: Agent.ID.make("rootAgent"),
           // No kete.unattended: interactive by KeteUnattendedPolicy.resolve.
           metadata: {},
         })
@@ -415,7 +415,7 @@ describe("KeteRunChecks: job mode implies unattended", () => {
         .pipe(Effect.orDie)
       yield* db
         .insert(SessionTable)
-        .values({ id, project_id: Project.ID.global, slug: id, directory: "/project", title: id, version: "test", agent: "rootAgent", metadata: {} })
+        .values({ id, project_id: Project.ID.global, slug: id, directory: "/project", title: id, version: "test", agent: Agent.ID.make("rootAgent"), metadata: {} })
         .onConflictDoNothing()
         .run()
         .pipe(Effect.orDie)

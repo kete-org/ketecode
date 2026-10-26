@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { NodeServices } from "@effect/platform-node"
 import { Global } from "@opencode/util/global"
 import { Effect } from "effect"
-import { Argument, Command } from "effect/unstable/cli"
+import { Argument, Command } from "effect/cli"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -78,7 +78,7 @@ describe("offline startup", () => {
       const parsed = await Effect.runPromise(
         Effect.gen(function* () {
           const seen: { offline?: boolean } = {}
-          const command = Command.make("probe", { rest: Argument.string("rest").pipe(Argument.variadic()) }, () =>
+          const command = Command.make("probe", { rest: Argument.String("rest").pipe(Argument.variadic()) }, () =>
             Effect.gen(function* () {
               seen.offline = yield* KeteCommands.Offline
             }),

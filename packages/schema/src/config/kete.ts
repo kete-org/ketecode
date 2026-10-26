@@ -40,7 +40,7 @@ export class Subagents extends Schema.Class<Subagents>("ConfigKete.Subagents")({
   }),
 }) {}
 
-const StepID = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9_-]*$/)).annotate({
+const StepID = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9_-]*$/u)).annotate({
   description: "Lowercase letters, digits, - and _",
 })
 

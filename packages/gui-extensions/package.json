@@ -12,7 +12,7 @@
     "./sdk/main": "./src/sdk/main.ts",
     "./sdk/bridge": "./src/sdk/bridge.ts",
     "./updater": "./src/updater/contract.ts",
-    "./kete/open-diff": "./src/kete/open-diff.ts"
+    "./kete/open-diff": "./src/kete/contract.ts"
   },
   "scripts": {
     "typecheck": "bun check --no-script -b",

@@ -6,7 +6,7 @@ export * as KeteGit from "./git.js"
 
 import { AppProcess } from "@opencode/util/process"
 import { Duration, Effect } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import { gitExecutable } from "../util/git-executable.js"
 
 export const timeout = Duration.seconds(60)

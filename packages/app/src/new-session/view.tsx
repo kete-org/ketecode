@@ -121,7 +121,7 @@ export function NewSessionView(props: {
   )
 }
 
-function NewSessionTips(props: {
+export function NewSessionTips(props: { // kete_change: exported (not rendered here; see above) so the unused check keeps it
   selection: ComposerModel["model"]["selection"]
   onDone: () => void
   workspaceEligible: boolean

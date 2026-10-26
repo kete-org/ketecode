@@ -1330,6 +1330,8 @@ describe("ShellTool", () => {
             Shell.node,
             ShellSelect.node,
             Tool.node,
+            Global.node, // kete_change: the shell tool reads them for the OS sandbox
+            Location.node, // kete_change: the shell tool reads them for the OS sandbox
           ],
         })
         yield* Effect.acquireUseRelease(

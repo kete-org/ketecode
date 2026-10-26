@@ -8,7 +8,7 @@
 // resolving `KeteUnattendedPolicy` for that child never depends on a parent row that could later
 // go missing.
 import { describe, expect } from "bun:test"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"

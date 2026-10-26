@@ -6,7 +6,7 @@ import { ConfigCommand } from "@opencode/schema/config/command"
 import { AppProcess } from "@opencode/util/process"
 import path from "path"
 import { Effect, Option, PubSub, Schema, Stream } from "effect"
-import { ChildProcess } from "effect/process"
+// import { ChildProcess } from "effect/process" // kete_change: unused; interpolations run through kete/command-shell.ts
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { Location } from "../../location.js"
@@ -14,7 +14,6 @@ import { Session } from "../../session.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 import { KeteSubagents } from "../../kete/subagents.js" // kete_change
 import { KeteCommandShell } from "../../kete/command-shell.js" // kete_change
-import type { SessionSchema } from "../../session/schema.js" // kete_change
 import { ShellSelect } from "../../shell/select.js"
 import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigMarkdown } from "../markdown.js"

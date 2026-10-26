@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { request } from "node:http"
 import { Effect } from "effect"
-import { HttpServer } from "effect/unstable/http"
+import { HttpServer } from "effect/http"
 import { it } from "../../../core/test/lib/effect"
 import { KeteLocalGuard } from "../../src/kete/local-guard"
 import { ServerProcess } from "../../src/process"

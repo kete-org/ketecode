@@ -77,18 +77,6 @@ export const make = createLocalProviderPlugin({
         (model): model is DiscoveredModel =>
           model !== undefined && (model.show.capabilities?.includes("completion") ?? false),
       )
-      // kete_change start: look again now when asked (the kete.local-models RPC, after `kete models pull`)
-      yield* ctx.event.subscribe().pipe(
-        Stream.filter((event) => KeteLocalHosts.isRediscover(event, "ollama")),
-        Stream.runForEach(() =>
-          Effect.suspend(() => {
-            if (source.current.tagsEndpoint) discovery.delete(source.current.tagsEndpoint)
-            return refresh()
-          }).pipe(Effect.ignore),
-        ),
-        Effect.forkScoped({ startImmediately: true }),
-      )
-      // kete_change end
     }),
   model: (item) => ({
     id: item.model,
