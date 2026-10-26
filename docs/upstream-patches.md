@@ -293,7 +293,7 @@ extension's frame.
 | `app/src/app.tsx`                                       | Mounts `KeteVSCodeShell` in the router root                                                        |
 | `app/src/session/route.tsx`, `app/src/new-session/route.tsx` | Mount `KeteVSCodeBridge` inside the composer providers                                        |
 | `gui-extensions/src/review/panel.tsx`                   | Selecting a file in the review panel also dispatches `kete:open-diff` (`gui-extensions/src/kete/contract.ts`; extensions import each other only through a contract); `KeteVSCodeShell` listens and calls `openDiff`. Upstream moved the review into `gui-extensions` in v2.0.22, which cannot import the app, hence the window event |
-| `gui-extensions/package.json`                           | Exports `./kete/open-diff` so the app imports the event name instead of repeating it              |
+| `gui-extensions/package.json`                           | Exports `./kete/open-diff` (the file `src/kete/contract.ts`) so the app imports the event name instead of repeating it |
 
 **Behaviour change.** Upstream accepted cross-origin requests from any `http://localhost:*` or
 `127.0.0.1:*` page and from `https://*.opencode.ai` (still password-protected). Kete Code accepts
@@ -1485,6 +1485,15 @@ Patches that changed shape in the v2.0.16 → v2.1.4 sync, beyond the rows updat
 | --- | --- | --- |
 | `core/src/plugin/internal.ts` | Upstream's `TodoTool.Plugin` (and its import) is commented out | v2.1.4 added its own `todowrite` tool; `KeteTodo` already registers one with that name plus the `kete.todo` RPC the TUI and VS Code read. **Follow-up:** compare the two and drop one |
 | `tui/src/plugin/builtins.ts` | Upstream's `SidebarTodo` is not registered | `KeteTodo` shows the task list; two lists would show. Same follow-up |
+| `core/src/config/normalize.ts` | Import; both policy lists (`experimental.policies`, top-level `policies`) go through `KetePolicyCompat.upgrade` before decoding | v2.1.4 renamed the action `permission` to `tool.use` and drops any other action, which would turn Kete's documented `hooks:*`/`sandbox_off:*` denies (and users' own) off. **Sync checklist:** if `decodeList` or `ConfigPolicy.Info` changes, keep both calls |
+| `core/test/config/normalization.test.ts` | The "drops unsupported policy actions" case expects `permission` to read as `tool.use`; only the unknown action drops | the test now states Kete's behaviour (kete/policy-compat.ts) |
+| `core/src/config/plugin/instruction.ts` | Configured `instructions`: URLs that offline mode blocks aren't fetched (`KeteOffline.blocks`); a project-relative entry's matches go through `KeteInstructionFiles.allowed` (no symlink out of the project) | v2.1.4 started loading `instructions`; a project's entries that leave it (URLs, absolute, `~`, `..`) also wait for folder trust (`instructionLeaves`, util/src/kete/folder-trust.ts) |
+| `core/src/plugin/provider/opencode.ts` | In offline mode the kept Console config drops `voice` | the snapshot is kept as is when offline, and v2.1.4's hosted voice would still reach the Console |
+| `core/test/plugin/provider-opencode.test.ts` | Marked test: offline mode withdraws hosted voice | covers the row above |
+| `server/src/handlers/server.ts` | Import; the expired-pairing page names `${Brand.cliName} pair` | new upstream browser text the leak check doesn't scan |
+| `cli/src/commands/handlers/mcp/auth.ts`, `core/src/plugin/provider/chatgpt.ts`, `tui/src/config/index.tsx` | New upstream strings through `Brand` (the `kete mcp add` hint and config file name, the name ChatGPT shows for the connection, the release-highlights setting) | user-facing text says Kete Code |
+| `core/src/tool/plugin/webfetch.ts`, `core/src/config/plugin/command.ts`, `tui/src/component/prompt/index.tsx`, `cli/src/index.ts` | A helper or import our patches leave unused is commented out (upstream's direct `execute`; `ChildProcess`; `EmptyBorder`/`SplitBorder`; `Updater`) | `bun check` reports unused code; deleting the lines couldn't carry a marker |
+| `app/src/new-session/view.tsx` | `NewSessionTips` is exported | Kete's layout doesn't render it, and the unused check would otherwise fail; exporting is the smallest marked edit |
 | `server/src/auth.ts` | The password comparison in `authorized` uses `KeteConstantTime.equal`; upstream's new session tokens (`verifySession`) already use `timingSafeEqual` | upstream compares the password with `===` again |
 | `cli/test/acp/subprocess.ts` | `spawn(extraEnv)` and `...extraEnv` kept | upstream dropped them with the only test that used them; that test moved to `cli/test/kete/acp-initialize-auth.subprocess.test.ts` (Kete agent name, auth secret never echoed) |
 | `tui/src/component/prompt/index.tsx` | The status line row replaces the footer label; the old `props.hint` fallback is gone | upstream removed the `hint` prop |

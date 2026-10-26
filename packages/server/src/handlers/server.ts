@@ -7,6 +7,7 @@ import { Api } from "../api"
 import { ServerAuth } from "../auth"
 import { ServerInfo } from "../server-info"
 import { ServerPairing } from "../pairing"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handlers) =>
   Effect.gen(function* () {
@@ -37,7 +38,7 @@ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handler
           if (token === undefined) {
             if (!browser) return yield* new UnauthorizedError({ message: "Pairing link expired or already used" })
             return HttpServerResponse.text(
-              "This pairing link expired or was already used. Run `opencode pair` to get a new one.",
+              `This pairing link expired or was already used. Run \`${Brand.cliName} pair\` to get a new one.`, // kete_change
               { status: 401 },
             )
           }

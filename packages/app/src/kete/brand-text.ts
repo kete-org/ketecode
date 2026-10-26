@@ -21,9 +21,13 @@ const placeholder = "\u0000HOSTED\u0000"
 export const overrides: Readonly<Record<string, string>> = {
   // Kete Code is built on OpenCode; OpenCode's trademark notice must not be rebranded.
   "settings.about.trademark": `${Brand.displayName} is built on OpenCode. OpenCode is a registered trademark of Anomaly Innovations, Inc.`,
-  // These free models are OpenCode's hosted ones (opt-in, docs/adr/0003-hosted-services-opt-in.md), not Kete Code's.
-  "dialog.model.unpaid.freeModels.title": "Free models provided by OpenCode",
 }
+
+/** Strings that name OpenCode truthfully and keep each locale's own translation as it is. */
+export const unchanged: ReadonlySet<string> = new Set([
+  // These free models are OpenCode's hosted ones (opt-in, docs/adr/0003-hosted-services-opt-in.md), not Kete Code's.
+  "dialog.model.unpaid.freeModels.title",
+])
 
 export function brandText(value: string) {
   return value
@@ -41,7 +45,7 @@ export function brandDictionary<Dictionary extends Record<string, unknown>>(dict
   return Object.fromEntries(
     Object.entries(dictionary).map(([key, value]) => [
       key,
-      overrides[key] ?? (typeof value === "string" ? brandText(value) : value),
+      overrides[key] ?? (typeof value === "string" && !unchanged.has(key) ? brandText(value) : value),
     ]),
     // Same keys, string values rewritten: the dictionary's shape is unchanged.
   ) as Dictionary
