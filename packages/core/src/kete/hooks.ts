@@ -242,17 +242,18 @@ export function make(deps: Deps = {}) {
       const userDocument = (file: string | undefined) => file !== undefined && KeteHooksSettings.inside(file, global.config)
       // Policies from the global config and the organization only: a repository can't switch the
       // user's own hooks off, or loosen anything.
+      // Config documents carry them in top-level `policies`: config/normalize.ts moves `experimental.policies` there.
       const policies = Effect.fnUntraced(function* (entries: ReadonlyArray<ConfigEntry>) {
         for (const entry of entries)
           if (
             entry.type === "document" &&
             !userDocument(entry.path) &&
-            (entry.info.experimental?.policies ?? []).some((policy) => policy.resource.startsWith("hooks:"))
+            (entry.info.policies ?? []).some((policy) => policy.resource.startsWith("hooks:"))
           )
             yield* warnOnce(`project policy ${entry.path}`, "ignored hooks policy statements in project configuration", { file: entry.path })
         return [
           ...entries.flatMap((entry) =>
-            entry.type === "document" && userDocument(entry.path) ? (entry.info.experimental?.policies ?? []) : [],
+            entry.type === "document" && userDocument(entry.path) ? (entry.info.policies ?? []) : [],
           ),
           ...managed.current().statements,
         ]

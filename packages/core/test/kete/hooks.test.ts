@@ -225,14 +225,15 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
       directory: AbsolutePath.make(workspace),
       project: { id: Project.ID.global, directory: AbsolutePath.make(workspace), canonical: AbsolutePath.make(workspace) },
     })
+    // The shape config/normalize.ts produces: `experimental.policies` and v1 lists land in top-level `policies`.
     const entries = [
       ...(options.user ? [{ type: "document", path: path.join(globalDir, "kete.json"), info: { kete: { hooks: options.user } } }] : []),
       ...(options.project
         ? [{ type: "document", path: path.join(workspace, "kete.json"), info: { kete: { hooks: options.project } } }]
         : []),
-      ...(options.policies ? [{ type: "document", path: path.join(globalDir, "p.json"), info: { experimental: { policies: options.policies } } }] : []),
+      ...(options.policies ? [{ type: "document", path: path.join(globalDir, "p.json"), info: { policies: options.policies } }] : []),
       ...(options.projectPolicies
-        ? [{ type: "document", path: path.join(workspace, ".kete", "p.json"), info: { experimental: { policies: options.projectPolicies } } }]
+        ? [{ type: "document", path: path.join(workspace, ".kete", "p.json"), info: { policies: options.projectPolicies } }]
         : []),
       ...(options.kete ? [{ type: "document", path: path.join(globalDir, "k.json"), info: { kete: options.kete } }] : []),
     ]

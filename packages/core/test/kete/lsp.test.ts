@@ -271,6 +271,8 @@ describe("the plugin with a fake language server", () => {
       kete?: unknown
       realSandbox?: boolean
       orgPolicies?: SyncedPolicy[]
+      /** Top-level `policies` in the global config (where config/normalize.ts puts them). */
+      policies?: unknown[]
     } = {},
   ) {
     const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "kete-lsp-test-")))
@@ -318,7 +320,7 @@ describe("the plugin with a fake language server", () => {
         Layer.succeed(Location.Service, location),
         Layer.succeed(Environment.Service, Environment.Service.of({ files: {} as any, spawner })),
         Config.testLayer([
-          { type: "document", path: path.join(globalDir, "kete.json"), info: { lsp, ...(options.kete ? { kete: options.kete } : {}) } } as any,
+          { type: "document", path: path.join(globalDir, "kete.json"), info: { lsp, ...(options.kete ? { kete: options.kete } : {}), ...(options.policies ? { policies: options.policies } : {}) } } as any,
         ]),
         Layer.succeed(
           FileAccess.Service,
@@ -449,6 +451,13 @@ describe("the plugin with a fake language server", () => {
     const required = await setup({ ...optIn, orgPolicies: [requireSandbox] })
     expect(await required.edit("a.fk", "BAD\n")).toEqual([{ type: "text", text: "Edit applied." }])
     expect(await required.log()).toEqual([])
+  }, 30_000)
+
+  test("a global config policy denying sandbox_off stops unsandboxed servers", async () => {
+    const optIn = { kete: { sandbox: { mode: "off" }, lsp: { unsandboxed: true } }, realSandbox: true }
+    const denied = await setup({ ...optIn, policies: [{ action: "tool.use", resource: "sandbox_off:*", effect: "deny" }] })
+    expect(await denied.edit("a.fk", "BAD\n")).toEqual([{ type: "text", text: "Edit applied." }])
+    expect(await denied.log()).toEqual([])
   }, 30_000)
 
   test("job mode registers nothing", async () => {

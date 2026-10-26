@@ -264,7 +264,7 @@ export function make(deps: Deps = {}) {
             const user = entries.filter((entry) => entry.type === "document" && userDocument(entry.path))
             const optedIn = user.some((entry) => entry.type === "document" && entry.info.kete?.lsp?.unsandboxed === true)
             const policies = [
-              ...user.flatMap((entry) => (entry.type === "document" ? (entry.info.experimental?.policies ?? []) : [])),
+              ...user.flatMap((entry) => (entry.type === "document" ? (entry.info.policies ?? []) : [])),
               ...managed.current().statements,
             ]
             if (!unsandboxedAllowed({ mode: settings.mode, optedIn, policies })) {
