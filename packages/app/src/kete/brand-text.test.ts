@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { dict as en } from "@/runtime/i18n/en"
-import { brandDictionary, brandText } from "./brand-text"
+import { brandDictionary, brandText, overrides } from "./brand-text"
 
 describe("brandText", () => {
   test("rebrands the product name", () => {
@@ -43,9 +43,11 @@ describe("brandDictionary", () => {
   const branded = brandDictionary(en as Record<string, string>)
 
   test("leaves no product-name OpenCode in the English UI", () => {
-    const leftover = Object.values(branded).filter((value) =>
-      /OpenCode(?! (?:Zen|Go|Console|Free|Black)\b)/.test(value.replace(/built on OpenCode\. OpenCode is/, "")),
-    )
+    // The overrides name OpenCode on purpose; the next test pins their text.
+    const leftover = Object.entries(branded)
+      .filter(([key]) => !(key in overrides))
+      .map(([, value]) => value)
+      .filter((value) => /OpenCode(?! (?:Zen|Go|Console|Free|Black)\b)/.test(value))
     expect(leftover).toEqual([])
   })
 
@@ -53,7 +55,7 @@ describe("brandDictionary", () => {
     expect(branded["settings.about.trademark"]).toBe(
       "Kete Code is built on OpenCode. OpenCode is a registered trademark of Anomaly Innovations, Inc.",
     )
-    expect(branded["sidebar.gettingStarted.line1"]).toBe("Connect a model provider to start.")
+    expect(branded["dialog.model.unpaid.freeModels.title"]).toBe("Free models provided by OpenCode")
   })
 
   test("keeps keys and non-string values", () => {

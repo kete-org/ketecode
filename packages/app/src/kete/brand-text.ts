@@ -21,8 +21,8 @@ const placeholder = "\u0000HOSTED\u0000"
 export const overrides: Readonly<Record<string, string>> = {
   // Kete Code is built on OpenCode; OpenCode's trademark notice must not be rebranded.
   "settings.about.trademark": `${Brand.displayName} is built on OpenCode. OpenCode is a registered trademark of Anomaly Innovations, Inc.`,
-  // Kete Code doesn't enable free hosted models by default (docs/adr/0003-hosted-services-opt-in.md).
-  "sidebar.gettingStarted.line1": "Connect a model provider to start.",
+  // These free models are OpenCode's hosted ones (opt-in, docs/adr/0003-hosted-services-opt-in.md), not Kete Code's.
+  "dialog.model.unpaid.freeModels.title": "Free models provided by OpenCode",
 }
 
 export function brandText(value: string) {
