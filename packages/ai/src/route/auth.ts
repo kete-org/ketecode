@@ -1,12 +1,15 @@
-import { Config, Effect, Redacted } from "effect"
-import { Headers } from "effect/unstable/http"
-import { AuthenticationError, InvalidRequestError, AIError, type HttpOptions } from "../schema/index.js"
+import { Config, Effect, Option, Redacted } from "effect"
+import { Headers } from "effect/http"
+import { AuthenticationError, AIError, type HttpOptions } from "../schema/index.js"
 
 export class MissingCredentialError extends Error {
   readonly _tag = "MissingCredentialError"
 
-  constructor(readonly source: string) {
-    super(`Missing auth credential: ${source}`)
+  constructor(
+    readonly source: string,
+    message = `Missing auth credential: ${source}`,
+  ) {
+    super(message)
   }
 }
 
@@ -36,9 +39,6 @@ export interface Definition {
   readonly orElse: (that: Definition) => Definition
   readonly pipe: <A>(f: (self: Definition) => A) => A
 }
-
-export const isAuth = (input: unknown): input is Definition =>
-  typeof input === "object" && input !== null && "apply" in input && typeof input.apply === "function"
 
 const credential = (load: Effect.Effect<Redacted.Redacted, CredentialError>): Credential => {
   const self: Credential = {
@@ -89,7 +89,14 @@ export const optional = (secret: Secret | undefined, source = "optional value") 
     ? credential(Effect.fail(new MissingCredentialError(source)))
     : credentialFromSecret(secret, source)
 
-export const config = (name: string) => credentialFromSecret(Config.redacted(name), name)
+export const config = (name: string) =>
+  credential(
+    Effect.gen(function* () {
+      const secret = yield* Config.option(Config.Redacted(name))
+      if (Option.isSome(secret) && Redacted.value(secret.value) !== "") return secret.value
+      return yield* Effect.fail(new MissingCredentialError(name, `${name} is not set`))
+    }),
+  )
 
 export const effect = (load: Effect.Effect<Redacted.Redacted, CredentialError>) => credential(load)
 
@@ -113,8 +120,6 @@ export function bearer(source: Secret | Credential): Definition
 export function bearer(source: Secret | Credential) {
   return credentialInput(source).bearer()
 }
-
-export const apiKey = bearer
 
 export function header(name: string): (source: Secret | Credential) => Definition
 export function header(name: string, source: Secret | Credential): Definition
@@ -145,15 +150,10 @@ export function scheme(name: string, source?: Secret | Credential) {
 }
 
 const toAIError = (error: AuthError): AIError => {
-  if (error instanceof MissingCredentialError || error instanceof Config.ConfigError) {
-    return new AIError({
-      reason:
-        error instanceof MissingCredentialError
-          ? new AuthenticationError({ message: error.message, cause: error })
-          : new InvalidRequestError({ message: `Failed to resolve auth config: ${error.message}`, cause: error }),
-    })
-  }
-  return error
+  if (error instanceof AIError) return error
+  const message =
+    error instanceof MissingCredentialError ? error.message : `Failed to resolve auth config: ${error.message}`
+  return new AIError({ reason: new AuthenticationError({ message, cause: error }) })
 }
 
 export const toEffect =

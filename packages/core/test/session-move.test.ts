@@ -1,3 +1,4 @@
+import type { FileSystem } from "@opencode/core/filesystem"
 import { describe, expect } from "bun:test"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 import path from "path"
@@ -59,7 +60,7 @@ const itWithActiveExecution = testEffect(
                   replacements: [Project.node.replace(globalProjectNode), offlineModels],
                 }),
                 Layer.succeed(SessionRunner.Service, { drain: () => Effect.never }),
-              ) as unknown as Layer.Layer<LocationServices>,
+              ) as unknown as Layer.Layer<LocationServices, FileSystem.DirectoryNotFoundError>,
           ),
         ),
       ),
@@ -69,7 +70,11 @@ const itWithActiveExecution = testEffect(
 const unavailableLocations = Layer.effect(
   LocationServiceMap.Service,
   LayerMap.make(
-    () => Layer.effectDiscard(Effect.fail(new Error("broken location"))) as unknown as Layer.Layer<LocationServices>,
+    () =>
+      Layer.effectDiscard(Effect.die(new Error("broken location"))) as unknown as Layer.Layer<
+        LocationServices,
+        FileSystem.DirectoryNotFoundError
+      >,
   ),
 )
 const itWithUnavailableDestination = testEffect(
@@ -211,7 +216,7 @@ describe("Session.move", () => {
           yield* Effect.promise(() => Promise.all([mkdir(source), mkdir(destination)]))
           if (broken)
             yield* Effect.promise(() =>
-              Bun.write(path.join(source, Brand.configFiles[0]), JSON.stringify({ instructions: ["{file:./missing.txt}"] })), // kete_change
+              Bun.write(path.join(source, Brand.configFiles[0]), JSON.stringify({ instructions: ["{file:.}"] })), // kete_change
             )
           const session = yield* Session.Service
           const execution = yield* SessionExecution.Service
@@ -267,7 +272,7 @@ describe("Session.move", () => {
           const source = Location.Ref.make({ directory: AbsolutePath.make(path.join(tmp.path, "source")) })
           const destination = AbsolutePath.make(path.join(tmp.path, "destination"))
           yield* Effect.promise(() => Promise.all([mkdir(source.directory), mkdir(destination)]))
-          const config = JSON.stringify({ instructions: ["{file:./missing.txt}"] })
+          const config = JSON.stringify({ instructions: ["{file:.}"] })
           if (!broken) yield* Effect.promise(() => Bun.write(path.join(source.directory, Brand.configFiles[0]), config)) // kete_change
           const selectedID = Session.ID.create()
           const replacements: LayerNode.Replacements = [
@@ -289,11 +294,7 @@ describe("Session.move", () => {
                           replacements: [
                             ...bindings,
                             ...(broken
-                              ? [
-                                  Config.node.replace(
-                                    Config.configured({ project: false, global: false, content: config }),
-                                  ),
-                                ]
+                              ? [Config.node.replace(Layer.effect(Config.Service, Effect.die("broken config")))]
                               : []),
                           ],
                         }),

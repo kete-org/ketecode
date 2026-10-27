@@ -20,6 +20,8 @@ import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { ConfigWatch } from "./config/watch.js"
 import { WellKnown } from "./wellknown.js"
 import { KeteFolderTrust } from "./kete/folder-trust.js" // kete_change
+import { AppProcess } from "@opencode/util/process"
+import { ChildProcess } from "effect/process"
 
 export function latest<K extends keyof Info>(entries: readonly Entry[], key: K): Info[K] | undefined {
   return entries.findLast((entry): entry is Document => entry.type === "document" && entry.info[key] !== undefined)
@@ -46,9 +48,12 @@ export interface Interface {
 
 export const Options = Schema.Struct({
   project: Schema.optional(Schema.Boolean),
-  // false skips the global config dir, ~/.claude, and ~/.agents; wellknown,
-  // file, and content entries still load.
+  // false skips the system and global config dirs, ~/.claude, and ~/.agents;
+  // wellknown, file, and content entries still load.
   global: Schema.optional(Schema.Boolean),
+  system: Schema.optional(Schema.Union([Schema.Boolean, Schema.String])),
+  // false skips ~/.claude and project .claude dirs.
+  claude: Schema.optional(Schema.Boolean),
   file: Schema.optional(Schema.String),
   content: Schema.optional(Schema.String),
 })
@@ -100,10 +105,11 @@ export const layer = (options?: Options) =>
       const globalService = yield* Global.Service
       const wellknown = yield* WellKnown.Service
       const folderTrust = yield* KeteFolderTrust.Service // kete_change
+      const processes = yield* AppProcess.Service
       const reloadLock = Semaphore.makeUnsafe(1)
       const configTexts = new Map<string, string>() // kete_change: raw text of the files `load` read, for folder trust
       const updateLock = Semaphore.makeUnsafe(1)
-      const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
+      const decodeOptions = { errors: "all", onExcessProperty: "ignore" } as const
       const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
       const parseInfo = Effect.fn("Config.parseInfo")(function* (text: string, source: string) {
         const errors: ParseError[] = []
@@ -154,19 +160,19 @@ export const layer = (options?: Options) =>
 
       const loadWellknownEntry = Effect.fnUntraced(function* (entry: WellKnown.Entry) {
         const auth = entry.manifest.auth
-        if (!auth) return []
         const credential = (yield* credentials.list(entry.integrationID)).at(-1)
-        if (!credential || credential.value.type !== "key") return []
-        const variables = { [auth.env]: credential.value.key }
-        const configs = yield* wellknown
-          .resolve(entry, variables)
-          .pipe(
-            Effect.catch(() =>
-              Effect.logWarning("failed to load wellknown config", { source: entry.origin }).pipe(
-                Effect.as([] as const),
-              ),
+        const variables = auth && credential?.value.type === "key" ? { [auth.env]: credential.value.key } : undefined
+        // A failed refresh, including a missing credential, keeps the last resolved config so remote providers
+        // and allowlists do not disappear; only removing the source clears it.
+        const configs = yield* (
+          variables ? wellknown.resolve(entry, variables) : Effect.fail(new Error("No usable wellknown credential"))
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("failed to load wellknown config", { source: entry.origin, error }).pipe(
+              Effect.andThen(wellknown.cached(entry.origin)),
             ),
-          )
+          ),
+        )
         return yield* Effect.forEach(configs, (config) =>
           ConfigVariable.substitute({
             type: "virtual",
@@ -190,6 +196,26 @@ export const layer = (options?: Options) =>
             ),
           )
         return yield* Effect.forEach(entries, loadWellknownEntry).pipe(Effect.map((documents) => documents.flat()))
+      })
+
+      const loadPreferences = Effect.fn("Config.loadPreferences")(function* (plist: AbsolutePath) {
+        const result = yield* processes
+          .run(ChildProcess.make("plutil", ["-convert", "json", "-o", "-", plist], { stdin: "ignore" }), {
+            timeout: "10 seconds",
+          })
+          .pipe(Effect.flatMap(AppProcess.requireSuccess), Effect.option)
+        if (Option.isNone(result)) {
+          yield* Effect.logWarning("failed to convert managed preferences", { source: plist })
+          return []
+        }
+        const text = yield* ConfigVariable.substitute({
+          type: "virtual",
+          source: plist,
+          dir: path.dirname(plist),
+          text: ConfigDiscovery.stripPreferenceMetadata(result.value.stdout.toString()),
+        })
+        const info = yield* parseInfo(text, plist)
+        return info ? [new Document({ type: "document", path: plist, info })] : []
       })
 
       const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath, kete?: "raw" | Map<string, string>) { // kete_change
@@ -237,8 +263,33 @@ export const layer = (options?: Options) =>
               )
             : []
 
-        // Global entries sit below explicit and direct files; project
-        // directories rank above them.
+        // Managed settings load last so they override everything, and MDM
+        // preferences outrank the system directory as in V1. Policies evaluate
+        // in reverse load order, so managed policies split off and load first
+        // to keep final file-based authority.
+        const managed = [
+          ...(sources.system?.present ? yield* loadDirectory(sources.system.path).pipe(Effect.orDie) : []),
+          ...(sources.preferences ? yield* loadPreferences(sources.preferences).pipe(Effect.orDie) : []),
+        ]
+        const managedPolicies = managed
+          .flatMap((entry) =>
+            entry.type === "document" && entry.info.policies
+              ? [
+                  new Document({
+                    type: "document",
+                    path: entry.path,
+                    info: new Info({ policies: entry.info.policies }),
+                  }),
+                ]
+              : [],
+          )
+          .toReversed()
+        const managedSettings = managed.map((entry) =>
+          entry.type === "document" && entry.info.policies
+            ? new Document({ ...entry, info: new Info({ ...entry.info, policies: undefined }) })
+            : entry,
+        )
+        // Global entries sit below explicit and direct files; project directories rank above them.
         const globalSupplementary = sources.global ? yield* loadDirectory(sources.global).pipe(Effect.orDie) : []
         // kete_change start: folder trust holds back guarded project settings (kete/folder-trust.ts)
         const wellknownEntries = yield* loadWellknown().pipe(Effect.orDie)
@@ -247,12 +298,14 @@ export const layer = (options?: Options) =>
           return loadProject(substitute === false ? "raw" : substituted, substitute === false ? undefined : substitute.files).pipe(
             Effect.map(([direct, projectSupplementary]) => ({
               entries: [
+                ...managedPolicies,
                 ...wellknownEntries,
                 ...globalSupplementary,
                 ...explicit,
                 ...direct,
                 ...projectSupplementary,
                 ...content,
+                ...managedSettings,
               ],
               substituted,
             })),
@@ -372,7 +425,8 @@ export const layer = (options?: Options) =>
         function* (patch: Patch) {
           const directory = initial.global ?? AbsolutePath.make(globalService.config)
           const candidates = ConfigDiscovery.names.map((name) => path.join(directory, name))
-          const filepath = (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, Brand.configFiles[1]) // kete_change
+          const filepath =
+            (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, Brand.configFiles[1]) // kete_change
           const text = (yield* fs.readFileStringSafe(filepath)) ?? "{}\n"
           const updated = yield* Effect.try({
             try: () =>
@@ -409,7 +463,17 @@ export function configured(options?: Options) {
   return makeLocationNode({
     service: Service,
     layer: layer(options),
-    deps: [Watcher.node, Bus.node, FSUtil.node, Global.node, Location.node, Credential.node, WellKnown.node, KeteFolderTrust.node], // kete_change
+    deps: [
+      Watcher.node,
+      Bus.node,
+      FSUtil.node,
+      Global.node,
+      Location.node,
+      Credential.node,
+      WellKnown.node,
+      AppProcess.node,
+      KeteFolderTrust.node, // kete_change
+    ],
   })
 }
 

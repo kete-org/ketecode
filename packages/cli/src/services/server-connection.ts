@@ -20,7 +20,7 @@ export type Resolved = {
   readonly service?: ReturnType<typeof managedService>
 }
 
-export const resolve = Effect.fn("cli.server-connection.resolve")(function* (input: Args) { // kete_change
+export const resolve = Effect.fn("cli.server-connection.resolve")(function* (input: Args = {}) { // kete_change
   // kete_change start: offline mode forces a private server and refuses --server (kete/offline.ts)
   const offline = KeteCliOffline.connection(input)
   if (!offline.ok) return yield* Effect.fail(new Error(offline.message))
@@ -45,7 +45,7 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (inp
       )
     return { endpoint } satisfies Resolved
   }
-  if (args.standalone) {
+  if (args.standalone || (yield* ServiceConfig.read()).disabled === true) {
     return { endpoint: yield* Standalone.start() } satisfies Resolved
   }
 

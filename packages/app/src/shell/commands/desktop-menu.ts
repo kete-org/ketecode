@@ -3,7 +3,6 @@ import type { DesktopNativeKey } from "@/runtime/i18n/desktop-native"
 export type DesktopMenuPlatform = "macos" | "windows"
 
 export type DesktopMenuAction =
-  | "app.checkForUpdates"
   | "app.installCli"
   | "app.relaunch"
   | "edit.undo"
@@ -53,7 +52,6 @@ export type DesktopMenuItem = {
   role?: DesktopMenuRole
   href?: string
   accelerator?: Partial<Record<DesktopMenuPlatform, string>>
-  enabled?: "updater"
   platforms?: DesktopMenuPlatform[]
 }
 
@@ -79,12 +77,6 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     platforms: ["macos"],
     items: [
       { type: "item", role: "about" },
-      {
-        type: "item",
-        labelKey: "desktop.menu.checkForUpdates",
-        action: "app.checkForUpdates",
-        enabled: "updater",
-      },
       { type: "item", labelKey: "desktop.menu.installCli", action: "app.installCli" },
       { type: "item", labelKey: "desktop.menu.settings", command: "settings.open", accelerator: { macos: "Cmd+," } },
       { type: "item", labelKey: "desktop.menu.reloadWebview", action: "view.reload" },
@@ -281,7 +273,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "help",
     labelKey: "desktop.menu.help",
     items: [
-      { type: "item", labelKey: "desktop.menu.documentation", href: "https://opencode.ai/docs" },
+      { type: "item", labelKey: "desktop.menu.documentation", href: "https://opencode.ai/v2/docs" },
       { type: "item", labelKey: "desktop.menu.supportForum", href: "https://discord.com/invite/opencode" },
       { type: "item", labelKey: "desktop.menu.exportLogs", command: "logs.export" },
       { type: "separator" },
@@ -301,4 +293,33 @@ export const DESKTOP_MENU: DesktopMenu[] = [
 
 export function desktopMenuVisible(item: { platforms?: DesktopMenuPlatform[] }, platform: DesktopMenuPlatform) {
   return !item.platforms || item.platforms.includes(platform)
+}
+
+/** What a GUI extension's menubar item names in `after`: a built-in item's command, action, or role. */
+export function desktopMenuKey(entry: DesktopMenuEntry) {
+  if (entry.type === "separator") return undefined
+
+  return entry.command ?? entry.action ?? entry.role
+}
+
+/** Places extension items after the entry their `after` names, or at the end of the menu. */
+export function desktopMenuWithExtensions<Entry, Extra extends { readonly id: string; readonly after?: string }>(
+  base: readonly { readonly key?: string; readonly entry: Entry }[],
+  extra: readonly Extra[],
+) {
+  const list: { readonly key?: string; readonly entry: Entry | Extra }[] = [...base]
+
+  for (const item of extra) {
+    const next = { key: item.id, entry: item }
+    const index = item.after ? list.findIndex((entry) => entry.key === item.after) : -1
+
+    if (index < 0) {
+      list.push(next)
+      continue
+    }
+
+    list.splice(index + 1, 0, next)
+  }
+
+  return list
 }

@@ -25,7 +25,7 @@ import { ConfigNormalize } from "../config/normalize.js"
 import { ConfigVariable } from "../config/variable.js"
 import { KeteFolderTrust } from "./folder-trust.js"
 
-const decodeInfo = Schema.decodeUnknownOption(Info, { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" })
+const decodeInfo = Schema.decodeUnknownOption(Info, { errors: "all", onExcessProperty: "ignore" })
 
 /** One line, no control, bidi or line-separator characters, at most `MAX_MESSAGE` characters. */
 export function clip(text: string) {
@@ -99,15 +99,12 @@ export const Plugin = define({
     const fs = yield* FSUtil.Service
 
     // The loader substitutes the machine's own files always, and project files only once the folder is
-    // trusted (untrusted ones load raw); a failed `{file:…}` makes the load fail.
+    // trusted (untrusted ones load raw); a missing or unreadable `{file:…}` substitutes empty (upstream v2.1.4).
     const checkFile = (file: { readonly path: string; readonly text: string }, substitute: boolean) =>
       substitute
         ? ConfigVariable.substitute({ type: "path", path: file.path, text: file.text }).pipe(
             Effect.provideService(FSUtil.Service, fs),
             Effect.map(checkText),
-            Effect.catch((error) =>
-              Effect.succeed<Checked>({ state: "rejected", messages: [clip(`substitution failed: ${error.message ?? "a {file:…} reference couldn't be read"}`)] }),
-            ),
           )
         : Effect.succeed(checkText(file.text))
 

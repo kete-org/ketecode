@@ -2,7 +2,7 @@
 // (`mock.module`) and never open a browser, read the person's account or log, or write a file.
 
 import os from "node:os"
-import open from "open"
+import { openUrl } from "@opencode/util/open"
 import { Global } from "@opencode/util/global"
 import { KeteAccount } from "@opencode/util/kete/account"
 import { Brand } from "@opencode/util/kete/brand"
@@ -11,7 +11,7 @@ import { Logging } from "@opencode/util/observability/logging"
 
 /** Opens `url` in the platform's browser. */
 export async function openURL(url: string): Promise<void> {
-  await open(url)
+  await openUrl(url)
 }
 
 /** Whether a Kete account is signed in (account.json only, never the key). */

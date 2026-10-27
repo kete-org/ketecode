@@ -70,7 +70,7 @@ const setup = Effect.fn(function* (input: {
       directory: "/project",
       title: root,
       version: "test",
-      agent: "rootAgent",
+      agent: Agent.ID.make("rootAgent"),
       metadata: input.policy === undefined ? null : { "kete.unattended": input.policy },
     })
     .onConflictDoNothing()
@@ -86,7 +86,7 @@ const setup = Effect.fn(function* (input: {
       directory: "/project",
       title: child,
       version: "test",
-      agent: "childAgent",
+      agent: Agent.ID.make("childAgent"),
       metadata: {},
     })
     .onConflictDoNothing()

@@ -41,7 +41,7 @@ const setup = Effect.gen(function* () {
     .pipe(Effect.orDie)
   yield* db
     .insert(SessionTable)
-    .values({ id: sessionID, project_id: Project.ID.global, slug: "test", directory: "/project", title: "test", version: "test", agent: "test" })
+    .values({ id: sessionID, project_id: Project.ID.global, slug: "test", directory: "/project", title: "test", version: "test", agent: Agent.ID.make("test") })
     .onConflictDoNothing()
     .run()
     .pipe(Effect.orDie)

@@ -74,8 +74,17 @@ describe("Generation", () => {
 
       expect(error).toBeInstanceOf(AIError)
       expect(error.reason._tag).toBe("Timeout")
+      if (error.reason._tag === "Timeout") expect(error.reason.timeoutMs).toBe(5000)
       expect(error.message).toContain("gen_1")
       expect(yield* Ref.get(scripted.polls)).toBeGreaterThan(1)
+
+      const subMilliFiber = yield* Effect.forkChild(
+        generation.await({ poll: { interval: "1 second", timeout: "500 micros" } }).pipe(Effect.flip),
+      )
+      yield* TestClock.adjust("1 milli")
+      const subMilliError = yield* Fiber.join(subMilliFiber)
+
+      expect(subMilliError.reason).toMatchObject({ _tag: "Timeout", timeoutMs: 1 })
     }),
   )
 
@@ -94,6 +103,26 @@ describe("Generation", () => {
       const error = yield* Fiber.join(fiber)
 
       expect(error.reason._tag).toBe("Timeout")
+    }),
+  )
+
+  it.effect("fails an event stream at the deadline when the poll interval is longer than the timeout", () =>
+    Effect.gen(function* () {
+      const scripted = yield* scriptedRoute(["running"], "never")
+      const generation = new Generation(scripted.route, "t", { id: "gen_1", status: "queued" })
+
+      const fiber = yield* Effect.forkChild(
+        generation
+          .events({ poll: { interval: "30 seconds", timeout: "10 seconds" } })
+          .pipe(Stream.runCollect, Effect.flip),
+      )
+      yield* TestClock.adjust("9 seconds")
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust("1 second")
+      const error = yield* Fiber.join(fiber)
+
+      expect(error.reason._tag).toBe("Timeout")
+      expect(yield* Ref.get(scripted.polls)).toBe(1)
     }),
   )
 

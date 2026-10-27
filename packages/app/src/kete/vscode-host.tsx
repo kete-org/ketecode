@@ -14,6 +14,7 @@
 
 import { useLocation } from "@solidjs/router"
 import { createEffect, onCleanup, onMount } from "solid-js"
+import { OPEN_DIFF_EVENT, openDiffPath } from "@opencode/gui-extensions/kete/open-diff"
 import { useComposerState } from "@/composer/persistence"
 import { useGlobal } from "@/runtime/server/runtime"
 import { ServerConnection } from "@/runtime/server/registry"
@@ -169,6 +170,13 @@ export function KeteVSCodeShell() {
       openWorkspace()
     }
     onCleanup(onHostMessage(listener))
+    // A file picked in the review panel also opens its diff in the editor.
+    const onOpenDiff = (event: Event) => {
+      const path = openDiffPath(event)
+      if (path) openDiff(path)
+    }
+    window.addEventListener(OPEN_DIFF_EVENT, onOpenDiff)
+    onCleanup(() => window.removeEventListener(OPEN_DIFF_EVENT, onOpenDiff))
     postToHost({ type: "kete.hello" })
   })
   return null

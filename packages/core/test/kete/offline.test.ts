@@ -300,7 +300,7 @@ describe("KeteRunChecks: offline", () => {
       .pipe(Effect.orDie)
     yield* db
       .insert(SessionTable)
-      .values({ id: session, project_id: Project.ID.global, slug: session, directory: "/project", title: session, version: "test", agent: "rootAgent", metadata: {} })
+      .values({ id: session, project_id: Project.ID.global, slug: session, directory: "/project", title: session, version: "test", agent: Agent.ID.make("rootAgent"), metadata: {} })
       .onConflictDoNothing()
       .run()
       .pipe(Effect.orDie)

@@ -8,6 +8,7 @@ import { Directory, Document, Event, Info } from "@opencode/schema/config"
 import { Session } from "@opencode/core/session"
 import { SessionExecution } from "@opencode/core/session/execution"
 import { Job } from "@opencode/core/job"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
 import { Agent } from "@opencode/core/agent"
 import { SessionInbox } from "@opencode/schema/session-inbox"
 import { SessionMessage } from "@opencode/schema/session-message"
@@ -56,6 +57,7 @@ const it = testEffect(
       ShellSelect.node,
       Session.node,
       Job.node,
+      SubagentJob.node,
       Agent.node,
       Global.node, // kete_change: the command plugin's shell interpolations (kete/command-shell.ts)
     ]),

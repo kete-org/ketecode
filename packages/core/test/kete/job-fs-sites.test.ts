@@ -65,8 +65,15 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
     category: "data-dir",
     reason: "an orchestration turn's record under <state>/kete (kete's home), never the working tree",
   },
-  "packages/core/src/util/process-lock.ts": { category: "data-dir", reason: "process lock files in kete's state dirs" },
-  "packages/core/src/util/process-lock-ffi.bun.ts": { category: "data-dir", reason: "flock on a lock file's descriptor" },
+  "packages/core/src/database/database.ts": { category: "data-dir", reason: "creates the database file owner-only (and chmods its WAL files) in kete's data dir" },
+  "packages/core/src/plugin/vcs/git.ts": {
+    category: "metadata-only",
+    reason: "lstat of untracked worktree files (type and size, no content) and a throwaway index list under the OS temp dir with a random name",
+  },
+  "packages/util/src/heap-snapshot.ts": {
+    category: "off-in-job",
+    reason: "heap snapshots: the endpoint refuses in job mode (server/src/handlers/debug.ts); the signal-triggered one writes kete's log dir",
+  },
   "packages/core/src/filesystem/watcher.ts": { category: "metadata-only", reason: "change notifications; no content reads" },
   "packages/core/src/persistent-pty/daemon.ts": { category: "off-in-job", reason: "PersistentPty is replaced with a refusing layer in job mode" },
   "packages/core/src/persistent-pty/binary.bun.ts": { category: "off-in-job", reason: "the persistent-PTY daemon binary; off in job mode" },

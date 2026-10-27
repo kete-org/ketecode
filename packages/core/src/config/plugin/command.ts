@@ -3,12 +3,10 @@ export * as ConfigCommandPlugin from "./command.js"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Info, type Entry } from "@opencode/schema/config"
 import { ConfigCommand } from "@opencode/schema/config/command"
-import { Model } from "@opencode/schema/model"
-import { Provider } from "@opencode/schema/provider"
 import { AppProcess } from "@opencode/util/process"
 import path from "path"
 import { Effect, Option, PubSub, Schema, Stream } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+// import { ChildProcess } from "effect/process" // kete_change: unused; interpolations run through kete/command-shell.ts
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { Location } from "../../location.js"
@@ -16,7 +14,6 @@ import { Session } from "../../session.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 import { KeteSubagents } from "../../kete/subagents.js" // kete_change
 import { KeteCommandShell } from "../../kete/command-shell.js" // kete_change
-import type { SessionSchema } from "../../session/schema.js" // kete_change
 import { ShellSelect } from "../../shell/select.js"
 import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigMarkdown } from "../markdown.js"
@@ -49,8 +46,9 @@ export const Plugin = define({
     const shell = yield* ShellSelect.Service
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
-    const subagents = yield* SubagentJob.make
+    const subagents = yield* SubagentJob.Service
     const checkSubtask = yield* KeteSubagents.subtaskCheck // kete_change
+    const controls = yield* KeteSubagents.make // kete_change: the subagent timeout for subtasks too
     const load = Effect.fn("ConfigCommandPlugin.load")(function* () {
       return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))
     })
@@ -98,11 +96,9 @@ export const Plugin = define({
                   command.model === undefined
                     ? commandAgent?.model
                     : {
-                        id: Model.ID.make(command.model.model),
-                        providerID: Provider.ID.make(command.model.providerID),
-                        ...(command.model.variant === undefined
-                          ? {}
-                          : { variant: Model.VariantID.make(command.model.variant) }),
+                        id: command.model.model,
+                        providerID: command.model.providerID,
+                        ...(command.model.variant === undefined ? {} : { variant: command.model.variant }),
                       }
                 const text = yield* evaluateTemplate(command.template, input.prompt.text, {
                   location,
@@ -136,7 +132,7 @@ export const Plugin = define({
                     agent: selected.id,
                     description: command.description ?? name,
                   }
-                  yield* subagents.start(recovery)
+                  yield* subagents.start(recovery, controls.bound) // kete_change: KeteSubagents timeout
                   yield* subagents.background(recovery)
                   return
                 }

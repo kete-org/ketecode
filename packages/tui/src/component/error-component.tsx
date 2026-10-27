@@ -1,7 +1,7 @@
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 // kete_change start: Open issue on Kete's tracker, with a scrubbed report
-import open from "open"
+import { openUrl } from "@opencode/util/open"
 import { Global } from "@opencode/util/global"
 import { KeteBugReport } from "@opencode/util/kete/bug-report"
 import { KeteBugReportFile } from "@opencode/util/kete/bug-report-file"
@@ -67,7 +67,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
   }
   // kete_change start
   const openIssue = () => {
-    void open(issueURL.toString())
+    void openUrl(issueURL.toString())
       .then(() => setOpenState("opened"))
       .catch(() => setOpenState("failed"))
   }

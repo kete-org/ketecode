@@ -155,13 +155,13 @@ type Statement = Pick<ConfigPolicy.Info, "action" | "resource" | "effect">
  * user's own hooks).
  */
 export function disabledByPolicy(policies: ReadonlyArray<Statement>, event: Event) {
-  const statement = policies.findLast((policy) => policy.action === "permission" && Wildcard.match(`hooks:${event}`, policy.resource))
+  const statement = policies.findLast((policy) => policy.action === "tool.use" && Wildcard.match(`hooks:${event}`, policy.resource))
   return statement?.effect === "deny"
 }
 
 /** Whether a policy denies leaving the OS sandbox (`sandbox_off`) for hooks. */
 export function sandboxOffDenied(policies: ReadonlyArray<Statement>) {
-  const statement = policies.findLast((policy) => policy.action === "permission" && Wildcard.match("sandbox_off:hook", policy.resource))
+  const statement = policies.findLast((policy) => policy.action === "tool.use" && Wildcard.match("sandbox_off:hook", policy.resource))
   return statement?.effect === "deny"
 }
 

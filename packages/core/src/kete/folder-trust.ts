@@ -248,6 +248,29 @@ export function strip(document: Document, machineDeny: ReadonlyArray<Rule>) {
       held.experimental = { policies: allows }
     }
   }
+  // `instructions` entries that reach outside the project (URLs, absolute, `~` or `..` paths) wait for trust:
+  // they read files elsewhere on the machine into the prompt, or fetch from the network, when config loads.
+  if (info.instructions) {
+    const outside = info.instructions.filter(KeteFolderTrustRules.instructionLeaves)
+    if (outside.length > 0) {
+      const kept = info.instructions.filter((source) => !KeteFolderTrustRules.instructionLeaves(source))
+      if (kept.length > 0) next.instructions = kept
+      else delete next.instructions
+      removed.push("instructions")
+      held.instructions = outside
+    }
+  }
+  // Top-level `policies` (upstream v2.1.4 normalizes `experimental.policies` into it): allows wait for trust too.
+  if (info.policies) {
+    const allows = info.policies.filter((policy) => policy.effect !== "deny")
+    if (allows.length > 0) {
+      const kept = info.policies.filter((policy) => policy.effect === "deny")
+      if (kept.length > 0) next.policies = kept
+      else delete next.policies
+      removed.push("policies")
+      held.policies = allows
+    }
+  }
   if (info.permissions) {
     const split = KeteFolderTrustRules.loosening(info.permissions, machineDeny, Wildcard.match)
     if (split.held.length > 0) {
@@ -318,8 +341,9 @@ export function shield(document: Document, machine: ConfigKete.Info | undefined)
 /**
  * The file system Config substitutes project documents with once folder trust allows it: a
  * `{file:…}` target is served from the text the fingerprint hashed (`files`, resolved path → text),
- * so what loads is what was checked, and any other target fails (ConfigVariable reports a bad file
- * reference, and the load fails closed).
+ * so what loads is what was checked. Any other target is refused; since upstream v2.1.4 ConfigVariable
+ * substitutes a refused or missing file as empty (with a warning) instead of failing the load, so nothing
+ * unchecked is read either way.
  */
 export function checkedFiles(fs: FSUtil.Interface, files: ReadonlyMap<string, string>): FSUtil.Interface {
   return {

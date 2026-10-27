@@ -1,7 +1,11 @@
-import { expect, test } from "bun:test"
+import { expect, beforeEach, test } from "bun:test"
 import path from "node:path"
 import { createAppFixture } from "../fixture/app"
 import { tmpdir } from "../fixture/fixture"
+import { takeDraft } from "../../src/component/prompt/draft-stash"
+
+// Other app tests can leave a home draft in the process-wide stash (as test/prompt-paste.test.tsx notes).
+beforeEach(() => void takeDraft(undefined))
 
 test("/terminal-setup shows what this terminal needs, and Ctrl+J; esc closes it", async () => {
   const tmp = await tmpdir()

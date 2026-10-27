@@ -5,6 +5,8 @@ import {
   MouseEvent,
   PasteEvent,
   decodePasteBytes,
+  measureEditText,
+  stripAnsiSequences,
   type KeyEvent,
 } from "@opentui/core"
 import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match, For } from "solid-js"
@@ -13,7 +15,7 @@ import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
 import { tint } from "../../theme/color"
 import { createAnimatable, tween } from "../../ui/animation"
-import { EmptyBorder, SplitBorder } from "../../ui/border"
+// import { EmptyBorder, SplitBorder } from "../../ui/border" // kete_change: unused since the Kete prompt layout
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
@@ -25,10 +27,8 @@ import { useEvent } from "../../context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "../../context/editor"
 import { normalizePromptContent, openEditor } from "../../editor"
 import { useExit } from "../../context/exit"
-import { promptOffsetWidth } from "../../prompt/display"
 import { expandPromptInputPastedText, realignPromptInputMentions } from "../../prompt/mention"
 import { parseSlashHead } from "../../prompt/parse"
-import { stringWidth } from "../../util/string-width"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { emptyPrompt, usePromptHistory, type PromptInfo, type PromptPartRef } from "../../prompt/history"
 import { saveDraft, takeDraft } from "./draft-stash"
@@ -38,7 +38,7 @@ import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../pro
 import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteOption, type AutocompleteRef, Autocomplete } from "./autocomplete"
-import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
+import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { createColors, createFrames } from "../../ui/spinner"
@@ -53,6 +53,7 @@ import { usePromptMove } from "./move"
 import { resolvePastedAttachments } from "./local-attachment"
 import { locationKey, useData } from "../../context/data"
 import { useLocation } from "../../context/location"
+import { useArgs } from "../../context/args"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
 import { Slot } from "../../plugin/render"
@@ -80,9 +81,6 @@ export type PromptProps = {
   onSubmit?: () => void
   onEmptySubmit?: () => boolean | Promise<boolean>
   ref?: (ref: PromptRef | undefined) => void
-  hint?: JSX.Element
-  right?: JSX.Element
-  showPlaceholder?: boolean
   placeholders?: {
     normal?: string[]
     shell?: string[]
@@ -92,6 +90,8 @@ export type PromptProps = {
 export type PromptRef = {
   focused: boolean
   current: PromptInfo
+  mode: "normal" | "shell"
+  setMode(mode: "normal" | "shell"): void
   set(prompt: PromptInfo): void
   reset(): void
   blur(): void
@@ -208,6 +208,7 @@ export function Prompt(props: PromptProps) {
   const directoryRecents = useDirectoryRecents()
   const keymapCommands = Keymap.useCommands()
   const currentLocation = useLocation()
+  const args = useArgs()
   const config = useConfig().data
   const dialog = useDialog()
   const toast = useToast()
@@ -216,6 +217,7 @@ export function Prompt(props: PromptProps) {
   const stash = usePromptStash()
   const keymap = Keymap.use()
   const renderer = useRenderer()
+  const measure = (text: string) => measureEditText(text, { widthMethod: renderer.widthMethod })
   const exit = useExit()
   const dimensions = useTerminalDimensions()
   const theme = useTheme()
@@ -315,7 +317,6 @@ export function Prompt(props: PromptProps) {
   }))
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const connected = useConnected()
-  const hasRightContent = createMemo(() => Boolean(props.right))
 
   function promptModelWarning() {
     toast.show({
@@ -346,7 +347,7 @@ export function Prompt(props: PromptProps) {
     setTimeout(() => {
       // setTimeout is a workaround and needs to be addressed properly
       if (!input || input.isDestroyed) return
-      input.getLayoutNode().markDirty()
+      input.invalidateIntrinsicSize()
       input.gotoBufferEnd()
       renderer.requestRender()
     }, 0)
@@ -557,7 +558,7 @@ export function Prompt(props: PromptProps) {
         run: async () => {
           dialog.clear()
 
-          const editorPrompt = expandPromptInputPastedText(store.prompt, store.prompt.pasted)
+          const editorPrompt = expandPromptInputPastedText(store.prompt, store.prompt.pasted, renderer.widthMethod)
           const value = editorPrompt.text
           const content = await openEditor({
             renderer,
@@ -566,6 +567,8 @@ export function Prompt(props: PromptProps) {
               (data.location.info()?.project.directory === "/" ? undefined : data.location.info()?.project.directory) ||
               data.location.default().directory ||
               paths.cwd,
+          }).catch((error) => {
+            toast.show({ title: "Failed to open editor", message: errorMessage(error), variant: "error" })
           })
           if (!content) return
           const normalized = normalizePromptContent(content)
@@ -573,11 +576,11 @@ export function Prompt(props: PromptProps) {
           input.setText(normalized)
 
           setStore("prompt", {
-            ...realignPromptInputMentions(normalized, editorPrompt),
+            ...realignPromptInputMentions(normalized, editorPrompt, renderer.widthMethod),
             pasted: [],
           })
           restoreExtmarksFromPrompt(store.prompt)
-          input.cursorOffset = stringWidth(normalized)
+          input.cursorOffset = measure(normalized)
         },
       },
       {
@@ -593,10 +596,11 @@ export function Prompt(props: PromptProps) {
                 if (store.prompt.skills?.some((item) => item.id === skill)) return
                 const text = `@${skill}`
                 const start = input.cursorOffset
+                const end = start + measure(text)
                 input.insertText(text + " ")
                 const extmarkId = input.extmarks.create({
                   start,
-                  end: start + promptOffsetWidth(text),
+                  end,
                   virtual: true,
                   styleId: skillStyleId,
                   typeId: promptPartTypeId,
@@ -608,7 +612,7 @@ export function Prompt(props: PromptProps) {
                     const index = skills.length
                     skills.push({
                       id: Skill.ID.make(skill),
-                      mention: { start, end: start + promptOffsetWidth(text), text },
+                      mention: { start, end, text },
                     })
                     draft.extmarkToPart.set(extmarkId, { type: "skill", index })
                   }),
@@ -676,12 +680,18 @@ export function Prompt(props: PromptProps) {
     get current() {
       return store.prompt
     },
+    get mode() {
+      return store.mode
+    },
     focus() {
       if (disabled()) return
       input.focus()
     },
     blur() {
       input.blur()
+    },
+    setMode(mode) {
+      setStore("mode", mode)
     },
     set(prompt) {
       input.setText(prompt.text)
@@ -716,7 +726,7 @@ export function Prompt(props: PromptProps) {
       input.setText(saved.prompt.text)
       setStore("prompt", saved.prompt)
       restoreExtmarksFromPrompt(saved.prompt)
-      input.cursorOffset = saved.cursor
+      input.cursorOffset = Math.min(saved.cursor, measure(saved.prompt.text))
     }
   })
 
@@ -1062,12 +1072,13 @@ export function Prompt(props: PromptProps) {
           title: "Next prompt history",
           group: "Prompt",
           run() {
-            if (input.cursorOffset !== input.plainText.length) {
+            const end = measure(input.plainText)
+            if (input.cursorOffset !== end) {
               if (
                 input.scrollY + input.visualCursor.visualRow ===
                 Math.max(0, input.editorView.getTotalVirtualLineCount() - 1)
               ) {
-                input.cursorOffset = input.plainText.length
+                input.cursorOffset = end
                 return
               }
               input.moveCursorDown()
@@ -1080,7 +1091,7 @@ export function Prompt(props: PromptProps) {
             setStore("prompt", item)
             setStore("mode", item.mode ?? "normal")
             restoreExtmarksFromPrompt(item)
-            input.cursorOffset = input.plainText.length
+            input.cursorOffset = measure(item.text)
           },
         },
       ],
@@ -1155,6 +1166,7 @@ export function Prompt(props: PromptProps) {
         if (!part) return []
         return [{ start: extmark.start, end: extmark.end, text: part.text }]
       }),
+      renderer.widthMethod,
     )
     const slash = argumentSlash(inputText, keymapCommands())
     if (delivery === "queue" && (store.mode === "shell" || exitWord || slash)) {
@@ -1215,7 +1227,7 @@ export function Prompt(props: PromptProps) {
       setStore("prompt", entry)
       setStore("mode", entry.mode ?? "normal")
       restoreExtmarksFromPrompt(entry)
-      input.cursorOffset = entry.text.length
+      input.cursorOffset = measure(entry.text)
     }
     const fail = (title: string, error: unknown) => {
       toast.show({ title, message: errorMessage(error), variant: "error" })
@@ -1253,7 +1265,9 @@ export function Prompt(props: PromptProps) {
       // a local session record synchronously, so the navigation below happens
       // immediately — enter feels sent even while the create round-trip is in
       // flight. Sends against the new session gate on the request.
+      const newSessionID = args.takeNewSessionID()
       const created = data.session.create({
+        id: newSessionID,
         location: directory ? { directory } : location,
         metadata: KeteAddDirView.mergeKeteMetadata(keteMode.createMetadata(), keteAddDir.createMetadata()), // kete_change: --permission-mode and --add-dir in force before the first tool call
         agent: agent.id,
@@ -1263,6 +1277,7 @@ export function Prompt(props: PromptProps) {
           variant,
         },
       })
+      if (newSessionID !== undefined) created.request.catch(() => args.restoreNewSessionID(newSessionID))
       sessionID = created.id
       session = data.session.get(created.id)
       newSession = {
@@ -1281,8 +1296,8 @@ export function Prompt(props: PromptProps) {
             route.data.type === "session" && route.data.sessionID === created.id ? promptRef.current : undefined
           const current = active?.current
           const draft = current?.text
-            ? { prompt: { ...unwrap(current) }, cursor: current.text.length }
-            : (takeDraft(created.id) ?? { prompt: entry, cursor: entry.text.length })
+            ? { prompt: { ...unwrap(current) }, cursor: Infinity }
+            : (takeDraft(created.id) ?? { prompt: entry, cursor: Infinity })
           saveDraft(undefined, draft)
           active?.reset()
           if (sessionTabs.enabled()) {
@@ -1329,7 +1344,9 @@ export function Prompt(props: PromptProps) {
     if (currentMode === "shell") {
       move.startSubmit()
       const send = () => client.api.session.shell({ sessionID: target, command: inputText })
-      void (newSession ? newSession.gate.then(send).catch(newSession.recover) : send())
+      void (newSession ? newSession.gate.then(send) : send()).catch((error) =>
+        newSession ? newSession.recover(error) : fail("Failed to run shell command", error),
+      )
       setStore("mode", "normal")
     } else if (slashHead && isCommand) {
       const send = async () => {
@@ -1421,7 +1438,7 @@ export function Prompt(props: PromptProps) {
   function pasteText(text: string, virtualText: string) {
     const currentOffset = input.cursorOffset
     const extmarkStart = currentOffset
-    const extmarkEnd = extmarkStart + promptOffsetWidth(virtualText)
+    const extmarkEnd = extmarkStart + measure(virtualText)
 
     input.insertText(virtualText + " ")
 
@@ -1459,7 +1476,7 @@ export function Prompt(props: PromptProps) {
   }
 
   async function pasteInputText(text: string, changed: () => boolean) {
-    const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+    const normalizedText = stripAnsiSequences(text).replace(/\r\n?/g, "\n")
     const pastedContent = normalizedText.trim()
     const attachments = await resolvePastedAttachments(pastedContent, terminalEnvironment.platform)
     if (changed()) return
@@ -1493,7 +1510,7 @@ export function Prompt(props: PromptProps) {
 
     setTimeout(() => {
       if (!input || input.isDestroyed) return
-      input.getLayoutNode().markDirty()
+      input.invalidateIntrinsicSize()
       renderer.requestRender()
     }, 0)
   }
@@ -1614,7 +1631,6 @@ export function Prompt(props: PromptProps) {
   })
 
   const placeholderText = createMemo(() => {
-    if (props.showPlaceholder === false) return undefined
     const value = (() => {
       if (store.mode === "shell") {
         if (!shell().length) return undefined
@@ -1860,11 +1876,6 @@ export function Prompt(props: PromptProps) {
                 modelAlpha={modelMetaAlpha()}
                 variantAlpha={variantMetaAlpha()}
               />
-              <Show when={hasRightContent()}>
-                <box flexDirection="row" gap={1} alignItems="center">
-                  {props.right}
-                </box>
-              </Show>
             </box>
           </box>
         </box>
@@ -1913,13 +1924,11 @@ export function Prompt(props: PromptProps) {
                   </Match>
                   <Match when={true}>
                     {/* kete_change start: the configurable status line replaces the directory:branch label */}
-                    <Show when={!props.hint} fallback={props.hint ?? <text />}>
-                      <KeteStatusLineRow
-                        sessionID={props.sessionID}
-                        location={keteStatusLocation()}
-                        actions={locationActions}
-                      />
-                    </Show>
+                    <KeteStatusLineRow
+                      sessionID={props.sessionID}
+                      location={keteStatusLocation()}
+                      actions={locationActions}
+                    />
                     {/* kete_change end */}
                   </Match>
                 </Switch>

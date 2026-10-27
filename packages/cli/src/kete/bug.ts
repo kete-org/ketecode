@@ -79,8 +79,8 @@ export default Runtime.handler(
             return !isCancel(answer) && answer === true
           },
           open: async (url) => {
-            const { default: open } = await import("open")
-            await open(url)
+            const { openUrl } = await import("@opencode/util/open")
+            await openUrl(url)
           },
           out: (text) => process.stdout.write(text + "\n"),
           err: (text) => process.stderr.write(text + "\n"),

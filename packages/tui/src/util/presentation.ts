@@ -24,13 +24,20 @@ function wordmark(pad = "") {
   })
 }
 
-export function sessionEpilogue(input: { title: string; sessionID?: string }) {
-  const weak = (text: string) => `${dim}${text.padEnd(10, " ")}${reset}`
+export type SessionEpilogue = { readonly title: string; readonly sessionID?: string }
+
+// Printed after the TUI closes.
+export function epilogue(input: { readonly session?: SessionEpilogue; readonly updatedVersion?: string }) {
+  if (!input.session && !input.updatedVersion) return
+  const row = (label: string, value: string) => `  ${dim}${label.padEnd(10, " ")}${reset}${bold}${value}${reset}`
   return [
     ...wordmark("  "),
     "",
-    `  ${weak("Session")}${bold}${input.title}${reset}`,
-    `  ${weak("Continue")}${bold}${Brand.cliName} -s ${input.sessionID}${reset}`, // kete_change
-    "",
+    ...(input.updatedVersion
+      ? [`  ${dim}Run ${reset}${bold}${Brand.cliName}${reset}${dim} to use ${reset}${bold}${input.updatedVersion}${reset}`, ""] // kete_change
+      : []),
+    ...(input.session
+      ? [row("Session", input.session.title), row("Continue", `${Brand.cliName} -s ${input.session.sessionID}`), ""] // kete_change
+      : []),
   ].join("\n")
 }

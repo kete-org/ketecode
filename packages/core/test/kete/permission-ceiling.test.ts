@@ -84,7 +84,7 @@ const setup = Effect.fn(function* (reader: Permission.Ruleset, policy: Permissio
         directory: "/project",
         title: id,
         version: "test",
-        agent,
+        agent: Agent.ID.make(agent),
       })
       .onConflictDoNothing()
       .run()

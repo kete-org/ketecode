@@ -29,7 +29,7 @@
 // refused outright. Stop and Notification never ask; unattended runs never ask: project hooks run
 // only when already trusted.
 //
-// - A policy denying `hooks:<event>` (`{"action":"permission","resource":"hooks:*","effect":"deny"}`,
+// - A policy denying `hooks:<event>` (`{"action":"tool.use","resource":"hooks:*","effect":"deny"}`; the older `"permission"` action still reads, kete/policy-compat.ts,
 //   from the organization or the global config — not a project's) turns hooks off.
 // - Never in job mode (cloud, self-hosted and review jobs); its server doesn't load project config
 //   either.
@@ -242,17 +242,18 @@ export function make(deps: Deps = {}) {
       const userDocument = (file: string | undefined) => file !== undefined && KeteHooksSettings.inside(file, global.config)
       // Policies from the global config and the organization only: a repository can't switch the
       // user's own hooks off, or loosen anything.
+      // Config documents carry them in top-level `policies`: config/normalize.ts moves `experimental.policies` there.
       const policies = Effect.fnUntraced(function* (entries: ReadonlyArray<ConfigEntry>) {
         for (const entry of entries)
           if (
             entry.type === "document" &&
             !userDocument(entry.path) &&
-            (entry.info.experimental?.policies ?? []).some((policy) => policy.resource.startsWith("hooks:"))
+            (entry.info.policies ?? []).some((policy) => policy.resource.startsWith("hooks:"))
           )
             yield* warnOnce(`project policy ${entry.path}`, "ignored hooks policy statements in project configuration", { file: entry.path })
         return [
           ...entries.flatMap((entry) =>
-            entry.type === "document" && userDocument(entry.path) ? (entry.info.experimental?.policies ?? []) : [],
+            entry.type === "document" && userDocument(entry.path) ? (entry.info.policies ?? []) : [],
           ),
           ...managed.current().statements,
         ]
@@ -294,7 +295,7 @@ export function make(deps: Deps = {}) {
         if (placement.kind === "unsandboxed") {
           // Every unsandboxed run passes the `sandbox_off` permission check, like an unsandboxed shell
           // command: organization policies (synced rules `{"action":"sandbox_off",…}` and
-          // `{"action":"permission","resource":"sandbox_off:*"}` statements) and agent rules can refuse it.
+          // `{"action":"tool.use","resource":"sandbox_off:*"}` statements) and agent rules can refuse it.
           // The reason makes it a check that never asks a person.
           const reason = settings.mode === "off" || available.available ? "disabled" : "unavailable"
           const allowed = yield* offAllowed(sessionID, `hook: ${entry.command}`, reason)

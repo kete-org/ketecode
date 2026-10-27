@@ -27,7 +27,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { KeteToolHelperProtocol as Protocol } from "@opencode/util/kete/tool-helper-protocol"
 import { Context, Effect, Layer } from "effect"
-import { HttpEffect, HttpRouter, HttpServer } from "effect/unstable/http"
+import { HttpEffect, HttpRouter, HttpServer } from "effect/http"
 import { LanguageModel, LLMClient } from "../../../ai/src"
 import { OpenAIChat } from "../../../ai/src/protocols/openai-chat"
 import { TestLLM } from "../../../ai/src/testing"
@@ -203,6 +203,32 @@ it.live("(d) job mode on: creating a PTY is refused", () =>
       ),
     )
     expect(result.ok).toBe(false)
+  }),
+)
+
+it.live("(e) job mode on: a heap dump is refused and no snapshot is written into the working tree", () =>
+  Effect.gen(function* () {
+    const s = yield* setup({ jobMode: true })
+    // The heap-dump handler reads job mode from the environment, as KeteJobServer.replacements does in a real
+    // server (KeteJobMode.read()); this test passes the replacements directly, so it sets the variable for this call.
+    const previous = process.env.OPENCODE_JOB_MODE
+    process.env.OPENCODE_JOB_MODE = "1"
+    const result = yield* Effect.promise(() =>
+      s.client.debug.heapDump({ directory: s.repoDir }).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ ok: false as const, error }),
+      ),
+    ).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.OPENCODE_JOB_MODE
+          else process.env.OPENCODE_JOB_MODE = previous
+        }),
+      ),
+    )
+    expect(result.ok).toBe(false)
+    const written = yield* Effect.promise(() => fs.readdir(s.repoDir))
+    expect(written.filter((name) => name.endsWith(".heapsnapshot"))).toEqual([])
   }),
 )
 

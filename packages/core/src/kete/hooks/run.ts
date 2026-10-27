@@ -27,8 +27,8 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { Duration, Effect, Fiber, Stream } from "effect"
-import { ChildProcess } from "effect/unstable/process"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcess } from "effect/process"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 export const MAX_STDOUT = 64 * 1024
 export const MAX_STDERR = 16 * 1024

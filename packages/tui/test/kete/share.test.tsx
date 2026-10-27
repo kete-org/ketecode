@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, beforeEach, test } from "bun:test"
 import { InputRenderable, TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
@@ -6,6 +6,10 @@ import { Global } from "@opencode/util/global"
 import { previewLines } from "../../src/kete/share"
 import { createEventStream, createFetch, directory, json } from "../fixture/tui-client"
 import { tmpdir } from "../fixture/fixture"
+import { takeDraft } from "../../src/component/prompt/draft-stash"
+
+// Other app tests can leave a home draft in the process-wide stash (as test/prompt-paste.test.tsx notes).
+beforeEach(() => void takeDraft(undefined))
 
 const preview = {
   counts: { messages: 4, tools: 3, diffs: 2 },
@@ -30,25 +34,37 @@ test("previewLines say what is sent, what is not, and the expiry", () => {
 
 test("/share previews then shares and shows the link; /unshare is enabled and asks first", async () => {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 110, height: 34, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 110, height: 34, kittyKeyboard: true })
+  // Since v2.1.4 setting the title needs a set-up terminal, as the app's own start does.
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   Object.defineProperty(setup.renderer, "capabilities", { get: () => null })
   const sessionID = "ses_share"
   const events = createEventStream()
   const rpc: Array<{ method: string; input: unknown }> = []
+  // The session screen loads these since v2.1.4 (as test/clear-session.test.tsx serves them).
+  const location = { directory, project: { id: "proj_test", directory, canonical: directory } }
+  const session = {
+    id: sessionID,
+    projectID: "proj_test",
+    title: "Share fixture",
+    location: { directory },
+    agent: "build",
+    model: { providerID: "provider", id: "model" },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 0, updated: 0 },
+  }
   const calls = createFetch(async (url, request) => {
-    if (url.pathname === `/api/session/${sessionID}`)
-      return json({
-        data: {
-          id: sessionID,
-          projectID: "proj_test",
-          title: "Share fixture",
-          location: { directory },
-          cost: 0,
-          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          time: { created: 0, updated: 0 },
-        },
-      })
+    if (url.pathname === "/api/fs/list") return json({ location, data: [] })
+    if (url.pathname === "/api/location") return json(location)
+    if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
+    if (url.pathname === "/api/agent")
+      return json({ location, data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }] })
+    if (url.pathname === "/api/provider") return json({ location, data: [{ id: "provider", name: "Provider" }] })
+    if (url.pathname === "/api/model")
+      return json({ location, data: [{ id: "model", providerID: "provider", name: "Model", variants: [] }] })
+    if (url.pathname === `/api/session/${sessionID}`) return json({ data: session })
     if (url.pathname === `/api/session/${sessionID}/message`) return json({ data: [], cursor: {} })
     if (url.pathname === `/api/session/${sessionID}/inbox` || url.pathname === `/api/session/${sessionID}/permission`)
       return json({ data: [] })

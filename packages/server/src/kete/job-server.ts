@@ -23,7 +23,7 @@
 export * as KeteJobServer from "./job-server.js"
 
 import { Effect, Layer } from "effect"
-import { Socket } from "effect/unstable/socket"
+import { Socket } from "effect/socket"
 import { RequestExecutor } from "@opencode/ai/route"
 import { Config } from "@opencode/core/config"
 import { Environment } from "@opencode/core/environment/index"

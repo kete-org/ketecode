@@ -629,8 +629,46 @@ describe("folder trust", () => {
       },
       () =>
         Effect.gen(function* () {
-          expect(Config.latest(yield* entries, "experimental")?.policies).toEqual([{ action: "permission", resource: "edit:*", effect: "deny" }])
-          expect((yield* formText).description).toContain('policy: "permission" "shell:*" → allow')
+          // The legacy "permission" action reads as "tool.use" and lands in top-level policies (kete/policy-compat.ts).
+          expect(Config.latest(yield* entries, "policies")).toEqual([{ action: "tool.use", resource: "edit:*", effect: "deny" }])
+          expect((yield* formText).description).toContain('policy: "tool.use" "shell:*" → allow')
+        }),
+    ),
+  )
+
+  it.live("instructions that leave the project wait for trust; ones inside it load", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), {
+          instructions: ["docs/rules.md", "~/.ssh/id_ed25519", "/etc/passwd", "../other/AGENTS.md", "https://example.com/x.md"],
+        })
+      },
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "instructions")).toEqual(["docs/rules.md"])
+          const description = (yield* formText).description
+          for (const item of ["~/.ssh/id_ed25519", "/etc/passwd", "../other/AGENTS.md", "https://example.com/x.md"])
+            expect(description).toContain(`instructions: "${item}"`)
+        }),
+    ),
+  )
+
+  it.live("minor4b: a top-level policy allow is held back; its deny applies", () =>
+    setup(
+      async (fixture) => {
+        await clean(fixture)
+        await write(path.join(fixture.repo, "kete.json"), {
+          policies: [
+            { action: "tool.use", resource: "shell:*", effect: "allow" },
+            { action: "tool.use", resource: "edit:*", effect: "deny" },
+          ],
+        })
+      },
+      () =>
+        Effect.gen(function* () {
+          expect(Config.latest(yield* entries, "policies")).toEqual([{ action: "tool.use", resource: "edit:*", effect: "deny" }])
+          expect((yield* formText).description).toContain('policy: "tool.use" "shell:*" → allow')
         }),
     ),
   )

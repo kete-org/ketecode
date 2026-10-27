@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, beforeEach, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { InputRenderable, TextareaRenderable } from "@opentui/core"
@@ -6,6 +6,10 @@ import type { Config } from "../../src/config"
 import { createAppFixture } from "../fixture/app"
 import { tmpdir } from "../fixture/fixture"
 import { directory, json } from "../fixture/tui-client"
+import { takeDraft } from "../../src/component/prompt/draft-stash"
+
+// Other app tests can leave a home draft in the process-wide stash (as test/prompt-paste.test.tsx notes).
+beforeEach(() => void takeDraft(undefined))
 
 const location = { directory, project: { id: "project", directory, canonical: directory } }
 // A new session ID per test: the prompt keeps an unsent draft per session ID across mounts (draft-stash).

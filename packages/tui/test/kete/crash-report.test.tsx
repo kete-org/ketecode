@@ -3,12 +3,13 @@ import { expect, mock, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { Global } from "@opencode/util/global"
 
-// The crash screen opens the issue form through the `open` package: faked, no browser.
+// The crash screen opens the issue form through @opencode/util/open's openUrl: faked, no browser.
 const opened: string[] = []
-mock.module("open", () => ({
-  default: async (url: string) => {
+mock.module("@opencode/util/open", () => ({
+  openUrl: async (url: string) => {
     opened.push(url)
   },
+  openPath: async () => {},
 }))
 
 const { ErrorComponent } = await import("../../src/component/error-component")

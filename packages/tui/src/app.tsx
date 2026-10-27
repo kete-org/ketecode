@@ -1,17 +1,21 @@
+import { existsSync } from "fs"
+import path from "path"
 import { render, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { useKeteLocalModels } from "./kete/local-offer" // kete_change
 import { useKetePermissionModeCommands } from "./kete/permission-mode" // kete_change
 import { useKeteAddDir } from "./kete/add-dir" // kete_change
-import { registerOpencodeSpinner } from "./component/register-spinner"
+import "./component/spinner-renderable"
 import { Effect, Latch } from "effect"
 import { Service, type Endpoint } from "@opencode/client/effect/service"
 import { OpenCode, type SessionInfo } from "@opencode/client"
 import { Global } from "@opencode/util/global"
+import { noTimeoutFetch } from "@opencode/util/no-timeout-fetch"
 import { ClipboardProvider, useClipboard } from "./context/clipboard"
-import { LogProvider, useLog, type LogSink } from "./context/log"
+import { LogProvider, type LogSink } from "./context/log"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
+import { epilogue, type SessionEpilogue } from "./util/presentation"
 import { Selection } from "./util/selection"
 import {
   CliRenderEvents,
@@ -41,6 +45,7 @@ import {
   TuiStartupProvider,
   TuiTerminalEnvironmentProvider,
   useTuiApp,
+  useTuiPaths,
   useTuiStartup,
   useTuiTerminalEnvironment,
   type TuiApp,
@@ -67,7 +72,9 @@ import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogConfig } from "./component/dialog-config"
 import { DialogDebug } from "./component/dialog-debug"
-import { DialogPair, type DialogPairCredentials } from "./component/dialog-pair"
+import { DialogPair } from "./component/dialog-pair"
+import { DialogHighlights } from "./component/dialog-highlights"
+import { claim } from "./util/highlights"
 import { DialogThemeList } from "./component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
@@ -77,6 +84,7 @@ import { SessionTabs } from "./component/session-tabs"
 import { clampSessionTabsWidth, sessionTabsFitVertically, SESSION_SIDEBAR_WIDTH } from "./ui/layout"
 import { createPaneResize } from "./ui/pane-resize"
 import { PaneResizeHandle } from "./ui/pane-resize-handle"
+import { clickedLink } from "./ui/link"
 import { ThemeErrorToast } from "./component/theme-error-toast"
 import { createThemeSource, ThemeProvider, useTheme, useThemes } from "./context/theme"
 import { Home } from "./routes/home"
@@ -87,7 +95,7 @@ import { Toast, ToastProvider, useToast } from "./ui/toast"
 import { isFallbackTitle } from "@opencode/util/session-title-fallback"
 import * as Model from "./util/model"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
-import open from "open"
+import { openUrl } from "@opencode/util/open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { Config, ConfigProvider, useConfig } from "./config"
 import { newSessionLocation } from "./config/new-session-location"
@@ -99,16 +107,15 @@ import { CommandPaletteDialog } from "./component/command-palette"
 import { COMMAND_PALETTE_COMMAND, Keymap, type KeymapCommand } from "./context/keymap"
 
 import { DialogVariant } from "./component/dialog-variant"
-import { destroyRenderer } from "./util/renderer"
+import { destroyRenderer, setTerminalTitle } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 import { AttentionProvider } from "./context/attention"
 import { StorageProvider, useStorage } from "./context/storage"
 import { SessionTerminalsProvider } from "./context/session-terminals"
+import { ClientMcp } from "./context/client-mcp"
 import { PanelProvider, usePanel } from "./context/panel"
 import { SessionFrame } from "./component/session-frame"
 import { createTuiClipboard } from "./clipboard"
-
-registerOpencodeSpinner()
 
 const appGlobalBindingCommands = ["session.list", "session.new", "open.menu"] as const
 
@@ -211,7 +218,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const config = Config.resolve(yield* Effect.tryPromise(() => input.config.get()), {
     terminalSuspend: process.platform !== "win32",
   })
-  const options = { baseUrl: input.server.endpoint.url, headers: Service.headers(input.server.endpoint) }
+  const headers = Service.headers(input.server.endpoint)
+  const options = {
+    baseUrl: input.server.endpoint.url,
+    headers,
+    fetch: noTimeoutFetch,
+  }
   const api = OpenCode.make(options)
   const location = yield* Effect.tryPromise(() => api.file.list({ location: { directory: process.cwd() } })).pipe(
     Effect.map((response) => response.location),
@@ -225,13 +237,17 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
     ? {
         reconnect: async (signal: AbortSignal) => {
           const endpoint = await managed.reconnect(signal)
-          const next = { baseUrl: endpoint.url, headers: Service.headers(endpoint) }
-          return { api: OpenCode.make(next), url: endpoint.url }
+          const next = { baseUrl: endpoint.url, headers: Service.headers(endpoint), fetch: noTimeoutFetch }
+          return { api: OpenCode.make(next), url: endpoint.url, headers: next.headers }
         },
         restart: managed.restart,
       }
     : undefined
-  const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
+  const exit = {
+    session: undefined as SessionEpilogue | undefined,
+    updatedVersion: undefined as string | undefined,
+    reason: undefined as unknown,
+  }
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
       const options = {
@@ -251,7 +267,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         if (handoff) {
           handoff.renderer.useMouse = options.useMouse
           return yield* Effect.acquireRelease(Effect.succeed(handoff.renderer), (renderer) =>
-            Effect.sync(() => destroyRenderer(renderer)),
+            Effect.promise(async () => {
+              destroyRenderer(renderer)
+              // closed rejects when the terminal is gone or the final flush times out; nothing is left to restore.
+              await renderer.closed.catch(() => {})
+            }),
           )
         }
         if (process.env.OPENCODE_DRIVE) {
@@ -263,7 +283,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
             try: () => createCliRenderer(options),
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           }),
-          (renderer) => Effect.sync(() => destroyRenderer(renderer)),
+          (renderer) =>
+            Effect.promise(async () => {
+              destroyRenderer(renderer)
+              await renderer.closed.catch(() => {})
+            }),
         )
       })
       renderer.setMaxListeners(15)
@@ -304,7 +328,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                   destroyRenderer(renderer)
                 }}
               >
-                <EpilogueProvider set={(value) => (exit.epilogue = value)}>
+                <EpilogueProvider
+                  value={{
+                    session: (value) => (exit.session = value),
+                    updatedVersion: (version) => (exit.updatedVersion = version),
+                  }}
+                >
                   <TuiAppProvider value={input.app}>
                     <ErrorBoundary
                       fallback={(error, reset) => (
@@ -333,12 +362,6 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                             <TuiTerminalEnvironmentProvider
                               value={{
                                 platform: process.platform,
-                                multiplexer: process.env.TMUX ? "tmux" : process.env.STY ? "screen" : undefined,
-                                displayServer: process.env.WAYLAND_DISPLAY
-                                  ? "wayland"
-                                  : process.env.DISPLAY
-                                    ? "x11"
-                                    : undefined,
                                 variables: input.environment,
                               }}
                             >
@@ -380,7 +403,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                 : undefined
                                             }
                                           >
-                                            <ClientProvider api={api} url={input.server.endpoint.url} service={service}>
+                                            <ClientProvider
+                                              api={api}
+                                              url={input.server.endpoint.url}
+                                              headers={headers}
+                                              service={service}
+                                            >
                                               <PermissionProvider>
                                                 <DataProvider directory={directory}>
                                                   <LocationProvider>
@@ -391,6 +419,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                           source={createThemeSource(global.config)}
                                                         >
                                                           <ThemeErrorToast />
+                                                          <ClientMcp />
                                                           <LocalProvider>
                                                             <PromptStashProvider>
                                                               <DialogProvider>
@@ -407,16 +436,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                                 packages={input.packages}
                                                                                 directories={pluginDirectories}
                                                                               >
-                                                                                <App
-                                                                                  pair={
-                                                                                    input.server.endpoint.auth
-                                                                                      ? input.server.endpoint.auth
-                                                                                      : {
-                                                                                          username: "opencode",
-                                                                                          password: "",
-                                                                                        }
-                                                                                  }
-                                                                                />
+                                                                                <App />
                                                                               </PluginProvider>
                                                                             </PanelProvider>
                                                                           </UpdateNotificationProvider>
@@ -459,18 +479,18 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         }
       })
       yield* shutdown.await
-      return { epilogue: exit.epilogue, reason: exit.reason }
+      return { session: exit.session, updatedVersion: exit.updatedVersion, reason: exit.reason }
     }),
   )
   yield* Effect.sync(() => {
     if (result.reason !== undefined)
       process.stderr.write((cliErrorMessage(result.reason) ?? errorFormat(result.reason)) + "\n")
-    if (result.epilogue) process.stdout.write(result.epilogue + "\n")
+    const text = epilogue({ session: result.session, updatedVersion: result.updatedVersion })
+    if (text) process.stdout.write(text + "\n")
   })
 })
 
-function App(props: { pair?: DialogPairCredentials }) {
-  const log = useLog({ component: "app" })
+function App() {
   const app = useTuiApp()
   const startup = useTuiStartup()
   const config = useConfig()
@@ -624,23 +644,23 @@ function App(props: { pair?: DialogPairCredentials }) {
     if (!terminalTitleEnabled()) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle(Brand.displayName) // kete_change
+      setTerminalTitle(renderer, Brand.displayName) // kete_change
       return
     }
 
     if (route.data.type === "session") {
       const title = session?.title
       if (!title || isFallbackTitle(title)) {
-        renderer.setTerminalTitle(Brand.displayName) // kete_change
+        setTerminalTitle(renderer, Brand.displayName) // kete_change
         return
       }
 
-      renderer.setTerminalTitle(`${Brand.shortName} | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`) // kete_change
+      setTerminalTitle(renderer, `${Brand.shortName} | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`) // kete_change
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`${Brand.shortName} | ${route.data.name}`) // kete_change
+      setTerminalTitle(renderer, `${Brand.shortName} | ${route.data.name}`) // kete_change
     }
   })
 
@@ -704,6 +724,30 @@ function App(props: { pair?: DialogPairCredentials }) {
     void client.api.session
       .fork({ sessionID: args.sessionID })
       .then((result) => route.navigate({ type: "session", sessionID: result.id, prompt: startupPrompt }))
+      .catch(toast.error)
+  })
+
+  // Opens the release highlights once after an update, but only into an idle home screen during startup.
+  const storage = useStorage()
+  const paths = useTuiPaths()
+  let highlighted = false
+  createEffect(() => {
+    if (highlighted || !plugins.ready() || client.connection.status() !== "connected") return
+    highlighted = true
+    const items = app.highlights ?? []
+    if (config.data.highlights === false) return
+    if (route.data.type !== "home" || dialog.stack.length > 0 || promptRef.current?.current.text) return
+    if (args.prompt || args.continue || args.sessionID || args.newSessionID) return
+    if (process.env.OPENCODE_DRIVE || process.env.OPENCODE_STORY || process.env.OPENCODE_ROUTE) return
+    void claim(storage, {
+      version: app.version,
+      count: items.length,
+      history: existsSync(path.join(paths.state, "prompt-history.jsonl")),
+    })
+      .then((show) => {
+        if (show && dialog.stack.length === 0)
+          dialog.replace(() => <DialogHighlights version={app.version} items={items} />)
+      })
       .catch(toast.error)
   })
 
@@ -979,6 +1023,17 @@ function App(props: { pair?: DialogPairCredentials }) {
         },
         category: "Integration",
       },
+      ...(app.highlights?.length
+        ? [
+            {
+              name: "opencode.highlights",
+              title: "Show release highlights",
+              slash: { name: "highlights" },
+              run: () => dialog.replace(() => <DialogHighlights version={app.version} items={app.highlights ?? []} />),
+              category: "System",
+            },
+          ]
+        : []),
       {
         name: "opencode.settings",
         title: "Open settings",
@@ -1014,7 +1069,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         title: "Pair device",
         slash: { name: "pair", aliases: ["web"] },
         run: () => {
-          dialog.replace(() => <DialogPair credentials={props.pair} />)
+          dialog.replace(() => <DialogPair />)
         },
         category: "System",
       },
@@ -1111,7 +1166,7 @@ function App(props: { pair?: DialogPairCredentials }) {
           name: "docs.open",
           title: "Open docs",
           run: () => {
-            open(docs).catch(() => {})
+            openUrl(docs).catch(() => {})
             dialog.clear()
           },
           category: "System",
@@ -1149,8 +1204,8 @@ function App(props: { pair?: DialogPairCredentials }) {
         category: "System",
         palette: undefined,
         enabled: process.platform !== "win32",
-        run: () => {
-          renderer.suspend()
+        run: async () => {
+          await renderer.suspend()
           process.once("SIGCONT", () => renderer.resume())
           process.kill(0, "SIGTSTP")
         },
@@ -1162,7 +1217,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         palette: undefined,
         run: () => {
           const next = !terminalTitleEnabled()
-          if (!next) renderer.setTerminalTitle("")
+          if (!next) setTerminalTitle(renderer, "")
           void config
             .update((draft) => {
               draft.terminal = { ...draft.terminal, title: next }
@@ -1358,9 +1413,11 @@ function App(props: { pair?: DialogPairCredentials }) {
         evt.preventDefault()
         evt.stopPropagation()
       }}
-      onMouseUp={
-        copyOnSelectEnabled() ? (event) => Selection.copyOnSelectRelease(event, renderer, toast, clipboard) : undefined
-      }
+      onMouseUp={(event) => {
+        const url = clickedLink(renderer, event)
+        if (url) return void openUrl(url).catch(toast.error)
+        if (copyOnSelectEnabled()) Selection.copyOnSelectRelease(event, renderer, toast, clipboard)
+      }}
     >
       <box
         flexGrow={1}

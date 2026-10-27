@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Stream } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { KeteToolHelper } from "../../src/kete/tool-helper.js"
 import { KeteToolRunner } from "../../src/kete/tool-runner.js"
 import { startFakeHelper, type FakeHelper } from "./fixture/fake-tool-helper.js"

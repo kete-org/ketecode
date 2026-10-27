@@ -23,6 +23,7 @@ import { Reference } from "@opencode/core/reference"
 import { Skill } from "@opencode/core/skill"
 import { ShellSelect } from "@opencode/core/shell/select"
 import { Job } from "@opencode/core/job"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
 import { Global } from "@opencode/util/global"
 import { Location } from "@opencode/core/location"
 import { Credential } from "@opencode/core/credential"
@@ -39,7 +40,10 @@ import { location } from "../fixture/location"
 import { tmpdir } from "../fixture/tmpdir"
 
 const it = testEffect(
-  Layer.merge(PluginTestLayer, AppNodeBuilder.build(LayerNode.group([AppProcess.node, ShellSelect.node, Job.node]))),
+  Layer.merge(
+    PluginTestLayer,
+    AppNodeBuilder.build(LayerNode.group([AppProcess.node, ShellSelect.node, Job.node, SubagentJob.node])),
+  ),
 )
 const decode = Schema.decodeUnknownSync(Info)
 const document = path.join(import.meta.dir, Brand.configFiles[0]) // kete_change
@@ -306,7 +310,9 @@ describe("config plugin reloads", () => {
             (yield* integrations.get(Integration.ID.make("second"))) !== undefined &&
             (yield* references.list()).some((reference) => reference.name === "second") &&
             (yield* providers.get(Provider.ID.make("first"))) === undefined &&
-            (yield* providers.get(Provider.ID.make("second"))) !== undefined
+            (yield* providers.get(Provider.ID.make("second"))) !== undefined &&
+            (yield* skills.list()).every((skill) => skill.id !== "first") &&
+            (yield* skills.list()).some((skill) => skill.id === "second")
           )
         }),
       )

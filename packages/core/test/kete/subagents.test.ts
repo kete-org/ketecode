@@ -35,6 +35,7 @@ import { tempGlobalLayer } from "../fixture/global"
 import { offlineModels } from "../fixture/models"
 import { testEffect } from "../lib/effect"
 import { executeTool, registerToolPlugin, toolIdentity } from "../lib/tool"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
 
 const childText = "child final response"
 const childModel = Model.Ref.make({ id: Model.ID.make("child"), providerID: Provider.ID.make("test") })
@@ -109,6 +110,7 @@ const plugins = makeLocationNode({
     Permission.node,
     Session.node,
     Job.node,
+    SubagentJob.node,
     Tool.node,
     PluginHooks.node,
   ],
@@ -296,6 +298,25 @@ describe("KeteSubagents", () => {
           ),
       )
       expect(calls.woken).not.toContain(parent.id)
+    }),
+  )
+
+  it.live("stopping a session stops a running subagent even past the first 50 children", () =>
+    Effect.gen(function* () {
+      const { sessions, parent } = yield* setup({})
+      const jobs = yield* Job.Service
+      const running = yield* sessions.create({ parentID: parent.id, title: "hold", agent: Agent.ID.make("reviewer") })
+      yield* jobs.start({ id: running.id, type: SubagentTool.name, run: Effect.never })
+      // Newer, finished children push the running one past a 50-row page.
+      yield* Effect.forEach(Array.from({ length: 55 }, (_, n) => n), (n) =>
+        sessions.create({ parentID: parent.id, title: `done ${n}`, agent: Agent.ID.make("reviewer") }),
+      )
+
+      const bus = yield* Bus.Service
+      yield* bus.publish(SessionEvent.Execution.Interrupted, { sessionID: parent.id, reason: "user" })
+
+      yield* eventually(() => jobs.get(running.id).pipe(Effect.map((job) => job?.status === "cancelled")))
+      expect(calls.interrupted).toContain(running.id)
     }),
   )
 

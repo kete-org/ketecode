@@ -31,8 +31,8 @@ import path from "path"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import { Global } from "@opencode/util/global"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
-import { Effect, Exit, Fiber, Option, Predicate, Queue, Scope, Stream } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { Effect, Exit, Option, Predicate, Queue, Scope, Stream } from "effect"
+import { ChildProcess } from "effect/process"
 import { Config } from "../config.js"
 import { Environment } from "../environment/index.js"
 import { FileAccess } from "../file-access.js"
@@ -132,7 +132,7 @@ export function serverEnvironment(
 /** Whether a policy statement denies leaving the OS sandbox (`sandbox_off`). */
 export function sandboxOffDenied(policies: ReadonlyArray<{ readonly action: string; readonly resource: string; readonly effect: string }>) {
   const statement = policies.findLast(
-    (policy) => policy.action === "permission" && Wildcard.match("sandbox_off:language-server", policy.resource),
+    (policy) => policy.action === "tool.use" && Wildcard.match("sandbox_off:language-server", policy.resource),
   )
   return statement?.effect === "deny"
 }
@@ -264,7 +264,7 @@ export function make(deps: Deps = {}) {
             const user = entries.filter((entry) => entry.type === "document" && userDocument(entry.path))
             const optedIn = user.some((entry) => entry.type === "document" && entry.info.kete?.lsp?.unsandboxed === true)
             const policies = [
-              ...user.flatMap((entry) => (entry.type === "document" ? (entry.info.experimental?.policies ?? []) : [])),
+              ...user.flatMap((entry) => (entry.type === "document" ? (entry.info.policies ?? []) : [])),
               ...managed.current().statements,
             ]
             if (!unsandboxedAllowed({ mode: settings.mode, optedIn, policies })) {

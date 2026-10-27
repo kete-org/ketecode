@@ -1,9 +1,13 @@
-import { expect, test } from "bun:test"
+import { expect, beforeEach, test } from "bun:test"
 import { mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { createAppFixture } from "../fixture/app"
 import { tmpdir } from "../fixture/fixture"
 import { json } from "../fixture/tui-client"
+import { takeDraft } from "../../src/component/prompt/draft-stash"
+
+// Other app tests can leave a home draft in the process-wide stash (as test/prompt-paste.test.tsx notes).
+beforeEach(() => void takeDraft(undefined))
 
 const TITLE = "Set up Kete Code"
 

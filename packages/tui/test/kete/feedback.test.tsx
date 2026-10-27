@@ -1,7 +1,11 @@
-import { expect, mock, test } from "bun:test"
+import { expect, beforeEach, mock, test } from "bun:test"
 import path from "node:path"
 import { createAppFixture } from "../fixture/app"
 import { tmpdir } from "../fixture/fixture"
+import { takeDraft } from "../../src/component/prompt/draft-stash"
+
+// Other app tests can leave a home draft in the process-wide stash (as test/prompt-paste.test.tsx notes).
+beforeEach(() => void takeDraft(undefined))
 
 // Every side effect of /feedback is faked: no browser, no account or log read, no file written.
 const calls = { opened: [] as string[], saved: [] as string[] }

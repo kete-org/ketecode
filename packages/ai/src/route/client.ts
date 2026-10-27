@@ -11,7 +11,8 @@ import { applyEffortUpdates } from "../effort-updates.js"
 import { normalizeToolHistory } from "../tool-history.js"
 import { sanitizeSurrogates } from "../utils/sanitize.js"
 import * as ProviderShared from "../protocols/shared.js"
-import type { ProtocolID, ProviderOptions } from "../schema/index.js"
+import { ToolSchemaProjection } from "../protocols/utils/tool-schema.js"
+import type { LanguageModelSanitizerCompatibility, ProtocolID, ProviderOptions } from "../schema/index.js"
 import {
   AIError,
   CompactionResponse,
@@ -57,6 +58,7 @@ export interface Route<
   readonly defaults: RouteDefaults
   readonly body: RouteBody<Body>
   readonly supportsEffortUpdates?: (request: LLMRequest) => boolean
+  readonly sanitizer?: LanguageModelSanitizerCompatibility
   readonly with: {
     <Next extends CompactionOperations | undefined>(
       patch: RoutePatch<Body, Prepared> & { readonly compact: Next },
@@ -91,8 +93,6 @@ export type AnyRoute<Compact extends CompactionOperations | undefined = Compacti
   any,
   Compact
 >
-
-export type HttpOptionsInput = HttpOptions.Input
 
 export type RouteLanguageModelInput = Omit<LanguageModel.Input, "provider" | "route">
 
@@ -130,7 +130,7 @@ const makeRouteLanguageModel = <Options extends ProviderOptions, Compact extends
 ) => {
   const provider = route.provider ?? ("provider" in mapped ? mapped.provider : undefined)
   if (!provider) throw new Error(`Route.model(${route.id}) requires a provider`)
-  if (!endpointBaseURL(route.endpoint))
+  if (!route.endpoint.baseURL)
     throw new ProviderConfigurationError({
       provider: ProviderID.make(provider),
       message: `Route.model(${route.id}) requires an endpoint baseURL — configure it on the route first`,
@@ -148,18 +148,15 @@ const mergeRouteDefaults = (base: RouteDefaults | undefined, patch: RouteDefault
     ...base,
     ...patch,
     headers,
-    generation: mergeGenerationOptions(generationOptions(base?.generation), generationOptions(patch.generation)),
+    generation: mergeGenerationOptions(base?.generation, patch.generation),
     providerOptions: mergeProviderOptions(base?.providerOptions, patch.providerOptions),
     http: mergeHttpOptions(
       base?.http,
-      httpOptions(patch.http),
+      HttpOptions.make(patch.http),
       headers === undefined ? undefined : new HttpOptions({ headers }),
     ),
   }
 }
-
-const endpointBaseURL = <Body>(endpoint: Endpoint.Definition<Body>) =>
-  typeof endpoint.baseURL === "string" ? endpoint.baseURL : undefined
 
 const mergeHeaders = (...items: ReadonlyArray<Record<string, string> | undefined>) => {
   const entries = items.flatMap((item) =>
@@ -167,14 +164,6 @@ const mergeHeaders = (...items: ReadonlyArray<Record<string, string> | undefined
   )
   if (entries.length === 0) return undefined
   return Object.fromEntries(entries)
-}
-
-export const generationOptions = (input: GenerationOptions.Input | undefined) =>
-  input === undefined ? undefined : GenerationOptions.make(input)
-
-export const httpOptions = (input: HttpOptionsInput | undefined) => {
-  if (input === undefined) return input
-  return HttpOptions.make(input)
 }
 
 export interface Interface {
@@ -261,7 +250,9 @@ const unsupportedCompaction = (request: LLMRequest, mechanism: string | undefine
   })
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/LLMClient") {}
+export class LLMClientService extends Context.Service<LLMClientService, Interface>()("@opencode/LLMClient") {}
+export const Service = LLMClientService
+export type Service = LLMClientService
 
 const resolveRequestOptions = (request: LLMRequest) => {
   const messages = normalizeToolHistory(request.messages)
@@ -359,7 +350,6 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
   input: MakeTransportInput<Body, Prepared, Frame, Event, State>,
 ): Route<Body, Prepared> {
   const protocol = input.protocol
-  const encodeBody = Schema.encodeSync(Schema.fromJsonString(protocol.body.schema))
   const decodeEventEffect = Schema.decodeUnknownEffect(protocol.stream.event)
   const decodeEvent = (route: string) => (frame: Frame) =>
     decodeEventEffect(frame).pipe(
@@ -391,6 +381,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
       defaults: routeInput.defaults ?? {},
       body: protocol.body,
       supportsEffortUpdates: protocol.supportsEffortUpdates,
+      sanitizer: protocol.sanitizer,
       with: (patch: RoutePatch<Body, Prepared>) => {
         const { compact, id, provider, providerMetadataKey, auth, transport, endpoint, ...defaults } = patch
         return build({
@@ -400,8 +391,8 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
           provider: provider ?? routeInput.provider,
           providerMetadataKey:
             providerMetadataKey ??
-            (provider !== undefined && String(provider) !== String(routeInput.provider)
-              ? String(provider)
+            (provider !== undefined && provider !== routeInput.provider
+              ? provider
               : routeInput.providerMetadataKey),
           auth: auth ?? routeInput.auth,
           endpoint: endpoint ? Endpoint.merge(routeInput.endpoint, endpoint) : routeInput.endpoint,
@@ -417,7 +408,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
           request,
           endpoint: routeInput.endpoint,
           auth: routeInput.auth ?? Auth.none,
-          encodeBody,
+          encodeBody: ProviderShared.encodeJson,
           middleware: options?.http,
           webSocket: options?.webSocket,
         }),
@@ -562,7 +553,9 @@ const prepareRequest = (request: LLMRequest) => {
       tool.type === "tool" ? tool : { ...tool, tools: dedupe(tool.tools) },
     )
   const resolved = applyCachePolicy(
-    applyEffortUpdates(LLMRequest.update(sanitized, { tools: dedupe(sanitized.tools) })),
+    applyEffortUpdates(
+      LLMRequest.update(sanitized, { tools: ToolSchemaProjection.tools(dedupe(sanitized.tools), sanitized.model) }),
+    ),
   )
   const headers = resolved.model.route.headers?.({ request: resolved })
   return headers === undefined
@@ -574,9 +567,7 @@ const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest, options
   const resolved = prepareRequest(request)
   const route = resolved.model.route
 
-  const body = yield* route.body
-    .from(resolved)
-    .pipe(Effect.flatMap(ProviderShared.validateWith(Schema.decodeUnknownEffect(route.body.schema))))
+  const body = yield* route.body.from(resolved)
   const prepared = yield* route.prepareTransport(body, resolved, options)
 
   return {
@@ -647,13 +638,6 @@ export function compact(request: LLMRequest, options?: EndpointCompactOptions | 
     return yield* unsupportedCompaction(request, options?.mechanism)
   })
 }
-
-export const streamRequest = (request: LLMRequest, options?: StreamOptions) =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      return (yield* Service).stream(request, options)
-    }),
-  )
 
 export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer.effect(
   Service,

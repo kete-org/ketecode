@@ -4,7 +4,7 @@
 // that a refused request never reaches the fake client at all.
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { AIError } from "@opencode/ai"
 import { RequestExecutor } from "@opencode/ai/route"
 import { KeteJobRequest } from "@opencode/core/kete/job-request"
