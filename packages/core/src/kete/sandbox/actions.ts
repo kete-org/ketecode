@@ -37,15 +37,33 @@ export function automatic(action: string, metadata: Readonly<Record<string, unkn
   return action === off && (metadata?.reason === "disabled" || metadata?.reason === "unavailable")
 }
 
+// A permission request carries a copy of the tool's metadata (permission.ts drops undefined values,
+// since upstream v2.1.4), while the shell tool hands the sandbox its original (KeteSandbox.remember).
+// `linked` records the original, so a mark set on the copy reaches it too.
+const originals = new WeakMap<object, Record<string, unknown>>()
+
+/** `copy`, with `original` recorded as the object a mark on it also goes to. */
+export function linked<T extends Record<string, unknown> | undefined>(copy: T, original: Record<string, unknown> | undefined): T {
+  if (copy && original && copy !== original) originals.set(copy, original)
+  return copy
+}
+
+const mark = (metadata: Record<string, unknown> | undefined, key: string) => {
+  if (!metadata) return
+  metadata[key] = true
+  const original = originals.get(metadata)
+  if (original) original[key] = true
+}
+
 /** Records that a person approved the request carrying `metadata` (only shell requests carry a
  * metadata object the sandbox reads it from). */
 export function markApproved(metadata: Record<string, unknown> | undefined) {
-  if (metadata) metadata[approvedKey] = true
+  mark(metadata, approvedKey)
 }
 
 /** Records that an unattended run's policy allowed the shell request carrying `metadata`. */
 export function markPolicyAllowed(metadata: Record<string, unknown> | undefined) {
-  if (metadata) metadata[policyKey] = true
+  mark(metadata, policyKey)
 }
 
 /** The approval hook's rule, given the final decision. */

@@ -185,9 +185,11 @@ const layer = Layer.effect(
         save: input.save,
         // Tools copy optional inputs straight into metadata; undefined values are not JSON and would
         // fail the HttpApi response encoder when clients list pending requests.
-        metadata:
+        metadata: KeteSandboxActions.linked( // kete_change: marks on the copy reach the tool's own object (kete/sandbox/actions.ts)
           input.metadata &&
-          Object.fromEntries(Object.entries(input.metadata).filter(([, value]) => value !== undefined)),
+            Object.fromEntries(Object.entries(input.metadata).filter(([, value]) => value !== undefined)), // kete_change: indented into the call above
+          input.metadata, // kete_change
+        ), // kete_change
         source: input.source,
         message,
       }
