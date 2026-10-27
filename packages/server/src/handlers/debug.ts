@@ -2,6 +2,7 @@ import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { InvalidRequestError, UnknownError } from "@opencode/protocol/errors"
 import { Global } from "@opencode/util/global"
 import { HeapSnapshot } from "@opencode/util/heap-snapshot"
+import { KeteJobMode } from "@opencode/util/kete/job-mode" // kete_change
 import { Effect, Option, RcMap } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import path from "node:path"
@@ -15,6 +16,8 @@ export const DebugHandler = HttpApiBuilder.group(Api, "server.debug", (handlers)
       .handle(
         "debug.heapDump",
         Effect.fn("server.debug.heapDump")(function* (ctx) {
+          // kete_change: a heap snapshot holds the job's secrets; in job mode none is written anywhere
+          if (KeteJobMode.enabled()) return yield* new InvalidRequestError({ message: KeteJobMode.message("heap dump") })
           const directory = ctx.query.directory
           if (directory !== undefined && !path.isAbsolute(directory))
             return yield* new InvalidRequestError({ message: "directory must be an absolute path", field: "directory" })

@@ -84,6 +84,8 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   "packages/core/src/ripgrep/binary.ts": { category: "seam", reason: "rg (grep/glob tools) via ChildProcessSpawner directly" },
   "packages/core/src/environment/exec-defaults.ts": { category: "seam", reason: "sh -c file-op fallback" },
   "packages/core/src/git.ts": { category: "seam", reason: "git (Git service: project, snapshot, vcs, worktree)" },
+  "packages/core/src/config.ts": { category: "seam", reason: "plutil for macOS managed preferences, through AppProcess" },
+  "packages/cli/src/commands/handlers/acp.ts": { category: "client-only", reason: "the `kete acp` command's own process wiring (CrossSpawnSpawner); a CLI command, never inside a job" },
   "packages/core/src/kete/git.ts": { category: "seam", reason: "git (KeteGit), via AppProcess" },
   "packages/core/src/plugin/vcs/git.ts": { category: "seam", reason: "git (vcs plugin)" },
   "packages/core/src/plugin/vcs/hg.ts": { category: "seam", reason: "hg (vcs plugin)" },
@@ -120,7 +122,6 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   "packages/util/src/process.ts": { category: "implementation", reason: "AppProcess, built on the spawner behind the seam" },
   "packages/core/src/effect/app-node-builder.ts": { category: "implementation", reason: "generic LayerNode compiler; no spawner reference" },
   "packages/core/src/instance.ts": { category: "implementation", reason: "generic per-session instance graph compiler; no spawner reference" },
-  "packages/util/src/npm.ts": { category: "implementation", reason: "Npm service's own runtime graph; its node has no spawner dependency" },
   "packages/cli/src/commands/handlers/default.ts": { category: "implementation", reason: "compiles only Global.node; no spawner reference" },
   "packages/cli/src/index.ts": {
     category: "implementation",
