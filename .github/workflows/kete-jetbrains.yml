@@ -94,7 +94,7 @@ jobs:
 
       - name: Web UI IDE-host tests
         working-directory: packages/app
-        run: bun test --conditions=solid --preload ./happydom.ts ./src/kete
+        run: bun test --conditions=solid --isolate --preload ../ui/test/solid-jsx.ts --preload ./happydom.ts ./src/kete
 
   verify:
     needs: build
