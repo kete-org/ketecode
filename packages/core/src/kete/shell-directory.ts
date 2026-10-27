@@ -65,8 +65,15 @@ export function implicitPowerShell(words: ReadonlyArray<string>, cwd: string): s
   const name = (words[0] ?? "").toLowerCase()
   if (STACK_ONLY.has(name)) return []
   const rest = words.slice(1)
-  const positional = rest.filter((word) => !(word.startsWith("-") && word !== "-"))
-  const explicit = rest.some((word) => /^-(literal)?path(:|$)/i.test(word))
+  // After `--` every word is a value; before it, a parameter is `-name` (letters first). Words like
+  // `-/../x` or `` -`x `` aren't parameters, so they're positional targets (as shell/parse.ts reads them).
+  const end = rest.indexOf("--")
+  const before = end === -1 ? rest : rest.slice(0, end)
+  const after = end === -1 ? [] : rest.slice(end + 1)
+  const parameter = (word: string) => /^-[a-z][a-z0-9]*(:|$)/i.test(word)
+  const positional = [...before.filter((word) => word === "-" || !parameter(word)), ...after]
+  // `-Path x`, or any parameter with its value bound by `:` (`-p:/x`, `-LiteralPath:x`, `-PSPath:x`).
+  const explicit = before.some((word) => /^-(literal)?path$/i.test(word) || /^-[a-z][a-z0-9]*:./i.test(word))
   if (!explicit && positional.length === 0) return [root(cwd)]
   if (positional.some((word) => word === "-" || word === "+")) return [root(cwd)]
   return []

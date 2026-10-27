@@ -63,3 +63,16 @@ describe("PR #20 follow-up: cd targets that can't be known", () => {
     expect(KeteShellDirectory.implicitPowerShell(["Pop-Location"], "/w")).toEqual([])
   })
 })
+
+describe("KeteShellDirectory.implicitPowerShell parameter forms", () => {
+  const cwd = "/workspace"
+  test("a parameter with a colon-bound value, or a value after --, is an explicit target", () => {
+    for (const words of [["Set-Location", "-p:/x"], ["Set-Location", "-PSPath:/x"], ["Set-Location", "--", "-x"], ["Set-Location", "-/../x"]])
+      expect(KeteShellDirectory.implicitPowerShell(words, cwd)).toEqual([])
+  })
+
+  test("no target, or a history move, still stands for anywhere", () => {
+    for (const words of [["Set-Location"], ["Set-Location", "-"], ["Set-Location", "+"], ["Set-Location", "-PassThru"]])
+      expect(KeteShellDirectory.implicitPowerShell(words, cwd)).toEqual(["/"])
+  })
+})

@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { ShellParse } from "../../src/shell/parse.js"
 import { ShellScan } from "../../src/shell/scan.js"
 import { Wildcard } from "../../src/util/wildcard.js"
+import os from "os" // kete_change
 
 async function parity(source: string) {
   const legacy = await Effect.runPromise(ShellParse.scan(source, "/bin/bash", "/workspace"))
@@ -160,7 +161,8 @@ describe("Bash redirect resource oracle", () => {
     const source = "pwd && cd >out /outside"
     const legacy = await Effect.runPromise(ShellParse.scan(source, "/bin/bash", "/workspace"))
     const native = await Effect.runPromise(ShellParse.scanPortable(source, "/bin/bash", "/workspace"))
-    expect(legacy).toEqual({ commands: [{ resource: "pwd", save: "pwd *" }], directories: [] })
-    expect(native).toEqual({ commands: [{ resource: "pwd", save: "pwd *" }], directories: ["/outside"] })
+    // kete_change: Kete Code also reads this `cd` as unresolved and adds home (kete/shell-directory.ts), so the legacy scan still asks
+    expect(legacy).toEqual({ commands: [{ resource: "pwd", save: "pwd *" }], directories: [os.homedir()] })
+    expect(native).toEqual({ commands: [{ resource: "pwd", save: "pwd *" }], directories: ["/outside", os.homedir()] }) // kete_change
   })
 })
