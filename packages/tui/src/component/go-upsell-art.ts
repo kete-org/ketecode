@@ -7,7 +7,7 @@ import {
   type RenderContext,
 } from "@opentui/core"
 import { extend } from "@opentui/solid"
-import { go } from "../logo"
+import { openCodeGo as go } from "../logo" // kete_change: the upsell shows OpenCode Go's mark, not Kete's
 
 // Ported from the v1 TUI's Go upsell (bg-pulse-render.ts): rings radiate from the GO logo while a shimmer crosses it.
 const PERIOD = 4600
