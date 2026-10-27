@@ -228,9 +228,9 @@ describe("Config", () => {
           return Effect.promise(async () => {
             await fs.mkdir(path.join(locked, "agents"), { recursive: true })
             await fs.mkdir(project, { recursive: true })
-            await fs.writeFile(path.join(project, "opencode.json"), JSON.stringify({ shell: "project" }))
+            await fs.writeFile(path.join(project, Brand.configFiles[0]), JSON.stringify({ shell: "project" })) // kete_change
             await fs.symlink(path.join(locked, "agents"), path.join(home, ".agents"))
-            await fs.symlink(path.join(locked, "agents"), path.join(project, ".opencode"))
+            await fs.symlink(path.join(locked, "agents"), path.join(project, Brand.projectDirectory)) // kete_change
             await fs.chmod(locked, 0o000)
           }).pipe(
             Effect.andThen(Effect.addFinalizer(() => Effect.promise(() => fs.chmod(locked, 0o755)))),
@@ -300,12 +300,12 @@ describe("Config", () => {
           await fs.mkdir(global, { recursive: true })
           await fs.mkdir(project, { recursive: true })
           await fs.writeFile(
-            path.join(system, "opencode.json"),
+            path.join(system, Brand.configFiles[0]), // kete_change
             JSON.stringify({ shell: "system", username: "system-user", experimental: { policies: [tool("deny")] } }),
           )
-          await fs.writeFile(path.join(global, "opencode.json"), JSON.stringify({ shell: "global" }))
+          await fs.writeFile(path.join(global, Brand.configFiles[0]), JSON.stringify({ shell: "global" })) // kete_change
           await fs.writeFile(
-            path.join(project, "opencode.json"),
+            path.join(project, Brand.configFiles[0]), // kete_change
             JSON.stringify({ shell: "project", experimental: { policies: [tool("allow")] } }),
           )
         }).pipe(
@@ -829,7 +829,7 @@ describe("Config", () => {
               const updated = yield* bus
                 .subscribe(Event.Updated)
                 .pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped({ startImmediately: true }))
-              yield* Effect.promise(() => fs.writeFile(path.join(project, "opencode.json"), JSON.stringify({ shell })))
+              yield* Effect.promise(() => fs.writeFile(path.join(project, Brand.configFiles[0]), JSON.stringify({ shell }))) // kete_change
               yield* trigger
               yield* Fiber.join(updated)
               return remote(yield* config.entries())

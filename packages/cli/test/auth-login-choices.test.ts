@@ -22,9 +22,11 @@ test("groups the CLI choices like /connect while keeping stable login IDs", () =
   ).toEqual([
     { value: "github", label: "GitHub", category: "MCP", connected: false },
     { value: "linear", label: "Linear", category: "MCP", connected: false },
-    { value: "opencode-go", label: "OpenCode Go", category: "Popular", connected: true },
-    { value: "opencode", label: "OpenCode Console", category: "Popular", connected: false },
+    // kete_change start: OpenCode Go and Console are listed, not promoted (hosted services are opt-in, ADR 0003)
     { value: "openai", label: "OpenAI", category: "Popular", connected: false },
     { value: "mistral", label: "Mistral", category: "Services", connected: false },
+    { value: "opencode", label: "OpenCode Console", category: "Services", connected: false },
+    { value: "opencode-go", label: "OpenCode Go", category: "Services", connected: true },
+    // kete_change end
   ])
 })

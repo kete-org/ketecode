@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ACPError } from "../../src/acp/error"
 import { delivered, rpcError, startSession, textDelta, type Wire } from "./wire-fixture"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 describe("acp errors", () => {
   test("wraps unknown defects without leaking raw details", () => {
@@ -33,7 +34,7 @@ describe("acp error boundary over the wire", () => {
       })
       const unavailable = {
         code: -32603,
-        message: "Internal error: OpenCode server is unavailable",
+        message: `Internal error: ${Brand.displayName} server is unavailable`, // kete_change
         data: { errorName: "ServerUnavailable" },
       }
 

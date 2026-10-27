@@ -7,6 +7,7 @@ import os from "node:os"
 import path from "node:path"
 import { OPENCODE_VERSION } from "../src/version"
 import { isolatedEnv } from "./fixture/environment"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 // Real `serve --service` processes driven by the real CLI commands and client. Only behavior that
 // needs real processes lives here; the client's lifecycle decisions are covered by fixture tests in
@@ -117,7 +118,7 @@ serviceTest(
       (error: Error) => error.message,
     )
     expect(conflict).toContain(`Managed service port ${home.port} on 127.0.0.1 is already in use by another process`)
-    expect(conflict).toContain("opencode service set port <port>")
+    expect(conflict).toContain(`${Brand.cliName} service set port <port>`) // kete_change
     expect(await servers(home)).toEqual([])
     expect(await Bun.file(home.registration).exists()).toBe(false)
 
@@ -182,12 +183,12 @@ async function serviceHome(options: { readonly failBoot?: boolean } = {}) {
   // Servers spawned through this home's entry carry its path, so `servers()` sees only this home.
   const homeEntry = path.join(root, "opencode.ts")
   await fs.writeFile(homeEntry, `import ${JSON.stringify(entry)}\n`)
-  const overrides = options.failBoot ? { OPENCODE_DB: path.join(root, "database") } : {}
+  const overrides = options.failBoot ? { KETE_DB: path.join(root, "database") } : {} // kete_change: children read KETE_* (util/src/kete/env.ts)
   const home = {
     root,
     port,
     entry: homeEntry,
-    registration: path.join(root, "state", "opencode", "service-local.json"),
+    registration: path.join(root, "state", Brand.appDirectory, "service-local.json"), // kete_change
     env: Object.fromEntries(
       Object.entries(isolatedEnv(root, overrides)).filter((entry): entry is [string, string] => entry[1] !== undefined),
     ),

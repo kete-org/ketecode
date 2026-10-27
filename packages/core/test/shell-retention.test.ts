@@ -15,6 +15,7 @@ import { tempGlobalLayer } from "./fixture/global"
 import { location, tempLocationLayer } from "./fixture/location"
 import { tmpdirScoped } from "./fixture/tmpdir"
 import { it } from "./lib/effect"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 it.live("eviction makes progress past an already-removed shell", () =>
   Effect.gen(function* () {
@@ -142,6 +143,7 @@ it.live("does not inherit host process.env when creating a shell in a workspace-
     expect(capturedEnv).toEqual({
       TERM: "xterm-256color",
       OPENCODE_TERMINAL: "1",
+      [`${Brand.envPrefix}TERMINAL`]: "1", // kete_change: shells also get the Kete name of the marker (shell.ts)
     })
   }),
 )

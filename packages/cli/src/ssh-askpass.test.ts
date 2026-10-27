@@ -51,7 +51,7 @@ test("a response split inside a multi-byte character is written intact", async (
   if (!address || typeof address === "string") throw new Error("missing listener")
   try {
     const child = Bun.spawn([process.execPath, path.join(import.meta.dir, "index.ts"), "Enter passphrase:"], {
-      env: { ...process.env, OPENCODE_SSH_ASKPASS_PORT: String(address.port), OPENCODE_SSH_ASKPASS_TOKEN: "fixture" },
+      env: { ...process.env, KETE_SSH_ASKPASS_PORT: String(address.port), KETE_SSH_ASKPASS_TOKEN: "fixture" }, // kete_change
       stdout: "pipe",
       stderr: "pipe",
     })

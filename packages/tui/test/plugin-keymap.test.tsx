@@ -41,7 +41,9 @@ test("setup layers before and after await reach keyboard, palette, and slash acr
   setup.mockInput.pressKey("g", { ctrl: true })
   setup.mockInput.pressKey("F9")
   await search(setup, "Setup check")
-  await setup.waitForFrame((frame) => frame.includes("No results found"))
+  // kete_change: Kete Code's "Check setup" (/doctor) also matches the search, so wait for the plugin's
+  // "Setup check <n>" command to be gone rather than for "No results found"
+  await setup.waitForFrame((frame) => frame.includes("Check setup") && !/Setup check \d/.test(frame)) // kete_change
   expect(setup.captureCharFrame()).not.toContain("Setup keymap ran 4")
   expect(setup.captureCharFrame()).not.toContain("Sync keymap ran 2")
   setup.mockInput.pressEscape()

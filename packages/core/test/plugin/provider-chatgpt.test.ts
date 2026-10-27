@@ -33,6 +33,7 @@ import { SessionRunnerRetry } from "@opencode/core/session/runner/retry"
 import { toSessionError } from "@opencode/core/session/to-session-error"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 const it = testEffect(PluginTestLayer)
 
@@ -400,7 +401,7 @@ describe("ChatGPTPlugin", () => {
       expect(`${url.origin}${url.pathname}`).toBe("https://auth.openai.com/api/accounts/authorize")
       expect(Object.fromEntries(url.searchParams)).toMatchObject({
         client_id: "dynamic_agent_client",
-        agent_name_hint: "OpenCode",
+        agent_name_hint: Brand.displayName, // kete_change
         response_type: "code",
         scope: "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
         resource: "https://api.openai.com/v1",

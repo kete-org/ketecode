@@ -33,7 +33,7 @@ describe("ConfigWatch.plan", () => {
       {
         path: project,
         type: "entries",
-        names: [".agents", ".claude", ".opencode", "opencode.json", "opencode.jsonc", "system-opencode"],
+        names: [".agents", ".claude", Brand.projectDirectory, Brand.configFiles[0], Brand.configFiles[1], "system-opencode"], // kete_change
       },
     ])
   })

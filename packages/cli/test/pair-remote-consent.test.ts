@@ -8,6 +8,7 @@ import path from "node:path"
 import { remoteConsent, type RemoteConsentPrompt } from "../src/commands/handlers/pair"
 import { ServiceConfig } from "../src/services/service-config"
 import { isolatedEnv } from "./fixture/environment"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 let root = ""
 beforeEach(async () => {
@@ -110,9 +111,9 @@ test("pair --remote without a terminal fails before enabling anything, and help 
   expect(pair.exitCode).toBe(1)
   expect(pair.output).toBe(
     [
-      "This will expose your OpenCode server to the internet.",
+      `This will expose your ${Brand.displayName} server to the internet.`, // kete_change
       "Traffic is end-to-end encrypted, and access requires your server password.",
-      "To pair locally instead, run `opencode pair` without the --remote flag.",
+      `To pair locally instead, run \`${Brand.cliName} pair\` without the --remote flag.`, // kete_change
       "Run interactively or pass --yes to continue.",
       "",
     ].join(os.EOL),

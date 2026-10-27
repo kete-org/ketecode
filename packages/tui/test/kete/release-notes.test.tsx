@@ -1,9 +1,13 @@
-import { afterEach, expect, test } from "bun:test"
+import { expect, afterEach, beforeEach, test } from "bun:test"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { autoShow, EMPTY, plainLines, title } from "../../src/kete/release-notes"
 import { createAppFixture } from "../fixture/app"
 import { tmpdir } from "../fixture/fixture"
+import { takeDraft } from "../../src/component/prompt/draft-stash"
+
+// Other app tests can leave a home draft in the process-wide stash (as test/prompt-paste.test.tsx notes).
+beforeEach(() => void takeDraft(undefined))
 
 // The build defines KETE_RELEASE_NOTES (packages/cli/script/build.ts); in a test it is a global.
 const globals = globalThis as { KETE_RELEASE_NOTES?: string }

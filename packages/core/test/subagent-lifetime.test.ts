@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schedule } from "effect" // kete_change: Schedule
 import { LanguageModel } from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { TestLLM } from "@opencode/ai/testing"
@@ -23,6 +23,7 @@ import { offlineModels } from "./fixture/models"
 import { tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 import { executeTool, toolIdentity } from "./lib/tool"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 const llmLayer = TestLLM.testLayer({ fallback: TestLLM.text("Review complete", "review") })
 const it = testEffect(
@@ -66,7 +67,7 @@ describe("subagent observer lifetime", () => {
           const childDir = yield* tmpdirScoped()
           yield* Effect.promise(() =>
             Bun.write(
-              `${parentDir.path}/opencode.json`,
+              `${parentDir.path}/${Brand.configFiles[0]}` /* kete_change */,
               JSON.stringify({
                 agents: { reviewer: { mode: "subagent" } },
                 permissions: [{ action: "*", resource: "*", effect: "allow" }],
@@ -74,7 +75,7 @@ describe("subagent observer lifetime", () => {
             ),
           )
           yield* Effect.promise(() =>
-            Bun.write(`${childDir.path}/opencode.json`, JSON.stringify({ agents: { reviewer: { mode: "subagent" } } })),
+            Bun.write(`${childDir.path}/${Brand.configFiles[0]}` /* kete_change */, JSON.stringify({ agents: { reviewer: { mode: "subagent" } } })),
           )
           const sessions = yield* Session.Service
           const locations = yield* LocationServiceMap.Service
@@ -124,6 +125,20 @@ describe("subagent observer lifetime", () => {
           if (outcome === "cancelled") yield* jobs.cancel(child.id)
           yield* gate.release
           yield* jobs.wait({ id: child.id })
+          // kete_change start: a cancelled child's notice reaches the parent's inbox without waking it
+          // (session/subagent-job.ts delivers it with `resume: false`; the person stopped it)
+          if (outcome === "cancelled") {
+            const delivered = (items: Effect.Success<ReturnType<typeof sessions.inbox>>) =>
+              items.filter((item) => item.type === "synthetic" && item.payload.text.includes('state="cancelled"'))
+            yield* sessions.inbox(parent.id).pipe(
+              Effect.repeat({ until: (items) => delivered(items).length > 0, schedule: Schedule.spaced("10 millis") }),
+              Effect.timeout("2 seconds"),
+            )
+            expect(delivered(yield* sessions.inbox(parent.id))).toHaveLength(1)
+            expect(yield* llm.requests()).toHaveLength(1)
+            return
+          }
+          // kete_change end
           yield* llm.wait(2).pipe(Effect.timeout("2 seconds"))
           yield* sessions.wait(parent.id)
           const notices = (yield* sessions.context(parent.id)).filter((message) => message.type === "synthetic")

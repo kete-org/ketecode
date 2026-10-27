@@ -3,6 +3,7 @@ import type { McpServer } from "@agentclientprotocol/sdk"
 import { Schema } from "effect"
 import { currentValue } from "./select-options"
 import { makeSession, rpcError, secondModel, startWire, type Wire } from "./wire-fixture"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 describe("acp session lifecycle over the wire", () => {
   test("initialize advertises capabilities, negotiates the version, and offers terminal auth only when asked", async () => {
@@ -24,19 +25,19 @@ describe("acp session lifecycle over the wire", () => {
         sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, resume: {} },
         _meta: { "opencode/child-session-updates": true },
       },
-      agentInfo: { name: "OpenCode" },
+      agentInfo: { name: Brand.displayName }, // kete_change
     })
     expect(plain.authMethods).toEqual([
-      { id: "opencode-login", name: "Login with opencode", description: "Run `opencode auth login` in the terminal" },
+      { id: "opencode-login", name: `Login with ${Brand.cliName}`, description: `Run \`${Brand.cliName} auth login\` in the terminal` }, // kete_change
     ])
     expect(terminal.authMethods?.[0]?._meta).toEqual({
-      "terminal-auth": { command: "opencode", args: ["auth", "login"], label: "OpenCode Login" },
+      "terminal-auth": { command: Brand.cliName, args: ["auth", "login"], label: `${Brand.displayName} Login` }, // kete_change
     })
     expect(standard.authMethods).toEqual([
       {
         id: "opencode-login",
-        name: "Login with opencode",
-        description: "Run `opencode auth login` in the terminal",
+        name: `Login with ${Brand.cliName}`, // kete_change
+        description: `Run \`${Brand.cliName} auth login\` in the terminal`, // kete_change
         type: "terminal",
         args: ["--login"],
       },

@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { it } from "../../core/test/lib/effect"
 import { ServerProcess } from "../src/process"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 it.live("authenticates API requests behind the frontend transform while allowing browser preflight", () =>
   Effect.gen(function* () {
@@ -220,11 +221,12 @@ it.live("pairing links sign in browsers with a cookie and API clients with a tok
 
     const reused = yield* request(`/auth/connect/${browser.code}`, { headers: { accept: "text/html" } })
     expect(reused.status).toBe(401)
-    expect(yield* Effect.promise(() => reused.text())).toContain("opencode pair")
+    expect(yield* Effect.promise(() => reused.text())).toContain(`${Brand.cliName} pair`) // kete_change
 
     expect((yield* request("/api/info", { headers: { cookie } })).status).toBe(200)
     expect((yield* request("/api/info", { headers: { cookie, origin: base } })).status).toBe(200)
-    expect((yield* request("/api/info", { headers: { cookie, origin: "http://127.0.0.1:1" } })).status).toBe(401)
+    // kete_change: refused either way; KeteLocalGuard turns a cross-origin request away (403) before auth would (401)
+    expect((yield* request("/api/info", { headers: { cookie, origin: "http://127.0.0.1:1" } })).status).toBe(403)
     expect((yield* request("/api/info", { headers: { cookie: `${cookie}x` } })).status).toBe(401)
 
     const client = yield* pair

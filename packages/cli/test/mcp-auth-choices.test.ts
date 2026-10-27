@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import path from "node:path"
 import type { IntegrationInfo, McpServer } from "@opencode/client"
 import { mcpAuthChoices } from "../src/commands/handlers/mcp/auth"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 
 const server = (
   name: string,
@@ -50,7 +51,7 @@ test("mcp auth accepts an optional server name and rejects no-name noninteractiv
       stderr: "pipe",
     })
   const help = cli(["--help"])
-  expect(await new Response(help.stdout).text()).toContain("opencode mcp auth [flags] [<name>]")
+  expect(await new Response(help.stdout).text()).toContain(`${Brand.cliName} mcp auth [flags] [<name>]`) // kete_change
   expect(await help.exited).toBe(0)
 
   const missing = cli([])

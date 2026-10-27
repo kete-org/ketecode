@@ -346,7 +346,7 @@ it.live("applies organization integration changes to running external plugins", 
     const directory = yield* tmpdirScoped()
     const root = path.join(directory.path, "external/policy-fixture")
     const entered = path.join(directory.path, "entered")
-    const configuration = path.join(directory.path, ".opencode/opencode.json")
+    const configuration = path.join(directory.path, Brand.projectDirectory, Brand.configFiles[0]) // kete_change
     yield* Effect.promise(async () => {
       await Bun.write(
         path.join(root, "index.ts"),

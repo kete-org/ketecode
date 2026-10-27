@@ -1342,7 +1342,7 @@ describe("ShellTool", () => {
               if (configured !== undefined)
                 yield* Effect.promise(() =>
                   Bun.write(
-                    path.join(tmp.path, "opencode.json"),
+                    path.join(tmp.path, Brand.configFiles[0]), // kete_change
                     JSON.stringify({ experimental: { portable_shell_scanner: configured } }),
                   ),
                 )

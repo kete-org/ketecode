@@ -711,8 +711,11 @@ function loadMarkdownAgent(frontmatter: string) {
       `---\n${frontmatter}\n---\nReview carefully.`,
     )
     const agents = yield* Agent.Service
+    const global = yield* Global.Service // kete_change
     yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
       Effect.provide(Config.testLayer([directoryEntry(tmp.path)])),
+      // kete_change: load it as the machine's own config folder, so folder trust leaves its rules as written
+      Effect.provideService(Global.Service, Global.Service.of({ ...global, config: tmp.path })),
     )
     const agent = yield* agents.get(Agent.ID.make("reviewer"))
     if (!agent) throw new Error("expected configured Markdown agent")

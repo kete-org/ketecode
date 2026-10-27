@@ -76,12 +76,14 @@ function withLayers<A, E, R>(
     Effect.gen(function* () {
       const global = yield* Global.Service
       yield* Effect.promise(async () => {
-        await fs.mkdir(path.join(directory, ".opencode"))
+        // kete_change start: Kete Code's file and folder names (no fallback to OpenCode's)
+        await fs.mkdir(path.join(directory, Brand.projectDirectory))
         const files = [
-          path.join(global.config, "opencode.jsonc"),
-          path.join(directory, "opencode.json"),
-          path.join(directory, ".opencode", "opencode.jsonc"),
+          path.join(global.config, Brand.configFiles[1]),
+          path.join(directory, Brand.configFiles[0]),
+          path.join(directory, Brand.projectDirectory, Brand.configFiles[1]),
         ]
+        // kete_change end
         await Promise.all(layers.map((formatter, index) => fs.writeFile(files[index], JSON.stringify({ formatter }))))
       })
       return yield* Effect.gen(function* () {
