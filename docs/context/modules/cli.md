@@ -1,11 +1,13 @@
 ---
 module: cli
 paths: [packages/cli/src/kete/*, packages/cli/src/index.ts, packages/cli/src/commands/commands.ts, packages/cli/src/commands/handlers/serve.ts, packages/cli/src/server-process.ts, packages/util/src/kete/setup.ts, packages/cli/src/run/noninteractive.ts]
-verified-at: aad7b54a7e
+verified-at: c979e8f4e1
 ---
 ## Quick answers
-- Where are `kete share` / `kete unshare`? Specs in `cli/src/kete/commands.ts:246,261` (`--link`, `--yes`, `ServerParams`), handlers `cli/src/kete/share.ts:66,76` (flow `share-flow.ts`), routed by two marked entries in `cli/src/index.ts:40-41`; exit 0 done / 1 failed / 2 refused. Refused from an agent shell (`KeteEnv.inAgentShell`). See card `session-share`.
-- Where does `kete run` print session errors, and what does the no-model hint do? `run/noninteractive.ts:483,492` print `KeteSetup.withHint(error)` (`util/src/kete/setup.ts:57`; the file also holds the TUI first-run setup rules `shouldShow`/`rows`/`parseLoginURL`), which appends `HINT` (`:10`) only when `isNoModel` (`:53`). `ModelNotSelectedError` reaches clients as `provider.no-route` carrying only its message (`core/src/session/to-session-error.ts:56-64`), so the match is on that code plus a message prefix, pinned by `core/test/kete/setup-hint.test.ts`.
+- Where are `kete share` / `kete unshare`? Specs in `cli/src/kete/commands.ts:246,261` (`--link`, `--yes`, `ServerParams`), handlers `cli/src/kete/share.ts:66,76` (flow `share-flow.ts`), routed by two marked entries in `cli/src/index.ts:44-45`; exit 0 done / 1 failed / 2 refused. Refused from an agent shell (`KeteEnv.inAgentShell`). See card `session-share`.
+- Where does `kete run` print session errors, and what does the no-model hint do? `run/noninteractive.ts:522,531` print `KeteSetup.withHint(error)` (`util/src/kete/setup.ts:57`; the file also holds the TUI first-run setup rules `shouldShow`/`rows`/`parseLoginURL`), which appends `HINT` (`:10`) only when `isNoModel` (`:53`). `ModelNotSelectedError` reaches clients as `provider.no-route` carrying only its message (`core/src/session/to-session-error.ts:56-64`), so the match is on that code plus a message prefix, pinned by `core/test/kete/setup-hint.test.ts`.
+- What does `kete run` do when the agent asks permission or a question? Nobody can answer, so (outside `--auto` and V1 compatibility) it rejects the ask with feedback text and the model continues (`replyPermission` / `cancelForm` in `run/noninteractive.ts:160,190`, `PERMISSION_REJECTED_FEEDBACK`/`QUESTION_CANCELLED_FEEDBACK` `:72,75`); asks from subagent child sessions count too (`ownsSession`). The run exits 1 after a cancelled question; V1 compatibility keeps the old interrupt-and-fail path.
+- Does `kete serve` open a remote tunnel? In service mode with a `remote` entry in service config, `ServerProcess` forks `RemoteTunnel.run` against the bound address (`server-process.ts:208-218`, `services/remote-tunnel.ts`). A busy port is retried for 15 s to recognise an incumbent service before failing (`:181`).
 - What does `--add-dir` do? Repeatable flag (max 10, `commands/commands.ts:47`) on the default and `run` commands; paths are normalised by `KeteAddDirCli.prepare`, checked via RPC `kete.add-dir`, and written to the session's `kete.dirs` before the first prompt (`run/run.ts:135`). See the `add-dir` card.
 - Which helper runs git clone/fetch/worktree with a timeout and abort signal? `JobGit.run(cwd, args, {timeoutMs, signal, env})` (`packages/cli/src/kete/job-git.ts:37`): no-shell `execFile("git")`, default 30 s (`:30`), worktree add 5 min; timeout resolves `{exitCode:-1, timedOut:true}`, missing git rejects `GitError`, job mode refuses the spawn.
 - What do `kete bug`, `kete completion` and `kete trust` live in? `kete/bug.ts` (deps) + `bug-flow.ts` (flow, asks `QUESTION` before opening a GitHub issue); `kete/completion-command.ts` with `completion.ts` (bash/zsh/fish/powershell, `instructions` when no shell) and `completion-tree.ts` (`script` `:91`, tree from `--help`); `kete/trust.ts` (`list`/`add`/`remove` of trusted folders, exit 0/1/2, `:25`) over `kete/folder-trust.ts` (`inspect` `:141`, which also holds back project shell-command definitions via `KeteFolderTrustRules.documentShellCommands`/`shellCommandFiles` and fingerprints them (`:178-198`), `connection` `:236`, which `kete`/`kete run --trust-project-config` use). All registered in `index.ts` Handlers (marked).
@@ -17,10 +19,10 @@ verified-at: aad7b54a7e
 - What does `kete sandbox` do? Asks the runtime whether agent shell commands go through the OS sandbox: the `kete.sandbox` status RPC (`client.rpc.call`, 15 s timeout), decoded against `KeteSandboxRpc.Status` (`kete/sandbox.ts`, `describe`); prints lines or `--format json`; exit 0 sandboxed or job, 1 unsandboxed (off/unavailable), 2 the runtime couldn't be asked (`EXIT`). Spec `kete/commands.ts:133`, handler routed at `index.ts:36`. See the `sandbox` card.
 - What do orchestrated and review jobs add to `kete job run`? Two optional spec sections the cloud entrypoint copies from a claim (`job-spec.ts` `TOP_LEVEL_KEYS`, parse at the end): `orchestration` (needs `branch`; `KeteJobOrchestration.resolve`, `kete/job-orchestration.ts`, refuses outside job mode or without `KETE_JOB_ID`) and `review` (needs `branch`, excludes `orchestration`, job mode only; `job.ts:133` also removes a stale review record). Both reach the server child on the fd-3 secrets message (`job-standalone.ts:127` `secretsMessage`, read by `job-serve.ts` `setOrchestration`/`setReview`). For a review job `Deps.readReview` (`job.ts` wires `KeteReview.readRecord`) puts the recorded findings in `Result.review` (`job-run.ts` `withReview`); a missing or invalid record is said on stderr and leaves `review` out, the run's outcome unchanged. See the `job-mode` card.
 - How do `kete mcp add harness|slack|playwright` and `kete mcp presets` work? Kete flows in `kete/mcp-preset.ts` over an injected `IO` (`kete/mcp-preset-io.ts`; `add` dispatches by name, `playwright` takes no flags and only writes the config entry, `addPlaywright`), routed from upstream's `commands/handlers/mcp/add.ts:27-42` (marked) when the name is a preset and no `--url`/command is given; flags `KeteCommands.mcpPresetParams` spread into upstream's `mcp add` spec (`commands/commands.ts:252`), `presets` registered at `:255` and `index.ts:63`. See the `mcp-presets` card.
-- How does `--offline` work? `kete/offline-startup.ts` (imported at `index.ts:5`, right after the env bridge) calls `KeteCliOffline.apply` (`kete/offline.ts:55`): env, `--offline` in argv, or `kete.offline` in the global config files turns it on (`flagged`, `kete/offline.ts:37`, reads `--offline=<v>`/`--offline <v>` with the parser's truthy/falsy values: `--offline=false` and `--offline false` are off, an unknown value is on; `offline-startup.test.ts` pins it against the real parser) and sets `OPENCODE_OFFLINE`, `OPENCODE_DISABLE_MODELS_FETCH` and `OPENCODE_DISABLE_AUTOUPDATE` before any module reads env. The flag is also a registered global flag (`kete/commands.ts:25`, `framework/runtime.ts:86`) so the parser accepts it. See the `local-models` card.
+- How does `--offline` work? `kete/offline-startup.ts` (imported at `index.ts:5`, right after the env bridge) calls `KeteCliOffline.apply` (`kete/offline.ts:55`): env, `--offline` in argv, or `kete.offline` in the global config files turns it on (`flagged`, `kete/offline.ts:37`, reads `--offline=<v>`/`--offline <v>` with the parser's truthy/falsy values: `--offline=false` and `--offline false` are off, an unknown value is on; `offline-startup.test.ts` pins it against the real parser) and sets `OPENCODE_OFFLINE`, `OPENCODE_DISABLE_MODELS_FETCH` and `OPENCODE_DISABLE_AUTOUPDATE` before any module reads env. The flag is also a registered global flag (`kete/commands.ts:22`, `framework/runtime.ts:86`) so the parser accepts it. See the `local-models` card.
 - Which commands refuse offline? `login`, `sync` (not `--status`/`--approve`), `upgrade`, `models pull`: `KeteCliOffline.refused` (`kete/offline.ts:84`) prints the refusal and sets exit code 2. `updater.ts` `isDisabled` and `check()` also honour it.
 - What changes in the server connection offline? `services/server-connection.ts` calls `KeteCliOffline.connection` (`kete/offline.ts:72`): always a private (`standalone`) server, `--server` refused.
-- How does a command with subcommands get its handlers? A `{ $, sub }` map: `index.ts:91` (`models: { $, pull }`; `trust: { $, list, add, remove }` at `:75-80`), `framework/runtime.ts:43-76`; the spec side is `commands: [KeteCommands.modelsPull]` at `commands/commands.ts:313`.
+- How does a command with subcommands get its handlers? A `{ $, sub }` map: `index.ts:98` (`models: { $, pull }`; `trust: { $, list, add, remove }` at `:82-87`), `framework/runtime.ts:43-76`; the spec side is `commands: [KeteCommands.modelsPull]` at `commands/commands.ts:348`.
 - What does `kete models` print on a TTY? `KeteModelsList.lines` (`kete/models-list.ts:26`) adds `tools:yes|no vision:yes|no ctx:<tokens>` for local providers (omitted ctx when unknown); piped output stays `provider/model`.
 - `kete models pull <name>`: `kete/models-pull.ts:145` `pull`; calls the `kete.local-models` RPC, strips `/v1` (`ollamaRoot`, `:77`), streams Ollama's `/api/pull`, then asks for `rediscover`. Exit codes `EXIT` (`:28`). Keyed Ollama servers: no bearer token is sent (status never returns keys).
 - Where does `kete job run` get the audit log in job mode (piece A3)? From the relay, not a file:
@@ -59,16 +61,16 @@ verified-at: aad7b54a7e
   `worktree` = `directory` = cwd, `branch` = `spec.branch`. `job-git.ts:37`'s
   `KeteJobMode.refuseSpawn("git")` guard stays as defence in depth. See the `job-mode` card,
   `contracts.md` §6d, `docs/jobs.md` "Job mode".
-- What are `kete serve`'s flags and where do they go? `commands/commands.ts:545-559` (`--hostname`,
-  `--port`, `--cors`, `--service`, `--stdio`, and Kete's `--socket`, marked `:557`) →
+- What are `kete serve`'s flags and where do they go? `commands/commands.ts:593-607` (`--hostname`,
+  `--port`, `--cors`, `--service`, `--stdio`, and Kete's `--socket`, marked `:605`) →
   `commands/handlers/serve.ts:6-18` → `ServerProcess.run` (`server-process.ts`). `--socket <path>`
   is **job mode only**: `KeteJobServe.prepare` (`kete/job-serve.ts:105`, called at
-  `server-process.ts:50` before anything else) refuses it outside job mode, and in job mode
+  `server-process.ts:52` before anything else) refuses it outside job mode, and in job mode
   requires exactly `--stdio --socket` (no `--port`/`--hostname`), so the service, a TUI's standalone
   child and ACP refuse in a job. It then makes the process non-dumpable, reads `{v:1, password,
   gateway_key}` from `KETE_JOB_SECRETS_FD` and sets the in-memory key; the password replaces
-  `Env.password` (`server-process.ts:89-96`) and `socket` reaches `ServerOptions.socket`
-  (`:109`; `server-sdk` card).
+  `Env.password` (`server-process.ts:95-105`) and `socket` reaches `ServerOptions.socket`
+  (`:122`; `server-sdk` card).
 - Where does the upstream standalone child come from? `packages/cli/src/services/standalone.ts:19-61`
   (`CrossSpawnSpawner`, `kete serve --stdio --port 0`, random 32-byte password as `KETE_PASSWORD`,
   ready line `{"url":…}`) — used by TUIs and `--standalone`, unchanged; `KeteJobStandalone` is its
@@ -94,7 +96,7 @@ verified-at: aad7b54a7e
   whose `commands:` array holds child `Spec`s (`kete/commands.ts`'s `job` entry, `Spec.make("job",
   {commands: [Spec.make("run", {...})]})`), and a matching nested object in `index.ts`'s
   `Handlers` map (`job: { run: () => import("./kete/job") }`) — `ServerParams`/`PermissionParams`
-  in `commands/commands.ts:18-40` aren't exported, so a command needing `--server`/`--standalone`
+  in `commands/commands.ts:18-30` aren't exported, so a command needing `--server`/`--standalone`
   duplicates that text verbatim (`kete/commands.ts`'s own `ServerParams` const) rather than
   importing it.
 - How does upstream's `kete run` connect/stream/exit, and what does `job run` reuse from it?
@@ -109,7 +111,7 @@ verified-at: aad7b54a7e
   job's family should never be asked at all).
 - Is there an existing "read a JSON file for a command" pattern to follow for the job spec? Only
   `kete session import` reads a JSON file from disk
-  (`packages/cli/src/commands/commands.ts:465`); nothing in the CLI reads YAML. `job-spec.ts`
+  (`packages/cli/src/commands/commands.ts:500`); nothing in the CLI reads YAML. `job-spec.ts`
   is the first JSON-spec-file parser of its kind here.
 - Why does `kete job run` set an explicit session `title`? So upstream's own auto-title-generation
   doesn't make an extra, unscripted model request before the job's first real step — wasteful for
@@ -119,7 +121,7 @@ verified-at: aad7b54a7e
 - Why doesn't `kete upgrade` animate in CI or over `ssh`? `packages/cli/src/kete/progress.ts` uses the spinner only when stdout is a TTY; otherwise one start line and one end line (a spinner writing to a pipe prints every frame).
 - Why does `kete upgrade` say updates are unavailable? The binary predates the first pinned key (`kete-update-2026`, pinned 2026-10-04, PR #78; builds from `kete-v0.2.0-rc.4` on carry it), or it is a source/local build (`channel === "local"`).
 - Where's the `KETE_*`→`OPENCODE_*` env bridge? `packages/cli/src/kete/env-bridge.ts`, imported first in `packages/cli/src/index.ts:4` (must stay the first import — runs before any other module reads `process.env`).
-- How do I add a new top-level `kete` subcommand? Add a `Spec` to `packages/cli/src/kete/commands.ts`'s `specs` array (it's already spread at `packages/cli/src/commands/commands.ts:520`) and a handler entry in `packages/cli/src/index.ts`'s `Handlers` map.
+- How do I add a new top-level `kete` subcommand? Add a `Spec` to `packages/cli/src/kete/commands.ts`'s `specs` array (it's already spread at `packages/cli/src/commands/commands.ts:555`) and a handler entry in `packages/cli/src/index.ts`'s `Handlers` map.
 - How do I build the `kete` binary? `bun run build --single --skip-install --skip-web-ui` in `packages/cli/` (CLAUDE.md §8) → `packages/cli/dist/cli-<os>-<arch>/bin/kete`; flags read at `packages/cli/script/build.ts:26,29,30`.
 - What is `kete skill`? `add|list|update|remove` (specs `kete/commands.ts:169-204`, handlers `kete/skill.ts:62-79` registered in a marked `Handlers` block in `index.ts`): flows over an injected `Deps` in `kete/skill-flow.ts` (`add` `:385`, `list` `:424`, `remove` `:444`, `update` `:461`). Installs into `.kete/skills/<name>/` (or `--global`: `<config>/skills/`), pinned in `skills.lock.json` v1 (`roles-skills`, `contracts` cards). Exit 0 done, 1 failed, 2 refused (`skill-flow.ts:32`); nothing is written without a yes (`approve` `:147`); files read once, shown (scripts marked), written without the exec bit; `skill.install` org policy via `policyGate` `:132` (`sync` card).
 - Can the CLI import `@opencode/core`? No (`cli/test/import-boundaries.test.ts`). So `skill-flow.ts:81` `match` mirrors core's `Wildcard.match` (case-insensitive only for git sources and on Windows; `policyGate(deps, source)` `:133`) and util's `KeteSkillSource.frontmatter` mirrors core's front-matter rules; keep them in step (`pitfalls`).
@@ -130,10 +132,10 @@ Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` agains
 
 ## Entry points
 - `packages/cli/src/index.ts:4` — `import "./kete/env-bridge"` (side-effecting, must run first).
-- `packages/cli/src/index.ts:29-114` — `Handlers` map: `upgrade` (`kete/upgrade.ts`), `uninstall`, `login`, `logout`, `whoami`, `sandbox`, `completion`, `bug`, `doctor`, `share`/`unshare` (`:40-41`, both from `kete/share.ts`), `terminal-setup`, `sync` and (nested) `job: { run }` (`:31-46`) route to `./kete/*` modules (each `kete_change`-marked); `trust`, `skill`, `models pull` are marked blocks further down.
-- `packages/cli/src/index.ts:5,91` — `import "./kete/offline-startup"` (offline decision) and the `models: { $, pull }` handler map (`kete_change`).
-- `packages/cli/src/index.ts:150` — `Effect.provide(KeteUpdater.layer)` (`kete_change`), replaces upstream's `Updater` service with the verified Kete updater.
-- `packages/cli/src/commands/commands.ts:520` — `...KeteCommands.specs` spreads the `kete/commands.ts` specs (`login`/`logout`/`whoami`/`sync`/`sandbox`/`trust`/`skill`/`completion`/`bug`/`terminal-setup`/`doctor`/`share`/`unshare`/`job`) into the root command list (`kete_change`).
+- `packages/cli/src/index.ts:33-121` — `Handlers` map: `upgrade` (`kete/upgrade.ts`), `uninstall`, `login`, `logout`, `whoami`, `sandbox`, `completion`, `bug`, `doctor`, `share`/`unshare` (`:44-45`, both from `kete/share.ts`), `terminal-setup`, `sync` and (nested) `job: { run }` (`:35-50`) route to `./kete/*` modules (each `kete_change`-marked); `trust`, `skill`, `models pull` are marked blocks further down.
+- `packages/cli/src/index.ts:5,98` — `import "./kete/offline-startup"` (offline decision) and the `models: { $, pull }` handler map (`kete_change`).
+- `packages/cli/src/index.ts:157` — `Effect.provide(KeteUpdater.layer)` (`kete_change`), replaces upstream's `Updater` service with the verified Kete updater.
+- `packages/cli/src/commands/commands.ts:555` — `...KeteCommands.specs` spreads the `kete/commands.ts` specs (`login`/`logout`/`whoami`/`sync`/`sandbox`/`trust`/`skill`/`completion`/`bug`/`terminal-setup`/`doctor`/`share`/`unshare`/`job`) into the root command list (`kete_change`).
 - `packages/cli/src/kete/commands.ts` — `Spec.make("login", …)` etc., and `Spec.make("job", {commands: [Spec.make("run", …)]})` for the nested command; the actual command definitions (params, descriptions).
 
 ## Key files
@@ -182,12 +184,12 @@ Kete-owned CLI surface: account sign-in (`login`/`logout`/`whoami`/`sync` agains
 ## Rules that must not break
 - `env-bridge.ts` import order in `packages/cli/src/index.ts:3-6` — any reordering reintroduces raw `OPENCODE_*` env reads before the bridge runs.
 - Secrets: `account-flow.ts` and `cli-login.ts` file headers state the PKCE verifier, authorization code, and API key never appear in printed output, logs, or error messages (CLAUDE.md §9) — preserve this in any edit.
-- `Handlers` map entries and `commands.ts` edits keep their `kete_change` markers (`packages/cli/src/index.ts:31-46,63,74-92,150`; `commands.ts:2,6-7,31-58,63-64,69,86,101,170,232,252,255,313,383,386,520,557`; `handlers/serve.ts:15`; `server-process.ts:20,29,49-56,90-92,109`).
+- `Handlers` map entries and `commands.ts` edits keep their `kete_change` markers (`packages/cli/src/index.ts:35-50,70,81-99,157`; `commands.ts:2,6-7,31-58,63-64,69,86,101,183,265,285,288,348,418,421,555,605`; `handlers/serve.ts:15`; `server-process.ts:4,22,31,51-58,102-104,122,194`).
 - In job mode no TCP listener may exist and no secret may be in an environment: keep
   `KeteJobServe.prepare` the first thing in `processEffect`, and `job.ts`'s "no fallback" guard
   (`:129-131`).
-- `kete auth` (upstream, provider keys) and `kete login` (Kete account) stay distinct commands; each `--help` text cross-references the other (`commands.ts:170`).
-- Per docs/upstream-patches.md "Account sign-in": when syncing upstream, check it hasn't added its own top-level `login`/`logout`/`whoami` command — the spread at `commands.ts:520` would then collide. Same check now applies to `job` (docs/upstream-patches.md "Jobs").
+- `kete auth` (upstream, provider keys) and `kete login` (Kete account) stay distinct commands; each `--help` text cross-references the other (`commands.ts:183`).
+- Per docs/upstream-patches.md "Account sign-in": when syncing upstream, check it hasn't added its own top-level `login`/`logout`/`whoami` command — the spread at `commands.ts:555` would then collide. Same check now applies to `job` (docs/upstream-patches.md "Jobs").
 - `job-run.ts` must never import a sibling `cli/src/*` module (including `./job-spec.js`/`./job-git.js`) — only `@opencode/client/promise`, `@opencode/schema/*`, `@opencode/util/*`, `node:*`, `effect` — so `packages/server/test/kete/job-run.test.ts`'s cross-package import keeps working and its own tests stay decoupled from the real `git`/spec-file plumbing.
 - In job mode `job-run.ts` must make no git call and never discard the worktree: it's the
   entrypoint's (ADR 0019 rule 5). Tests: `packages/cli/test/kete/job-run.test.ts` "job mode" (a

@@ -12,6 +12,7 @@ import KeteStatusLine from "../kete/statusline" // kete_change
 import KeteReleaseNotes from "../kete/release-notes" // kete_change
 import KeteFeedback from "../kete/feedback" // kete_change
 import KeteDoctor from "../kete/doctor" // kete_change
+import KeteContext from "../kete/context" // kete_change
 import KeteTerminalSetup from "../kete/terminal-setup" // kete_change
 // import SidebarTodo from "../feature-plugins/sidebar/todo" // kete_change: KeteTodo shows the task list
 import DiffViewer from "../feature-plugins/system/diff-viewer"
@@ -35,6 +36,7 @@ export const builtins = [
   KeteReleaseNotes, // kete_change: /release-notes, and the notes once after an upgrade
   KeteFeedback, // kete_change: /feedback, the problem report dialog
   KeteDoctor, // kete_change: /doctor, the setup checks dialog
+  KeteContext, // kete_change: /context, the context usage breakdown
   KeteTerminalSetup, // kete_change: /terminal-setup, Shift+Enter guidance
   SidebarMcp,
   // SidebarTodo, // kete_change: KeteTodo shows the task list

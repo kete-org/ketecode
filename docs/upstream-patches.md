@@ -1509,3 +1509,20 @@ Patches that changed shape in the v2.0.16 → v2.1.4 sync, beyond the rows updat
 Toolchain: v2.1.4 needs Bun 1.4.4 (`packageManager`) and Effect's moved modules (`effect/http`, `effect/cli`,
 `effect/process`; `Flag.Boolean`/`String`/`Literals`). Kete-owned code was updated to match in the same PR.
 
+### Context breakdown (feature/context-breakdown)
+
+`/context` shows how much of the context window each part of a session's request takes. The logic is Kete-owned
+(`core/src/kete/context-breakdown.ts`, `schema/src/kete/context.ts`, `tui/src/kete/context.tsx`); it needs five
+small edits where no extension point exists.
+
+| File | Change | Why no seam works |
+| ---- | ------ | ----------------- |
+| `core/src/plugin/internal.ts` | Import; `KeteContextBreakdown.Service` in `services`, its `.node` in `requirements`; `KeteContextBreakdown.Plugin` last in `post` | A plugin reaches only what is in the plugin requirements, and `SessionContext` and `Database` are not; registering a core plugin always edits this file (as `KeteFolderTrust.Service`). Last in `post`, so its read-only `context` hook sees what every other hook added |
+| `core/src/codemode/catalog.ts` | `CHARACTERS_PER_TOKEN` is exported | One token estimate for the catalog and the breakdown, not a copy |
+| `tui/src/plugin/builtins.ts` | Import and entry for `KeteContext` | The builtin plugin list |
+| `tui/test/fixture/tui-client.ts` | Answers `/api/rpc/kete.context/get` | The fixture throws on any request it doesn't know |
+| `tui/test/session-panel.test.tsx` | The diff-plugin test waits for `opencode.diffs` after typing the filter, not before | With Kete's builtin plugins the unfiltered list pushes that row below the fold; the test still checks the row appears |
+
+When syncing upstream: check that `Instructions.combine` still keeps each source's `key`, that `SessionHistory.preview`
+is still read-only, and that `Tool.snapshot` still drops Code Mode when `execute` is wholly denied.
+

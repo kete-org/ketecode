@@ -83,6 +83,7 @@ Mistakes to avoid, grouped. Each item cites where the rule lives or where it bit
 
 ## Permissions and sessions
 
+- **Never run `SessionModelRequest.primary/generate` to inspect a request.** The `context` session hooks have side effects (`core/src/plugin/warming.ts:58,103` starts a loop), so an inspection would change the session. Read with `SessionContext.select` then `SessionHistory.preview` (read-only; `entriesForRunner` writes) then `baseTranscript`, as `core/src/kete/context-breakdown.ts` does.
 - **Session hooks can't fail** (`packages/core/src/plugin/hooks.ts:23-30` — only the `tool`
   `execute.before` hook may fail); a refusal that needs to happen on a session-level action
   (metadata update, a prompt starting) has to be a plain guard function called directly from the
