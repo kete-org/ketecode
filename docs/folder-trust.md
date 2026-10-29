@@ -19,10 +19,11 @@ Until the folder is trusted, these settings from its project configuration don't
 | `formatter` (unless `false`) | formatters run programs, and the built-in ones run tools installed in the project |
 | `shell` | the shell every command runs in |
 | `worktree` | where worktrees, and their setup script, are created |
+| `instructions` entries that point outside the project: URLs, absolute paths, `~` and `..` | they read files elsewhere on your computer or fetch from the network |
 | `skills` URLs and git `references` | they are fetched when they load (local paths still load) |
 | shell commands in commands: ``!`…` `` in a command's template (`.kete/command(s)/**/*.md`, or `commands` in the config) | they run on your computer when you use the command; until you trust the folder, the command still works but its shell commands don't run (the prompt says so) |
 | `{env:…}` and `{file:…}` in any value | they read your environment and files; until you trust the folder they are left as written |
-| `experimental.policies` statements that allow | a repository's allow would outrank a deny set for you; its deny statements still apply |
+| `policies` (or `experimental.policies`) statements that allow | a repository's allow would outrank a deny set for you; its deny statements still apply |
 | `enabled_providers` (older key) | it becomes an allow for each provider it lists; `disabled_providers` still applies, and both are part of what you trust, so changing either asks again |
 | permission rules that loosen | see below |
 

@@ -190,7 +190,7 @@ rules (and an `ask` that would override one of your own `deny` rules) only apply
 folder; see [Folder trust](folder-trust.md).
 
 Tightening always wins: a `deny` rule is decided before any mode runs, and your organization's
-policies (synced from the Kete platform) and `experimental.policies` in config are applied after
+policies (synced from the Kete platform) and `policies` in config are applied after
 the mode, so they can deny what a mode or rule would allow. No mode turns `ask` or `deny` into
 `allow`.
 
