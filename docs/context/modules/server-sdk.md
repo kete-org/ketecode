@@ -1,7 +1,7 @@
 ---
 module: server-sdk
 paths: [packages/server/src/kete/local-guard.ts, packages/server/script/kete/isolated-test.ts, packages/server/src/process.ts, packages/server/src/kete/socket-listen.ts, packages/server/src/kete/constant-time.ts, packages/server/src/auth.ts, packages/server/src/middleware/authorization.ts, packages/server/src/options.ts, packages/protocol, packages/client]
-verified-at: 063cfce610
+verified-at: c979e8f4e1
 ---
 ## Quick answers
 - Does the `kete.share` RPC need regeneration? No: it is a plugin RPC on the generic `POST /api/rpc/:rpcID/:method` route (`schema/src/kete/share.ts:69`); no protocol or client change. Card `session-share`.
@@ -24,7 +24,7 @@ verified-at: 063cfce610
   `overrides` at the `routes.ts` level flow into `instance.ts`'s graph as part of its own
   `Options.replacements` for a location instance, not the other way around.
 - Is `packages/server/src/routes.ts`'s replacement list itself Kete-owned or upstream? Upstream —
-  `build`'s `replacements` array (`routes.ts:141-148`) is where the workerd profile already swaps
+  `build`'s `replacements` array (`routes.ts:147-`) is where the workerd profile already swaps
   `CrossSpawnSpawner.node` for a refusing stub (`server/src/workerd.ts:79`); job mode reuses the same
   seam with one marked line, `...KeteJobServer.replacements(options)`, appended **last** (after
   `...overrides`) so it always wins. Not covered in depth here — see the `job-mode` card
@@ -36,13 +36,13 @@ verified-at: 063cfce610
   `data.session.create(...)`); it wraps the generated `api().session.*` calls and is a different
   surface from `SessionCreateInput` (`src/promise/generated/types.ts`).
 - Does `data.session.create()` forward session `metadata`? Yes — its input type has an optional
-  `metadata?: SessionCreateInput["metadata"]` (`data.ts:1447-1455`, two `kete_change`-marked lines:
+  `metadata?: SessionCreateInput["metadata"]` (`data.ts:1521`, two `kete_change`-marked lines:
   the `SessionCreateInput` type import and the field); the body already spreads `...payload` into
-  `api().session.create({ ...payload, id, location })` (`data.ts:1481`) so no body change was needed.
+  `api().session.create({ ...payload, id, location })` (`data.ts:1549`) so no body change was needed.
   Added for the Kete chat panel to set `kete.permissionMode` atomically at session creation
   (`packages/app/src/new-session/composer-adapter.ts`; `permissions` card) — nothing else in `data.ts`
   changed, and every other `data.session.create` caller is unaffected since the field is optional.
-- Why does a browser request to `kete serve` sometimes get a bare 403? `KeteLocalGuard.middleware` (`packages/server/src/kete/local-guard.ts:58-67`) rejects it before auth/routing — check `Host`/`Origin`.
+- Why does a browser request to `kete serve` sometimes get a bare 403? `KeteLocalGuard.middleware` (`packages/server/src/kete/local-guard.ts:57-65`) rejects it before auth/routing — check `Host`/`Origin`.
 - How do I allow an extra hostname (e.g. a forwarded Codespaces host)? `KETE_SERVER_ALLOWED_HOSTS` env var (internal name `OPENCODE_SERVER_ALLOWED_HOSTS`, `local-guard.ts:18`), comma-separated, leading `.` allows subdomains.
 - Why do `packages/server` tests need a special runner instead of `bun test`? `bun run test` (`script/kete/isolated-test.ts`) isolates HOME/XDG and strips credentials so tests don't read/sync the developer's real Kete account (CLAUDE.md §8) — but CI runs `bun test test/kete` directly for this package, bypassing that isolation (see Gotchas).
 - After changing a server endpoint or the config schema, what do I regenerate? `bun run generate` in `packages/protocol` then `packages/client` (CLAUDE.md §8); see Data and APIs used.
@@ -63,9 +63,9 @@ verified-at: 063cfce610
   (`unattended`/`cli` cards, `docs/jobs.md`).
 
 - How does `ServerProcess.start` listen, and can it use a unix socket? TCP by default: the private
-  `listen`/`bind` in `packages/server/src/process.ts:143-166` (hostname + port). With
+  `listen`/`bind` in `packages/server/src/process.ts:148-` (hostname + port). With
   `ServerOptions.socket` set (`server/src/options.ts:16`, marked) it calls
-  `KeteSocketListen.bind(path)` instead (`process.ts:59`), same `{ http, server, scope }` shape
+  `KeteSocketListen.bind(path)` instead (`process.ts:63`), same `{ http, server, scope }` shape
   (`packages/server/src/kete/socket-listen.ts:67-92`). `prepare` (`:34-64`) refuses Windows, a
   relative path, > 103 bytes (sun_path), a parent dir that is a symlink, not owned by the euid or
   has any group/other bits; unlinks a stale **socket** and refuses any other file there; after
@@ -81,16 +81,16 @@ verified-at: 063cfce610
   username); `authorized` (`auth.ts:30-36`) compares the password with
   `KeteConstantTime.equal` (`server/src/kete/constant-time.ts:13-19`, pure JS over UTF-8 so workerd
   works; folds the length difference in) instead of upstream's `===`. Credentials come from
-  `middleware/authorization.ts:31-39`: a `?auth_token=` query (base64 `user:pass`) is checked
+  `middleware/authorization.ts:34-40`: a `?auth_token=` query (base64 `user:pass`) is checked
   **before** the Basic header; in job mode a query token yields an empty credential (401), marked
-  `:34`. A PTY connect ticket in the URL skips the check entirely (`authorization.ts:53-56`; the
-  handler validates the ticket; also `process.ts:194`) — unreachable in job mode, PTY is refused.
+  `:37`. A PTY connect ticket in the URL skips the check entirely (`authorization.ts:84-97`; the
+  handler validates the ticket; also `process.ts:195`) — unreachable in job mode, PTY is refused.
 
 ## Purpose
 Two independent Kete-owned server concerns: (1) `local-guard.ts` — browser-facing DNS-rebinding/cross-site defenses in front of every `kete serve` HTTP server, layered outside upstream's own CORS/auth; (2) `isolated-test.ts` — a test-runner wrapper giving `packages/server`'s test suite a throwaway HOME/XDG/credential-free environment, mirroring `packages/core/script/test.ts`. Also covers the protocol/client SDK generation pipeline that turns server endpoint and config-schema changes into typed client code.
 
 ## Entry points
-- `packages/server/src/process.ts:74` — `KeteLocalGuard.middleware({ hostname, cors, allowedHosts })` applied in the served-app pipe, after upstream's `HttpMiddleware.cors(...)` in source order but documented (and tested) to run "before CORS and auth" (`process.ts:73`, `kete_change`).
+- `packages/server/src/process.ts:80` — `KeteLocalGuard.middleware({ hostname, cors, allowedHosts })` applied in the served-app pipe, after upstream's `HttpMiddleware.cors(...)` in source order but documented (and tested) to run "before CORS and auth" (`process.ts:73`, `kete_change`).
 - `packages/server/package.json` `"test"` script → `bun run script/kete/isolated-test.ts` (no `kete_change` marker possible — JSON; documented in docs/upstream-patches.md "Isolated server tests").
 - `packages/protocol/script/generate-openapi.ts` — `bun run generate` (writes `packages/protocol/openapi.json` from `ClientApi`, `effect/unstable/httpapi`'s `OpenApi.fromApi`).
 - `packages/client/script/build.ts` — `bun run generate` in `packages/client` (writes `src/promise/generated/`, `src/effect/generated/`, `src/effect/api`).
@@ -105,17 +105,17 @@ Two independent Kete-owned server concerns: (1) `local-guard.ts` — browser-fac
 | `packages/server/src/kete/local-guard.ts` | 96 | `check()`, `middleware()`, `allowedHostsFromEnvironment()` — Host/Origin verdicts |
 | `packages/server/test/kete/local-guard.test.ts` | 114 | Unit tests for `check()`'s Host/Origin decision table |
 | `packages/server/script/kete/isolated-test.ts` | 47 | Spawns `bun test` with a temp HOME/XDG and a filtered, credential-free env |
-| `packages/server/src/process.ts:16,74` | — | Upstream file; imports and applies `KeteLocalGuard.middleware` (`kete_change`) |
-| `packages/server/src/process.ts:17,59` | — | Upstream file; socket bind instead of TCP when `options.socket` (`kete_change`) |
+| `packages/server/src/process.ts:19,80` | — | Upstream file; imports and applies `KeteLocalGuard.middleware` (`kete_change`) |
+| `packages/server/src/process.ts:20,63` | — | Upstream file; socket bind instead of TCP when `options.socket` (`kete_change`) |
 | `packages/server/src/kete/socket-listen.ts` | 92 | unix-socket path checks, stale-socket unlink, 0600, `NodeHttpServer.make(..., { path })` |
 | `packages/server/src/kete/constant-time.ts` | 19 | constant-time string compare for Basic auth |
-| `packages/server/src/auth.ts:34`, `middleware/authorization.ts:34`, `options.ts:16` | — | Upstream; marked one-line edits (constant-time, job-mode query-token refusal, `socket` option) |
+| `packages/server/src/auth.ts:34`, `middleware/authorization.ts:37`, `options.ts:16` | — | Upstream; marked one-line edits (constant-time, job-mode query-token refusal, `socket` option) |
 | `packages/protocol/script/generate-openapi.ts` | — | Generates `openapi.json` from the effect `HttpApi` definition (includes `ConfigKete.*` schemas) |
 | `packages/client/script/build.ts` | — | Generates the promise/effect SDK clients from the OpenAPI document |
-| `packages/client/src/solid/data.ts:1447-1481` | — | Hand-written (not generated) reactive `Data["session"].create()` wrapper; `kete_change`-marked `metadata` passthrough |
+| `packages/client/src/solid/data.ts:1521-1549` | — | Hand-written (not generated) reactive `Data["session"].create()` wrapper; `kete_change`-marked `metadata` passthrough |
 
 ## Data flow
-**Local guard:** every inbound request to the served app passes `HttpServerRequest.headers.{host,origin}` into `KeteLocalGuard.check` (`local-guard.ts:37-48`): missing/invalid/disallowed `Host` → reject; present `Origin` must be an app scheme (`oc://renderer`, Tauri), a `--cors`-allowed origin, or same-origin as `Host` → otherwise reject. A reject short-circuits with `HttpServerResponse.text("Forbidden", {status: 403})` and a `logWarning`, never reaching auth or routing (`local-guard.ts:58-67`).
+**Local guard:** every inbound request to the served app passes `HttpServerRequest.headers.{host,origin}` into `KeteLocalGuard.check` (`local-guard.ts:37-48`): missing/invalid/disallowed `Host` → reject; present `Origin` must be an app scheme (`oc://renderer`, Tauri), a `--cors`-allowed origin, or same-origin as `Host` → otherwise reject. A reject short-circuits with `HttpServerResponse.text("Forbidden", {status: 403})` and a `logWarning`, never reaching auth or routing (`local-guard.ts:57-65`).
 
 **Isolated tests:** `isolated-test.ts` creates a `mkdtemp` HOME, strips provider-credential-shaped env vars and anything under `Brand.envPrefix` (`KETE_*`) or matching `API_KEY|AUTHORIZATION|TOKEN|SECRET|PASSWORD|CREDENTIALS?` (`isolated-test.ts:16-21`), sets `HOME`/`XDG_*`/`OPENCODE_CONFIG_DIR` to point inside it, then spawns `bun test --only-failures ...args` as a child process with that env, forwarding `SIGINT` and exit code, and removes the temp dir afterward.
 
@@ -128,7 +128,7 @@ Two independent Kete-owned server concerns: (1) `local-guard.ts` — browser-fac
 - `packages/protocol/openapi.json` and `packages/client/src/*/generated/` are the only cross-package "APIs" this card covers; both are generated, never hand-edited (CLAUDE.md §4, §8). Check-only mode: `bun run check:generated` in each package (`--check` flag in `generate-openapi.ts`, `git diff --exit-code` in `client/package.json`).
 
 ## Rules that must not break
-- `process.ts:74`'s `kete_change` marker and comment ("before CORS and auth") — any upstream merge that reorders the middleware pipe must re-verify request rejection still precedes auth (CLAUDE.md §9 "Never weaken ... permission checks").
+- `process.ts:80`'s `kete_change` marker and comment ("before CORS and auth") — any upstream merge that reorders the middleware pipe must re-verify request rejection still precedes auth (CLAUDE.md §9 "Never weaken ... permission checks").
 - Behavior change vs. upstream: Kete Code accepts only the server's own origin and `--cors`-listed origins — not upstream's `http://localhost:*`/`127.0.0.1:*`/`https://*.opencode.ai` allowance (docs/upstream-patches.md "VS Code extension"). Don't silently widen this back.
 - `local-guard.ts` never logs or echoes the raw rejected `Host`/`Origin` value into a response body — only a generic "Forbidden" text (secret/PII hygiene, CLAUDE.md §9).
 - Generated files (`openapi.json`, `packages/client/src/*/generated/`) must be committed together with the schema/endpoint change that produced them (CLAUDE.md §8); a PR that changes `packages/schema` or `packages/server/src/` without a regen will fail `check:generated`.
