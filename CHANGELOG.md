@@ -6,6 +6,34 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Policies move to a top-level `policies` key:** write policy statements as `"policies": [...]`
+  instead of under `experimental`, and use the `tool.use` action where you used `permission`
+  (`{ "action": "tool.use", "resource": "hooks:*", "effect": "deny" }`). `experimental.policies` and
+  `permission` statements still work. A repository's allow statements under either key wait for
+  folder trust.
+- **More from `instructions`:** the `instructions` config key now also takes glob patterns and URLs,
+  and reloads when they change. A repository's entries that point outside it (a URL, an absolute
+  path, `~` or `..`) wait until you trust the folder, and offline mode doesn't fetch remote ones.
+- **Responses that hit the output limit carry on** instead of stopping mid-way.
+- **Better compaction:** the summary covers the whole conversation and keeps recent messages word
+  for word, and it starts a little earlier to leave room for the reply.
+- **`/diff` opens beside your session;** press `f` to switch between the side panel and full screen.
+  `/copy` now copies the latest reply (the full transcript is still in `/export`).
+- **Long-running commands stay connected:** shell calls and other requests are no longer cut off
+  after five minutes, and a model that pauses while reasoning gets 15 minutes before the stream is
+  treated as stuck.
+- **Fixes:** a custom provider `baseURL` now overrides the catalog's endpoint; edits keep a file's
+  mixed CRLF and LF line endings; MCP results with images, text resources or binary files reach the
+  model correctly; the terminal UI no longer crashes when file watching is unavailable; links in the
+  transcript open when clicked, including wrapped URLs; slash-command suggestions only appear at the
+  start of the prompt; `/models` opens on the model you're using.
+- **Runtime:** `kete` now runs on Bun 1.4.4, with its security fixes for TLS, HTTP, WebSocket and
+  compression, and updated root certificates.
+- **For SDK and plugin authors:** session data and events now name provider replay data `native`
+  (was `state`, `providerState` or `resultState`), key credentials take setup answers in `metadata`
+  (was `configuration`), and the `session.compacted` event is gone. Stored sessions and credentials
+  still load.
+
 ## 0.2.12
 
 - **Security:** Kete Code's own API keys (`kete_live_…`, `kete_test_…`) are now masked wherever text
