@@ -172,6 +172,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/rpc/kete.todo/get") return json({ output: { sessionID: "ses_fixture", todos: [] } }) // kete_change: the session task list
     if (url.pathname === "/api/rpc/kete.sync/status") return json({ output: { signedIn: true, managedAgents: 0, offline: false } }) // kete_change: the home portal notice; signed in, so the first-run setup screen stays closed (kete/setup.tsx)
     if (url.pathname === "/api/rpc/kete.doctor/check") return json({ output: { files: [], trust: { state: "clear", held: [], heldCount: 0 } } }) // kete_change: /doctor
+    if (url.pathname === "/api/rpc/kete.context/get") return json({ output: { type: "refused", reason: "Fixture session." } }) // kete_change: /context
     if (url.pathname === "/api/model/default") return json({ location: { directory: "/" }, data: null }) // kete_change: /doctor
     throw new Error(`unexpected request: ${url.pathname}`)
   }
