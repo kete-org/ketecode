@@ -14,7 +14,7 @@
 
 import { useLocation } from "@solidjs/router"
 import { createEffect, onCleanup, onMount } from "solid-js"
-import { OPEN_DIFF_EVENT, openDiffPath } from "@opencode/gui-extensions/kete/open-diff"
+import { OPEN_DIFF_EVENT, openDiffPath } from "@opencode/gui-plugins/kete/open-diff"
 import { useComposerState } from "@/composer/persistence"
 import { useGlobal } from "@/runtime/server/runtime"
 import { ServerConnection } from "@/runtime/server/registry"
