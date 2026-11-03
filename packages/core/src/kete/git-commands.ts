@@ -1,14 +1,17 @@
-// `/commit` and `/pr`: built-in prompt commands for the git work people do at the end of a change
-// (docs/parity-plan.md A3), registered like upstream's `/init` and `/review` (plugin/command.ts). They are
+// `/commit`, `/pr` and `/security-review`: built-in prompt commands for the git work people do at the end of a
+// change (docs/parity-plan.md A3, B8), registered like upstream's `/init` and `/review` (plugin/command.ts). They are
 // plain prompts: the agent does the work with its own tools, so every `git add`, `git commit`, `git push`
 // and `gh pr create` goes through the permission system and the OS sandbox like any other command
-// (`git push` asks by default). No template runs shell itself. A `commit` or `pr` command in the person's or the
-// project's config replaces these (config commands load later, plugin/internal.ts `post`).
+// (`git push` asks by default). No template runs shell itself. A `commit`, `pr` or `security-review` command in the
+// person's or the project's config replaces these (config commands load later, plugin/internal.ts `post`).
+// `/security-review` switches the session to the read-only Security agent (kete/roles.ts) when it exists, the way a
+// config command with `agent:` does; signed in, the organization may have no such agent, and the current one runs it.
 
 export * as KeteGitCommands from "./git-commands.js"
 
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
+import { Agent } from "../agent.js"
 import { Location } from "../location.js"
 
 export const COMMIT = `Create a git commit for the current changes in \${path}.
@@ -51,6 +54,20 @@ Read it this way: if its first word names a branch that exists on the remote, th
 
 Finish with the pull request's URL.`
 
+export const SECURITY_REVIEW = `Review code changes in \${path} for security problems only. Don't change any file.
+
+What to review (optional): $ARGUMENTS
+- Nothing: the uncommitted changes (\`git diff\`, \`git diff --cached\`, and untracked files from \`git status --short\`).
+- A commit hash: \`git show <hash>\`. A branch name: \`git diff <branch>...HEAD\`. A pull request number or URL: \`gh pr diff <it>\`.
+If it's unclear, ask.
+
+1. Read the whole of every changed file, not only the diff, and follow untrusted input (request data, headers, files, environment, model or tool output, third-party responses) to where it is used.
+2. Run the scanners that are already installed (Semgrep, gitleaks, npm/pnpm/bun audit, pip-audit, Trivy, osv-scanner) on the changed files or the lockfiles the change touches. Don't install anything.
+3. Look for: missing or broken authentication and authorization (including access to another user's objects), injection (SQL, shell, template, path traversal, SSRF), unsafe deserialization, weak input validation, secrets in code, logs or errors, insecure defaults (TLS verification off, debug on, permissive CORS or cookies), and dependencies added or upgraded by the change.
+4. Report only problems the change introduces or makes reachable, not pre-existing code it doesn't touch.
+
+For each finding give the severity (critical, high, medium, low), file:line, how it could be exploited, and the fix. Keep confirmed issues apart from suspicions, and say "no security problems found" if there are none. Never repeat a secret value: name the file and line, and show at most its first four characters followed by "…".`
+
 function prompt(template: string, path: string, input: string) {
   // One pass with a function replacer: `$&` or `$1` in the path or the person's text is kept as written,
   // and a path containing "$ARGUMENTS" isn't filled in again.
@@ -80,6 +97,26 @@ export const Plugin = define({
               })
               .pipe(Effect.asVoid),
         })
+      editor.add({
+        name: "security-review",
+        description: "review changes for security problems [commit|branch|pr], defaults to uncommitted",
+        execute: (input) =>
+          Effect.gen(function* () {
+            const security = Agent.ID.make("security")
+            const exists = yield* ctx.agent.get({ agentID: security }).pipe(
+              Effect.as(true),
+              Effect.orElseSucceed(() => false),
+            )
+            if (exists && (yield* ctx.session.get({ sessionID: input.sessionID })).agent !== security)
+              yield* ctx.session.switchAgent({ sessionID: input.sessionID, agent: security })
+            yield* ctx.session.prompt({
+              ...input.prompt,
+              sessionID: input.sessionID,
+              text: prompt(SECURITY_REVIEW, location.project.directory, input.prompt.text),
+              delivery: input.delivery,
+            })
+          }).pipe(Effect.asVoid),
+      })
     })
   }),
 })

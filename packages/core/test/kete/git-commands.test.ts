@@ -85,7 +85,8 @@ const userPrompts = (sessionID: Parameters<Session.Interface["context"]>[0]) =>
 
 describe("/commit and /pr", () => {
   test("the templates never run shell themselves: the agent's commands go through permissions", () => {
-    for (const template of [KeteGitCommands.COMMIT, KeteGitCommands.PR]) expect(/!`[^`]+`/.test(template)).toBe(false)
+    for (const template of [KeteGitCommands.COMMIT, KeteGitCommands.PR, KeteGitCommands.SECURITY_REVIEW])
+      expect(/!`[^`]+`/.test(template)).toBe(false)
   })
 
   test("the templates keep the safety rules", () => {
@@ -104,6 +105,9 @@ describe("/commit and /pr", () => {
     expect(KeteGitCommands.PR).toContain("git fetch <remote> <base>")
     expect(KeteGitCommands.PR).toContain("system temp directory (outside the repository")
     expect(KeteGitCommands.PR).toContain("already exists")
+    expect(KeteGitCommands.SECURITY_REVIEW).toContain("Don't change any file.")
+    expect(KeteGitCommands.SECURITY_REVIEW).toContain("Don't install anything.")
+    expect(KeteGitCommands.SECURITY_REVIEW).toContain("Never repeat a secret value")
   })
 
   test("render fills the path and the person's notes as written", () => {
@@ -112,7 +116,7 @@ describe("/commit and /pr", () => {
     expect(KeteGitCommands.render("Notes: $ARGUMENTS", "/x", "  ")).toBe("Notes: (none)")
     // One pass: a path that contains the placeholder text isn't filled in again.
     expect(KeteGitCommands.render("${path} | $ARGUMENTS", "/a/$ARGUMENTS", "n")).toBe("/a/$ARGUMENTS | n")
-    for (const template of [KeteGitCommands.COMMIT, KeteGitCommands.PR]) {
+    for (const template of [KeteGitCommands.COMMIT, KeteGitCommands.PR, KeteGitCommands.SECURITY_REVIEW]) {
       const text = KeteGitCommands.render(template, "/x", "y")
       expect(text).not.toContain("$ARGUMENTS")
       expect(text).not.toContain("${path}")
@@ -138,6 +142,18 @@ describe("/commit and /pr", () => {
       const prompts = yield* userPrompts(session.id)
       expect(prompts[0]?.text).toContain("Open a pull request")
       expect(prompts[0]?.text).toContain("What the person wrote (optional): main draft")
+    }),
+  )
+
+  it.live("/security-review switches to the Security agent and sends the review prompt", () =>
+    Effect.gen(function* () {
+      const session = yield* repository({})
+      const sessions = yield* Session.Service
+      yield* sessions.command({ sessionID: session.id, command: "security-review", text: "main" })
+      const prompts = yield* userPrompts(session.id)
+      expect(prompts[0]?.text).toContain("for security problems only")
+      expect(prompts[0]?.text).toContain("What to review (optional): main")
+      expect((yield* sessions.get(session.id)).agent).toBe(Agent.ID.make("security"))
     }),
   )
 
