@@ -38,6 +38,7 @@ import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { mentionTriggerIndex, slashTriggerIndex } from "../../prompt/display"
 import type { FileSystemEntry } from "@opencode/client"
 import { Skill } from "@opencode/schema/skill"
+import { KeteMcpMentionOptions } from "../../kete/mcp-mentions" // kete_change
 import { stringWidth } from "../../util/string-width"
 import { parseFileLineRange, stripFileLineRange } from "../../prompt/parse"
 import { moveSelection, reconcileSelectionWindow, revealSelectionOffset } from "../../ui/select-controller"
@@ -480,6 +481,14 @@ export function Autocomplete(props: {
       ),
   )
 
+  // kete_change start: MCP resources as `@` mentions; see kete/mcp-mentions.ts
+  const mcpResourceOptions = createMemo(() =>
+    KeteMcpMentionOptions.options(data.location.mcp.resource.list(location.current) ?? [], (text, file) =>
+      insertPart(text, { type: "file", value: { ...file, mention: { start: 0, end: 0, text: "" } } }),
+    ),
+  )
+  // kete_change end
+
   function insertSlash(name: string) {
     const newText = `/${name} `
     const cursor = props.input().logicalCursor
@@ -557,7 +566,7 @@ export function Autocomplete(props: {
     const fileOptions: AutocompleteOption[] = store.visible === "reference" ? fileSearch.options : []
     const nonFileOptions: AutocompleteOption[] =
       store.visible === "reference"
-        ? [...skillOptions(), ...referenceAliasesValue, ...agentsValue]
+        ? [...skillOptions(), ...referenceAliasesValue, ...agentsValue, ...mcpResourceOptions()] // kete_change: MCP resources
         : store.index === 0
           ? [...commandsValue]
           : []

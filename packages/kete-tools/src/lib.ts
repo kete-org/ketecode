@@ -98,6 +98,7 @@ export function isKeteOwned(file: string): boolean {
     normalized === "docs/todo.md" ||
     normalized === "docs/lsp.md" ||
     normalized === "docs/hooks.md" ||
+    normalized === "docs/mcp-resources.md" ||
     // The parity plan against Claude Code and Codex CLI.
     normalized === "docs/parity-plan.md" ||
     normalized === "docs/statusline.md" ||

@@ -1833,3 +1833,18 @@ tells every window with `KeteSidecarRestarting` / `KeteSidecarReady { url }`; th
 `Ipc.layer` sees the decorated service), keep both union entries, keep the status component mounted inside `AppInterface`.
 Tests: `desktop/src/main/kete/sidecar-watcher.test.ts`, `sidecar-watcher.integration.test.ts`,
 `desktop/src/shared/kete/sidecar-events.test.ts`, `desktop/src/renderer/kete/sidecar-status-state.test.ts`.
+
+## MCP resource mentions (feature/mcp-resource-mentions)
+
+The TUI's `@` menu lists MCP resources (`tui/src/kete/mcp-mentions.ts`) and attaches a picked one as a
+`kete-mcp:` file (`util/src/kete/mcp-mention.ts`); `core/src/kete/mcp-mentions.ts` reads it into the
+prompt in the `session.prompt` hook, before upstream materializes attachments.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/component/prompt/autocomplete.tsx` | Import; a marked memo of resource options, and one marked line adding them to the `@` options | the `@` option list is built inline in the component |
+| `core/src/plugin/internal.ts` | Import; `KeteMcpMentions.Plugin` after `KeteHooks.Plugin` in `pre` | internal plugin registration list |
+
+**Sync checklist:** if upstream's TUI adds MCP resources to `@` itself (its web app autocompletes them),
+drop ours. If `SessionPrompt.prepare` stops running the `prompt` hook before materializing attachments,
+the `kete-mcp:` files fail the prompt: move the expansion.
