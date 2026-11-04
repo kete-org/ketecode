@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { KeteVSCodeBridge } from "@/kete/vscode-host" // kete_change
 import { ErrorBoundary, createEffect, createMemo, Show, type ParentProps } from "solid-js"
 import { Title } from "@solidjs/meta"
@@ -250,7 +251,7 @@ function SessionDocumentTitle(props: { sessionID: () => string }) {
   // Keyed: <Title> reads its text inside a meta effect, which would hit a stale Show accessor once the session is deleted.
   return (
     <Show when={title()} keyed>
-      {(value) => <Title>{`${value} · OpenCode`}</Title>}
+      {(value) => /* kete_change */ <Title>{`${value} · ${Brand.displayName}`}</Title>}
     </Show>
   )
 }
