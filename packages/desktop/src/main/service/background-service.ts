@@ -48,11 +48,12 @@ const connect = Effect.fn("BackgroundService.connect")(function* (mode: "initial
   if (isolated) process.env.XDG_STATE_HOME = app.getPath("userData")
   const client = yield* Effect.promise(() => import("@opencode/client/service"))
 
-  // kete_change: Kete Code's state directory, for the release service file too (kete/service-file.ts)
+  // kete_change start: Kete Code's state directory, for the release service file too (kete/service-file.ts)
   const file = serviceFile(
     app.getPath("home"),
     process.env.OPENCODE_DESKTOP_SERVER_CHANNEL === "local" ? "service-local.json" : undefined,
   )
+  // kete_change end
 
   const ensure = (required = version) =>
     client.Service.ensure({

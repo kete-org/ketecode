@@ -49,7 +49,7 @@ function trimFilter(dir: string, config: Configuration) {
   ]).createFilter()
 }
 
-test.each(channels)("channel identity for $channel", ({ channel, appId }) => {
+test.each(channels)("channel identity for $channel", ({ channel, appId }) => { // kete_change: no feed
   const config = load(channel)
   expect(config.appId).toBe(appId)
   // kete_change: no channel has an update feed yet, so nothing points at OpenCode's update service

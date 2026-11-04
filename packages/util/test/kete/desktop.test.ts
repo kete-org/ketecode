@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { KeteDesktop } from "../../src/kete/desktop"
+import { KeteDesktop } from "../../src/kete/desktop.js"
 
 describe("KeteDesktop", () => {
   test("no channel checks for updates until it has a feed", () => {

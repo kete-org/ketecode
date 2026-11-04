@@ -82,13 +82,14 @@ const getBase = (appId: string): Configuration => {
     // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
     // https://www.electron.build/docs/linux/
     // Release builds take their version from OPENCODE_VERSION instead of rewriting package.json.
-    // kete_change: Kete Code's name and author (the Windows CompanyName and copyright come from it), not package.json's
+    // kete_change start: Kete Code's name and author (the Windows CompanyName and copyright come from it), not package.json's
     extraMetadata: {
       desktopName,
       author: { name: Brand.displayName },
       homepage: Brand.urls.releases,
       ...(process.env.OPENCODE_VERSION ? { version: process.env.OPENCODE_VERSION } : {}),
     },
+    // kete_change end
     files: [
       "out/**/*",
       "resources/**/*",
@@ -260,10 +261,11 @@ export function getConfig() {
         appId,
         productName: KeteDesktop.productNames.prod, // kete_change
         protocols: { name: KeteDesktop.productNames.prod, schemes: [KeteDesktop.scheme] }, // kete_change
-        // kete_change: Kete Code ships its ICNS on every macOS; it has no Icon Composer package yet
+        // kete_change start: Kete Code ships its ICNS on every macOS; it has no Icon Composer package yet
         // // An Icon Composer package compiles to Assets.car, which macOS 26 and later draw the app icon from
         // // (Dock, Finder, system dialogs and the system icon styles). Older macOS keeps using the ICNS.
         // mac: { ...base.mac, icon: "resources/icons/icon.icon" },
+        // kete_change end
         // The DMG volume icon would otherwise use the same actool-generated ICNS.
         dmg: { icon: "resources/icons/icon.icns" },
         publish: ketePublish("prod"), // kete_change

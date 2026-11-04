@@ -89,6 +89,7 @@ export function isKeteOwned(file: string): boolean {
     normalized === "docs/upstream-patches.md" ||
     normalized === "docs/upstream-sync.md" ||
     normalized === "docs/release.md" ||
+    normalized === "docs/desktop.md" ||
     normalized === "docs/jobs.md" ||
     normalized === "docs/job-hosts.md" ||
     normalized === "docs/local-models.md" ||
