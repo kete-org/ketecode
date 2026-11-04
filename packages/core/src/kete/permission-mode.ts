@@ -254,7 +254,7 @@ export interface Lookup {
 }
 
 /** The family's root session and the mode of the root-most session that has one (else the fallback). */
-export const resolveFamily = Effect.fnUntraced(function* (lookup: Lookup, sessionID: SessionSchema.ID) {
+export const resolveFamily = Effect.fnUntraced(function* (lookup: Pick<Lookup, "session" | "fallback">, sessionID: SessionSchema.ID) {
   let found: Mode | undefined
   let root: SessionSchema.ID = sessionID
   let current: SessionSchema.ID | undefined = sessionID
@@ -270,7 +270,7 @@ export const resolveFamily = Effect.fnUntraced(function* (lookup: Lookup, sessio
 })
 
 /** The mode of the root-most session in `sessionID`'s family that has one, else the fallback. */
-export const resolveMode = (lookup: Lookup, sessionID: SessionSchema.ID) =>
+export const resolveMode = (lookup: Pick<Lookup, "session" | "fallback">, sessionID: SessionSchema.ID) =>
   resolveFamily(lookup, sessionID).pipe(Effect.map((family) => family.mode))
 
 const catchAll = (rule: Permission.Rule) => rule.action === "*" && rule.resource === "*" && rule.effect === "allow"
