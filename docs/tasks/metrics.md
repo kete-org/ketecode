@@ -40,3 +40,4 @@ about 10 tasks, drop any agent that isn't saving calls.
 | 2026-11-04 | desktop-shell-redesign | large | scout, planner, implementer ×3 (no shell), reviewer, upstream-guard, librarian ×3 | 1 | 0 | 0% | n/a | n/a |
 | 2026-11-04 | ws0-handshake | large | scout, planner, implementer (no shell), reviewer, upstream-guard, librarian ×2 | 1 | 0 | 0% | n/a | n/a |
 | 2026-11-04 | ws0-sidecar-supervision | large | scout, planner ×2, implementer (no shell), reviewer, upstream-guard, librarian ×3 | 1 | 0 | 0% | n/a | n/a |
+| 2026-11-04 | ws0-packaged-smoke | large | scout, planner ×2, implementer (no shell), reviewer, librarian ×2 | 1 | 0 | 0% | n/a | n/a |

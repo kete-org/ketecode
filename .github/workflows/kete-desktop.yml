@@ -72,3 +72,10 @@ jobs:
           path: dist/desktop/
           retention-days: 7
           if-no-files-found: error
+
+      # After the upload, so a failing build can still be downloaded. Launches the packaged app (not the
+      # dev build) with an isolated state dir, checks its runtime's handshake, kills the runtime and
+      # waits for the app to restart it (docs/desktop.md).
+      - name: Smoke packaged app
+        timeout-minutes: 10 # above the script's own waits (180 + 120 + 60 s plus cleanup)
+        run: bun run --cwd packages/desktop script/kete-packaged-smoke.ts
