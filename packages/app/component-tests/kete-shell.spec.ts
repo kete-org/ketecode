@@ -76,6 +76,16 @@ story("opens on Plan for a session already in Plan and leaves it with Build", as
   await expect(group.getByRole("radio", { name: "Plan" })).toHaveAttribute("aria-checked", "false")
 })
 
+story("covers the page with the panel while a server is incompatible and restores it after", async ({ mount }) => {
+  const root = await mount("app-kete-shell--incompatible-gate")
+
+  await expect(root.getByTestId("panel")).toBeVisible()
+  await expect(root.getByTestId("home")).toHaveCount(0)
+  await root.getByRole("button", { name: "Toggle" }).click()
+  await expect(root.getByTestId("home")).toBeVisible()
+  await expect(root.getByTestId("panel")).toHaveCount(0)
+})
+
 story("switches between Build and Plan",async ({ mount }) => {
   const root = await mount("app-kete-shell--agent-switch")
   const group = root.getByRole("radiogroup", { name: "Agent" })

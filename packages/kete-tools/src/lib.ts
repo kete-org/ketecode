@@ -105,6 +105,8 @@ export function isKeteOwned(file: string): boolean {
     normalized === "docs/history-search.md" ||
     normalized === "docs/home-notices.md" ||
     normalized === "docs/sharing.md" ||
+    // The desktop Code | Work programme plan.
+    normalized === "docs/desktop-enhancement-plan.md" ||
     // Kete Code's public-facing files; GitHub prefers .github/ over upstream's root files (ADR 0010).
     normalized === ".github/README.md" ||
     normalized === ".github/SECURITY.md" ||
@@ -121,6 +123,7 @@ export function isKeteOwned(file: string): boolean {
     normalized.startsWith("assets/brand/") ||
     // Contracts with kete-code-platform and requests to it.
     normalized.startsWith("docs/platform/") ||
+    normalized.startsWith("docs/platform-issues/") ||
     // The development knowledge base and agent swarm (docs/context/INDEX.md).
     normalized.startsWith("docs/context/") ||
     normalized.startsWith("docs/tasks/") ||

@@ -1797,3 +1797,20 @@ strip. If it adds a top-level route or changes `currentRoute` (`shell/state/layo
 a `home` route. Tests: `app/src/kete/sidebar/records.test.ts`, `shell-defaults.test.ts`, `panel-layout.test.ts`, `mode.test.ts`,
 `ui/src/theme/kete/theme.test.ts`, and the story component tests `app/component-tests/kete-shell.spec.ts`
 (stories in `app/src/kete/shell.stories.tsx`).
+
+## WS0 handshake (feature/desktop-handshake)
+
+The app refuses a server whose `kete.handshake` protocol differs from its own (schema `KeteHandshakeRpc.PROTOCOL`),
+or that has no `kete.handshake` RPC, and shows the incompatible panel on every route except Settings.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | imports and registers `KeteHandshake.Plugin` (marked lines) | the internal plugin list is the only registration point |
+| `app/src/runtime/server/health.ts` | `checkServerHealth` hoists the client and chains `KeteHandshake.check` after `server.info`; a mismatch returns `incompatible: true` | the check belongs in the probe so every consumer of `ServerHealth` sees it |
+| `app/src/runtime/server/health.test.ts` | its fake `fetch` answers the handshake path; the expected requests gain it | the probe now makes a second request |
+| `app/src/shell/shell.tsx` | wraps the routed content in `<KeteIncompatibleGate>` (marked) | the app-wide cover has to sit inside `<main>`; no shell slot exists there |
+| `app/e2e/utils/mock-server.ts` | `rpcCall` answers `kete.handshake.get` | else every e2e scenario shows the incompatible panel |
+
+**Sync checklist:** keep the handshake call after `server.info` in `checkServerHealth`, and keep the gate mounted inside `<main>`.
+Tests: `schema/test/kete/handshake.test.ts`, `server/test/kete/handshake.test.ts`, `app/src/kete/handshake.test.ts`,
+`app/src/kete/incompatible-gate-state.test.ts`, `app/component-tests/kete-shell.spec.ts`.

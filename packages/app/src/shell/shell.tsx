@@ -11,6 +11,7 @@ import { UploadToastHost } from "@/composer/attachments/uploads"
 import { useSettingsSurface } from "@/settings/surface"
 import { useSettings } from "@/settings/model"
 import { PluginServerCover } from "@/runtime/plugin/server-shell"
+import { KeteIncompatibleGate } from "@/kete/incompatible-gate" // kete_change
 import { PluginSlot } from "@/runtime/plugin/render"
 import { COMMAND_SEARCH_ID, useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -300,9 +301,15 @@ export default function Layout(props: ParentProps) {
               : "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))",
           }}
         >
+          {/* kete_change start */}
+          <KeteIncompatibleGate>
+          {/* kete_change end */}
           <PluginServerCover>
             <Suspense>{props.children}</Suspense>
           </PluginServerCover>
+          {/* kete_change start */}
+          </KeteIncompatibleGate>
+          {/* kete_change end */}
         </main>
         <CollapsedSidebarToggle />
       </div>

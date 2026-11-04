@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { ServerConnection } from "@/runtime/server/registry"
+import { KeteHandshakeRpc } from "@opencode/schema/kete/handshake" // kete_change
 import { checkServerHealth } from "./health"
 
 const server: ServerConnection.HttpBase = {
@@ -8,6 +9,16 @@ const server: ServerConnection.HttpBase = {
 
 const info = (version = "1.2.3") =>
   Response.json({ version, pid: 1, urls: [server.url], paths: { tmp: "/tmp/opencode" } })
+
+// kete_change start: the health check also asks `kete.handshake`; answer it like a compatible server
+const handshakePath = "/api/rpc/kete.handshake/get"
+const reply = (input: RequestInfo | URL, version?: string) => {
+  const url = input instanceof URL ? input : new URL(input instanceof Request ? input.url : input)
+  return url.pathname === handshakePath
+    ? Response.json({ output: { protocol: KeteHandshakeRpc.PROTOCOL, runtime: version ?? "1.2.3", modes: ["code"] } })
+    : info(version)
+}
+// kete_change end
 
 function abortFromInput(input: RequestInfo | URL, init?: RequestInit) {
   if (init?.signal) return init.signal
@@ -25,12 +36,14 @@ describe("checkServerHealth", () => {
       const url = input instanceof URL ? input : new URL(input instanceof Request ? input.url : input)
       requests.push({ path: url.pathname, authorization: new Headers(init?.headers).get("authorization") })
 
-      return info("2.0.0")
+      return reply(input, "2.0.0") // kete_change
     }) as typeof globalThis.fetch
 
     expect(await checkServerHealth({ ...server, password }, fetch)).toEqual({ healthy: true, version: "2.0.0" })
+    const authorization = password ? `Basic ${btoa(`opencode:${password}`)}` : null // kete_change
     expect(requests).toEqual([
-      { path: "/api/info", authorization: password ? `Basic ${btoa(`opencode:${password}`)}` : null },
+      { path: "/api/info", authorization }, // kete_change
+      { path: handshakePath, authorization }, // kete_change
     ])
   })
 
@@ -59,7 +72,7 @@ describe("checkServerHealth", () => {
       },
     })
 
-    const fetch = (async () => info()) as unknown as typeof globalThis.fetch
+    const fetch = (async (input: RequestInfo | URL) => reply(input)) as unknown as typeof globalThis.fetch // kete_change
 
     await checkServerHealth(server, fetch).finally(() => {
       if (timeout) Object.defineProperty(AbortSignal, "timeout", timeout)
@@ -110,7 +123,7 @@ describe("checkServerHealth", () => {
     const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       signal = abortFromInput(input, init)
 
-      return info()
+      return reply(input) // kete_change
     }) as unknown as typeof globalThis.fetch
 
     const abort = new AbortController()
@@ -124,12 +137,12 @@ describe("checkServerHealth", () => {
   test("retries transient failures and eventually succeeds", async () => {
     let count = 0
 
-    const fetch = (async () => {
+    const fetch = (async (input: RequestInfo | URL) => { // kete_change
       count += 1
 
       if (count < 3) throw new TypeError("network")
 
-      return info()
+      return reply(input) // kete_change
     }) as unknown as typeof globalThis.fetch
 
     const result = await checkServerHealth(server, fetch, {
@@ -137,7 +150,7 @@ describe("checkServerHealth", () => {
       retryDelayMs: 1,
     })
 
-    expect(count).toBe(3)
+    expect(count).toBe(4) // kete_change: two failed info calls, one info, one handshake
     expect(result).toEqual({ healthy: true, version: "1.2.3" })
   })
 

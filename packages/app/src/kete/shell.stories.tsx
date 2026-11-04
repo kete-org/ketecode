@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import { KeteAgentSwitchView } from "./agent-switch"
+import { KeteIncompatibleGateView } from "./incompatible-gate-view"
 import { KeteSidebarView, type SidebarSession } from "./sidebar/view"
 
 export default {
@@ -44,6 +45,25 @@ function SidebarStory() {
 function AgentSwitchStory(props: { planning?: boolean }) {
   const [planning, setPlanning] = createSignal(props.planning ?? false)
   return <KeteAgentSwitchView planning={planning()} onChoose={(choice) => setPlanning(choice === "plan")} />
+}
+
+// The real panel needs server contexts the harness doesn't mock, so a stand-in fills its slot.
+function IncompatibleGateStory() {
+  const [covered, setCovered] = createSignal<string | undefined>("local")
+  return (
+    <div style={{ width: "480px", height: "240px", display: "flex", "flex-direction": "column" }}>
+      <button type="button" onClick={() => setCovered((value) => (value ? undefined : "local"))}>
+        Toggle
+      </button>
+      <KeteIncompatibleGateView covered={covered()} panel={<div data-testid="panel">Panel stand-in</div>}>
+        <div data-testid="home">Home stand-in</div>
+      </KeteIncompatibleGateView>
+    </div>
+  )
+}
+
+export const IncompatibleGate = {
+  render: () => <IncompatibleGateStory />,
 }
 
 export const Sidebar = {

@@ -21,6 +21,8 @@ const placeholder = "\u0000HOSTED\u0000"
 export const overrides: Readonly<Record<string, string>> = {
   // Kete Code is built on OpenCode; OpenCode's trademark notice must not be rebranded.
   "settings.about.trademark": `${Brand.displayName} is built on OpenCode. OpenCode is a registered trademark of Anomaly Innovations, Inc.`,
+  // The server is out of date, not the app: say what to do.
+  "session.error.incompatible.description": `{{server}} is running ${Brand.displayName} {{version}}, which this app can't use. Update ${Brand.displayName} on that server to continue.`,
 }
 
 /** Strings that name OpenCode truthfully and keep each locale's own translation as it is. */
