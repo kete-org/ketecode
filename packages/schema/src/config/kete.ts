@@ -122,7 +122,16 @@ export class Sandbox extends Schema.Class<Sandbox>("ConfigKete.Sandbox")({
 }) {}
 
 
-export const HookEvents = ["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "SessionStart", "Notification"] as const
+export const HookEvents = [
+  "PreToolUse",
+  "PostToolUse",
+  "UserPromptSubmit",
+  "Stop",
+  "SubagentStop",
+  "SessionStart",
+  "Notification",
+  "PreCompact",
+] as const
 export type HookEvent = (typeof HookEvents)[number]
 
 export class Hook extends Schema.Class<Hook>("ConfigKete.Hook")({
@@ -153,9 +162,13 @@ export class Hooks extends Schema.Class<Hooks>("ConfigKete.Hooks")({
   PreToolUse: hookList("Before a tool runs; can block it (exit code 2, or {\"decision\":\"deny\"})."),
   PostToolUse: hookList("After a tool ran; can add context for the agent."),
   UserPromptSubmit: hookList("When a prompt is sent; can add context for the agent."),
-  Stop: hookList("When the agent finishes its turn."),
+  Stop: hookList("When the agent finishes its turn (subagents too; see SubagentStop)."),
+  SubagentStop: hookList("When a subagent finishes its turn."),
   SessionStart: hookList("When a session is created; can add context for the agent."),
   Notification: hookList("When Kete Code needs you (a permission prompt or a question)."),
+  PreCompact: hookList(
+    "Before the conversation is summarised (compaction); can add instructions for the summary.",
+  ),
   unsandboxed: Schema.Boolean.pipe(optional).annotate({
     description:
       "Global config only: let trusted project hooks run when the OS sandbox isn't active (turned off, unavailable, Windows). Off by default; a policy denying sandbox_off always wins.",

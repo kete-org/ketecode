@@ -2574,6 +2574,13 @@ export type ConfigEntry =
               sandbox?: boolean
             }>
             Stop?: Array<{ command: string; match?: string; timeout?: number; network?: boolean; sandbox?: boolean }>
+            SubagentStop?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
             SessionStart?: Array<{
               command: string
               match?: string
@@ -2582,6 +2589,13 @@ export type ConfigEntry =
               sandbox?: boolean
             }>
             Notification?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
+            PreCompact?: Array<{
               command: string
               match?: string
               timeout?: number

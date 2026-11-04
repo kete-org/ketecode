@@ -37,8 +37,10 @@ config file, global and project, and runs them all (yours first).
 | `PostToolUse` | after a tool ran, successfully or not (`match` selects tools) | add context after the tool's result |
 | `UserPromptSubmit` | when a prompt is sent | add context to the prompt (appended, visible in the conversation); it can't block the prompt |
 | `SessionStart` | when a session is created | add context (a message at the start of the session) |
-| `Stop` | when the agent finishes its turn (succeeded, failed or interrupted) | — |
+| `Stop` | when the agent finishes its turn (succeeded, failed or interrupted), a subagent's too | — |
+| `SubagentStop` | when a subagent finishes its turn (after `Stop` for the same session) | — |
 | `Notification` | when Kete Code needs you: a permission prompt or a question | — |
+| `PreCompact` | before the conversation is summarised (automatic or `/compact`), before the summary is requested | add notes for the summary (what to keep), sent after the conversation; it can't block, and exit 2 adds nothing |
 
 Each entry:
 
@@ -50,8 +52,11 @@ Each entry:
 | `network` | `true` gives the hook network access inside the sandbox (default: none) |
 | `sandbox` | `false` runs the hook **outside** the sandbox — a sandbox escape, honoured only in your global config |
 
-Hooks of one event run one after another, in config order. At most eight `Stop`/`Notification`
-hooks run at once; more are skipped (and logged).
+Hooks of one event run one after another, in config order. At most eight `Stop`/`SubagentStop`/
+`Notification` hooks run at once; more are skipped (and logged). `PreCompact` hooks run while the
+compaction waits, so keep them fast; a failing one is logged and the compaction goes ahead. With
+`compaction.precompute` on, they also run for summaries prepared in the background, which may be
+discarded, so one compaction can run them twice.
 
 ## The sandbox
 
@@ -99,8 +104,9 @@ never looked up in the current directory. The event comes as JSON on stdin:
 - `PostToolUse` adds `tool_result`: `{ "status": "completed", "output": "…" }` or
   `{ "status": "error", "error": "…" }`, cut at 32 KiB with `"truncated": true`; its `tool_input` is
   cut at 32 KiB.
-- `UserPromptSubmit` adds `prompt`, `Stop` adds `status`, `Notification` adds `kind`
-  (`permission`/`question`) and `message`.
+- `UserPromptSubmit` adds `prompt`, `Stop` adds `status`, `SubagentStop` adds `status`,
+  `parent_session_id` and `agent` (the subagent's), `Notification` adds `kind`
+  (`permission`/`question`) and `message`, `PreCompact` adds `agent`.
 
 ## What a hook returns
 
@@ -139,7 +145,8 @@ hidden; which ones get network) and the repository files they run, and asks.
 - A project command with control characters (other than tab) or text-reordering (bidi) characters
   is refused outright; you aren't asked.
 - `sandbox: false` in a project's config is ignored (logged); its hooks stay sandboxed.
-- `Stop` and `Notification` hooks never ask; project ones run only once trusted.
+- `Stop`, `SubagentStop`, `Notification` and `PreCompact` hooks never ask; project ones run only
+  once trusted.
 - Unattended runs (`kete job run`) never ask: project hooks run only if you trusted those exact
   hooks before, interactively. `kete job run` refuses a repository whose config sets `kete.hooks`
   unless you pass `--trust-project-config` (and even then, untrusted project hooks are skipped).
