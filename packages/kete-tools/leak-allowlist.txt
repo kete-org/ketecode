@@ -22,3 +22,11 @@ packages/tui/src/util/tool-display.ts:display-name
 packages/tui/src/feature-plugins/system/storybook/highlights.tsx:display-name
 # The SDK client's identifier in an import (`import { OpenCode }`), not user-facing text.
 packages/cli/src/commands/handlers/pair.ts:display-name
+
+# Upstream v2.2.5 sync (2026-11-03)
+# "OpenCode Console", "OpenCode Go" and OpenCode's hosted GPT-Live are those hosted services' product names (opt-in, ADR 0003);
+# console-access.ts's project-dir hit is the console.opencode.ai host in a regular expression, not a project directory.
+packages/core/src/console-access.ts:project-dir
+packages/core/src/usage-limits.ts:display-name
+packages/core/src/voice.ts:display-name
+packages/tui/src/component/usage.tsx:display-name

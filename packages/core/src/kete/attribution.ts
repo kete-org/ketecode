@@ -1,6 +1,6 @@
 // How Kete Code identifies itself to model providers that credit the calling app.
 //
-// Upstream's provider plugins (plugin/provider/{openrouter,vercel,kilo,llmgateway,zenmux,nvidia,
+// Upstream's provider plugins (plugin/provider/{openrouter,kilo,llmgateway,zenmux,nvidia,
 // cerebras}.ts) set attribution headers that credit OpenCode. This plugin runs after them and replaces
 // exactly those default values with Kete Code's (Brand.attribution), so the upstream files stay
 // untouched and any other value, such as one a user configured, is left alone:

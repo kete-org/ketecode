@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_THEMES } from "../default-themes"
+import { oc2Theme } from "../context"
 import { resolveThemeVariant } from "../resolve"
 import { resolveThemeVariantV2 } from "../v2/resolve"
 import oc2ThemeJson from "../themes/oc-2.json"
@@ -15,7 +15,8 @@ function palette(variant: DesktopTheme["light"]) {
 
 describe("the web UI's default theme is Kete Code's violet", () => {
   test("it replaces upstream's default under the same id", () => {
-    expect(DEFAULT_THEMES["oc-2"]).toBe(keteTheme)
+    // Upstream v2.2 removed the eager DEFAULT_THEMES registry; the theme context registers "oc-2" from oc2Theme.
+    expect(oc2Theme).toBe(keteTheme)
     expect(keteTheme.id).toBe("oc-2")
     expect(keteTheme.name).toBe("Kete Code")
   })

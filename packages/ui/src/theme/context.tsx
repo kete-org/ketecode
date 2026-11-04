@@ -87,7 +87,7 @@ const names: Record<string, string> = {
   vesper: "Vesper",
   zenburn: "Zenburn",
 }
-const oc2Theme = keteTheme // kete_change: the default theme in Kete Code's violet (kete/theme.ts)
+export const oc2Theme = keteTheme // kete_change: the default theme in Kete Code's violet (kete/theme.ts); exported for its test
 
 
 function resolveStoredTheme(id: string | null | undefined, registered?: Record<string, DesktopTheme>) {

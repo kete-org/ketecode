@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 import path from "path"
 import { Effect, Layer } from "effect"
-import { LanguageModel } from "@opencode/ai"
+import { LanguageModel } from "@opencode/ai/effect"
 import { OpenAIChat } from "@opencode/ai/protocols/openai-chat"
 import { TestLLM } from "@opencode/ai/testing"
 import { Agent } from "@opencode/core/agent"
