@@ -1,4 +1,5 @@
 import { serviceFile } from "../kete/service-file" // kete_change
+import { devCors } from "../kete/runtime-env" // kete_change
 import { app } from "electron"
 import { Context, Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import { CHANNEL } from "../constants"
@@ -64,6 +65,7 @@ const connect = Effect.fn("BackgroundService.connect")(function* (mode: "initial
         "serve",
         "--service",
         ...(isolated ? ["--hostname", "0.0.0.0", "--port", String(0x0c0c)] : []),
+        ...devCors(app.isPackaged, process.env.ELECTRON_RENDERER_URL), // kete_change: the dev renderer's origin (kete/runtime-env.ts)
       ],
       onStart: (reason, previousVersion) =>
         runFork(Effect.logInfo("v2 CLI background service starting", { reason, previousVersion })),

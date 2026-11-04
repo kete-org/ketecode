@@ -1,3 +1,4 @@
+import { forRuntime } from "../kete/runtime-env" // kete_change
 import { randomUUID } from "node:crypto"
 import { mkdirSync, rmSync } from "node:fs"
 import { enableCompileCache } from "node:module"
@@ -20,7 +21,7 @@ export function configureApplication() {
     process.chdir(homedir())
   } catch {}
 
-  process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
+  Object.assign(process.env, forRuntime({ OPENCODE_DISABLE_EMBEDDED_WEB_UI: "true" })) // kete_change: also KETE_* (kete/runtime-env.ts)
 
   app.setName(APP_NAME)
   app.setAppUserModelId(APP_ID)

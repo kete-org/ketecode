@@ -1,4 +1,3 @@
-import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -20,9 +19,12 @@ export function resolveChannel(): Channel {
   return "dev"
 }
 
-// kete_change start: Kete Code's npm platform packages (kete-tools/src/distribute.ts `npmPlatforms`), and the
-// directory `cli/script/build.ts` writes each target to
-const ketePackage = (suffix: string) => `${Brand.distribution.npmPackage}-${suffix}`
+// kete_change start: Kete Code's npm platform packages (kete-tools/src/distribute.ts `npmPlatforms`), named on use,
+// and the directory `cli/script/build.ts` writes each target to. Brand loads lazily: electron.vite.config.ts
+// imports this file under Node, whose loader can't follow util's `.js` specifiers to its `.ts` sources.
+const ketePackage = (suffix: string) => suffix
+const brand = () => import("@opencode/util/kete/brand").then((module) => module.Brand)
+const npmName = async (suffix: string) => `${(await brand()).distribution.npmPackage}-${suffix}`
 // kete_change end
 
 export const CLI_BINARIES: Array<{ target: string; package: string; directory: string; os: string; cpu: string }> = [ // kete_change: directory
@@ -101,13 +103,14 @@ export async function downloadCliToResources(version = CLI_VERSION, dest = windo
   const directory = await mkdtemp(join(tmpdir(), "opencode-cli-"))
 
   try {
-    await $`bun install --no-save --cwd ${directory} ${`${cli.package}@${version}`} ${`--os=${cli.os}`} ${`--cpu=${cli.cpu}`}`
-    await copyCliToResources(join(directory, "node_modules", cli.package), dest)
+    const name = await npmName(cli.package) // kete_change
+    await $`bun install --no-save --cwd ${directory} ${`${name}@${version}`} ${`--os=${cli.os}`} ${`--cpu=${cli.cpu}`}` // kete_change: name
+    await copyCliToResources(join(directory, "node_modules", name), dest) // kete_change: name
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
 
-  console.log(`Copied ${cli.package}@${version} to ${dest}`)
+  console.log(`Copied ${await npmName(cli.package)}@${version} to ${dest}`) // kete_change
 }
 
 export async function copyBuiltCliToResources(root: string, dest = windowsify("resources/opencode-cli")) {
@@ -120,7 +123,8 @@ export async function copyBuiltCliToResources(root: string, dest = windowsify("r
 // 200 MB binary on first launch.
 async function copyCliToResources(pkg: string, dest: string) {
   const cli = getCurrentCli()
-  await copyFile(join(pkg, "bin", cli.os === "win32" ? `${Brand.cliName}.exe` : Brand.cliName), dest) // kete_change
+  const { cliName } = await brand() // kete_change
+  await copyFile(join(pkg, "bin", cli.os === "win32" ? `${cliName}.exe` : cliName), dest) // kete_change
   await prepareCli(dest)
 
   const manifest = Option.getOrUndefined(
