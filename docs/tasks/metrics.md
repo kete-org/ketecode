@@ -37,3 +37,4 @@ about 10 tasks, drop any agent that isn't saving calls.
 | 2026-10-20 | byteplus-sync | large | planner, implementer, reviewer, verifier (no shell), librarian | 0 | – | – | n/a | n/a |
 | 2026-10-29 | context-breakdown (B2) | medium (plan approved as large) | scout, planner, implementer (no shell), verifier (no shell), reviewer, upstream-guard, librarian ×2 | 1 | 0 | 0% | n/a | ~1 h 30 min |
 | 2026-11-04 | desktop-sign-in | large | scout, planner, implementer ×2 (no shell), verifier (no shell), reviewer, upstream-guard, librarian ×2 | 3 | 0 | 0% | n/a | n/a |
+| 2026-11-04 | desktop-shell-redesign | large | scout, planner, implementer ×3 (no shell), reviewer, upstream-guard, librarian ×3 | 1 | 0 | 0% | n/a | n/a |
