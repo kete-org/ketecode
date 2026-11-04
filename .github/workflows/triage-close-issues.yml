@@ -1,9 +1,13 @@
 name: triage-close-issues
 
+# kete_change start: manual only in Kete Code; upstream workflows stay disabled (docs/upstream-sync.md)
 on:
-  schedule:
-    - cron: "0 2 * * *" # Daily at 2:00 AM
   workflow_dispatch:
+# on:
+#   schedule:
+#     - cron: "0 2 * * *" # Daily at 2:00 AM
+#   workflow_dispatch:
+# kete_change end
 
 jobs:
   close:
