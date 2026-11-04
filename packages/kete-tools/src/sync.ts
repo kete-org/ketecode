@@ -226,7 +226,8 @@ function leftoverConflictMarkers(cwd: string): [string, number][] {
   const found: [string, number][] = []
   for (const file of staged.split("\n")) {
     const full = path.join(cwd, file)
-    if (!fs.existsSync(full)) continue
+    // Deleted files and directories (a submodule's gitlink) hold no conflict markers.
+    if (!fs.statSync(full, { throwIfNoEntry: false })?.isFile()) continue
     const text = fs.readFileSync(full, "utf8")
     const line = text.split("\n").findIndex((l) => /^(<{7}|>{7}) /.test(l))
     if (line !== -1) found.push([file, line + 1])
