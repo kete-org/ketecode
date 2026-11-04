@@ -2606,6 +2606,7 @@ export type ConfigEntry =
           }
           memory?: { claudeMd?: boolean; imports?: boolean; auto?: boolean }
           lsp?: { unsandboxed?: boolean }
+          outputStyle?: string
         }
       }
     }

@@ -225,4 +225,9 @@ export class Info extends Schema.Class<Info>("ConfigKete.Info")({
   lsp: Lsp.pipe(optional).annotate({
     description: "Kete Code's language server settings; the servers themselves are configured under the top-level `lsp` key (docs/lsp.md)",
   }),
+  // Checked in core/src/kete/output-styles.ts, not here: a bad name must not discard the rest of the file's `kete` settings.
+  outputStyle: Schema.String.check(Schema.isMaxLength(200)).pipe(optional).annotate({
+    description:
+      "How the agent writes its replies (docs/output-styles.md): default, explanatory, learning, reviewer, or the name of a custom style in ~/.config/kete/output-styles/<name>.md",
+  }),
 }) {}
