@@ -1,0 +1,167 @@
+/*
+ * The desktop/web sidebar body (sidebar.tsx, account.tsx). `--kete-*` tokens only (tokens.css); unlayered,
+ * and keyed on `data-kete` attributes, never on upstream's Tailwind classes.
+ */
+
+[data-kete="sidebar"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: var(--kete-ui-font);
+  font-size: var(--kete-shell-font);
+  color: var(--kete-text-1);
+}
+
+[data-kete="sidebar"] button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--kete-r-control);
+  background: none;
+  color: var(--kete-text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+[data-kete="sidebar"] button:hover {
+  background: var(--kete-surface-2);
+  color: var(--kete-text-1);
+}
+[data-kete="sidebar"] button:focus-visible {
+  outline: 2px solid var(--kete-brand);
+  outline-offset: 1px;
+}
+
+[data-kete="sidebar-nav"] {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-kete="sidebar-scroll"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+[data-kete="sidebar-section"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-kete="sidebar"] [data-kete="sidebar-section-title"] {
+  color: var(--kete-text-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+[data-kete="sidebar-count"] {
+  margin-left: auto;
+  color: var(--kete-text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-kete="sidebar"] [data-kete="sidebar-session"] {
+  min-width: 0;
+  color: var(--kete-text-1);
+}
+[data-kete="sidebar"] [data-kete="sidebar-session"][aria-current="page"] {
+  background: color-mix(in srgb, var(--kete-brand) 16%, transparent);
+}
+
+[data-kete="sidebar-session-title"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-kete="sidebar-session-time"] {
+  flex: none;
+  color: var(--kete-text-3);
+  font-size: 12px;
+}
+
+[data-kete="sidebar-busy"] {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+[data-kete="sidebar-busy"][data-busy] {
+  background: var(--kete-brand-soft);
+}
+
+[data-kete="sidebar"] [data-kete="sidebar-more"] {
+  color: var(--kete-brand-soft);
+}
+
+[data-kete="sidebar-project"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-kete="sidebar-project-name"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  color: var(--kete-text-2);
+}
+
+[data-kete="sidebar-account"] {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--kete-border);
+}
+
+[data-kete="sidebar-account-who"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-kete="sidebar-account"] [data-kete="sidebar-account-who"] button {
+  width: auto;
+  color: var(--kete-brand-soft);
+}
+[data-kete="sidebar-account"] > button {
+  width: 32px;
+  justify-content: center;
+  padding: 0;
+}
+
+[data-kete="sidebar-account-name"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-kete="sidebar-account-host"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kete-text-3);
+  font-size: 12px;
+}

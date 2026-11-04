@@ -18,6 +18,7 @@ import { applyPath, backPath, forwardPath, type HistoryLocation } from "./histor
 import { TitlebarTabStrip } from "@/shell/titlebar/tab-strip"
 import { macVerticalTrafficLights, SidebarToggle } from "@/shell/sidebar-toggle"
 import { SidebarInbox } from "@/shell/titlebar/inbox"
+import { KeteSidebar } from "@/kete/sidebar/sidebar" // kete_change
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/shell/titlebar/session-events"
@@ -851,6 +852,12 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                                 </div>
                               </div>
                             </Show>
+                            {/* kete_change start: Kete sidebar body in the vertical layout */}
+                            <Show
+                              when={settings.appearance.tabLayout() !== "vertical"}
+                              fallback={<KeteSidebar newSession={openNewTab} />}
+                            >
+                            {/* kete_change end */}
                             <div class="flex w-full shrink-0 flex-col gap-1">
                               <Show when={!homeInSidebarHeader()}>{homeButton(true)}</Show>
                               {searchButton(true)}
@@ -885,6 +892,9 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                                 <SidebarInbox />
                               </Show>
                             </div>
+                            {/* kete_change start */}
+                            </Show>
+                            {/* kete_change end */}
                             <Show when={titlebarItems.ids().length > 0}>
                               <div data-slot="vertical-tabs-footer" class="mt-2 flex w-full shrink-0 flex-col">
                                 <TitlebarItems items={titlebarItems} vertical />

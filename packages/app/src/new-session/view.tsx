@@ -41,6 +41,7 @@ import { NewSessionBranch } from "./workspace/selector"
 // import { NewSessionWordmark, type LodgerBall } from "./wordmark"
 import { KeteCliHint, KeteEmptyState, KetePanelHeader } from "@/kete/panel"
 import { KeteNewSessionLayout } from "@/kete/panel-layout" // scroll area above a pinned footer
+import { KeteModeToggle } from "@/kete/composer-controls" // the permission mode under the card
 // kete_change end
 
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
@@ -119,6 +120,7 @@ export function NewSessionView(props: {
                   <div class="relative z-10">
                     <Composer model={props.composer} />
                   </div>
+                  <div data-kete="home-controls">
                   <Show when={props.project.selected()}>
                     {(project) => (
                       <NewSessionLocation
@@ -132,6 +134,8 @@ export function NewSessionView(props: {
                       />
                     )}
                   </Show>
+                  <KeteModeToggle model={props.composer} placement="under" />
+                  </div>
                 </div>
                 <Show when={props.project.empty()}>
                   <PromptProjectAddButton controller={props.project} />

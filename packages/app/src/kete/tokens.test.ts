@@ -16,6 +16,11 @@ describe("tokens.css", () => {
     expect(match?.[1]?.toLowerCase()).toBe(brand.light.toLowerCase())
   })
 
+  test("the desktop shell tokens exist", () => {
+    expect(css).toMatch(/--kete-r-card:\s*16px;/)
+    expect(css).toMatch(/--kete-shell-font:\s*\d+px;/)
+  })
+
   test("the wordmark font is bundled, never loaded remotely", () => {
     const match = /@font-face\s*{[^}]*src:\s*url\("([^"]+)"\)/.exec(css)
     expect(match?.[1]).toBeDefined()

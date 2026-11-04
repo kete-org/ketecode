@@ -19,6 +19,7 @@ import path from "node:path"
 
 const layoutSource = fs.readFileSync(path.join(import.meta.dir, "panel-layout.tsx"), "utf8")
 const viewSource = fs.readFileSync(path.join(import.meta.dir, "../new-session/view.tsx"), "utf8")
+const composerSource = fs.readFileSync(path.join(import.meta.dir, "../composer/composer.tsx"), "utf8")
 
 describe("KeteNewSessionLayout's own structure (panel-layout.tsx)", () => {
   test("panel-scroll (children) is a sibling that comes before panel-footer (footer), both inside panel-column", () => {
@@ -54,6 +55,27 @@ describe("new-session/view.tsx's use of KeteNewSessionLayout", () => {
     const call = between(viewSource, "<KeteNewSessionLayout", "</KeteNewSessionLayout>")
     const footerProp = between(call, "footer={", "\n          >")
     expect(footerProp).toContain("<Composer model={props.composer} />")
+  })
+
+  test("the Build | Plan switch is in the shared Composer, above the card, so sessions get it too", () => {
+    const switchIndex = composerSource.indexOf("<KeteAgentSwitch")
+    expect(switchIndex).toBeGreaterThan(-1)
+    expect(switchIndex).toBeLessThan(composerSource.indexOf("<ComposerEditor"))
+    expect(viewSource).not.toContain("<KeteAgentSwitch")
+  })
+
+  test("home-controls holds the location row and the under-card mode toggle, after the composer", () => {
+    const call = between(viewSource, "<KeteNewSessionLayout", "</KeteNewSessionLayout>")
+    const controls = call.slice(call.indexOf(`data-kete="home-controls"`))
+    expect(call.indexOf("<Composer model")).toBeLessThan(call.indexOf(`data-kete="home-controls"`))
+    expect(controls).toContain("<NewSessionLocation")
+    expect(controls).toContain(`<KeteModeToggle model={props.composer} placement="under" />`)
+  })
+})
+
+describe("the home layout", () => {
+  test("panel-column carries data-kete-layout from homeLayout()", () => {
+    expect(layoutSource).toContain(`data-kete-layout={homeLayout() ? "home" : undefined}`)
   })
 })
 

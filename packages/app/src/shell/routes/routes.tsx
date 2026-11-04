@@ -1,6 +1,6 @@
 import { Route, useParams } from "@solidjs/router"
 import { createMemo, lazy, Show, Suspense, type ParentProps } from "solid-js"
-import { Home } from "@/home/route"
+import { KeteHome } from "@/kete/home" // kete_change
 import { ServerProvider } from "@/runtime/server/current"
 import { useGlobal } from "@/runtime/server/runtime"
 import { ServerConnection, useServers } from "@/runtime/server/registry"
@@ -50,7 +50,7 @@ export function preloadRoute(url: string) {
 export function AppRoutes() {
   return (
     <Route component={AppLayout}>
-      <Route path="/" component={Home} />
+      <Route path="/" component={KeteHome /* kete_change */} />
       <Route path="/settings" component={SettingsScreen} />
       <Route
         path="/server/:serverKey/session/:id"

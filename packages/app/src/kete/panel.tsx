@@ -14,6 +14,7 @@ import { KeteWordmark } from "./wordmark"
 import {
   dismissCliHintLocally,
   dismissNoticeLocally,
+  homeLayout,
   panelState,
   segments,
   tipKeys,
@@ -40,7 +41,12 @@ export function KeteEmptyState() {
   const state = panelState
   return (
     <div data-kete="empty-state">
-      <KeteMark class="kete-hero-mark" decorative />
+      <Show when={homeLayout()} fallback={<KeteMark class="kete-hero-mark" decorative />}>
+        <h1 data-kete="greeting">
+          <span>{Brand.displayName}</span>
+          <span>What should we build today?</span>
+        </h1>
+      </Show>
       <KeteLocalOffer />
       <KeteAccountPrompt />
       <Show when={tipVisible(state())}>

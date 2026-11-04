@@ -37,6 +37,11 @@
   --kete-r-container: 12px;
   --kete-r-control: 8px;
   --kete-r-inline: 4px;
+  --kete-r-card: 16px;
+
+  /* The desktop/web shell (sidebar, home): a little larger than the editor panel's text. */
+  --kete-shell-font: 14px;
+  --kete-greeting-font: 28px;
 
   --kete-ui-font: system-ui, -apple-system, "Segoe UI", sans-serif;
   --kete-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

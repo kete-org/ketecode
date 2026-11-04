@@ -36,6 +36,15 @@ describe("the web UI's default theme is Kete Code's violet", () => {
     expect(keteTheme.dark.v2Overrides?.["v2-blue-600"]).toBe(oc2.dark.v2Overrides?.["v2-blue-600"])
   })
 
+  test("the neutral surfaces are the softer violet-tinted ones in both modes", () => {
+    const light = resolveThemeVariantV2(keteTheme.light, false)
+    const dark = resolveThemeVariantV2(keteTheme.dark, true)
+    expect(light["v2-background-bg-base"]).toBe("#fbfafdff")
+    expect(light["v2-background-bg-layer-01"]).toBe("#f4f2f8ff")
+    expect(dark["v2-background-bg-base"]).toBe("#100f15ff")
+    expect(dark["v2-background-bg-layer-02"]).toBe("#211e2bff")
+  })
+
   test("the accent tokens resolve to violet, not upstream's blue", () => {
     for (const [variant, dark] of [
       [keteTheme.light, false],

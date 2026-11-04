@@ -40,12 +40,28 @@ const accents = {
   },
 } as const
 
+// Softer, violet-tinted neutral surfaces for the desktop/web shell: the same values as the chat panel's
+// `--kete-bg`/`--kete-surface`/`--kete-surface-2` (kete/tokens.css). Near-white and near-black, so text and
+// icon contrast on them stays at or above what the grey ramp gave.
+const neutrals = {
+  light: {
+    "v2-background-bg-base": "#fbfafdff",
+    "v2-background-bg-layer-01": "#f4f2f8ff",
+    "v2-background-bg-layer-02": "#ece9f3ff",
+  },
+  dark: {
+    "v2-background-bg-base": "#100f15ff",
+    "v2-background-bg-layer-01": "#17151eff",
+    "v2-background-bg-layer-02": "#211e2bff",
+  },
+} as const
+
 function violet(variant: DesktopTheme["light"], mode: "light" | "dark"): DesktopTheme["light"] {
   if (!("palette" in variant) || !variant.palette) return variant
   return {
     ...variant,
     palette: { ...variant.palette, primary: brand[mode], interactive: brand.light },
-    v2Overrides: { ...variant.v2Overrides, ...accents[mode] },
+    v2Overrides: { ...variant.v2Overrides, ...neutrals[mode], ...accents[mode] },
   }
 }
 

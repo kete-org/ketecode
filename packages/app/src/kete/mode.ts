@@ -14,6 +14,7 @@ export const LABEL = KetePermissionModes.label
 export const DESCRIPTION = KetePermissionModes.description
 
 export const PLAN_AGENT = "plan"
+const PLAN_MODE: Mode = "plan"
 const METADATA_KEY = KetePermissionModes.metadataKey
 
 /** The toggle's displayed state, from the composer's current agent and the session's metadata. */
@@ -22,9 +23,31 @@ export function derive(input: { agent?: string; metadata?: SessionMetadata; fall
   return KetePermissionModes.parse(input.metadata?.[METADATA_KEY]) ?? input.fallback ?? "default"
 }
 
-/** Cycles Default -> Auto -> Ask -> Plan -> Default. */
-export function next(mode: Mode): Mode {
-  return KetePermissionModes.next(mode)
+/** Cycles Default -> Auto -> Ask -> Plan -> Default. With `plan: false` (the desktop/web app, where Plan has its
+ *  own Build | Plan switch) it cycles Default -> Auto -> Ask -> Default, and Plan goes to Default. */
+export function next(mode: Mode, options: { plan?: boolean } = {}): Mode {
+  if (options.plan !== false) return KetePermissionModes.next(mode)
+  const modes = MODES.filter((item) => item !== PLAN_MODE)
+  return modes[(modes.indexOf(mode) + 1) % modes.length]!
+}
+
+/** The Build | Plan switch shows in the desktop/web app (not an editor panel), and only when a plan agent is offered. */
+export function agentSwitchVisible(input: { browser: boolean; planAvailable: boolean }): boolean {
+  return input.browser && input.planAvailable
+}
+
+/**
+ * What choosing Build or Plan does. Plan remembers the mode it left (`before`); Build returns to it. Choosing
+ * the side already selected does nothing (undefined).
+ */
+export function switchTarget(input: {
+  choice: "build" | "plan"
+  current: Mode
+  before: Mode
+}): { mode: Mode; before: Mode } | undefined {
+  const planning = input.current === PLAN_MODE
+  if (input.choice === "plan") return planning ? undefined : { mode: PLAN_MODE, before: input.current }
+  return planning ? { mode: input.before, before: input.before } : undefined
 }
 
 /** Merges `mode`'s permission-mode key into `metadata`, keeping every other key. */
