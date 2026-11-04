@@ -52,7 +52,7 @@ describe("kete-packaged-smoke", () => {
     expect(env.PATH).toBe("/bin")
     expect(env.HOME).toBe("/r")
     expect(env.USERPROFILE).toBe("/r")
-    for (const name of ["CONFIG", "DATA", "CACHE", "STATE"]) expect(env[`XDG_${name}_HOME`]?.startsWith("/r")).toBe(true)
+    for (const name of ["CONFIG", "DATA", "CACHE", "STATE"]) expect(env[`XDG_${name}_HOME`]?.startsWith(path.join("/r"))).toBe(true)
     expect(env.OPENCODE_DESKTOP_TEST_ROOT).toBe(path.join("/r", "app"))
     expect(registrationDir(env)).toBe(path.join("/r", "app", "state", "kete"))
   })
