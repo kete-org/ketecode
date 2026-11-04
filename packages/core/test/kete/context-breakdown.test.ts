@@ -3,7 +3,7 @@
 // when `execute` is denied, a session of another folder is refused, and nothing but sizes and names
 // leaves the service.
 import { describe, expect, test } from "bun:test"
-import { LLMClient, LanguageModel, ToolDefinition } from "@opencode/ai"
+import { LLMClient, LanguageModel, ToolDefinition } from "@opencode/ai/effect"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { Agent } from "@opencode/core/agent"
 import { Bus } from "@opencode/core/bus"

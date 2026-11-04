@@ -112,8 +112,7 @@ export const make = Effect.fn("KeteCommandShell.make")(function* () {
       config: Effect.map(config.entries(), (entries) => Config.latest(entries, "kete")),
     }
     const cwd = location.directory
-    const portable = Config.latest(yield* config.entries(), "experimental")?.portable_shell_scanner === true
-    const parsed = yield* ShellParse.scan(input.source, input.shell, cwd, { portable })
+    const parsed = yield* ShellParse.scan(input.source, input.shell, cwd)
     // A `cd` out of the workspace would need the external-directory question, which belongs to a tool
     // call; a command template doesn't get to leave the workspace.
     const directories = yield* Effect.forEach(parsed.directories, (directory) =>

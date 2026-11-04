@@ -108,8 +108,8 @@ describe("TUI folder trust", () => {
       // still reports it from before.
       await writeFile(path.join(both, "tui.ts"), "export default { changed: true }")
       const server = [
-        { source: { type: "local" as const, path: path.join(both, "server.ts") } },
-        { source: { type: "local" as const, path: path.join(globalDir, "g", "server.ts") } },
+        { source: { type: "local" as const, path: both } },
+        { source: { type: "local" as const, path: path.join(globalDir, "g") } },
         { source: { type: "package" as const, target: "some-package" } },
       ]
       const directories = [globalDir, plugins]
@@ -134,7 +134,7 @@ describe("TUI folder trust", () => {
       const now = (await KeteFolderTrustRules.targetDigest(both)) as string
       expect(await serverTargets(server, directories, async () => new Map([[both, now]]))).toEqual([both, path.join(globalDir, "g"), "some-package"])
       // A project-configured local plugin outside .kete/plugins is checked the same way.
-      const configured = [{ source: { type: "local" as const, path: path.join(tmp, "repo", "local", "server.ts") } }]
+      const configured = [{ source: { type: "local" as const, path: path.join(tmp, "repo", "local") } }]
       expect(await serverTargets(configured, directories, refuse)).toEqual([])
     } finally {
       await rm(tmp, { recursive: true, force: true })

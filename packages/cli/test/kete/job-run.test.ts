@@ -71,7 +71,7 @@ function fakeClient(options: {
     wake = undefined
   }
 
-  spyOn(sdk.event, "subscribe").mockImplementation(() => stream)
+  spyOn(sdk.event, "subscribe").mockImplementation(() => stream as never) // subscribe is generic over the requested types since v2.2
   spyOn(sdk.location, "get").mockImplementation(
     () => ok({ directory: options.locationDirectory ?? "/repo", project: { id: "abcdef1234567890", directory: "/repo", canonical: "/repo" } }) as never,
   )

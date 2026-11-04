@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect"
-import { Commands } from "../commands"
+import { Commands, Server as ServerFlag, Standalone as StandaloneFlag } from "../commands" // kete_change: the global server flags, for the folder-trust check
 import { Runtime } from "../../framework/runtime"
 import { ServerConnection } from "../../services/server-connection"
 import * as KetePermissionMode from "../../kete/permission-mode" // kete_change
@@ -9,24 +9,33 @@ import { KeteJobProjectConfig } from "../../kete/job-project-config" // kete_cha
 
 export default Runtime.handler(Commands.commands.run, (input) =>
   Effect.gen(function* () {
-    const { runNonInteractive } = yield* Effect.promise(() => import("../../run/run"))
+    const { reportRunError, runNonInteractive } = yield* Effect.promise(() => import("../../run/run"))
     // kete_change: --auto is the "auto" permission mode; --dangerously-skip-permissions is the bypass
     const permissionMode = yield* Effect.try({ try: () => KetePermissionMode.fromFlags(input), catch: (error) => (error instanceof Error ? error : new Error(String(error))) })
     const addDirs = yield* Effect.try({ try: () => KeteAddDirCli.prepare(input.addDir), catch: (error) => (error instanceof Error ? error : new Error(String(error))) }) // kete_change: --add-dir folders as absolute paths; refused in a job
     const separator = process.argv.indexOf("--", 2)
-    // kete_change start: --trust-project-config trusts the folder for this run, on a private server (kete/folder-trust.ts)
+    // kete_change start: --trust-project-config trusts the folder for this run, on a private server (kete/folder-trust.ts).
+    // --server and --standalone are global flags since v2.2, so they are read here to check them against the trust.
     const trustProjectConfig = KeteJobProjectConfig.trusted(input.trustProjectConfig, process.env)
+    const serverFlag = yield* Effect.serviceOption(ServerFlag).pipe(Effect.map(Option.flatten))
+    const standaloneFlag = yield* Effect.serviceOption(StandaloneFlag)
     const trust = KeteFolderTrustCli.connection(
-      { server: Option.getOrUndefined(input.server), standalone: input.standalone },
+      { server: Option.getOrUndefined(serverFlag), standalone: Option.getOrElse(standaloneFlag, () => false) },
       trustProjectConfig,
       "run",
     )
     if (!trust.ok) return yield* Effect.fail(new Error(trust.message))
     // kete_change end
+    // kete_change start: the trust check's server choice
     const server = yield* ServerConnection.resolve({
-      server: trust.args.server, // kete_change
-      standalone: trust.args.standalone, // kete_change
-    })
+      server: trust.args.server,
+      standalone: trust.args.standalone,
+    }).pipe(
+      // kete_change end
+      Effect.tapError((error) => Effect.logError("run could not resolve its server", { cause: error })),
+      Effect.catch((error) => Effect.sync(() => reportRunError(input, error.message))),
+    )
+    if (!server) return
     yield* Effect.promise(() =>
       runNonInteractive({
         server,

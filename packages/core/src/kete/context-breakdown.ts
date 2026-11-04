@@ -186,7 +186,7 @@ export const layer = Layer.effect(
       if (last) {
         if (last.auto > 0) add("memory", item("auto memory (last request)", last.auto))
         const base = categories.get("system")?.[0]?.characters ?? 0
-        const extra = last.total - last.auto - base - (history?.initial.length ?? 0)
+        const extra = last.total - last.auto - base - (history ? Instructions.join(history.initial).length : 0)
         if (extra > 0) add("other", item("added by plugins at the last request", extra))
       }
 
@@ -198,7 +198,7 @@ export const layer = Layer.effect(
               agent: selection.agent.info,
               model,
               tools: selection.tools,
-              initial: "",
+              initial: [],
               messages,
             }).messages
           : messages

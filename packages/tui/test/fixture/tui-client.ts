@@ -160,6 +160,11 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       })
     if (url.pathname === "/api/reference")
       return json({ location: { directory, project: { id: "proj_test", directory, canonical: directory } }, data: [] })
+    if (url.pathname === "/api/experimental/usage/limits")
+      return json({
+        location: { directory, project: { id: "proj_test", directory, canonical: directory } },
+        data: null,
+      })
     if (url.pathname === "/api/websearch/provider") {
       return json({ location: { directory, project: { id: "proj_test", directory, canonical: directory } }, data: [] })
     }
@@ -174,6 +179,8 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/rpc/kete.doctor/check") return json({ output: { files: [], trust: { state: "clear", held: [], heldCount: 0 } } }) // kete_change: /doctor
     if (url.pathname === "/api/rpc/kete.context/get") return json({ output: { type: "refused", reason: "Fixture session." } }) // kete_change: /context
     if (url.pathname === "/api/model/default") return json({ location: { directory: "/" }, data: null }) // kete_change: /doctor
+    // The prompt footer reads the routed session's goal from the goal plugin's RPC; no fixture sets one.
+    if (url.pathname === "/api/rpc/opencode.goal/get") return json({ output: null })
     throw new Error(`unexpected request: ${url.pathname}`)
   }
   fetch.preconnect = () => {}

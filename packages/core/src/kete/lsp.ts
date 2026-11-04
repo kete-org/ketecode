@@ -39,7 +39,7 @@ import { FileAccess } from "../file-access.js"
 import { Location } from "../location.js"
 import { Shell } from "../shell.js"
 import type { Agent } from "../agent.js"
-import { ManagedPolicy } from "../managed-policy.js"
+import { ConfigIntegration } from "../config/integration.js"
 import { Permission } from "../permission.js"
 import type { SessionSchema } from "../session/schema.js"
 import { Wildcard } from "../util/wildcard.js"
@@ -216,7 +216,6 @@ export function make(deps: Deps = {}) {
       const config = yield* Config.Service
       const access = yield* FileAccess.Service
       const global = yield* Global.Service
-      const managed = yield* ManagedPolicy.Service
       const pluginScope = yield* Effect.scope
       const workspace = location.project.directory ?? location.directory
       const lookup = deps.find ?? ((command: string) => KeteLspExecutable.find(command, { env, workspace }))
@@ -265,7 +264,8 @@ export function make(deps: Deps = {}) {
             const optedIn = user.some((entry) => entry.type === "document" && entry.info.kete?.lsp?.unsandboxed === true)
             const policies = [
               ...user.flatMap((entry) => (entry.type === "document" ? (entry.info.policies ?? []) : [])),
-              ...managed.current().statements,
+              // An organization's statements arrive as integration documents (the OpenCode Console's, upstream v2.2)
+              ...entries.flatMap((entry) => (entry instanceof ConfigIntegration.Document ? (entry.info.policies ?? []) : [])),
             ]
             if (!unsandboxedAllowed({ mode: settings.mode, optedIn, policies })) {
               await Effect.runPromise(

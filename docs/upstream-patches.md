@@ -233,7 +233,7 @@ wordmark until Kete Code has a designed logo.
 | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `app/src/runtime/i18n/language.tsx`                                                                                      | `brandDictionary` applied to the base and loaded dictionaries                                    |
 | `app/index.html`                                                                                                         | Title "Kete Code"; placeholder SVG favicon                                                       |
-| `app/src/new-session/wordmark.tsx`, `app/src/servers/connect/screen.tsx`                                                 | Kete wordmark in place of OpenCode's; `kete pair` in the pairing hint                            |
+| `app/src/servers/connect/screen.tsx`                                                 | Kete wordmark in place of OpenCode's; `kete pair` in the pairing hint (`new-session/wordmark.tsx` is upstream's since v2.2.5) |
 | `app/src/shell/titlebar/windows-menu.tsx`                                                                                | Desktop menu heading                                                                             |
 | `app/src/settings/about/about.tsx`                                                                                       | The opencode.ai website link is shown only once `Brand.urls.docs` exists                         |
 | `app/vite.config.ts`, `app/src/entry.tsx`                                                                                | About shows the Kete release version (`OPENCODE_VERSION` from the release build)                 |
@@ -292,8 +292,8 @@ extension's frame.
 | `server/src/process.ts`                                 | `KeteLocalGuard.middleware` wraps the served app, outside CORS and auth                           |
 | `app/src/app.tsx`                                       | Mounts `KeteVSCodeShell` in the router root                                                        |
 | `app/src/session/route.tsx`, `app/src/new-session/route.tsx` | Mount `KeteVSCodeBridge` inside the composer providers                                        |
-| `gui-extensions/src/review/panel.tsx`                   | Selecting a file in the review panel also dispatches `kete:open-diff` (`gui-extensions/src/kete/contract.ts`; extensions import each other only through a contract); `KeteVSCodeShell` listens and calls `openDiff`. Upstream moved the review into `gui-extensions` in v2.0.22, which cannot import the app, hence the window event |
-| `gui-extensions/package.json`                           | Exports `./kete/open-diff` (the file `src/kete/contract.ts`) so the app imports the event name instead of repeating it |
+| `gui-plugins/src/review/panel.tsx`                      | Selecting a file in the review panel also dispatches `kete:open-diff` (`gui-plugins/src/kete/contract.ts`; extensions import each other only through a contract); `KeteVSCodeShell` listens and calls `openDiff`. Upstream moved the review into `gui-extensions` in v2.0.22 (renamed `gui-plugins` in v2.2), which cannot import the app, hence the window event |
+| `gui-plugins/package.json`                              | Exports `./kete/open-diff` (the file `src/kete/contract.ts`) so the app imports the event name instead of repeating it |
 
 **Behaviour change.** Upstream accepted cross-origin requests from any `http://localhost:*` or
 `127.0.0.1:*` page and from `https://*.opencode.ai` (still password-protected). Kete Code accepts
@@ -1488,7 +1488,7 @@ Patches that changed shape in the v2.0.16 → v2.1.4 sync, beyond the rows updat
 | `core/src/config/normalize.ts` | Import; both policy lists (`experimental.policies`, top-level `policies`) go through `KetePolicyCompat.upgrade` before decoding | v2.1.4 renamed the action `permission` to `tool.use` and drops any other action, which would turn Kete's documented `hooks:*`/`sandbox_off:*` denies (and users' own) off. **Sync checklist:** if `decodeList` or `ConfigPolicy.Info` changes, keep both calls |
 | `core/test/config/normalization.test.ts` | The "drops unsupported policy actions" case expects `permission` to read as `tool.use`; only the unknown action drops | the test now states Kete's behaviour (kete/policy-compat.ts) |
 | `core/src/config/plugin/instruction.ts` | Configured `instructions`: URLs that offline mode blocks aren't fetched (`KeteOffline.blocks`); a project-relative entry's matches go through `KeteInstructionFiles.allowed` (no symlink out of the project) | v2.1.4 started loading `instructions`; a project's entries that leave it (URLs, absolute, `~`, `..`) also wait for folder trust (`instructionLeaves`, util/src/kete/folder-trust.ts) |
-| `core/src/plugin/provider/opencode.ts` | In offline mode the kept Console config drops `voice` | the snapshot is kept as is when offline, and v2.1.4's hosted voice would still reach the Console |
+| `core/src/plugin/provider/opencode.ts` | In offline mode the kept Console config drops `voice` (v2.2.5: voice moved to `core/src/voice.ts`; see that sync) | the snapshot is kept as is when offline, and v2.1.4's hosted voice would still reach the Console |
 | `core/test/plugin/provider-opencode.test.ts` | Marked test: offline mode withdraws hosted voice | covers the row above |
 | `server/src/handlers/server.ts` | Import; the expired-pairing page names `${Brand.cliName} pair` | new upstream browser text the leak check doesn't scan |
 | `cli/src/commands/handlers/mcp/auth.ts`, `core/src/plugin/provider/chatgpt.ts`, `tui/src/config/index.tsx` | New upstream strings through `Brand` (the `kete mcp add` hint and config file name, the name ChatGPT shows for the connection, the release-highlights setting) | user-facing text says Kete Code |
@@ -1526,3 +1526,45 @@ small edits where no extension point exists.
 When syncing upstream: check that `Instructions.combine` still keeps each source's `key`, that `SessionHistory.preview`
 is still read-only, and that `Tool.snapshot` still drops Code Mode when `execute` is wholly denied.
 
+## Upstream v2.2.5 sync (upstream/v2.2.5)
+
+Patches that changed shape in the v2.1.4 → v2.2.5 sync, beyond the rows updated above.
+
+| File | Change | Why |
+| --- | --- | --- |
+| `cli/src/services/server-connection.ts`, `cli/src/commands/handlers/run.ts`, `cli/src/commands/commands.ts` | Offline mode and `--trust-project-config` read `--server`/`--standalone` from upstream's new global flags (`Server`, `Standalone`), not only the arguments; `run` keeps upstream's error reporting | v2.2 made both global flags, so a flag given before the subcommand would otherwise bypass the offline refusal and the run-trust check |
+| `core/src/file-access.ts` | `FSUtil.Service` kept (with its node) for `KeteRealPath`; the boundary type comes from upstream's `Environment.typeFollowing` on the real path | upstream moved this file to the `Environment` file service |
+| `core/src/config.ts` | Upstream's integration documents and its `integration.use` lockdown run inside Kete's folder-trust `assemble`, in upstream's order | v2.2 adds integration documents to the config layers; the gate still wraps every layer |
+| `core/src/session.ts` | An explicit location wins over the parent's, canonicalised as upstream now does | both kept |
+| `core/src/shell/parse.ts` | Upstream's rewritten scanner; `KeteShellDirectory`'s implicit directories after each directory command (after a `builtin`/`command` wrapper, only the `cd` words) | v2.2 removed the legacy scanner and the `portable_shell_scanner` flag |
+| `core/src/tool/plugin/webfetch.ts` | Upstream's new redirect-following `execute` commented out; `MAX_REDIRECTS` is `KeteWebRedirect.MAX_REDIRECTS`; `KeteWebRedirect.follow` now also gets upstream's per-hop deny check (`assertNotDenied`) | upstream now checks every hop against the rules but never asks; Kete keeps both: every hop checked, another origin asked |
+| `core/src/kete/shell-directory.ts` | A `$` or backtick the tokenizer read as literal (single quotes, `\$`) is a folder name, not "anywhere" | upstream's new tests showed the over-ask (`cd '../$literal'`) |
+| `core/src/plugin/provider/opencode.ts` | Offline mode keeps the last Console config and makes no request, on upstream's new `remote` snapshot; voice moved out of this file | upstream's refactor |
+| `core/src/voice.ts` | Import; offline mode never starts OpenCode's hosted GPT-Live | hosted voice moved here from the Console provider in v2.2 |
+| `core/test/voice.test.ts`, `core/test/plugin/provider-opencode.test.ts` | Marked tests: offline voice refusal; offline mode loads no Console config | replace the v2.1.4 voice test, whose code moved |
+| `core/src/kete/hooks.ts`, `core/src/kete/lsp.ts` | An organization's policies come from integration documents in the config entries | v2.2 removed `ManagedPolicy.Service`; the Console's statements now arrive as `ConfigIntegration.Document`s |
+| `core/src/artifact.ts`, `server/src/handlers/persistent-pty.ts`, `core/src/plugin/provider/claude-agent/**` | New upstream strings (including the Claude Code harness's system prompt and errors) through `Brand.displayName` | the leak check |
+| `app/src/new-session/view.tsx` | Upstream's view with Kete's panel: `KeteNewSessionLayout`'s footer holds the composer and upstream's new `NewSessionLocation`; the wordmark, its brick breaker and their imports are commented out | v2.2 replaced the project/workspace selectors Kete's footer used |
+| `app/src/new-session/wordmark.tsx` | Upstream's, unpatched | Kete's panel doesn't render it any more |
+| `app/src/providers/models/select-dialog.tsx` | Kete's local-model badges, group titles and unreachable servers on upstream's rewritten dialog | upstream rewrite |
+| `app/src/providers/connect/dialog.tsx` | `POPULAR` leaves out OpenCode Zen/Go (ADR 0003), as the TUI does | upstream replaced the `featured` list and the "Recommended" tag |
+| `app/src/runtime/i18n/language.tsx` | `brandDictionary` on upstream's flat dictionaries | upstream stopped flattening |
+| `app/src/kete/vscode-host.tsx` | `projects.add` (registers the folder and marks it used) instead of `open` + `touch` | upstream removed `open` |
+| `ui/src/theme/context.tsx` | `oc2Theme` is exported for `ui/src/theme/kete/theme.test.ts` | upstream deleted `default-themes.ts`, the registry the test checked |
+| `tui/src/kete/folder-trust.ts` | A server-reported local plugin is checked and loaded by its own path | the server now reports the plugin directory itself (v2.2 GUI plugins) |
+| `tui/src/component/prompt/metadata.tsx`, `tui/src/component/dialog-model.tsx`, `tui/src/context/theme.tsx` | Kete's fields beside upstream's new `limit`, `usage` and `newDesigns()` arguments | both kept |
+| `.github/CODEOWNERS` | Upstream's new owner lines kept, commented out | Kete's maintainers own the repository |
+| `.github/workflows/{check-bot-scope,check-process-daemon,release-dry-run,release-process-daemon}.yml` | `pull_request` triggers commented out (`release-dry-run` becomes manual only) | new upstream workflows start enabled and can only be disabled once they are on `main`; without this the sync PR itself would have run them, upstream's release pipeline included |
+| `.github/workflows/{check-test,check-nix,triage-contributor,triage-pr-standards,triage-close-issues,triage-close-prs,triage-compliance-close,nightly-beta}.yml` | Manual only (`workflow_dispatch`); the original `on:` block kept as a comment | renamed in v2.2 (so the sync report's new-workflow list missed them): `pull_request_target` would run for fork PRs with secrets once on `main`, and the schedules would close issues and PRs. Disable all 15 new workflow files after merging |
+| `packages/kete-tools/leak-allowlist.txt` | OpenCode Console, OpenCode Go and hosted GPT-Live names in `console-access.ts`, `usage-limits.ts`, `voice.ts`, `tui/src/component/usage.tsx` | those hosted services' product names (opt-in) |
+
+New upstream tests that assume upstream's narrower `cd` handling expect Kete's extra directories (home for a bare `cd`, the
+root for `cd -`, `~+`/`~N`/`~user`, globs, braces and variables), marked: `core/test/shell-parse.test.ts`,
+`core/test/shell-parse-compatibility.test.ts`. New tests that write `opencode.json` or assert OpenCode names use `Brand`:
+`core/test/config/config.test.ts`, `server/test/schedule.test.ts`, `server/test/persistent-pty.test.ts`,
+`cli/test/server-connection.test.ts`, `core/test/plugin/provider/claude-agent/claude/tools.test.ts`. Job mode's
+inventories classify upstream's new file-access and spawn sites (`core/test/kete/job-{fs,spawn}-sites.test.ts`).
+
+Tests that assert upstream's removed code were retargeted, not dropped: the legacy shell scanner's cases run once
+(`core/test/kete/shell-directory.test.ts`); the Vercel provider plugin was removed upstream, so its attribution case
+went with it (`core/test/kete/attribution.test.ts`).

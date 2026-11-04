@@ -5,7 +5,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { AIError } from "@opencode/ai"
+import { AIError } from "@opencode/ai/effect"
 import { RequestExecutor } from "@opencode/ai/route"
 import { KeteJobRequest } from "@opencode/core/kete/job-request"
 import { it } from "../lib/effect"

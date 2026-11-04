@@ -3,7 +3,7 @@ export * as WebSearchTool from "./websearch.js"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { Brand } from "@opencode/util/kete/brand" // kete_change
 import type { SessionHooks } from "@opencode/plugin/effect/session"
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import { Effect, Schema, Semaphore } from "effect"
 import { HttpClientError } from "effect/http"
 import { Form } from "../../form.js"

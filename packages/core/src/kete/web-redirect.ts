@@ -1,7 +1,8 @@
 // Web fetch redirects (PR #20 review): `fetch` follows redirects on its own, so an approved URL could
 // lead to content from any other site without asking. The web fetch tool now fetches with
-// `redirect: "manual"` and follows redirects here: a hop to another origin is asked for (like a new
-// fetch) before it is requested; same-origin hops aren't. At most `MAX_REDIRECTS` hops, http(s) only.
+// `redirect: "manual"` and follows redirects here: every hop is checked against the deny rules (as
+// upstream v2.2 does), and a hop to another origin is also asked for (like a new fetch) before it is
+// requested; same-origin hops aren't asked. At most `MAX_REDIRECTS` hops, http(s) only.
 
 export * as KeteWebRedirect from "./web-redirect.js"
 
@@ -16,14 +17,16 @@ interface Response {
   readonly headers: Readonly<Record<string, string | undefined>>
 }
 
-export const follow = <R extends Response, E1, E2, Q1, Q2>(input: {
+export const follow = <R extends Response, E1, E2, Q1, Q2, E3 = never, Q3 = never>(input: {
   readonly url: string
   readonly fetch: (url: string) => Effect.Effect<R, E1, Q1>
+  /** Refuses a hop the rules deny, without asking; runs before `approve`. */
+  readonly check?: (url: string) => Effect.Effect<void, E3, Q3>
   /** Asks permission for a URL on an origin not approved yet. */
   readonly approve: (url: string) => Effect.Effect<void, E2, Q2>
   /** Releases a redirect response's body (bounded read or cancel); failures are ignored. */
   readonly discard?: (response: R) => Effect.Effect<unknown, unknown, Q1>
-}): Effect.Effect<R, E1 | E2 | RedirectError, Q1 | Q2> =>
+}): Effect.Effect<R, E1 | E2 | E3 | RedirectError, Q1 | Q2 | Q3> =>
   Effect.gen(function* () {
     const approved = new Set([new URL(input.url).origin])
     let url = input.url
@@ -39,6 +42,7 @@ export const follow = <R extends Response, E1, E2, Q1, Q2>(input: {
       })
       if (next.protocol !== "http:" && next.protocol !== "https:")
         return yield* Effect.fail(new RedirectError(`Redirect to a non-HTTP URL: ${next.protocol}`))
+      if (input.check) yield* input.check(next.toString())
       if (!approved.has(next.origin)) {
         yield* input.approve(next.toString())
         approved.add(next.origin)

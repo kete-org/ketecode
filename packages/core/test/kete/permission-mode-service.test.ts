@@ -184,8 +184,10 @@ describe("KetePermissionMode with the permission service", () => {
       yield* setup({ rules: upstreamDefault })
       const command = "cd && cat Documents/secret.txt"
       const resources = yield* parsed(command)
-      expect(resources).toEqual(["cat Documents/secret.txt"])
-      expect(yield* ask("shell", resources)).toBe("allow")
+      // Since upstream v2.2 an unresolved `cd` is a resource of its own, which upstream's rules ask about too.
+      expect(resources).toEqual(["cd", "cat Documents/secret.txt"])
+      expect(yield* ask("shell", resources)).toBe("ask")
+      expect(yield* ask("shell", ["cat Documents/secret.txt"])).toBe("allow")
       expect(yield* ask("shell", resources, { command })).toBe("ask")
     }),
   )

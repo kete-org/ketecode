@@ -3,6 +3,7 @@ import PromptBtw from "../feature-plugins/prompt/btw"
 import PromptFooter from "../feature-plugins/prompt/footer"
 import SidebarContext from "../feature-plugins/sidebar/context"
 import SidebarFooter from "../feature-plugins/sidebar/footer"
+import SidebarLimit from "../feature-plugins/sidebar/limit"
 import SidebarMcp from "../feature-plugins/sidebar/mcp"
 import KeteBalance from "../kete/balance" // kete_change
 import KeteLocalStatus from "../kete/local-status" // kete_change
@@ -28,6 +29,7 @@ export const builtins = [
   PromptFooter,
   PromptBtw,
   SidebarContext,
+  SidebarLimit,
   KeteBalance, // kete_change: Kete credit balance under the session context
   KeteLocalStatus, // kete_change: "Offline" footer indicator
   KeteSandboxStatus, // kete_change: "Unsandboxed" footer warning
