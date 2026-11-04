@@ -311,6 +311,7 @@ export function readTree(cwd: string, ref: string, roots: readonly string[] = en
  * workflow in the repository settings; a newly added file starts out enabled.
  */
 export function addedWorkflows(cwd: string, from: string, to: string): string[] {
-  const out = git(cwd, "diff", "--name-only", "--diff-filter=A", from, to, "--", ".github/workflows")
+  // --no-renames: a renamed workflow is a new path, and GitHub starts a new path enabled (v2.2.5 renamed eight).
+  const out = git(cwd, "diff", "--name-only", "--no-renames", "--diff-filter=A", from, to, "--", ".github/workflows")
   return out ? out.split("\n") : []
 }

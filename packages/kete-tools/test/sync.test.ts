@@ -5,7 +5,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { runChecks } from "../src/check"
-import { git, SyncError } from "../src/lib"
+import { addedWorkflows, git, SyncError } from "../src/lib"
 import { abort, readState, resolveVersionHunks, sync, type SyncOptions } from "../src/sync"
 
 const roots: string[] = []
@@ -136,6 +136,21 @@ describe("sync", () => {
     const { kete } = fixture()
     write(kete, { "packages/core/src/other.ts": "dirty\n" })
     expect(() => sync({ cwd: kete, version: "v1.1.0", ...quiet })).toThrow(/uncommitted/)
+  })
+
+  test("lists workflows that upstream renamed: a new path starts enabled too", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "kete-sync-"))
+    roots.push(root)
+    git(root, "init", "-q")
+    commit(root, "v1", { ".github/workflows/close-issues.yml": "on: schedule\n", "README.md": "x\n" })
+    git(root, "tag", "v1")
+    git(root, "mv", ".github/workflows/close-issues.yml", ".github/workflows/triage-close-issues.yml")
+    commit(root, "v2", { ".github/workflows/brand-new.yml": "on: push\n" })
+    git(root, "tag", "v2")
+    expect(addedWorkflows(root, "v1", "v2").sort()).toEqual([
+      ".github/workflows/brand-new.yml",
+      ".github/workflows/triage-close-issues.yml",
+    ])
   })
 
   test("lists workflows that upstream added, which start enabled", () => {
