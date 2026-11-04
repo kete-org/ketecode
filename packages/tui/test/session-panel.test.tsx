@@ -511,10 +511,11 @@ test("disabling the registered diff plugin closes its open panel and removes its
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("Plugins") && frame.includes("show internal"))
   setup.mockInput.pressKey("a", { ctrl: true })
-  await setup.waitForFrame((frame) => frame.includes("opencode.diffs"))
   await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof InputRenderable)
   await setup.mockInput.typeText("opencode.diffs")
   await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "opencode.diffs")
+  // kete_change: look for the row after filtering; Kete's builtin plugins push it below the fold
+  await setup.waitForFrame((frame) => frame.includes("opencode.diffs"))
   await setup.flush()
   setup.mockInput.pressEnter()
   await setup.waitFor(() => !setup.renderer.root.findDescendantById("session-panel"))

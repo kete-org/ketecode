@@ -63,9 +63,9 @@ Goal: lead on context efficiency and safe autonomy, the any-model advantage.
 
 | # | Item | Source | Status | Size | Upstream edits |
 |---|---|---|---|---|---|
-| B1 | **Load MCP tools only when needed**: send tool names, fetch schemas on demand (tool search) | Claude Code | *new* | L | tool registry |
+| B1 | **Load MCP tools only when needed**: send tool names, fetch schemas on demand (tool search) | Claude Code | done upstream (v2.1.4 Code Mode: MCP tools default to `codemode`, sent as one `execute` tool plus a catalog of about 2,000 tokens with `search` for the rest; `packages/core/src/tool.ts`, `codemode/catalog.ts`) | — | none |
 | B2 | **`/context` breakdown**: system prompt, tools, MCP, memory files, messages | Claude Code | *new* | M | none |
-| B3 | **Prompt caching for Anthropic models**: verify what upstream's provider adapters do; add cache breakpoints if missing (gateway and BYOK) | Claude Code | *new* | S–M | provider adapter |
+| B3 | **Prompt caching for Anthropic models**: verify what upstream's provider adapters do; add cache breakpoints if missing (gateway and BYOK) | Claude Code | done upstream (v2.1.4 sync); local gateway check passed 2026-10-29 (4 stable breakpoints across turns); live cache-read check pending a Claude model on the gateway | — | none |
 | B4 | **Plan approval**: Plan mode ends with a plan the user approves, then switches to Accept-edits or Default | Claude Code | *new* | M | plan agent |
 | B5 | **More hook events**: before compaction, subagent stop | Claude Code | *new* | S | none |
 | B6 | **`@`-mention MCP resources** in the prompt | Claude Code | *new* | S | autocomplete |
@@ -112,7 +112,7 @@ work (A5, D2, E4's marketplace side) runs alongside.
 2. **Milestone A**: A16 (local-build crash) first, since it blocks testing local builds; then A1 (status
    line), because A4, B2 and the mode label build on it; then A10 (folder trust), a security gap; then
    the rest.
-3. **B3 and B1** next. Prompt caching is cheap and cuts cost at once; lazy MCP tools is the largest
+3. **B3 and B1** next (both covered by upstream as of v2.1.4; see the table). Prompt caching is cheap and cuts cost at once; lazy MCP tools is the largest
    context win. Then B2, B4, and the small B items.
 4. **Milestone C**, then **D4/D5**, then Wave 2's larger items (D1–D3).
 5. **E3, E4**, then Wave 4.

@@ -132,6 +132,7 @@ import { Project } from "../project.js" // kete_change
 import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
 import { KeteFolderTrustRpcPlugin } from "../kete/folder-trust/rpc.js" // kete_change
 import { KeteDoctor } from "../kete/doctor.js" // kete_change
+import { KeteContextBreakdown } from "../kete/context-breakdown.js" // kete_change
 import { KeteGitCommands } from "../kete/git-commands.js" // kete_change
 import { KeteAutoMemory } from "../kete/auto-memory.js" // kete_change
 import { KeteMemoryFiles } from "../kete/memory-files.js" // kete_change
@@ -178,6 +179,7 @@ const services = [
   PermissionSaved.Service, // kete_change: KetePermissionCeiling
   Project.Service, // kete_change: KeteWorktrees (the worktree setup script)
   KeteFolderTrust.Service, // kete_change: ConfigAgentPlugin (an untrusted folder's agent permission rules)
+  KeteContextBreakdown.Service, // kete_change: KeteContextBreakdown.Plugin (/context)
   Form.Service,
   ReadToolFileSystem.Service,
   Reference.Service,
@@ -237,6 +239,7 @@ export const requirements = LayerNode.group([
   PermissionSaved.node, // kete_change: KetePermissionCeiling
   Project.node, // kete_change: KeteWorktrees (the worktree setup script)
   KeteFolderTrust.node, // kete_change: ConfigAgentPlugin (an untrusted folder's agent permission rules)
+  KeteContextBreakdown.node, // kete_change: KeteContextBreakdown.Plugin (/context)
   Form.node,
   ReadToolFileSystem.node,
   Reference.node,
@@ -383,6 +386,8 @@ const post = [
   KeteUnattended.Plugin,
   // kete_change: after every other hook: marks a shell request a person will approve (network in the OS sandbox); see kete/sandbox.ts
   KeteSandbox.ApprovalPlugin,
+  // kete_change: last, so its `context` hook sees what every other hook added; the `kete.context` RPC (/context); see kete/context-breakdown.ts
+  KeteContextBreakdown.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 // Repository config must not switch off policy enforcement or the Console connection that delivers

@@ -52,6 +52,7 @@ by feature — the best seam map), `docs/upstream-sync.md`, `docs/release.md`, `
 | hooks | config shell hooks (`kete.hooks`): events, trust for project hooks, policy, job-mode exclusion |
 | lsp | language server diagnostics after edits: `lsp` config, sandboxed servers, report |
 | todo | the session task list: `todowrite` tool, `kete.todo` RPC, TUI sidebar/footer, web dock |
+| context-breakdown | `/context`: the `kete.context` RPC sizing a session's request (system, tools, Code Mode, MCP, memory, skills, messages), hidden MCP tools, the TUI dialog |
 | config-kete | the `kete` config section, discovery, adding a key end to end |
 | mcp-presets | built-in MCP presets (`kete mcp add harness`, `kete mcp add slack`, `kete mcp add playwright`, `kete mcp presets`): catalogue, stored MCP secrets (`{kete-secret:mcp:<name>}`), permission rules, offline skip |
 | instructions | how `AGENTS.md` instructions are discovered and injected (global, project walk-up, nested after a read); no `CLAUDE.md`; the `InstructionDiscovery` seam |
