@@ -173,6 +173,21 @@ function kill(pid: number, signal: NodeJS.Signals) {
   }
 }
 
+/** On failure: run the CLI the app staged once, in the same env, and return what it prints (the app only logs its start). */
+async function diagnoseRuntime(testRoot: string, env: Env) {
+  const cli = path.join(testRoot, "desktop", "cli")
+  const stage = (await fs.readdir(cli).catch(() => []))[0]
+  if (stage === undefined) return "no staged CLI"
+  const exe = path.join(cli, stage, process.platform === "win32" ? "opencode-cli.exe" : "opencode-cli")
+  // The XDG dirs the app gives its runtime (main/lifecycle/configure.ts `createTestRoot`).
+  const dirs = Object.fromEntries(["data", "config", "cache", "state"].map((d) => [`XDG_${d.toUpperCase()}_HOME`, path.join(testRoot, d)]))
+  const child = Bun.spawn([exe, "serve", "--service"], { env: { ...env, ...dirs } as Record<string, string>, stdout: "pipe", stderr: "pipe" })
+  const timer = setTimeout(() => child.kill(), 15_000)
+  const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
+  clearTimeout(timer)
+  return `${exe} serve --service exited ${code}\n${out}${err}`.slice(-8_000)
+}
+
 async function taskkill(pid: number) {
   await Bun.spawn(["taskkill", "/PID", String(pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" }).exited
 }
@@ -267,6 +282,7 @@ async function main() {
     )
     if (left?.length) failure ??= new Error(`left a process behind: ${left.join(", ")}`)
     if (failure) {
+      if (appProcess) console.error("--- runtime run directly\n" + redact(await diagnoseRuntime(env.OPENCODE_DESKTOP_TEST_ROOT ?? root, env), secrets))
       for await (const log of new Bun.Glob("**/*.log").scan({ cwd: root, absolute: true })) {
         const text = await Bun.file(log).text().catch(() => "")
         console.error(`--- ${log}\n` + redact(text.split("\n").slice(-200).join("\n"), secrets))
