@@ -1,11 +1,12 @@
 export * as DesktopCli from "./desktop-cli"
 
-import { execFile, spawn } from "node:child_process"
+import { execFile } from "node:child_process" // kete_change: spawn only ran the installer
 import { existsSync, readFileSync } from "node:fs"
 import { promisify } from "node:util"
 import { app } from "electron"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { Context, Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
-import installer from "../../../../../install?raw"
+// import installer from "../../../../../install?raw" // kete_change: upstream's installer isn't bundled
 import { DesktopPaths } from "../paths"
 import { BUNDLED_CLI_VERSION_KEY } from "../storage/keys"
 import { getStore } from "../storage/store"
@@ -29,7 +30,7 @@ export class Service extends Context.Service<Service, Interface>()("opencode/des
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const path = yield* Path.Path
+    // const path = yield* Path.Path // kete_change: only the installer's path used it
 
     const resolve = yield* Effect.cached(
       make().pipe(Effect.provide(yield* Effect.context<FileSystem.FileSystem | Path.Path>()), Effect.orDie),
@@ -40,10 +41,18 @@ export const layer = Layer.effect(
       const cli = yield* resolve
 
       if (!cli.binary) return yield* Effect.fail(new Error("Bundled CLI executable is unavailable"))
-      const home = app.getPath("home")
-      yield* runInstaller(cli.binary, home)
-
-      return path.join(home, ".opencode", "bin", "opencode")
+      // kete_change start: upstream's installer puts OpenCode's `opencode` on the PATH; Kete Code's CLI comes from
+      // its own package managers (ADR 0009) until the desktop app installs it itself
+      return yield* Effect.fail(
+        new Error(
+          `Install the ${Brand.cliName} command with \`npm install -g ${Brand.distribution.npmPackage}\` or \`brew install ${Brand.distribution.homebrewFormula}\`.`,
+        ),
+      )
+      // const home = app.getPath("home")
+      // yield* runInstaller(cli.binary, home)
+      //
+      // return path.join(home, ".opencode", "bin", "opencode")
+      // kete_change end
     })
 
     return Service.of({ resolve, install })
@@ -186,27 +195,29 @@ const run = Effect.fn("DesktopCli.run")(function* (binary: string, args: string[
   return stdout
 })
 
-const runInstaller = Effect.fn("DesktopCli.installForUser")(function* (binary: string, home: string) {
-  yield* Effect.tryPromise({
-    try: () =>
-      new Promise<void>((resolve, reject) => {
-        const child = spawn("/bin/bash", ["-s", "--", "--binary", binary], {
-          env: { ...process.env, HOME: home },
-          stdio: ["pipe", "ignore", "pipe"],
-        })
-
-        let stderr = ""
-        child.stderr.on("data", (chunk) => (stderr += chunk))
-        child.on("error", reject)
-        child.on("close", (code) => {
-          if (code === 0) return resolve()
-          reject(new Error(stderr.trim() || `CLI installer exited with code ${code}`))
-        })
-        child.stdin.end(installer)
-      }),
-    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-  })
-})
+// kete_change start: upstream's installer isn't run (see `install` above)
+// const runInstaller = Effect.fn("DesktopCli.installForUser")(function* (binary: string, home: string) {
+//   yield* Effect.tryPromise({
+//     try: () =>
+//       new Promise<void>((resolve, reject) => {
+//         const child = spawn("/bin/bash", ["-s", "--", "--binary", binary], {
+//           env: { ...process.env, HOME: home },
+//           stdio: ["pipe", "ignore", "pipe"],
+//         })
+//
+//         let stderr = ""
+//         child.stderr.on("data", (chunk) => (stderr += chunk))
+//         child.on("error", reject)
+//         child.on("close", (code) => {
+//           if (code === 0) return resolve()
+//           reject(new Error(stderr.trim() || `CLI installer exited with code ${code}`))
+//         })
+//         child.stdin.end(installer)
+//       }),
+//     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+//   })
+// })
+// kete_change end
 
 function executableName() {
   return process.platform === "win32" ? "opencode-cli.exe" : "opencode-cli"

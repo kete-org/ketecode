@@ -3,6 +3,7 @@ import path from "node:path"
 import { app } from "electron"
 import type { Endpoint } from "@opencode/client/service"
 import { CHANNEL } from "../constants"
+import { serviceFile } from "../kete/service-file" // kete_change
 
 // The main thread idles between showing the first window and evaluating the main bundle, waiting
 // for the renderer's asset requests. That slot is long enough to find out whether a compatible
@@ -17,7 +18,7 @@ export function startSidecarProbe() {
 
   if (version === "") return
   probe = import("@opencode/client/service")
-    .then(({ Service }) => Service.discover({ version }))
+    .then(({ Service }) => Service.discover({ version, file: serviceFile(app.getPath("home")) })) // kete_change: Kete Code's state directory
     .catch(() => undefined)
 }
 

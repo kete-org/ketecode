@@ -13,6 +13,10 @@ async function main() {
   process.env.OPENCODE_CHANNEL = "local"
   process.env.OPENCODE_VERSION ??= `2.0.0-local-${Date.now()}`
   process.env.OPENCODE_DISABLE_CHANNEL_DB = "0"
+  // kete_change start: the CLI the desktop starts reads KETE_* names and drops inherited OPENCODE_* ones
+  process.env.KETE_VERSION ??= process.env.OPENCODE_VERSION
+  process.env.KETE_DISABLE_CHANNEL_DB ??= process.env.OPENCODE_DISABLE_CHANNEL_DB
+  // kete_change end
   const options = selectOptions()
 
   if (options.server.type === "build") process.env.OPENCODE_DESKTOP_SERVER_CHANNEL = "local"

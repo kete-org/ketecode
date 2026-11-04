@@ -1,0 +1,74 @@
+# Kete-owned. Builds the Kete Code desktop app (packages/desktop, docs/desktop.md) for macOS and
+# Windows, unsigned, from this commit's CLI. Runs only when the desktop, its web UI or the code they
+# share changes, or by hand. Nothing is published: the packaged apps are uploaded as workflow
+# artifacts for testing (macOS: Kete Code Dev.app in a tarball; Windows: the unpacked app folder).
+name: kete-desktop
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/desktop/**"
+      - "packages/app/**"
+      - "packages/gui-plugins/**"
+      - "packages/client/src/service*.ts"
+      - "packages/util/src/kete/brand.ts"
+      - "packages/util/src/kete/desktop.ts"
+      - ".github/workflows/kete-desktop.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple silicon. `--single` builds the runner's own CLI target (cli-darwin-arm64).
+          - os: macos-latest
+            target: darwin-arm64
+            cli-flags: ""
+          # The x64 desktop bundles the baseline CLI (cli-windows-x64-baseline), as releases do.
+          - os: windows-latest
+            target: windows-x64
+            cli-flags: "--baseline"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      OPENCODE_CHANNEL: dev
+      OPENCODE_TARGET: ${{ matrix.target }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Desktop tests
+        run: bun run --cwd packages/desktop test
+
+      # The app bundles this commit's `kete`, not a published one (packages/desktop/script/build.ts).
+      - name: Build CLI
+        shell: bash
+        run: bun run --cwd packages/cli build --single --skip-install --skip-web-ui ${{ matrix.cli-flags }}
+
+      - name: Build desktop app
+        run: bun run --cwd packages/desktop build
+
+      # Unsigned: no signing identity or certificate is available to pull requests.
+      - name: Package desktop app
+        run: bun run --cwd packages/desktop pack
+
+      - name: Upload app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-desktop-${{ matrix.target }}
+          path: dist/desktop/
+          retention-days: 7
+          if-no-files-found: error

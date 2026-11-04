@@ -1,3 +1,5 @@
+import { KeteDesktop } from "@opencode/util/kete/desktop" // kete_change
+import { forRuntime } from "../kete/runtime-env" // kete_change
 import http from "node:http"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import { app } from "electron"
@@ -32,9 +34,13 @@ export const preferApplicationEnvironment = Effect.gen(function* () {
     if (!shellEnv?.XDG_STATE_HOME) delete process.env.XDG_STATE_HOME
     Object.assign(process.env, {
       ...shellEnv,
-      OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
-      OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
-      OPENCODE_CLIENT: "desktop",
+      // kete_change start: also under the KETE_* names the runtime reads (kete/runtime-env.ts)
+      ...forRuntime({
+        OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
+        OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
+        OPENCODE_CLIENT: "desktop",
+      }),
+      // kete_change end
     })
   })
 })
@@ -44,7 +50,7 @@ export const prepareDesktop = Effect.gen(function* () {
   const paths = yield* DesktopPaths.resolve
 
   if (app.isPackaged || process.env.OPENCODE_DESKTOP_DISABLE_PROTOCOL_REGISTRATION !== "1")
-    app.setAsDefaultProtocolClient("opencode")
+    app.setAsDefaultProtocolClient(KeteDesktop.scheme) // kete_change
   const runFork = Effect.runForkWith(yield* Effect.context())
   setProtocolReporter((level, message, data) =>
     runFork(scoped("protocol", level === "error" ? Effect.logError(message, data) : Effect.logWarning(message, data))),

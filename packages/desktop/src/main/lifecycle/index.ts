@@ -1,5 +1,6 @@
 export * as ApplicationLifecycle from "./index"
 
+import { KeteDesktop } from "@opencode/util/kete/desktop" // kete_change
 import { app, BrowserWindow } from "electron"
 import type { Event } from "electron"
 import { Context, Effect, Layer } from "effect"
@@ -86,7 +87,7 @@ const runtime = Layer.effect(
     }
 
     const secondInstance = (_event: Event, argv: string[]) => {
-      const urls = argv.filter((arg) => arg.startsWith("opencode://"))
+      const urls = argv.filter((arg) => arg.startsWith(`${KeteDesktop.scheme}://`)) // kete_change
 
       if (urls.length) {
         runFork(Effect.logInfo("deep link received via second-instance", { urls }))

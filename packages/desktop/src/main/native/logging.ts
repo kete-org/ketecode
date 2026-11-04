@@ -1,5 +1,6 @@
 export * as DesktopLogging from "./logging"
 
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import log from "electron-log/main.js"
 import { app, crashReporter, netLog, shell } from "electron"
 import { Context, Effect, FileSystem, Layer, Logger, Option, Path, References, Stream } from "effect"
@@ -149,7 +150,7 @@ function exportDebugLogsEffect(fs: FileSystem.FileSystem, path: Path.Path) {
       )
     }
 
-    const output = path.join(app.getPath("downloads"), `opencode-debug-${stamp()}.zip`)
+    const output = path.join(app.getPath("downloads"), `${Brand.cliName}-debug-${stamp()}.zip`) // kete_change
 
     return yield* Effect.gen(function* () {
       yield* Effect.logInfo("exporting debug logs", { output })
@@ -241,7 +242,7 @@ function manifest(path: Path.Path) {
 function serverLogRoots(path: Path.Path) {
   const xdgData = process.env.XDG_DATA_HOME || path.join(homedir(), ".local", "share")
 
-  return [...new Set([path.join(xdgData, "opencode", "log"), path.join(app.getPath("userData"), "opencode", "log")])]
+  return [...new Set([path.join(xdgData, Brand.appDirectory, "log"), path.join(app.getPath("userData"), Brand.appDirectory, "log")])] // kete_change: the runtime logs under Kete Code's data directory
 }
 
 type Entry = { name: string; path: string; offset: number } | { name: string; data: Uint8Array }
