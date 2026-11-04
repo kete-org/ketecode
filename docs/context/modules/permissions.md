@@ -1,7 +1,7 @@
 ---
 module: permissions
 paths: [packages/core/src/kete/permission-mode.ts, packages/core/src/kete/shell-risk.ts, packages/util/src/kete/permission-mode.ts, packages/core/src/kete/permission-ceiling.ts, packages/core/src/permission.ts, packages/core/src/plugin/internal.ts, packages/cli/src/kete/permission-mode.ts, packages/tui/src/kete/permission-mode.tsx]
-verified-at: 7c430bd9c5
+verified-at: 2800ac0ed3
 ---
 ## Quick answers
 - Does the ceiling still hand a session's extra folders to subagents? Yes, but only folders that still pass `KeteAddDir.live` (as the grant uses), through `FSUtil` (`permission-ceiling.ts:116,139-140`). The ceiling plugin therefore needs `FSUtil.Service`.
@@ -86,6 +86,8 @@ verified-at: 7c430bd9c5
   best-effort shell-text check matches against.
 - How is the `memory` action (auto memory) decided? `permission-mode.ts` `memory()` (`:88`, called first in `decide()` `:153`): resources are `<scope>/<file>:<verb>`; `:view` always allows; a change is denied in Plan mode, asked in Ask mode, and asked in every other mode for `user/` resources unless a rule or saved "Always" allowed it (resource `source` is not `catch-all`). Project-scope changes are allowed by the catch-all.
 - Why must a Kete-owned rule that needs resource sources go through `apply()`? `apply()` skips non-`guarded` actions early; `memory` is carved out (`:309`) so it takes the full path that computes each resource's source. Test through `apply()`, not `decide()` (pitfalls).
+
+- Is `kete.account` a permission surface? It is a plugin RPC registered in `core/src/plugin/internal.ts:387` (`KeteAccount.Plugin`, `kete_change`), not a tool, so it adds no `evaluate` rule; its credential-changing methods are gated in server middleware (`server/src/kete/account-gate.ts`) and refused in offline and job mode. See `account-login`.
 
 ## Purpose
 Extends upstream's allow/ask/deny permission engine with Kete-specific policies, all applied only after upstream's own rule evaluation: a per-session UI toggle for stricter prompting (for editor clients like VS Code), a security backstop that caps subagent permissions at their ancestors' level so a restricted parent agent can't spawn an unrestricted child, and (the `unattended` card) a run-level policy that fails an unattended session closed. This card covers permission-mode and permission-ceiling in depth and the full `evaluate` hook order; for the unattended plugins' own logic see the `unattended` card.

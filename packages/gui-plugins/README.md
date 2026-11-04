@@ -705,6 +705,7 @@ export const builtins = compose({
   "microsoft-office": microsoftOffice,
   sources,
   goal,
+  "kete-account": keteAccount, // kete_change: Settings → Account (window only)
 })
 ```
 
@@ -730,6 +731,7 @@ export const builtins = compose({
   "microsoft-office": { ...microsoftOffice, windowEntry: eager(microsoftOfficeRenderer) },
   sources: { ...sources, windowEntry: eager(sourcesRenderer) },
   goal: { ...goal, windowEntry: eager(goalRenderer) },
+  "kete-account": { ...keteAccount, windowEntry: eager(keteAccountRenderer) }, // kete_change
 })
 ```
 

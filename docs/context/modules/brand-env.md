@@ -1,10 +1,10 @@
 ---
 module: brand-env
 paths: [packages/util/src/kete/brand.ts, packages/util/src/kete/env.ts, packages/util/src/kete/wordmark.ts, packages/cli/src/kete/env-bridge.ts]
-verified-at: 604889ab32
+verified-at: 2800ac0ed3
 ---
 ## Quick answers
-- What marks an agent shell? `KeteEnv.agentShell` (`KETE_AGENT_SHELL`, `util/src/kete/env.ts:30`) is set to `1` by `core/src/kete/tool-env.ts:130`; `KeteEnv.inAgentShell(env)` (`env.ts:33`) also accepts the bridged `OPENCODE_` name. `kete share` uses it to refuse.
+- What marks an agent shell? `KeteEnv.agentShell` (`KETE_AGENT_SHELL`, `util/src/kete/env.ts:30`) is set to `1` by `core/src/kete/tool-env.ts:130`; `KeteEnv.inAgentShell(env)` (`env.ts:33-34`) also accepts the bridged `OPENCODE_` name. `kete share` uses it to refuse.
 - Which local-model env vars exist? `KETE_OFFLINE`, `KETE_OLLAMA_HOST`, `KETE_LMSTUDIO_HOST`, `KETE_VLLM_HOST` are bridged like any `KETE_*` (internal `OPENCODE_OFFLINE`, `OPENCODE_OLLAMA_HOST`, ...); Ollama's own `OLLAMA_HOST` is read unbridged as the fallback (`core/src/kete/local-hosts.ts:27`). See the `local-models` card.
 - What are `KETE_JOB_MODE`/`KETE_JOB_MAX_OUTPUT_TOKENS`/`KETE_JOB_TOOL_SOCKET`? The cloud-job
   runtime image's own env contract (not defined in this card's files —
@@ -15,31 +15,32 @@ verified-at: 604889ab32
   `feature/job-root-helper`) needed no bridge code either — same prefix rule. See the `job-mode` and
   `root-helper` cards and `docs/context/contracts.md`.
 - Where is the product name / binary name / config dirs defined? `packages/util/src/kete/brand.ts:10-31`.
-- Where do public releases live, and what's the npm/Homebrew name? `brand.ts:68` `urls.releases` (kete-org/kete-releases) and `brand.ts:91-96` `distribution`; ADR 0009.
+- Is `Brand.urls.platform` set? Yes: `https://app.ketecode.ai` (`brand.ts:66`, type still `string | undefined` at `:52`), the last default for `kete login` after `--platform-url`, `KETE_PLATFORM_URL`, `kete.platform.url` and the previous account. Consumers: `cli/src/kete/account-flow.ts:351` (`resolvePlatform`) and the `--platform-url` help text (`cli/src/kete/commands.ts`). `urls.issues` (`brand.ts:62`) and `urls.securityReport` (`brand.ts:73`) are always set.
+- Where do public releases live, and what's the npm/Homebrew name? `brand.ts:70` `urls.releases` (kete-org/kete-releases) and `brand.ts:94` `distribution`; ADR 0009.
 - How does a user's `KETE_*` env var reach upstream code that reads `OPENCODE_*`? `packages/util/src/kete/env.ts:34-51` `bridge()`, run once at `packages/cli/src/kete/env-bridge.ts:6`.
 - Where's the logo SVG (mark + "Kete Code") used on asset-less pages (OAuth callback)? `packages/util/src/kete/wordmark.ts:28`; its bars must equal `packages/app/src/kete/mark.tsx`'s `MARK_RECTS` (`packages/core/test/kete/oauth-page.test.ts`).
-- What does Kete Code send providers that credit the calling app? `brand.ts:81-88` `attribution`, consumed by `core/src/kete/attribution.ts` (see docs/upstream-patches.md "Branding cleanup and provider attribution").
+- What does Kete Code send providers that credit the calling app? `brand.ts:84` `attribution`, consumed by `core/src/kete/attribution.ts` (see docs/upstream-patches.md "Branding cleanup and provider attribution").
 
 ## Purpose
 Single source of truth for Kete Code's product identity (display name, binary name, directory names, config filenames, env-var prefix, URLs, provider-attribution strings), plus the `KETE_*` → `OPENCODE_*` environment bridge that lets ~60 unmodified upstream `process.env.OPENCODE_*` reads keep working while the user-facing surface stays `KETE_*` (CLAUDE.md §5).
 
 ## Entry points
 - `packages/cli/src/kete/env-bridge.ts:6` — `KeteEnv.bridge(process.env)`, the CLI entry point's first import (side-effect module).
-- `brand.ts:98` `export * as Brand` — imported as `@opencode/util/kete/brand` throughout the engine.
-- `env.ts:61` `export * as KeteEnv`.
+- `brand.ts:101` `export * as Brand` — imported as `@opencode/util/kete/brand` throughout the engine.
+- `env.ts:68` `export * as KeteEnv`.
 - `wordmark.ts:28` `wordmarkSvg` — imported by `core/src/oauth/page.ts` (kete_change block, per docs/upstream-patches.md).
 
 ## Key files
 - `brand.ts:10-31` names, dirs, config filenames (`configFiles`), env prefix (`envPrefix = "KETE_"`, no OPENCODE_ fallback), `filePrefix`, `shortName`.
 - `brand.ts:33-43` `updatesAvailable = true` / `updatesUnavailableMessage` — the verified updater (ADR 0009, `cli/src/kete/updater.ts`); the message is what a build without a pinned update key reports.
-- `brand.ts:48-74` `urls` — mostly `undefined` TODOs pending a domain; callers must omit the link rather than guess. `urls.releases` = `https://github.com/kete-org/kete-releases` (public downloads, ADR 0009).
-- `brand.ts:91-96` `distribution` — `npmPackage` (`@ketecode/cli`) and `homebrewFormula` (`kete-org/tap/kete`), for messages pointing at package managers.
-- `brand.ts:81-88` `attribution` — `title`, `nvidiaOrigin`, `cerebrasIntegration` sent to model providers that credit the calling app.
-- `env.ts:34-51` `bridge()` — idempotent env rewrite (see Data flow); `env.ts:57-59` `publicName()` maps an internal `OPENCODE_X` back to `KETE_X` for user-facing messages.
-- `env.ts:31` `hasPrefix` compares case-insensitively (Windows env names).
+- `brand.ts:48-79` `urls` — `docs`, `configSchema`, `platform`, `website` are `undefined` TODOs pending a domain; `issues`, `releases`, `securityReport`, `upstream` are set; callers must omit the link rather than guess. `urls.releases` = `https://github.com/kete-org/kete-releases` (public downloads, ADR 0009).
+- `brand.ts:94` `distribution` — `npmPackage` (`@ketecode/cli`) and `homebrewFormula` (`kete-org/tap/kete`), for messages pointing at package managers.
+- `brand.ts:84` `attribution` — `title`, `nvidiaOrigin`, `cerebrasIntegration` sent to model providers that credit the calling app.
+- `env.ts:41-58` `bridge()` — idempotent env rewrite (see Data flow); `env.ts:64` `publicName()` maps an internal `OPENCODE_X` back to `KETE_X` for user-facing messages.
+- `env.ts:38` `hasPrefix` compares case-insensitively (Windows env names).
 
 ## Data flow
-CLI process starts → `env-bridge.ts` is the first import → `KeteEnv.bridge(process.env)` runs: in a top-level process (no `KETE_ENV_BRIDGED` marker) every inherited `OPENCODE_*` variable is deleted; every `KETE_X` is moved to `OPENCODE_X`; the marker `KETE_ENV_BRIDGED=1` is set (`env.ts:34-51`) → every other module, including unmodified upstream files, reads `process.env.OPENCODE_*` exactly as it would on upstream OpenCode → child processes the runtime starts (background service, askpass, agent PTY shells) inherit the bridged `OPENCODE_*` values plus the marker, so they don't strip them again; a `KETE_X` set explicitly for a child still overrides the inherited value.
+CLI process starts → `env-bridge.ts` is the first import → `KeteEnv.bridge(process.env)` runs: in a top-level process (no `KETE_ENV_BRIDGED` marker) every inherited `OPENCODE_*` variable is deleted; every `KETE_X` is moved to `OPENCODE_X`; the marker `KETE_ENV_BRIDGED=1` is set (`env.ts:41-58`) → every other module, including unmodified upstream files, reads `process.env.OPENCODE_*` exactly as it would on upstream OpenCode → child processes the runtime starts (background service, askpass, agent PTY shells) inherit the bridged `OPENCODE_*` values plus the marker, so they don't strip them again; a `KETE_X` set explicitly for a child still overrides the inherited value.
 
 ## Data and APIs used
 None — no network or platform calls. `brand.ts` is deliberately dependency-free (file header, lines 4-7) since it's imported from code that runs before the CLI finishes starting.

@@ -1,17 +1,18 @@
 ---
 module: session-share
 paths: [packages/core/src/kete/share/**, packages/util/src/kete/share.ts, packages/schema/src/kete/share.ts, packages/tui/src/kete/share.tsx, packages/cli/src/kete/share.ts, packages/cli/src/kete/share-flow.ts, packages/kete-vscode/src/share.ts]
-verified-at: 063cfce610
+verified-at: e34caf4d08
 ---
 ## Quick answers
 - What does sharing send, and where? A redacted snapshot of one session to the Kete portal only (`POST/PUT/DELETE /api/v1/shares`), never anywhere else; what is sent is in `docs/sharing.md`, the wire contract in `docs/platform/session-shares-v1.md`.
 - Where is the logic? Plugin `kete.share` with RPC `preview`/`share`/`unshare` (`core/src/kete/share/plugin.ts:60`, schema `schema/src/kete/share.ts:69`); registered in `core/src/plugin/internal.ts` (marked). TUI, CLI and VS Code are thin clients of that RPC.
 - In what order are refusals made? Another folder, job mode, offline, child session, signed out, config `share: "disabled"` in any entry, synced policy (`plugin.ts:77-127`); none of them calls the network. `unshare` skips config/org-disabled and child checks so you can still delete your own share (`plugin.ts:11-12`).
 - Where is the share remembered? Session metadata key `kete.share` (`core/src/kete/share/record.ts:10`), carrying `session`; a record for another session id is ignored because children inherit metadata (`core/src/session.ts:279`). Imports drop it (`core/src/session/transfer.ts` via `KeteShareRecord.without`).
-- How is the snapshot redacted? Each string is windowed, run through `KeteRedact.text`, then capped, so a secret on a cut is never half-shown (`snapshot.ts:8-9,24`); 2 MiB total (`snapshot.ts:22`), then `too_large`. A `digest` from the preview makes `share` refuse (`changed`) if the session moved (`plugin.ts:215`).
+- How is the snapshot redacted? Each string is windowed, run through `KeteRedact.text`, then capped, so a secret on a cut is never half-shown (`snapshot.ts:5-7`); 2 MiB total (`snapshot.ts:19` `MAX_BYTES`), then `too_large`. A `digest` from the preview makes `share` refuse (`changed`) if the session moved (`plugin.ts:215`).
+- Does share see a newly signed-in account without a restart? Yes: every call reads the account from disk (`core/src/kete/share/plugin.ts:86-88` `KeteAccount.read`, `util/src/kete/account.ts:50`; no cache) and the key via `KeteAccount.key` (`plugin.ts:216,261`). Only the account location (`KeteAccount.defaults()`, `plugin.ts:68`) is fixed at plugin start, so signing in from the CLI or desktop is picked up on the next `preview`/`share`.
 - Can the agent share? No: shells the agent runs carry `KETE_AGENT_SHELL=1` (`core/src/kete/tool-env.ts:130`) and `kete share` refuses when `KeteEnv.inAgentShell` (`cli/src/kete/share.ts:24`).
 - Which key is used? The signed-in account key via `KeteAccount.key`; a job key is never sent. Errors carry the request id, never the key or body (`util/src/kete/share.ts`).
-- How does the VS Code extension call it? Raw `fetch` of `POST /api/rpc/kete.share/<method>` (`kete-vscode/src/extension.ts:1043`, bodies in `src/share.ts:15-19`).
+- How does the VS Code extension call it? Raw `fetch` of `POST /api/rpc/kete.share/<method>` (`kete-vscode/src/extension.ts:1045` via `Share.rpcUrl`, `src/share.ts:11`).
 - Session read API: `Session.Service.messages`/`diff` live in `core/src/session.ts:134-150`, not `session/session.ts`; `diff` with no `from`/`to` covers only the latest turn, so the plugin passes the first-to-last user message range.
 
 ## Purpose
@@ -20,7 +21,7 @@ Lets a user publish a read-only, redacted copy of a session to their Kete portal
 ## Entry points
 - `core/src/kete/share/plugin.ts:60` `make`, `:277` `Plugin`; RPC definition `schema/src/kete/share.ts:69`.
 - TUI: `tui/src/kete/share.tsx:61` `share`, `:77` `unshare`, wired to `/share` and `/unshare` in `tui/src/routes/session/index.tsx` (marked).
-- CLI: `kete share [session-id] [--link] [--yes]`, `kete unshare` (`cli/src/kete/share.ts:66,76`, flow `share-flow.ts:53,102`, exit 0 done / 1 failed / 2 refused, `:15`; `cli/src/index.ts:40-41`).
+- CLI: `kete share [session-id] [--link] [--yes]`, `kete unshare` (`cli/src/kete/share.ts:66,76`, flow `share-flow.ts:53,102`, exit 0 done / 1 failed / 2 refused, `:15`; `cli/src/index.ts:58-59`).
 - VS Code: commands `kete.shareSession`/`kete.unshareSession` (`extension.ts:213-214`).
 
 ## Key files

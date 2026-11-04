@@ -61,9 +61,9 @@ export const urls: {
   docs: undefined,
   // The public issue tracker: `kete bug`, `/feedback` and the crash screen open its bug-report form.
   issues: "https://github.com/kete-org/ketecode/issues",
-  // TODO(kete): set the production Kete Code platform URL, the default for `kete login`. Until then
-  // `kete login` needs --platform-url, KETE_PLATFORM_URL or `kete.platform.url`.
-  platform: undefined,
+  // The production Kete Code platform, the last default for `kete login` (after --platform-url,
+  // KETE_PLATFORM_URL, `kete.platform.url` and the previous account).
+  platform: "https://app.ketecode.ai",
   // Public downloads (ADR 0009): every release's CLI archives, SHA256SUMS, SHA256SUMS.sig (Ed25519,
   // what `kete upgrade` verifies) and SHA256SUMS.sigstore.json (cosign keyless, what the install
   // scripts verify). The source repository stays private; this one holds only release files.

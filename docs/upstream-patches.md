@@ -1569,6 +1569,26 @@ Tests that assert upstream's removed code were retargeted, not dropped: the lega
 (`core/test/kete/shell-directory.test.ts`); the Vercel provider plugin was removed upstream, so its attribution case
 went with it (`core/test/kete/attribution.test.ts`).
 
+## Desktop sign-in (feature/desktop-sign-in)
+
+Sign in and out from the desktop app and the web UI: the `kete.account` plugin RPC runs `kete login
+--no-browser` / `kete logout` as a child process (`core/src/kete/account.ts`, `util/src/kete/login-child.ts`,
+`schema/src/kete/account.ts`). The Settings -> Account page is a GUI plugin (`gui-plugins/src/kete/account/`);
+the new-session prompt is `app/src/kete/account-prompt-card.tsx` (state in `account-prompt-state.ts`). The RPC uses the generic plugin RPC route, so
+there is no protocol or client regeneration. `Brand.urls.platform` now defaults to the production platform.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteAccount.Plugin` after `KeteShare.Plugin` | internal plugin registration list |
+| `server/src/process.ts` | Import; `KeteAccountGate.middleware(...)` listed before `KeteLocalGuard` in the pipe, so it runs inside the guard | a plugin RPC handler never sees its caller, so only the server can refuse credential-changing methods unless it is loopback-only, not on a socket, with no tunnel and not in a remote session; `ServerProcess.start` takes no middleware list (`transform` belongs to the web UI) |
+| `gui-plugins/src/renderer.ts` | Import; the `kete-account` entry in `compose` | the built-in GUI plugin list; the alternative was editing the app's settings pages, route, shell, search and i18n |
+| `gui-plugins/src/main.ts` | Import; `"kete-account": keteAccount` in `compose` | main lists every built-in so its id stays reserved and the desktop enables it; the plugin has no main entry |
+| `gui-plugins/README.md` | The two quoted `builtins` blocks include the `kete-account` lines | `script/sdk-docs.ts` (in lint) requires the quoted blocks to match `src/main.ts` and `src/renderer.ts` |
+
+**Sync checklist:** if upstream gives `ServerProcess.start` a middleware seam, move the gate to it. If it
+changes `Rpc` routing (`/api/rpc/:rpcID/:method`), update `KeteAccountGate.gated`. Tests:
+`server/test/kete/account-gate.test.ts`, `core/test/kete/account.test.ts`.
+
 ## Desktop app (feature/desktop-phase0)
 
 The Electron app as Kete Code (docs/desktop.md). Identity values come from `util/src/kete/desktop.ts`
