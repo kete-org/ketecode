@@ -127,6 +127,7 @@ import { KeteWorkflows } from "../kete/workflows.js" // kete_change
 import { KeteTodo } from "../kete/todo.js" // kete_change
 import { KeteLsp } from "../kete/lsp.js" // kete_change
 import { KeteHooks } from "../kete/hooks.js" // kete_change
+import { KeteMcpMentions } from "../kete/mcp-mentions.js" // kete_change
 import { PermissionSaved } from "../permission/saved.js" // kete_change
 import { Project } from "../project.js" // kete_change
 import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
@@ -342,6 +343,8 @@ const pre = [
   KeteLsp.Plugin,
   // kete_change: shell commands configured under kete.hooks (project hooks only once trusted); see kete/hooks.ts
   KeteHooks.Plugin,
+  // kete_change: `@`-mentioned MCP resources read into the prompt (kete-mcp: attachments); see kete/mcp-mentions.ts
+  KeteMcpMentions.Plugin,
   // kete_change: the `kete.folder.trust` RPC (the TUI loads project plugins only once trusted); see kete/folder-trust/rpc.ts
   KeteFolderTrustRpcPlugin.Plugin,
   // kete_change: the `kete.doctor` RPC (config file checks, folder trust) for `kete doctor` and /doctor; see kete/doctor.ts
