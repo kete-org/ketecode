@@ -1,18 +1,22 @@
 name: check-test
 
+# kete_change start: manual only in Kete Code; upstream workflows stay disabled (docs/upstream-sync.md)
 on:
-  push:
-    branches:
-      - dev
-      - beta
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
-    inputs:
-      quarantine:
-        description: Run only the quarantined browser tests (packages/app/e2e/QUARANTINE.md)
-        type: boolean
-        default: false
+# on:
+#   push:
+#     branches:
+#       - dev
+#       - beta
+#   pull_request:
+#     types: [opened, synchronize, reopened, ready_for_review]
+#   workflow_dispatch:
+#     inputs:
+#       quarantine:
+#         description: Run only the quarantined browser tests (packages/app/e2e/QUARANTINE.md)
+#         type: boolean
+#         default: false
+# kete_change end
 
 concurrency:
   # A new push to a pull request cancels its stale run. Every push and manual run keeps its own group, so each

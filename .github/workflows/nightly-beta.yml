@@ -2,10 +2,14 @@ name: nightly-beta
 
 # GitHub runs schedules only from the default branch (dev), so this fires once this file is on dev.
 # It tests beta with the full suite on both OSes, then runs beta's quarantined browser tests.
+# kete_change start: manual only in Kete Code; upstream workflows stay disabled (docs/upstream-sync.md)
 on:
-  schedule:
-    - cron: "17 9 * * *"
   workflow_dispatch:
+# on:
+#   schedule:
+#     - cron: "17 9 * * *"
+#   workflow_dispatch:
+# kete_change end
 
 permissions:
   actions: write

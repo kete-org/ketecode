@@ -1,10 +1,14 @@
 name: triage-compliance-close
 
+# kete_change start: manual only in Kete Code; upstream workflows stay disabled (docs/upstream-sync.md)
 on:
-  schedule:
-    # Run every 30 minutes to check for expired compliance windows
-    - cron: "*/30 * * * *"
   workflow_dispatch:
+# on:
+#   schedule:
+#     # Run every 30 minutes to check for expired compliance windows
+#     - cron: "*/30 * * * *"
+#   workflow_dispatch:
+# kete_change end
 
 permissions:
   contents: read

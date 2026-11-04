@@ -1,8 +1,12 @@
 name: triage-pr-standards
 
+# kete_change start: manual only in Kete Code; upstream workflows stay disabled (docs/upstream-sync.md)
 on:
-  pull_request_target:
-    types: [opened, edited, synchronize]
+  workflow_dispatch:
+# on:
+#   pull_request_target:
+#     types: [opened, edited, synchronize]
+# kete_change end
 
 jobs:
   check-standards:
