@@ -1,7 +1,7 @@
 ---
 module: gateway
 paths: [packages/core/src/kete/gateway.ts, packages/tui/src/kete/balance.tsx]
-verified-at: e34caf4d08
+verified-at: 2800ac0ed3
 ---
 ## Quick answers
 - Why do `kete` models call the right route when config sets a provider `baseURL`? Upstream's v2.2 config plugin deletes every model's own `settings.baseURL` when the provider's config sets one (`core/src/config/plugin/provider.ts:75-81,221`), and for `kete` that value is the gateway root, not an endpoint. PR #81 (branch `fix/gateway-model-routes`, commit `cff393696f`, not on this branch yet) re-applies `${url}${route.prefix}` per model inside the `ctx.model.transform` at `gateway.ts:243` (model transforms run after the provider fold). Without it every gateway model calls the root; on this branch only the `provider.transform` overlay (`:231`) sets it, which the config plugin can still delete.
@@ -39,6 +39,8 @@ verified-at: e34caf4d08
 - Where does the `kete` provider's catalog data come from in a job? From the bundled models.dev snapshot: job mode disables the periodic models.dev fetch (`KETE_DISABLE_MODELS_FETCH=1`, `job-mode` card), so a gateway model newer than the shipped `kete`'s snapshot has no catalog entry there.
 - Where do gateway model prices come from? The platform's `GET /api/v1/models`, only when a platform URL is configured (`gateway.ts:299-330`).
 - Where does the TUI show account balance? `packages/tui/src/kete/balance.tsx`, reading the `kete` integration's metadata.
+
+- Does the gateway pick up a sign-in or sign-out from a client without restart? Yes: it also reloads on the bus event `rpc.kete.account.changed` (emitted by the `kete.account` RPC, `core/src/kete/account.ts`), same path as `config.updated` (`gateway.ts:469-481`: `reload()` then a balance check). See `account-login`.
 
 ## Purpose
 Discovers which models a configured Kete Model Gateway allows (one native route per source provider), publishes them as the `kete` provider with gateway-adjusted base URLs and platform pricing, and surfaces the account's credit balance in the TUI sidebar. Implements ADR 0004: no unified OpenAI-format gateway API exists, so each model reuses its source provider's catalog definition and SDK.

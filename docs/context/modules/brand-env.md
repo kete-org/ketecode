@@ -1,7 +1,7 @@
 ---
 module: brand-env
 paths: [packages/util/src/kete/brand.ts, packages/util/src/kete/env.ts, packages/util/src/kete/wordmark.ts, packages/cli/src/kete/env-bridge.ts]
-verified-at: e34caf4d08
+verified-at: 2800ac0ed3
 ---
 ## Quick answers
 - What marks an agent shell? `KeteEnv.agentShell` (`KETE_AGENT_SHELL`, `util/src/kete/env.ts:30`) is set to `1` by `core/src/kete/tool-env.ts:130`; `KeteEnv.inAgentShell(env)` (`env.ts:33-34`) also accepts the bridged `OPENCODE_` name. `kete share` uses it to refuse.
@@ -15,7 +15,7 @@ verified-at: e34caf4d08
   `feature/job-root-helper`) needed no bridge code either — same prefix rule. See the `job-mode` and
   `root-helper` cards and `docs/context/contracts.md`.
 - Where is the product name / binary name / config dirs defined? `packages/util/src/kete/brand.ts:10-31`.
-- Is `Brand.urls.platform` set? No: it is `undefined` (`brand.ts:66`); `kete login` needs `--platform-url`, `KETE_PLATFORM_URL` or `kete.platform.url` until a production URL exists, so any desktop sign-in code must handle `undefined`. `urls.issues` (`brand.ts:62`) and `urls.securityReport` (`brand.ts:73`) are always set.
+- Is `Brand.urls.platform` set? Yes: `https://app.ketecode.ai` (`brand.ts:66`, type still `string | undefined` at `:52`), the last default for `kete login` after `--platform-url`, `KETE_PLATFORM_URL`, `kete.platform.url` and the previous account. Consumers: `cli/src/kete/account-flow.ts:351` (`resolvePlatform`) and the `--platform-url` help text (`cli/src/kete/commands.ts`). `urls.issues` (`brand.ts:62`) and `urls.securityReport` (`brand.ts:73`) are always set.
 - Where do public releases live, and what's the npm/Homebrew name? `brand.ts:70` `urls.releases` (kete-org/kete-releases) and `brand.ts:94` `distribution`; ADR 0009.
 - How does a user's `KETE_*` env var reach upstream code that reads `OPENCODE_*`? `packages/util/src/kete/env.ts:34-51` `bridge()`, run once at `packages/cli/src/kete/env-bridge.ts:6`.
 - Where's the logo SVG (mark + "Kete Code") used on asset-less pages (OAuth callback)? `packages/util/src/kete/wordmark.ts:28`; its bars must equal `packages/app/src/kete/mark.tsx`'s `MARK_RECTS` (`packages/core/test/kete/oauth-page.test.ts`).

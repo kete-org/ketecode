@@ -1,7 +1,7 @@
 ---
 module: web-app
 paths: [packages/app/src/kete/panel.tsx, packages/app/src/kete/panel.css, packages/app/src/kete/panel-layout.tsx, packages/app/src/kete/panel-state.ts, packages/app/src/kete/mode.ts, packages/app/src/kete/composer-controls.tsx, packages/app/src/new-session/view.tsx, packages/app/src/composer/composer.tsx, packages/app/src/composer/editor/editor.tsx, packages/app/src/new-session/composer-adapter.ts]
-verified-at: e34caf4d08
+verified-at: 2800ac0ed3
 ---
 
 ## Quick answers
@@ -82,6 +82,8 @@ verified-at: e34caf4d08
 - Is `new-session/wordmark.tsx` (the shimmer wrapper) still used? No — `KeteEmptyState` replaced its
   only call site in `view.tsx`. It's dead code, deliberately left in place (not in the approved plan's
   file list) rather than deleted in this task; a cleanup candidate.
+
+- Where is the sign-in prompt in the web app? `KeteAccountPrompt` (`app/src/kete/account-prompt-card.tsx`) is mounted in the panel empty state (`panel.tsx:25,45`), styled with the local-offer rules in `panel.css`; data and RPC decoding in `account-prompt-state.ts`. It only opens Settings > Account (a GUI plugin page, see `account-login`); "Not now" is not persisted.
 
 ## Purpose
 

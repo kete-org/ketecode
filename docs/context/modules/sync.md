@@ -1,7 +1,7 @@
 ---
 module: sync
 paths: [packages/util/src/kete/sync/**, packages/core/src/kete/sync/**, packages/cli/src/kete/sync.ts, packages/schema/src/kete/sync.ts]
-verified-at: e34caf4d08
+verified-at: 2800ac0ed3
 ---
 ## Quick answers
 - What does the user see when a managed agent's model is refused? `kete_agent_model_not_allowed` (in `agentErrors`, `plugin.ts:87`) makes `agentErrorMessage(code, agent, models)` (`plugin.ts:95-111`) say the agent runs `provider/model` but the request used another, and to run `kete sync`; the `http.response` hook passes both models (`plugin.ts:334-337`). It also triggers a resync like the other stale codes.
@@ -36,6 +36,8 @@ verified-at: e34caf4d08
 - What headers tag a managed agent's model calls? `x-kete-agent-id` / `x-kete-agent-version` (`plugin.ts:80-81`, hooks `:310-324`).
 - Is there a policy action for installing skills? `skill.install` (resource `host/path` lower-cased for git sources, absolute path for local ones: `util/src/kete/skill-source.ts:74`), evaluated by `kete skill add|update` in the CLI, not the runtime (`cli/src/kete/skill-flow.ts:132-145`): not signed in = no policy; signed in with no cache = forced ask; unreadable cache = refuse; `deny` refuses, `ask` asks even with `--yes`. It uses `KeteSyncPolicy.evaluate` with the CLI's mirrored matcher (`:80`).
 - How are org skills protected from `kete skill`? By slug: `orgSkills` (`cli/src/kete/skill.ts:42`) = `KeteSyncSkills.present` over every `managed/<org>/`, i.e. folders with a `.kete-skill.json` manifest; `add`/`update`/`remove` refuse those names (`skill-flow.ts:394,450,468`) and `list` shows them read-only. `safeRelative` (`util/src/kete/sync/skills.ts:49`) refuses a `.kete-skill.json` path, and `skill-flow` `collect` refuses it in a source, so a user skill can't pose as an org one.
+
+- Does sync pick up a sign-in from a client without restart? Yes: it subscribes to `rpc.kete.account.changed` and runs a tick (`core/src/kete/sync/plugin.ts:490-494`); `kete login` already synced, so this reloads the cache. See `account-login`.
 
 ## Purpose
 Brings an organization's platform-managed agents, skills, MCP servers and policies into the local runtime, keeps them current on a schedule, enforces the org's policies on permission decisions, and translates the gateway's per-agent error codes into clear, non-retried failures. Implements architecture §44 "Configuration Synchronization" (current implementation: agents, sync v1).
