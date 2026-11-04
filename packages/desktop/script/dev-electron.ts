@@ -1,6 +1,7 @@
 import { $ } from "bun"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { KeteDesktop } from "@opencode/util/kete/desktop" // kete_change
 
 export async function prepareDevElectron() {
   const electron = dirname(fileURLToPath(import.meta.resolve("electron/package.json")))
@@ -16,7 +17,7 @@ export async function prepareDevElectron() {
     .slice(0, 16)
 
   const root = join(import.meta.dirname, "../node_modules/.cache/opencode-dev", hash)
-  const bundle = join(root, "OpenCode Dev.app")
+  const bundle = join(root, `${KeteDesktop.productNames.dev}.app`) // kete_change
   // Electron uses the executable's name to distinguish development from packaged apps.
   const executable = join(bundle, "Contents/MacOS/Electron")
 
@@ -28,10 +29,10 @@ export async function prepareDevElectron() {
   const plist = join(bundle, "Contents/Info.plist")
 
   for (const key of ["CFBundleName", "CFBundleDisplayName"]) {
-    await $`plutil -replace ${key} -string ${"OpenCode Dev"} ${plist}`
+    await $`plutil -replace ${key} -string ${KeteDesktop.productNames.dev} ${plist}` // kete_change
   }
 
-  await $`plutil -replace CFBundleIdentifier -string ai.opencode.desktop.dev ${plist}`
+  await $`plutil -replace CFBundleIdentifier -string ${KeteDesktop.appIDs.dev} ${plist}` // kete_change
   await $`plutil -insert NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac -bool true ${plist}`
   await Bun.write(join(bundle, "Contents/Resources/electron.icns"), icon)
   // Changing the bundle resources invalidates Electron's signature.
