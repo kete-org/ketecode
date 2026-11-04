@@ -241,6 +241,16 @@ export function make(
       // The organization's default model is the default only when nothing else (the config's `model`)
       // set one, and only once the gateway serves it; `--model` and a session's own model always win.
       yield* ctx.model.transform((models) => {
+        // Each model's own route again. Upstream's config plugin (v2.2) deletes every model's baseURL when the
+        // provider's config sets one, and for `kete` that config value is the gateway root, not an endpoint, so
+        // without this every gateway model would call the root. Model transforms run after the provider fold.
+        const url = source.current.url
+        if (url)
+          for (const item of loaded.models)
+            if (models.get(providerID, Model.ID.make(item.id)))
+              models.update(providerID, Model.ID.make(item.id), (model) => {
+                model.settings = Provider.mergeOverlay(model.settings, { baseURL: `${url}${item.route.prefix}` })
+              })
         const id = preferred.current
         if (id === undefined || models.default.get() !== undefined) return
         if (models.get(providerID, Model.ID.make(id))) models.default.set(providerID, Model.ID.make(id))

@@ -1,4 +1,5 @@
 import { Config } from "@opencode/core/config"
+import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
 import { Integration } from "@opencode/core/integration"
 import { KeteGateway } from "@opencode/core/kete/gateway"
 import { Model } from "@opencode/core/model"
@@ -272,6 +273,31 @@ describe("KeteGateway", () => {
             path: "/compat/byteplus/v1/models",
             headers: { "x-api-key": null, authorization: `Bearer ${key}`, "x-goog-api-key": null },
           })
+        }),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  // Upstream v2.2's config plugin deletes every model's own baseURL when a provider's config sets one; for `kete`
+  // that baseURL is the gateway root, so without the gateway re-applying its routes every model called the portal.
+  it.live("the gateway root in providers.kete.settings.baseURL keeps each model's route under the config plugin", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => gateway("prices", ["glm-5-2-260617"])),
+      ({ server }) =>
+        Effect.gen(function* () {
+          const models = yield* Model.Service
+          const config = yield* Config.Test
+          yield* seedCatalog()
+          yield* config.setEntries([settings({ baseURL: server.url.origin, apiKey: key })])
+          yield* addPlugin()
+          yield* ConfigProviderPlugin.Plugin.effect(yield* PluginHost.make(yield* Plugin.Service))
+          const glm = yield* eventually(
+            models.get(KeteGateway.providerID, Model.ID.make("glm-5-2-260617")),
+            (model) => model?.settings?.baseURL !== undefined,
+          )
+          expect(glm?.settings?.baseURL).toBe(`${server.url.origin}/compat/byteplus/v1`)
+          const gpt = yield* models.get(KeteGateway.providerID, Model.ID.make("gpt-5"))
+          if (gpt) expect(gpt.settings?.baseURL).toBe(`${server.url.origin}/openai/v1`)
         }),
       ({ server }) => Effect.promise(() => server.stop(true)),
     ),
