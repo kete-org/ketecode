@@ -20,14 +20,14 @@ await $`bun ./script/copy-icons.ts ${channel}`
 
 await $`bun ./script/copy-metainfo.ts ${channel}`
 
-const built = await exists(path.join(cli, getCurrentCli().package.replace("@opencode/", "")))
+const built = await exists(path.join(cli, getCurrentCli().directory)) // kete_change
 
 if (channel === "prod" && !built)
   throw new Error(`Production desktop builds bundle the CLI from ${cli}; build it first`)
 
 if (built) await copyBuiltCliToResources(cli)
 
-if (!built) await downloadCliToResources(channel === "beta" ? "beta" : undefined)
+if (!built) await downloadCliToResources(channel === "beta" ? "next" : undefined) // kete_change: Kete Code's prerelease tag
 
 await $`bunx electron-vite build`
 

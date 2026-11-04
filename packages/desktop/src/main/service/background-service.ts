@@ -1,3 +1,4 @@
+import { serviceFile } from "../kete/service-file" // kete_change
 import { app } from "electron"
 import { Context, Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import { CHANNEL } from "../constants"
@@ -36,7 +37,7 @@ export const layer = Layer.effect(
 const connect = Effect.fn("BackgroundService.connect")(function* (mode: "initial" | "reconnect") {
   yield* Effect.logInfo("starting v2 background service")
   const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
+  // const path = yield* Path.Path // kete_change: only the service file's path used it (kete/service-file.ts)
   const desktopCli = yield* DesktopCli.Service
   const runFork = Effect.runForkWith(yield* Effect.context<FileSystem.FileSystem | Path.Path>())
   const isolated = !app.isPackaged && process.env.OPENCODE_DESKTOP_ISOLATED_SERVER === "1"
@@ -46,14 +47,11 @@ const connect = Effect.fn("BackgroundService.connect")(function* (mode: "initial
   if (isolated) process.env.XDG_STATE_HOME = app.getPath("userData")
   const client = yield* Effect.promise(() => import("@opencode/client/service"))
 
-  const file =
-    process.env.OPENCODE_DESKTOP_SERVER_CHANNEL === "local"
-      ? path.join(
-          process.env.XDG_STATE_HOME ?? path.join(app.getPath("home"), ".local", "state"),
-          "opencode",
-          "service-local.json",
-        )
-      : undefined
+  // kete_change: Kete Code's state directory, for the release service file too (kete/service-file.ts)
+  const file = serviceFile(
+    app.getPath("home"),
+    process.env.OPENCODE_DESKTOP_SERVER_CHANNEL === "local" ? "service-local.json" : undefined,
+  )
 
   const ensure = (required = version) =>
     client.Service.ensure({
