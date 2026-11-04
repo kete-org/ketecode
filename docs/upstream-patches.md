@@ -1328,7 +1328,7 @@ diagnostics API, compare and drop one.
 
 ## Built-in /commit and /pr (feature/git-helpers)
 
-`core/src/kete/git-commands.ts` registers `/commit` and `/pr` as prompt commands, like upstream's `/init`
+`core/src/kete/git-commands.ts` registers `/commit`, `/pr` and `/security-review` as prompt commands, like upstream's `/init`
 and `/review` (`plugin/command.ts`). They are plain prompts: the agent's git and `gh`/`glab` commands go
 through the permission system and the sandbox. The templates contain no ``!`…` `` interpolation. A config
 command with the same name replaces them, because `ConfigCommandPlugin` loads later (`post`).
