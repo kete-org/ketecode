@@ -8,6 +8,7 @@ import { installContextMenu } from "./lifecycle/environment"
 import { ApplicationLifecycle } from "./lifecycle"
 import { DesktopLogging } from "./native/logging"
 import { BackgroundService } from "./service/background-service"
+import { KeteSidecarSupervision } from "./kete/sidecar-supervision" // kete_change
 import { DesktopCli } from "./service/desktop-cli"
 import { marks } from "./lifecycle/marks"
 
@@ -42,6 +43,7 @@ const runIpc = Effect.fn("Desktop.runIpc")(function* () {
 
 runIpc().pipe(
   Effect.provide(Ipc.layer),
+  Effect.provide(KeteSidecarSupervision.layer), // kete_change
   Effect.provide(BackgroundService.layer),
   Effect.provide(DesktopCli.layer),
   Effect.provide(DesktopInitialization.layer),

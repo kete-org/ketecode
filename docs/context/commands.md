@@ -19,6 +19,7 @@ pass/fail and the failing tests.
 | ui | `bun test ./src/theme/kete/theme.test.ts` | ✓ 4 |
 | kete-tools | `bun test ./test/lib.test.ts` | ✓ 13 |
 | kete-vscode | `bun test ./test/status.test.ts` | ✓ 8 |
+| desktop | `bun test ./src/main/service/background-service-state.test.ts` (all: `bun run test` = `bun test --timeout 30000`; typecheck `bun run typecheck` = `bun check --no-script -b`, excludes test files) | — |
 | one test by name | add `-t "<name>"` | — |
 
 Kete tests live in `packages/<pkg>/test/kete/` (core, util, cli, tui, server),

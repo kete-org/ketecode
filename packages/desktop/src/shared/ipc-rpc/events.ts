@@ -2,6 +2,7 @@ import { desktopZoomLevels } from "@opencode/app/desktop-menu"
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
 import { PluginInstalled, PluginMenubarItem, PluginPayload, PluginGuis } from "./plugins"
+import { KeteSidecarReady, KeteSidecarRestarting } from "../kete/sidecar-events" // kete_change
 
 export class DeepLinksOpened extends Schema.TaggedClass<DeepLinksOpened>()("DeepLinksOpened", {
   urls: Schema.Array(Schema.String),
@@ -84,6 +85,8 @@ export const DesktopEvent = Schema.Union([
   PluginsChanged,
   PluginGuisChanged,
   PluginMenubarItemsChanged,
+  KeteSidecarRestarting, // kete_change
+  KeteSidecarReady, // kete_change
 ])
 
 export type DesktopEvent = Schema.Schema.Type<typeof DesktopEvent>

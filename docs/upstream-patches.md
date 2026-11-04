@@ -1814,3 +1814,22 @@ or that has no `kete.handshake` RPC, and shows the incompatible panel on every r
 **Sync checklist:** keep the handshake call after `server.info` in `checkServerHealth`, and keep the gate mounted inside `<main>`.
 Tests: `schema/test/kete/handshake.test.ts`, `server/test/kete/handshake.test.ts`, `app/src/kete/handshake.test.ts`,
 `app/src/kete/incompatible-gate-state.test.ts`, `app/component-tests/kete-shell.spec.ts`.
+
+## WS0 sidecar supervision (feature/desktop-sidecar-supervision)
+
+The desktop main process watches the runtime service (authenticated `GET /api/info` about once a second). After 2
+failed checks it restarts it through the shared `reconnect` (single-flight, exponential backoff 0.5 s to 30 s) and
+tells every window with `KeteSidecarRestarting` / `KeteSidecarReady { url }`; the renderer shows a notice and a
+"restarted" toast and updates its sidecar when the origin changed.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `desktop/src/main/desktop.ts` | imports and provides `KeteSidecarSupervision.layer` between `Ipc.layer` and `BackgroundService.layer` (marked) | the layer stack is the only place to decorate `BackgroundService` |
+| `desktop/src/shared/ipc-rpc/events.ts` | imports the two events and adds them to the `DesktopEvent` union (marked) | the union is closed; the IPC stream only carries members of it |
+| `desktop/src/renderer/desktop-app.tsx` | imports and mounts `<KeteSidecarStatus>` inside `AppInterface` (marked) | no slot for extra renderer components there |
+| `app/src/runtime/i18n/en.ts` | two `toast.kete.sidecar.*` keys (marked); other locales fall back to `en` | the dictionary is one flat object |
+
+**Sync checklist:** keep the provide order in `desktop.ts` (supervision directly above `BackgroundService.layer`, so
+`Ipc.layer` sees the decorated service), keep both union entries, keep the status component mounted inside `AppInterface`.
+Tests: `desktop/src/main/kete/sidecar-watcher.test.ts`, `sidecar-watcher.integration.test.ts`,
+`desktop/src/shared/kete/sidecar-events.test.ts`, `desktop/src/renderer/kete/sidecar-status-state.test.ts`.
