@@ -6,6 +6,21 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **`/context`** shows how much of the context window each part of the session takes (system prompt,
+  tools, MCP tools, memory files, skills, messages), with the provider's own count of the last request
+  when it reports one, and which MCP tools a denied `execute` keeps out.
+- **`/security-review`** reviews uncommitted changes, a commit, a branch or a pull request for
+  security problems only, on the read-only Security agent, and reports each finding with its severity,
+  location, how it could be exploited and the fix.
+- **Compaction buffer as a share of the window:** `"compaction": { "buffer": "20%" }` keeps that share
+  of each model's context free, so one setting fits small and large windows. Token counts still work.
+- **Clearer tool errors:** when `read` misses because a folder is missing, the error names the nearest
+  folder that exists; when `edit` can't find the text, it shows the file's closest lines or says the
+  change is already there. A model that calls `bash` gets `shell`, with the same permissions.
+- **Web fetch checks every redirect:** each hop is checked against your rules, and a redirect to
+  another site still asks first.
+- **Fixes:** `cd '$name'` (a literal `$` in quotes) is a folder name again, so it no longer asks about
+  the whole file system.
 - **Policies move to a top-level `policies` key:** write policy statements as `"policies": [...]`
   instead of under `experimental`, and use the `tool.use` action where you used `permission`
   (`{ "action": "tool.use", "resource": "hooks:*", "effect": "deny" }`). `experimental.policies` and
