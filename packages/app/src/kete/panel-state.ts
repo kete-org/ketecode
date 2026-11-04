@@ -62,6 +62,11 @@ const [panelState, setPanelStateSignal] = createSignal<PanelState>({
 
 export { panelState }
 
+/** The desktop/web app (not an editor panel): greeting, centred composer, Build | Plan switch. */
+export function homeLayout(): boolean {
+  return panelState().host === "browser"
+}
+
 /** Merges a partial update (e.g. the VS Code bridge's `kete.panel` message) into the panel state. */
 export function updatePanelState(patch: Partial<PanelState>) {
   setPanelStateSignal((current) => ({ ...current, ...patch }))

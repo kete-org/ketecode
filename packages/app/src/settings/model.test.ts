@@ -106,7 +106,7 @@ describe("settings schema", () => {
         mono: "",
         sans: "",
         terminal: "",
-        tabLayout: "horizontal",
+        tabLayout: "vertical", // kete_change: vertical sidebar outside an editor host (kete/shell-defaults.ts)
         reduceMotion: "system",
       },
       keybinds: {},

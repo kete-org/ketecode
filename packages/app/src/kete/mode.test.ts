@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { apply, derive, KeteModeDraft, next, withMode } from "./mode"
+import { agentSwitchVisible, apply, derive, KeteModeDraft, next, switchTarget, withMode } from "./mode"
 
 describe("derive", () => {
   test("the plan agent always shows Plan", () => {
@@ -27,6 +27,36 @@ describe("next", () => {
     expect(next("auto")).toBe("ask")
     expect(next("ask")).toBe("plan")
     expect(next("plan")).toBe("default")
+    expect(next("ask", { plan: true })).toBe("plan")
+  })
+  test("without Plan cycles Default -> Auto -> Ask -> Default", () => {
+    expect(next("default", { plan: false })).toBe("auto")
+    expect(next("auto", { plan: false })).toBe("ask")
+    expect(next("ask", { plan: false })).toBe("default")
+  })
+  test("without Plan, a session already in Plan moves to Default", () => {
+    expect(next("plan", { plan: false })).toBe("default")
+  })
+})
+
+describe("switchTarget", () => {
+  test("Plan from another mode selects Plan and remembers that mode", () => {
+    expect(switchTarget({ choice: "plan", current: "ask", before: "default" })).toEqual({ mode: "plan", before: "ask" })
+  })
+  test("Build from Plan returns to the remembered mode", () => {
+    expect(switchTarget({ choice: "build", current: "plan", before: "auto" })).toEqual({ mode: "auto", before: "auto" })
+  })
+  test("choosing the side already selected does nothing", () => {
+    expect(switchTarget({ choice: "plan", current: "plan", before: "default" })).toBeUndefined()
+    expect(switchTarget({ choice: "build", current: "ask", before: "default" })).toBeUndefined()
+  })
+})
+
+describe("agentSwitchVisible", () => {
+  test("needs the desktop/web app and a plan agent", () => {
+    expect(agentSwitchVisible({ browser: true, planAvailable: true })).toBe(true)
+    expect(agentSwitchVisible({ browser: true, planAvailable: false })).toBe(false)
+    expect(agentSwitchVisible({ browser: false, planAvailable: true })).toBe(false)
   })
 })
 

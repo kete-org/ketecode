@@ -8,6 +8,7 @@ import { timelinePresets, type TimelineCategory, type TimelineDetail } from "@op
 import { persisted } from "@/runtime/persistence/storage"
 import { Persistence } from "@/runtime/persistence/schema"
 import { ScopedKey, type ServerScope } from "@/runtime/server/scope"
+import { keteDefaultTabLayout } from "@/kete/shell-defaults" // kete_change
 
 export type Settings = typeof settingsSchema.Type
 
@@ -309,7 +310,7 @@ export const defaultSettings: Settings = {
     mobileTitlebarPosition: "top",
     followUpBehavior: "steer",
   },
-  appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: "horizontal", reduceMotion: "system" },
+  appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: keteDefaultTabLayout(), reduceMotion: "system" }, // kete_change
   keybinds: {},
   permissions: { autoApprove: false, autoApproveProjects: {} },
   workspaces: { defaultDestination: "last-used", lastUsed: {} },

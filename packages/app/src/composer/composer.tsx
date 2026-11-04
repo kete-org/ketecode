@@ -12,7 +12,7 @@ import { DialogSelectModelUnpaid } from "@/providers/models/unpaid"
 import { formatKeybind, useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { ComposerModel } from "./model"
-import { KeteCommandsButton, KeteModeToggle } from "@/kete/composer-controls" // kete_change
+import { KeteAgentSwitch, KeteCommandsButton, KeteModeToggle } from "@/kete/composer-controls" // kete_change
 import { KeteTodoDock } from "@/kete/todo-dock" // kete_change
 import { KeteGlobalFormDock } from "@/kete/global-form-dock" // kete_change
 import type { ComposerModelLabel } from "./model-label"
@@ -57,6 +57,7 @@ export function Composer(props: {
       {/* kete_change: session-less questions (folder trust, MCP elicitations) above the composer */}
       <KeteGlobalFormDock />
       <KeteTodoDock /> {/* kete_change: the session task list above the composer */}
+      {!props.readOnly && <KeteAgentSwitch model={props.model} />} {/* kete_change: Build | Plan above the card (desktop/web) */}
       <ComposerEditor
         controller={props.model}
         borderUnderlay={props.borderUnderlay}

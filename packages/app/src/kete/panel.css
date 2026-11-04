@@ -308,6 +308,93 @@
   color: var(--kete-brand-soft);
 }
 
+/* ---------- Desktop/web home (panel-layout.tsx's data-kete-layout="home") ---------- */
+
+/* The greeting and the composer card sit together in the middle instead of the card pinned to the bottom. */
+[data-kete-layout="home"] {
+  max-width: 760px;
+  justify-content: center;
+}
+[data-kete-layout="home"] [data-kete="panel-scroll"] {
+  flex: 0 1 auto;
+  padding: 0 0 24px;
+}
+[data-kete-layout="home"] [data-kete="panel-footer"] {
+  gap: 12px;
+  padding: 0;
+}
+[data-kete-layout="home"] [data-component="composer"] {
+  border-radius: var(--kete-r-card);
+}
+
+[data-kete="greeting"] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  text-align: center;
+  font-family: var(--kete-ui-font);
+  font-weight: 600;
+  font-size: var(--kete-greeting-font);
+  line-height: 1.25;
+  color: var(--kete-text-1);
+}
+[data-kete="greeting"] span:first-child {
+  font-family: var(--kete-wordmark-font);
+  color: var(--kete-brand-soft);
+}
+[data-kete="greeting"] span:last-child {
+  color: var(--kete-text-2);
+  font-size: 0.7em;
+  font-weight: 500;
+}
+
+/* Under the card: the location row grows, the permission mode sits at the end. */
+[data-kete-layout="home"] [data-kete="home-controls"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+[data-kete-layout="home"] [data-kete="home-controls"] > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+[data-kete="mode-toggle"][data-placement="under"] {
+  flex: none;
+  margin: 0;
+}
+
+/* Build | Plan, a segmented control above the card. */
+[data-kete="agent-switch"] {
+  align-self: center;
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--kete-border);
+  border-radius: 999px;
+  background: var(--kete-surface);
+}
+[data-kete="agent-switch"] button {
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--kete-text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+[data-kete="agent-switch"] button:hover {
+  color: var(--kete-text-1);
+}
+[data-kete="agent-switch"] button[aria-checked="true"] {
+  background: var(--kete-brand);
+  color: var(--kete-brand-paper);
+}
+
 /* ---------- Focus rings, in brand ---------- */
 
 [data-kete] :focus-visible,
