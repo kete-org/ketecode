@@ -6,15 +6,19 @@ import { Arch, type Configuration } from "electron-builder"
 import { NativeArch } from "../../script/native-arch"
 import { DESKTOP_NATIVE_ENGLISH } from "@opencode/app/i18n/desktop-native"
 import { CLI_BINARIES, getCurrentCli, nodePtyPackage } from "./script/utils"
+import { Brand } from "@opencode/util/kete/brand" // kete_change
+import { KeteDesktop } from "@opencode/util/kete/desktop" // kete_change
 
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 
-// The Electron 42 packaging update briefly installed Linux launchers/icons under
-// "opencode-desktop". Keep that hidden desktop entry around so existing GNOME/KDE
-// pins still resolve after the canonical app id changes back to ai.opencode.desktop.
-const legacyDesktopEntry = path.join(packageDir, "resources", "linux", "opencode-desktop.desktop")
-
-const legacyDesktopEntryFpm = `${legacyDesktopEntry}=/usr/share/applications/opencode-desktop.desktop`
+// kete_change start: OpenCode's legacy "opencode-desktop" launcher isn't Kete Code's to install
+// // The Electron 42 packaging update briefly installed Linux launchers/icons under
+// // "opencode-desktop". Keep that hidden desktop entry around so existing GNOME/KDE
+// // pins still resolve after the canonical app id changes back to ai.opencode.desktop.
+// const legacyDesktopEntry = path.join(packageDir, "resources", "linux", "opencode-desktop.desktop")
+//
+// const legacyDesktopEntryFpm = `${legacyDesktopEntry}=/usr/share/applications/opencode-desktop.desktop`
+// kete_change end
 
 // rpmbuild adds /usr/lib/.build-id links for every ELF file. The bundled Electron
 // binaries are byte-identical across apps on the same Electron version, so those
@@ -40,11 +44,14 @@ function resolveChannel() {
   return "dev"
 }
 
-const APP_IDS = {
-  dev: "ai.opencode.desktop.dev",
-  beta: "ai.opencode.desktop.beta",
-  prod: "ai.opencode.desktop",
-} as const
+const APP_IDS = KeteDesktop.appIDs // kete_change
+
+// kete_change start: the channel's update feed, or none (KeteDesktop.updateFeeds); without one there is no app-update.yml
+function ketePublish(channel: KeteDesktop.Channel) {
+  const url = KeteDesktop.updateFeeds[channel]
+  return url ? { provider: "generic" as const, url, channel: "latest" } : null
+}
+// kete_change end
 
 // libappimage (used by AppImageLauncher) resolves the .desktop entry inside an
 // AppImage by globbing `*.desktop` at the squashfs root. If the main
@@ -64,7 +71,7 @@ const getBase = (appId: string): Configuration => {
   const desktopName = `${appId}.desktop`
 
   return {
-    artifactName: "opencode-desktop-${os}-${arch}.${ext}",
+    artifactName: `${KeteDesktop.artifactPrefix}-\${os}-\${arch}.\${ext}`, // kete_change
     directories: {
       output: "dist",
       buildResources: "resources",
@@ -75,9 +82,14 @@ const getBase = (appId: string): Configuration => {
     // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
     // https://www.electron.build/docs/linux/
     // Release builds take their version from OPENCODE_VERSION instead of rewriting package.json.
-    extraMetadata: process.env.OPENCODE_VERSION
-      ? { desktopName, version: process.env.OPENCODE_VERSION }
-      : { desktopName },
+    // kete_change start: Kete Code's name and author (the Windows CompanyName and copyright come from it), not package.json's
+    extraMetadata: {
+      desktopName,
+      author: { name: Brand.displayName },
+      homepage: Brand.urls.releases,
+      ...(process.env.OPENCODE_VERSION ? { version: process.env.OPENCODE_VERSION } : {}),
+    },
+    // kete_change end
     files: [
       "out/**/*",
       "resources/**/*",
@@ -173,8 +185,8 @@ const getBase = (appId: string): Configuration => {
       target: ["dmg", "zip"],
     },
     protocols: {
-      name: "OpenCode",
-      schemes: ["opencode"],
+      name: KeteDesktop.productNames.prod, // kete_change
+      schemes: [KeteDesktop.scheme], // kete_change
     },
     win: {
       icon: `resources/icons/icon.ico`,
@@ -218,15 +230,11 @@ export function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Dev",
-        publish: {
-          provider: "generic",
-          url: "https://opencode.ai/update/api/dev/desktop/opencode/",
-          channel: "latest",
-        },
+        productName: KeteDesktop.productNames.dev, // kete_change
+        publish: ketePublish("dev"), // kete_change
         deb: { fpm: [...previewCompressionFpm("deb"), metainfoFpm(appId)] },
         rpm: {
-          packageName: "opencode-dev",
+          packageName: KeteDesktop.linuxPackages.dev, // kete_change
           fpm: [rpmNoBuildIdLinksFpm, ...previewCompressionFpm("rpm"), metainfoFpm(appId)],
         },
       }
@@ -236,16 +244,12 @@ export function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Beta",
-        protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
-        publish: {
-          provider: "generic",
-          url: "https://opencode.ai/update/api/beta/desktop/opencode/",
-          channel: "latest",
-        },
+        productName: KeteDesktop.productNames.beta, // kete_change
+        protocols: { name: KeteDesktop.productNames.beta, schemes: [KeteDesktop.scheme] }, // kete_change
+        publish: ketePublish("beta"), // kete_change
         deb: { fpm: [...previewCompressionFpm("deb"), metainfoFpm(appId)] },
         rpm: {
-          packageName: "opencode-beta",
+          packageName: KeteDesktop.linuxPackages.beta, // kete_change
           fpm: [rpmNoBuildIdLinksFpm, ...previewCompressionFpm("rpm"), metainfoFpm(appId)],
         },
       }
@@ -255,20 +259,18 @@ export function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode",
-        protocols: { name: "OpenCode", schemes: ["opencode"] },
-        // An Icon Composer package compiles to Assets.car, which macOS 26 and later draw the app icon from
-        // (Dock, Finder, system dialogs and the system icon styles). Older macOS keeps using the ICNS.
-        mac: { ...base.mac, icon: "resources/icons/icon.icon" },
+        productName: KeteDesktop.productNames.prod, // kete_change
+        protocols: { name: KeteDesktop.productNames.prod, schemes: [KeteDesktop.scheme] }, // kete_change
+        // kete_change start: Kete Code ships its ICNS on every macOS; it has no Icon Composer package yet
+        // // An Icon Composer package compiles to Assets.car, which macOS 26 and later draw the app icon from
+        // // (Dock, Finder, system dialogs and the system icon styles). Older macOS keeps using the ICNS.
+        // mac: { ...base.mac, icon: "resources/icons/icon.icon" },
+        // kete_change end
         // The DMG volume icon would otherwise use the same actool-generated ICNS.
         dmg: { icon: "resources/icons/icon.icns" },
-        publish: {
-          provider: "generic",
-          url: "https://opencode.ai/update/api/latest/desktop/opencode/",
-          channel: "latest",
-        },
-        deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
-        rpm: { packageName: "opencode", fpm: [rpmNoBuildIdLinksFpm, metainfoFpm(appId), legacyDesktopEntryFpm] },
+        publish: ketePublish("prod"), // kete_change
+        deb: { fpm: [metainfoFpm(appId)] }, // kete_change: no legacy desktop entry
+        rpm: { packageName: KeteDesktop.linuxPackages.prod, fpm: [rpmNoBuildIdLinksFpm, metainfoFpm(appId)] }, // kete_change
       }
     }
   }

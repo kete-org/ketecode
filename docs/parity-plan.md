@@ -70,7 +70,7 @@ Goal: lead on context efficiency and safe autonomy, the any-model advantage.
 | B5 | **More hook events**: before compaction, subagent stop | Claude Code | *new* | S | none |
 | B6 | **`@`-mention MCP resources** in the prompt | Claude Code | *new* | S | autocomplete |
 | B7 | **Output styles**: named personas (default, explanatory, learning, reviewer) | Claude Code | *new* | S | system prompt seam |
-| B8 | **Security-review command**, reusing review_v1 | Claude Code | *new* | S | none |
+| B8 | **Security-review command**, reusing review_v1 | Claude Code | done: `/security-review` (`core/src/kete/git-commands.ts`) runs on the read-only Security agent; review_v1 is job-only, so it isn't reused | — | none |
 
 ### Milestone C — Power users (terminal)
 | # | Item | Source | Status | Size | Upstream edits |

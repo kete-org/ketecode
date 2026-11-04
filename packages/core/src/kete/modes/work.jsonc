@@ -1,0 +1,9 @@
+// Work mode: a placeholder (Work mode spec, Phase 0). Nothing reads mode profiles yet.
+// Its agents, permissions and the skills it uses (which live in kete-loom, not this repository)
+// are decided in a later phase.
+{
+  "id": "work",
+  "name": "Work",
+  "description": "Placeholder for Work mode; not available yet.",
+  "placeholder": true
+}

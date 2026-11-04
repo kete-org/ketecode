@@ -5,12 +5,13 @@ import { MenubarItem, type Plugin } from "@opencode/plugin/gui/main"
 import { Updater } from "@opencode/plugin/gui/updater"
 import { logContext } from "./log"
 import { make } from "./machine"
+import { KeteDesktop } from "@opencode/util/kete/desktop" // kete_change
 
 const setup: Plugin.MainSetup = async (ctx) => {
   const builtin = builtinMainContext(ctx)
   const build = ctx.app
   const lifecycle = builtin.lifecycle
-  const enabled = build.packaged
+  const enabled = build.packaged && KeteDesktop.updatesEnabled(build.channel) // kete_change: no Kete Code update feed yet
   // Holds no resources, so it needs no cleanup.
   const context = logContext(ctx.log.write)
   const runPromise = Effect.runPromiseWith(context)

@@ -120,6 +120,19 @@ describe("sync", () => {
     expect(git(kete, "log", "-1", "--format=%s")).toBe("chore(upstream): pin OpenCode v1.1.0")
   })
 
+  test("resumes when a staged path is a directory, such as a submodule", () => {
+    const { kete } = fixture({ "packages/core/src/config.ts": config(".opencode-v2") })
+    expect(sync({ cwd: kete, version: "v1.1.0", ...quiet }).type).toBe("conflicts")
+    write(kete, {
+      "packages/core/src/config.ts":
+        "export const configDir = Brand.projectDirectory // kete_change\nexport const retries = 3\n",
+    })
+    git(kete, "add", "packages/core/src/config.ts")
+    fs.mkdirSync(path.join(kete, "vendor/sub"), { recursive: true })
+    git(kete, "update-index", "--add", "--cacheinfo", `160000,${git(kete, "rev-parse", "HEAD")},vendor/sub`)
+    expect(sync({ cwd: kete, resume: true, ...quiet }).type).toBe("done")
+  })
+
   test("refuses when pushing to upstream is enabled", () => {
     const { kete, upstream } = fixture()
     git(kete, "remote", "set-url", "--push", "upstream", upstream)

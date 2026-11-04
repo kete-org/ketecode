@@ -1,0 +1,10 @@
+// Code mode: Kete Code as it works today, for software engineering in a repository.
+// Phase 0 of the Work mode spec: nothing reads mode profiles yet, so this file changes no behaviour.
+// It records the defaults a profile will select, so Work mode can be described the same way.
+{
+  "id": "code",
+  "name": "Code",
+  "description": "Build, test and review code in a repository.",
+  // The agent a new session starts with (core/src/agent.ts `defaultID`).
+  "agent": "build"
+}
