@@ -1321,6 +1321,8 @@ export const dict = {
   "usage.signedOut.body": "Connect OpenCode Console to see your workspace's budgets and Go usage.",
   "usage.error": "Usage limits couldn't be loaded.",
   "usage.retry": "Try again",
+  "toast.kete.sidecar.restarting": "{{product}} runtime stopped. Restarting…", // kete_change
+  "toast.kete.sidecar.restarted": "{{product}} runtime restarted", // kete_change
 }
 
 export default dict
