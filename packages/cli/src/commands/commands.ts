@@ -13,17 +13,27 @@ export const PrintLogs = GlobalFlag.Setting("print-logs")({
   ),
 })
 
-declare const OPENCODE_CLI_NAME: string | undefined
-
-const ServerParams = {
-  standalone: Flag.Boolean("standalone").pipe(
+export const Standalone = GlobalFlag.Setting("standalone")({
+  flag: Flag.Boolean("standalone").pipe(
     Flag.withDescription("Run with a private server instead of the background service"),
     Flag.withDefault(false),
   ),
-  server: Flag.String("server").pipe(
+})
+
+export const Server = GlobalFlag.Setting("server")({
+  flag: Flag.String("server").pipe(
     Flag.withDescription("Connect to a server URL instead of the background service"),
     Flag.optional,
   ),
+})
+
+const ServerFlags = [Standalone, Server] as const
+
+declare const OPENCODE_CLI_NAME: string | undefined
+
+const ServerParams = {
+  standalone: Standalone.flag,
+  server: Server.flag,
 }
 
 const PermissionParams = {
@@ -122,8 +132,8 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     }),
     Spec.make("api", {
       description: "Make a request to the running server",
+      globalFlags: ServerFlags,
       params: {
-        ...ServerParams,
         request: Argument.String("operation | method path").pipe(
           Argument.withDescription("OpenAPI operation ID, or an HTTP method followed by a path"),
           Argument.variadic({ min: 1, max: 2 }),
@@ -140,17 +150,14 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     Spec.make("debug", {
       description: "Debugging and troubleshooting tools",
       commands: [
-        Spec.make("agents", { description: "List all agents" }),
-        Spec.make("config", { description: "List configuration sources" }),
+        Spec.make("agents", { description: "List all agents", globalFlags: ServerFlags }),
+        Spec.make("config", { description: "List configuration sources", globalFlags: ServerFlags }),
         Spec.make("heap-dump", {
           description: "Write a heap snapshot of the running server and print its path",
+          globalFlags: [Server],
           params: {
             directory: Flag.String("directory").pipe(
               Flag.withDescription("Directory to write the snapshot into instead of the server's log directory"),
-              Flag.optional,
-            ),
-            server: Flag.String("server").pipe(
-              Flag.withDescription("Connect to a server URL instead of the background service"),
               Flag.optional,
             ),
           },
@@ -181,11 +188,11 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     }),
     Spec.make("auth", {
       description: `manage integrations and credentials (to sign in to your ${Brand.displayName} account, use \`${Brand.cliName} login\`)`, // kete_change
+      globalFlags: ServerFlags,
       commands: [
         Spec.make("list", {
           description: "list integrations and credentials",
           params: {
-            ...ServerParams,
             format: Flag.Literals("format", ["default", "json"]).pipe(
               Flag.withDescription("Output format"),
               Flag.withDefault("default"),
@@ -195,7 +202,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("login", {
           description: "connect an integration",
           params: {
-            ...ServerParams,
             target: Argument.String("target").pipe(
               Argument.withDescription("Integration ID, name, or well-known provider URL"),
               Argument.optional,
@@ -210,7 +216,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("logout", {
           description: "log out of a saved account",
           params: {
-            ...ServerParams,
             target: Argument.String("target").pipe(
               Argument.withDescription("Integration ID or name"),
               Argument.optional,
@@ -224,7 +229,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("export", {
           description: "print stored credentials, including secrets, as JSON",
           params: {
-            ...ServerParams,
             target: Argument.String("target").pipe(
               Argument.withDescription("Integration ID or name (exports every integration when omitted)"),
               Argument.optional,
@@ -234,7 +238,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("import", {
           description: "import credentials exported by auth export",
           params: {
-            ...ServerParams,
             file: Argument.String("file").pipe(
               Argument.withDescription("JSON file to import (reads stdin when omitted)"),
               Argument.optional,
@@ -244,7 +247,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("switch", {
           description: "switch the active account for an integration",
           params: {
-            ...ServerParams,
             target: Argument.String("target").pipe(
               Argument.withDescription("Integration ID or name"),
               Argument.optional,
@@ -260,7 +262,10 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     Spec.make("mcp", {
       description: "Manage MCP (Model Context Protocol) servers",
       commands: [
-        Spec.make("list", { description: "List configured MCP servers and their status" }),
+        Spec.make("list", {
+          description: "List configured MCP servers and their status",
+          globalFlags: ServerFlags,
+        }),
         Spec.make("add", {
           description: "Add an MCP server to your configuration, or a built-in preset (`kete mcp presets`)", // kete_change
           params: {
@@ -288,12 +293,14 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         KeteCommands.mcpPresets, // kete_change
         Spec.make("auth", {
           description: "Authenticate with an OAuth-capable remote MCP server",
+          globalFlags: ServerFlags,
           params: {
             name: Argument.String("name").pipe(Argument.withDescription("Name of the MCP server"), Argument.optional),
           },
         }),
         Spec.make("logout", {
           description: "Remove stored OAuth credentials for an MCP server",
+          globalFlags: ServerFlags,
           params: { name: Argument.String("name").pipe(Argument.withDescription("Name of the MCP server")) },
         }),
       ],
@@ -303,6 +310,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       commands: [
         Spec.make("list", {
           description: "List plugins",
+          globalFlags: ServerFlags,
           params: {
             builtin: Flag.Boolean("builtin").pipe(
               Flag.withDescription("Include built-in server plugins"),
@@ -318,6 +326,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         }),
         Spec.make("check", {
           description: "Check package plugins for updates",
+          globalFlags: ServerFlags,
           params: {
             target: Argument.String("target").pipe(
               Argument.withDescription("Configured package target"),
@@ -327,6 +336,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         }),
         Spec.make("update", {
           description: "Update package plugins",
+          globalFlags: ServerFlags,
           params: {
             target: Argument.String("target").pipe(
               Argument.withDescription("Configured package target; omit to update all outdated plugins"),
@@ -344,13 +354,13 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     }),
     Spec.make("models", {
       description: "List all available models",
-      params: ServerParams,
+      globalFlags: ServerFlags,
       commands: [KeteCommands.modelsPull], // kete_change
     }),
     Spec.make("stats", {
       description: "Show shareable usage statistics",
+      globalFlags: ServerFlags,
       params: {
-        ...ServerParams,
         days: Flag.Int("days").pipe(
           Flag.withSchema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
           Flag.withDescription("Show the last N days; 0 means today"),
@@ -380,8 +390,8 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     }),
     Spec.make("mini", {
       description: "Start the minimal interactive interface",
+      globalFlags: ServerFlags,
       params: {
-        ...ServerParams,
         continue: Flag.Boolean("continue").pipe(
           Flag.withAlias("c"),
           Flag.withDescription("Continue the last session"),
@@ -416,8 +426,8 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     }),
     Spec.make("run", {
       description: `Run ${Brand.displayName} with a message`, // kete_change
+      globalFlags: ServerFlags,
       params: {
-        ...ServerParams,
         ...KeteCommands.trustParams, // kete_change: trust the folder's project config for this run (kete/folder-trust.ts)
         message: Argument.String("message").pipe(
           Argument.withDescription("Message to send"),
@@ -459,11 +469,11 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     }),
     Spec.make("session", {
       description: "Manage sessions",
+      globalFlags: ServerFlags,
       commands: [
         Spec.make("list", {
           description: "List top-level sessions in the current project, newest first",
           params: {
-            ...ServerParams,
             maxCount: Flag.Int("max-count").pipe(
               Flag.withAlias("n"),
               Flag.withSchema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
@@ -479,14 +489,12 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("delete", {
           description: "Delete a session and its child sessions",
           params: {
-            ...ServerParams,
             sessionID: Argument.String("sessionID").pipe(Argument.withDescription("Session ID to delete")),
           },
         }),
         Spec.make("export", {
           description: "Export session data as JSON",
           params: {
-            ...ServerParams,
             session: Argument.String("session").pipe(
               Argument.withDescription("Session ID to export"),
               Argument.optional,
@@ -500,7 +508,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("import", {
           description: "Import session data from a JSON file or URL",
           params: {
-            ...ServerParams,
             file: Argument.String("file").pipe(Argument.withDescription("JSON file or URL to import")),
             directory: Flag.String("directory").pipe(
               Flag.withDescription("Directory in which to import the session"),
@@ -555,9 +562,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     ...KeteCommands.specs, // kete_change
     Spec.make("reload", {
       description: "Reload configuration",
-      params: {
-        ...ServerParams,
-      },
+      globalFlags: ServerFlags,
     }),
     Spec.make("pair", {
       description: "Print one-time links to connect a browser or app",

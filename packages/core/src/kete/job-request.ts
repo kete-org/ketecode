@@ -9,9 +9,9 @@
 
 export * as KeteJobRequest from "./job-request.js"
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Redacted } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { AIError, InvalidRequestError } from "@opencode/ai"
+import { AIError, InvalidRequestError } from "@opencode/ai/effect"
 import {
   RequestExecutor,
   type HttpHandler,
@@ -134,7 +134,8 @@ const check = (
     if (kind === undefined) return yield* Effect.fail(refusal("this route isn't one a job may use"))
     const transport = transportReason(kind, request.headers, [
       ...new URL(request.url).searchParams,
-      ...request.urlParams,
+      // A query value can be Redacted (a key in the URL); the check reads it but never reports it.
+      ...Array.from(request.urlParams, ([name, value]) => [name, Redacted.isRedacted(value) ? Redacted.value(value) : value] as const),
     ])
     if (transport !== undefined) return yield* Effect.fail(refusal(transport))
     if (request.body._tag !== "Uint8Array") return yield* Effect.fail(refusal("the request body isn't JSON"))

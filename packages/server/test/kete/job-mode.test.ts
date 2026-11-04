@@ -28,7 +28,7 @@ import { Global } from "@opencode/util/global"
 import { KeteToolHelperProtocol as Protocol } from "@opencode/util/kete/tool-helper-protocol"
 import { Context, Effect, Layer } from "effect"
 import { HttpEffect, HttpRouter, HttpServer } from "effect/http"
-import { LanguageModel, LLMClient } from "../../../ai/src"
+import { LanguageModel, LLMClient } from "../../../ai/src/effect"
 import { OpenAIChat } from "../../../ai/src/protocols/openai-chat"
 import { TestLLM } from "../../../ai/src/testing"
 import { initRepo } from "../../../core/test/fixture/git"
@@ -154,7 +154,7 @@ it.live("(a) job mode on: a shell tool call is refused, and the marker file is n
   Effect.gen(function* () {
     const s = yield* setup({ jobMode: true })
     yield* s.llm.push(
-      TestLLM.tool("call-shell", "shell", { command: `touch ${s.shellMarker}` }),
+      TestLLM.toolCall("call-shell", "shell", { command: `touch ${s.shellMarker}` }),
       TestLLM.text("done", "step-1"),
     )
     // An explicit title (automatic title generation would consume the scripted tool call) and a
@@ -343,7 +343,8 @@ it.live("(g) job mode on with a tool socket: real runtime spawns reach the fake 
       s.client.session.create({ location: { directory: s.repoDir }, metadata: { "kete.unattended": unattended } }),
     )
     expect(fake.requests.length).toBeGreaterThan(0)
-    expect(fake.requests.every((req) => req.argv[0] === "git")).toBe(true)
+    // On macOS upstream resolves git to its full path (core/src/util/git-executable.ts); a job runs on Linux, where it is "git".
+    expect(fake.requests.every((req) => path.basename(req.argv[0] ?? "") === "git")).toBe(true)
     // The env allowlist this fake's HELLO reply advertises is empty — proves the client actually
     // filters to it (D6), not just that it connected.
     expect(fake.requests.every((req) => req.env.length === 0)).toBe(true)
@@ -395,7 +396,7 @@ const agentsRun = (review: KeteReview.Spec | undefined) =>
   Effect.gen(function* () {
     const s = yield* setup({ jobMode: true, review, agents: true })
     yield* s.llm.push(
-      TestLLM.tool("call-read", "read", { path: path.join(s.repoDir, "sub", "file.txt") }),
+      TestLLM.toolCall("call-read", "read", { path: path.join(s.repoDir, "sub", "file.txt") }),
       TestLLM.text("done", "step-1"),
     )
     const session = yield* Effect.promise(() =>

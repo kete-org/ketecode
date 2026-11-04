@@ -76,6 +76,12 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   },
   "packages/core/src/filesystem/watcher.ts": { category: "metadata-only", reason: "change notifications; no content reads" },
   "packages/core/src/persistent-pty/daemon.ts": { category: "off-in-job", reason: "PersistentPty is replaced with a refusing layer in job mode" },
+  // Upstream v2.2.5 sync
+  "packages/core/src/persistent-pty/index.ts": { category: "off-in-job", reason: "stats a new terminal's cwd; PersistentPty is replaced with a refusing layer in job mode" },
+  "packages/core/src/plugin.ts": { category: "off-in-job", reason: "reads a disk plugin's GUI bundle for the desktop app; ConfigPluginSource is empty in job mode" },
+  "packages/core/src/util/git-executable.ts": { category: "not-worktree", reason: "resolves the git binary through Xcode's developer-directory link" },
+  "packages/core/src/shell/parse.ts": { category: "not-worktree", reason: "reads /etc/passwd and stats /Users/<name> to resolve `~user` in a command, never the working tree" },
+  "packages/core/src/artifact.ts": { category: "data-dir", reason: "artifact files under the data directory (`global.data/artifacts`)" },
   "packages/core/src/persistent-pty/binary.bun.ts": { category: "off-in-job", reason: "the persistent-PTY daemon binary; off in job mode" },
   "packages/core/src/plugin/module.ts": { category: "off-in-job", reason: "disk plugins; ConfigPluginSource is empty in job mode" },
   "packages/core/src/kete/lsp.ts": { category: "off-in-job", reason: "language server diagnostics; the plugin does nothing in job mode" },

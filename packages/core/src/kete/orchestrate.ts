@@ -20,7 +20,7 @@
 export * as KeteOrchestrate from "./orchestrate.js"
 
 import path from "node:path"
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"

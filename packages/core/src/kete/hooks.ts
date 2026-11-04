@@ -51,7 +51,7 @@ import { Config } from "../config.js"
 import { Environment } from "../environment/index.js"
 import { Form } from "../form.js"
 import { Location } from "../location.js"
-import { ManagedPolicy } from "../managed-policy.js"
+import { ConfigIntegration } from "../config/integration.js"
 import { Permission } from "../permission.js"
 import { Session } from "../session.js"
 import type { SessionSchema } from "../session/schema.js"
@@ -176,7 +176,6 @@ export function make(deps: Deps = {}) {
       const global = yield* Global.Service
       const location = yield* Location.Service
       const environment = yield* Environment.Service
-      const managed = yield* ManagedPolicy.Service
       const forms = Option.getOrUndefined(yield* Effect.serviceOption(Form.Service))
       const sessions = Option.getOrUndefined(yield* Effect.serviceOption(Session.Service))
       const permission = Option.getOrUndefined(yield* Effect.serviceOption(Permission.Service))
@@ -248,6 +247,7 @@ export function make(deps: Deps = {}) {
           if (
             entry.type === "document" &&
             !userDocument(entry.path) &&
+            !(entry instanceof ConfigIntegration.Document) &&
             (entry.info.policies ?? []).some((policy) => policy.resource.startsWith("hooks:"))
           )
             yield* warnOnce(`project policy ${entry.path}`, "ignored hooks policy statements in project configuration", { file: entry.path })
@@ -255,7 +255,8 @@ export function make(deps: Deps = {}) {
           ...entries.flatMap((entry) =>
             entry.type === "document" && userDocument(entry.path) ? (entry.info.policies ?? []) : [],
           ),
-          ...managed.current().statements,
+          // An organization's statements arrive as integration documents (the OpenCode Console's, upstream v2.2)
+          ...entries.flatMap((entry) => (entry instanceof ConfigIntegration.Document ? (entry.info.policies ?? []) : [])),
         ]
       })
       const availability = deps.availability ?? (() => Effect.runPromise(KeteSandbox.availability))

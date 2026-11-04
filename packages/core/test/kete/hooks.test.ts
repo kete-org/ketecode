@@ -21,7 +21,6 @@ import { KeteHooksTrust } from "@opencode/core/kete/hooks/trust"
 import { Config } from "@opencode/core/config"
 import { Environment } from "@opencode/core/environment/index"
 import { Location } from "@opencode/core/location"
-import { ManagedPolicy } from "@opencode/core/managed-policy"
 import { Project } from "@opencode/core/project"
 import { AbsolutePath } from "@opencode/core/schema"
 import { KeteSandboxProbe } from "@opencode/core/kete/sandbox/probe"
@@ -261,7 +260,6 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
           ...(options.orgPolicies ? [Layer.succeed(Permission.Service, permissionWith(options.orgPolicies))] : []),
           Layer.succeed(Environment.Service, Environment.Service.of({ files: {} as any, spawner })),
           Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.sync(() => current) } as any)),
-          Layer.succeed(ManagedPolicy.Service, ManagedPolicy.Service.of({ current: () => ({ statements: [] }), set: () => Effect.void } as any)),
           Layer.succeed(
             Global.Service,
             Global.Service.of({

@@ -19,7 +19,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { Context, Effect, Layer } from "effect"
 import { HttpEffect, HttpRouter, HttpServer } from "effect/http"
-import { LanguageModel, LLMClient, LLMEvent } from "../../../ai/src"
+import { LanguageModel, LLMClient, LLMEvent } from "../../../ai/src/effect"
 import { OpenAIChat } from "../../../ai/src/protocols/openai-chat"
 import { TestLLM } from "../../../ai/src/testing"
 import { initRepo } from "../../../core/test/fixture/git"
@@ -159,7 +159,7 @@ it.live("AC3 + AC5: completes a run that writes a file, only in the worktree —
   Effect.gen(function* () {
     const s = yield* setup()
     yield* s.llm.push(
-      TestLLM.tool("call-write", "write", { path: "hello.txt", content: "hi" }),
+      TestLLM.toolCall("call-write", "write", { path: "hello.txt", content: "hi" }),
       TestLLM.text("done", "step-2"),
     )
 
@@ -194,7 +194,7 @@ it.live("AC4 + AC6: a write to .kete/kete.jsonc is denied even with a matching a
   Effect.gen(function* () {
     const s = yield* setup()
     yield* s.llm.push(
-      TestLLM.tool("call-write", "write", { path: ".kete/kete.jsonc", content: "{}" }),
+      TestLLM.toolCall("call-write", "write", { path: ".kete/kete.jsonc", content: "{}" }),
       TestLLM.text("done", "step-3"),
     )
 
@@ -294,7 +294,7 @@ it.live("job mode: runs in the prepared worktree (cwd) with no git call; writes 
   Effect.gen(function* () {
     const s = yield* setup()
     yield* s.llm.push(
-      TestLLM.tool("call-write", "write", { path: "hello.txt", content: "hi" }),
+      TestLLM.toolCall("call-write", "write", { path: "hello.txt", content: "hi" }),
       TestLLM.text("done", "step-job-mode"),
     )
 
