@@ -1,10 +1,12 @@
 name: Process daemon
 
 on:
-  pull_request:
-    paths:
-      - packages/process-daemon/**
-      - .github/workflows/check-process-daemon.yml
+  # kete_change start: no pull_request runs in Kete Code (upstream workflows stay disabled; docs/upstream-sync.md)
+#  pull_request:
+#    paths:
+#      - packages/process-daemon/**
+#      - .github/workflows/check-process-daemon.yml
+  # kete_change end
   push:
     branches: [dev]
     paths:

@@ -1537,6 +1537,7 @@ Patches that changed shape in the v2.1.4 → v2.2.5 sync, beyond the rows update
 | `tui/src/kete/folder-trust.ts` | A server-reported local plugin is checked and loaded by its own path | the server now reports the plugin directory itself (v2.2 GUI plugins) |
 | `tui/src/component/prompt/metadata.tsx`, `tui/src/component/dialog-model.tsx`, `tui/src/context/theme.tsx` | Kete's fields beside upstream's new `limit`, `usage` and `newDesigns()` arguments | both kept |
 | `.github/CODEOWNERS` | Upstream's new owner lines kept, commented out | Kete's maintainers own the repository |
+| `.github/workflows/{check-bot-scope,check-process-daemon,release-dry-run,release-process-daemon}.yml` | `pull_request` triggers commented out (`release-dry-run` becomes manual only) | new upstream workflows start enabled and can only be disabled once they are on `main`; without this the sync PR itself would have run them, upstream's release pipeline included. Disable all of v2.2.5's new workflows after merging |
 | `packages/kete-tools/leak-allowlist.txt` | OpenCode Console, OpenCode Go and hosted GPT-Live names in `console-access.ts`, `usage-limits.ts`, `voice.ts`, `tui/src/component/usage.tsx` | those hosted services' product names (opt-in) |
 
 New upstream tests that assume upstream's narrower `cd` handling expect Kete's extra directories (home for a bare `cd`, the

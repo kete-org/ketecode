@@ -12,8 +12,11 @@ run-name: "${{ format('release {0}{1}', inputs.bump, inputs.version) }}"
 # TEMPORARY copy of release.yml for this PR's dry run: GitHub does not start runs for the release.yml path on
 # pull requests (it is the old name of publish.yml). Delete before merging.
 on:
-  pull_request:
-    paths: [.github/workflows/release.yml, .github/workflows/release-dry-run.yml, .github/release/**]
+  # kete_change start: no pull_request runs in Kete Code (upstream workflows stay disabled; docs/upstream-sync.md)
+  #  pull_request:
+  #    paths: [.github/workflows/release.yml, .github/workflows/release-dry-run.yml, .github/release/**]
+  workflow_dispatch:
+  # kete_change end
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ (inputs.bump || inputs.version) && 'release' || 'build' }}

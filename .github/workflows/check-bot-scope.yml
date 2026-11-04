@@ -5,8 +5,10 @@ name: check-bot-scope
 # pushes start no workflows, so bot-nix-hashes.yml dispatches this; pull_request covers anyone else pushing the branch.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  # kete_change start: no pull_request runs in Kete Code (upstream workflows stay disabled; docs/upstream-sync.md)
+#  pull_request:
+#    types: [opened, synchronize, reopened, ready_for_review]
+  # kete_change end
   workflow_dispatch:
 
 concurrency:
