@@ -259,7 +259,7 @@ const compatibilityCases: Array<[string, string, Record<string, string>, ShellPa
   // kete_change end
   test.each(compatibilityCases)(
     "extracts resources, saved prefixes, and directories: %s %s %j",
-    async (shell, command, env, upstream) => {
+    async (shell, command, env, upstream) => { // kete_change: upstream's expectation, adjusted below
       // kete_change start
       const kete = shell === "bash" ? keteDirectories[command] : undefined
       const expected = kete ? { ...upstream, directories: kete(env.HOME ?? os.homedir()) } : upstream
