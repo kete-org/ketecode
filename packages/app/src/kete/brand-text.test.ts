@@ -55,6 +55,9 @@ describe("brandDictionary", () => {
     expect(branded["settings.about.trademark"]).toBe(
       "Kete Code is built on OpenCode. OpenCode is a registered trademark of Anomaly Innovations, Inc.",
     )
+    expect(branded["session.error.incompatible.description"]).toBe(
+      "{{server}} is running Kete Code {{version}}, which this app can't use. Update Kete Code on that server to continue.",
+    )
     expect(branded["dialog.model.unpaid.freeModels.title"]).toBe("Free models provided by OpenCode")
     // Each locale keeps its own translation of it.
     const german = brandDictionary({ "dialog.model.unpaid.freeModels.title": "Kostenlose Modelle von OpenCode" })

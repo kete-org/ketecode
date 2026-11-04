@@ -3,6 +3,7 @@ import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise
 import { Permission } from "@opencode/schema/permission"
 import { Model } from "@opencode/schema/model"
 import { Worktree } from "@opencode/schema/worktree"
+import { KeteHandshakeRpc } from "@opencode/schema/kete/handshake" // kete_change
 import { Duration, Effect, Layer, Option, Predicate, Schema } from "effect"
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
@@ -1133,6 +1134,10 @@ function mockHandlers(
         },
         // The goal plugin's pill reads each routed session's goal; no scenario sets one.
         rpcCall: (ctx) =>
+          // kete_change start: the app's health check asks for the handshake
+          ctx.params.rpcID === KeteHandshakeRpc.ID && ctx.params.method === "get"
+            ? Effect.succeed({ output: { protocol: KeteHandshakeRpc.PROTOCOL, runtime: "2.0.0", modes: ["code"] } })
+            : // kete_change end
           ctx.params.rpcID === "opencode.goal" && ctx.params.method === "get"
             ? Effect.succeed({ output: null })
             : Effect.fail(

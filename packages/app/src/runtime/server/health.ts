@@ -2,6 +2,7 @@ import { usePlatform } from "@/runtime/platform/platform"
 import { ServerConnection } from "@/runtime/server/registry"
 import { authTokenFromCredentials } from "./api"
 import { ClientError, isUnauthorizedError, OpenCode } from "@opencode/client"
+import * as KeteHandshake from "@/kete/handshake" // kete_change
 import { Match } from "effect"
 import { Accessor, createEffect, createSignal, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
@@ -120,15 +121,22 @@ export async function checkServerHealth(
   }
 
   const attempt = async (count: number): Promise<ServerHealth> => {
-    const current = await OpenCode.make({
+    // kete_change start
+    const client = OpenCode.make({
       baseUrl: server.url,
       fetch,
       headers,
     })
-      .server.info({ signal })
-      .then((status) => ({
-        data: { healthy: true as const, version: status.version, hostname: status.hostname },
+    const current = await client.server
+      .info({ signal })
+      // a server that doesn't speak this app's protocol is incompatible
+      .then(async (status) => ({
+        data:
+          (await KeteHandshake.check(client, signal)) === "compatible"
+            ? { healthy: true as const, version: status.version, hostname: status.hostname }
+            : { healthy: false, incompatible: true, version: status.version, hostname: status.hostname },
       }))
+      // kete_change end
       .catch((error) => ({ error }))
 
     if ("data" in current) return current.data

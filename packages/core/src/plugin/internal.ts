@@ -132,6 +132,7 @@ import { Project } from "../project.js" // kete_change
 import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
 import { KeteFolderTrustRpcPlugin } from "../kete/folder-trust/rpc.js" // kete_change
 import { KeteDoctor } from "../kete/doctor.js" // kete_change
+import { KeteHandshake } from "../kete/handshake.js" // kete_change
 import { KeteContextBreakdown } from "../kete/context-breakdown.js" // kete_change
 import { KeteGitCommands } from "../kete/git-commands.js" // kete_change
 import { KeteAutoMemory } from "../kete/auto-memory.js" // kete_change
@@ -345,6 +346,8 @@ const pre = [
   KeteFolderTrustRpcPlugin.Plugin,
   // kete_change: the `kete.doctor` RPC (config file checks, folder trust) for `kete doctor` and /doctor; see kete/doctor.ts
   KeteDoctor.Plugin,
+  // kete_change: the `kete.handshake` RPC (protocol number clients check before using a server); see kete/handshake.ts
+  KeteHandshake.Plugin,
   // kete_change: built-in /commit and /pr prompt commands; see kete/git-commands.ts
   KeteGitCommands.Plugin,
 ] as const satisfies readonly InternalPlugin[]
