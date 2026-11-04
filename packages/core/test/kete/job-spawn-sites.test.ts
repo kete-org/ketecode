@@ -78,6 +78,9 @@ const allowlist: Readonly<Record<string, { readonly category: Category; readonly
   // CrossSpawnSpawner.node.
   "packages/core/src/shell.ts": { category: "seam", reason: "shell tool commands" },
   "packages/core/src/mcp/stdio.ts": { category: "seam", reason: "MCP stdio servers" },
+  // Upstream v2.2.5 sync
+  "packages/core/src/schedule/check.ts": { category: "seam", reason: "a scheduled task's condition command, through Environment.spawner (experimental.schedules, off by default)" },
+  "packages/cli/src/services/port-owner.ts": { category: "client-only", reason: "the CLI names the process holding the service port (lsof/netstat) in an error; never inside a job" },
   "packages/core/src/kete/hooks/run.ts": { category: "seam", reason: "config hooks (the plugin also does nothing in job mode)" },
   "packages/core/src/kete/lsp.ts": { category: "seam", reason: "language servers (the plugin also does nothing in job mode)" },
   "packages/core/src/ripgrep.ts": { category: "seam", reason: "rg (grep/glob tools)" },

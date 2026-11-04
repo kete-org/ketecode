@@ -19,7 +19,7 @@
 
 export * as KeteSubagents from "./subagents.js"
 
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import type { ConfigKete } from "@opencode/schema/config/kete"
 import { Cause, Duration, Effect, Scope, Semaphore, Stream } from "effect"
 import { Bus } from "../bus.js"

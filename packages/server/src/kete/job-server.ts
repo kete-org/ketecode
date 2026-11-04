@@ -78,6 +78,7 @@ const persistentPtyLayer = Layer.succeed(
     input: () => Effect.fail(persistentPtyUnavailable),
     snapshot: () => Effect.fail(persistentPtyUnavailable),
     read: () => Effect.fail(persistentPtyUnavailable),
+    rename: () => Effect.fail(persistentPtyUnavailable),
     remove: () => Effect.fail(persistentPtyUnavailable),
     shutdown: () => Effect.fail(persistentPtyUnavailable),
     handoff: () => Effect.fail(persistentPtyUnavailable),

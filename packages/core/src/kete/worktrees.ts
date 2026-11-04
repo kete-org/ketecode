@@ -18,7 +18,7 @@
 
 export * as KeteWorktrees from "./worktrees.js"
 
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import { Worktree as WorktreeSchema } from "@opencode/schema/worktree"
 import { FSUtil } from "@opencode/util/fs-util"
 import { AppProcess } from "@opencode/util/process"

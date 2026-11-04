@@ -99,7 +99,6 @@ describe("KeteToolEnv.filter", () => {
 // endpoints. Everything else a provider lists under `env` is its credential and must be removed.
 const nonSecret = new Set([
   "AWS_REGION",
-  "AZURE_COGNITIVE_SERVICES_RESOURCE_NAME",
   "AZURE_RESOURCE_NAME",
   "CLOUDFLARE_ACCOUNT_ID",
   "CLOUDFLARE_GATEWAY_ID",

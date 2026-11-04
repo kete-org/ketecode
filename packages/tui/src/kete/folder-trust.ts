@@ -122,7 +122,8 @@ export async function serverTargets(
     .flatMap((directory) => KeteFolderTrustRules.PLUGIN_DIRECTORIES.map((name) => path.join(path.dirname(path.resolve(directory)), name)))
   const entries = plugins.map((plugin) => {
     if (plugin.source.type === "package") return { entry: plugin.source.target, checked: false }
-    const entry = path.dirname(plugin.source.path)
+    // The server reports a local plugin by its directory (upstream v2.2); the TUI loads that directory.
+    const entry = plugin.source.path
     return { entry, checked: !roots.some((root) => within(entry, root)) }
   })
   const asked = [...new Set(entries.filter((item) => item.checked).map((item) => item.entry))]

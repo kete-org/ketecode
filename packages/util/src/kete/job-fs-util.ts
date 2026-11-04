@@ -12,7 +12,7 @@
 //   lists it through KeteConfinedFs and never enters or reports a symlink, and any result of a walk
 //   rooted elsewhere that lands in the working tree is kept only if it's reachable without a symlink
 //   — so a planted link to `/` or `kete`'s data dir can't enumerate names outside the tree;
-// - metadata calls (stat, exists, access, readLink, watch, up/findUp) pass through unchanged: they
+// - metadata calls (stat, lstat, exists, access, readLink, watch, up/findUp) pass through unchanged: they
 //   reveal a link target's existence, type or size, never its content.
 //
 // Paths outside the working tree delegate to the real FSUtil. Every key of the real service is in
@@ -79,6 +79,7 @@ export const delegated = [
   "isDir",
   "isFile",
   "readLink",
+  "lstat",
   "stat",
   "watch",
   "up",
