@@ -1,9 +1,10 @@
 ---
 module: account-login
 paths: [packages/util/src/kete/account.ts, packages/util/src/kete/secret-store.ts, packages/cli/src/kete/cli-login.ts, packages/cli/src/kete/account-flow.ts, packages/cli/src/kete/account-io.ts, packages/cli/src/kete/login.ts, packages/cli/src/kete/logout.ts, packages/cli/src/kete/whoami.ts, packages/cli/src/kete/commands.ts, packages/tui/src/kete/setup-login.ts, packages/util/src/kete/setup.ts]
-verified-at: 063cfce610
+verified-at: e34caf4d08
 ---
 ## Quick answers
+- Is there a desktop or web UI path that signs in or reads account state, and does the runtime react to `account.json` changes without restart? No UI path signs in except the TUI first-run (spawns `kete login`, `tui/src/kete/setup-login.ts:34`); the app/desktop have none yet (see the desktop-sign-in task). The runtime does react, but not on every tick: the gateway reads the account in `load()` (`core/src/kete/gateway.ts:189`) at plugin start and on each `config.updated` event (`:469-476` -> `reload()` `:446`), not on its refresh/balance ticks (those use the loaded `source.current`; the balance tick can rewrite only `gateway_url`, `:361-375`). `sync` reads the account fresh on the `status` RPC (`core/src/kete/sync/plugin.ts:229-243`, `readAccount`), but `state.account` only changes on the sync tick. After login/logout/sync changes, `announceReload()` (`account-flow.ts:418`) calls `io.reload()` (`account-io.ts:12-19`, `client.location.reload`, 30 s timeout) only if a service is running, and prints "The background service picked up the change."
 - Can sign-in start from the TUI? Yes: the first-run setup screen runs `kete login` as a child process (`tui/src/kete/setup-login.ts:34`, 6 min `TIMEOUT` `:20`), reads the browser URL with `KeteSetup.parseLoginURL` (`util/src/kete/setup.ts:39`, only a line that is just a URL) and reloads the location on success; the key never passes through the TUI. The TUI can't import the CLI's `selfCommand` (`cli/src/util/process.ts:5`), so the command is mirrored. See the `ui-branding` card.
 - What colour is the `kete login` callback page? Brand violet `#6e47f5` / dark `#a38cfa` in the page's inline CSS (`cli-login.ts` `page()`, `--brand`), moved from `#7c3aed`/`#a78bfa` on 2026-10-10; see the `ui-branding` card.
 - Do MCP presets share the account's secret store? The same `KeteSecretStore` module and `kete-code` service, under separate `mcp:<server>` entries (`util/src/kete/mcp-secret.ts`); `kete logout` doesn't remove them. See the `mcp-presets` card.
@@ -14,8 +15,8 @@ verified-at: 063cfce610
   service job mode otherwise replaces wholesale. Not expected to matter in practice — job mode is a
   server-side, unattended build with no interactive sign-in flow — but it's fail-closed the same way
   as every other spawn site. See the `job-mode` card.
-- What does `kete login` do? Runs a PKCE browser flow against the platform (`cli-login.ts`), then stores the key via `account-flow.ts:32` `login()`.
-- Where is the account's non-secret state stored? `<config>/account.json`, written by `account.ts:64-81` `save()` (write-then-rename).
+- What does `kete login` do? Runs a PKCE browser flow against the platform (`cli-login.ts`), then stores the key via `account-flow.ts:33` `login()`.
+- Where is the account's non-secret state stored? `<config>/account.json`, written by `account.ts:64-75` `save()` (via `write()` `:90`) (write-then-rename).
 - Where does the API key itself live? An OS credential store (macOS Keychain / Linux Secret Service / Windows Credential Manager) via `secret-store.ts`, or a user-only fallback file when none works.
 - Does `kete auth` still work? Yes — it stays upstream's command for model-provider keys; `kete login`/`logout`/`whoami` are Kete's own commands for the platform account (`commands.ts:1-2`).
 
@@ -23,13 +24,13 @@ verified-at: 063cfce610
 Signs a user in to a Kete Code account through the platform's browser-based CLI login (`kete login`), stores the resulting API key OS-natively, and exposes it to `kete logout`/`kete whoami`/the gateway provider/the sync plugin. Implements docs/platform/cli-login-v1.md end to end on the client.
 
 ## Entry points
-- `packages/cli/src/kete/login.ts:9-25`, `logout.ts:9-18`, `whoami.ts:9-18` — Effect `Runtime.handler`s wired into the CLI command tree via `commands.ts:82-131` (`login`/`logout`/`sync`/`whoami` specs, part of `KeteCommands.specs`), spread into `cli/src/commands/commands.ts` (upstream seam) and `cli/src/index.ts` (handler map entries). `commands.ts` also defines the unrelated `sandbox` (`:133`), `trust` (`:143`), `skill` (`:169`) and `job` (`:246`) specs — see the `cli` card; this card only covers the account-sign-in specs in the same file.
-- `account-flow.ts:32` `login()`, `:241` `logout()`, `:298` `whoami()` / `:274` `whoamiJSON()`, `:105` `sync()` (see the `sync` module card) — plain functions over injected `IO`, so tests run them end to end against a fake platform (`account-flow.ts:1-2`).
+- `packages/cli/src/kete/login.ts:9-25`, `logout.ts:9-18`, `whoami.ts:9-18` — Effect `Runtime.handler`s wired into the CLI command tree via `commands.ts:82-132` (`login`/`logout`/`sync`/`whoami` specs, part of `KeteCommands.specs`), spread into `cli/src/commands/commands.ts` (upstream seam) and `cli/src/index.ts` (handler map entries). `commands.ts` also defines the unrelated `sandbox` (`:133`), `trust` (`:143`), `skill` (`:169`) and `job` (`:246`) specs — see the `cli` card; this card only covers the account-sign-in specs in the same file.
+- `account-flow.ts:33` `login()`, `:242` `logout()`, `:299` `whoami()` / `:275` `whoamiJSON()`, `:106` `sync()` (see the `sync` module card) — plain functions over injected `IO`, so tests run them end to end against a fake platform (`account-flow.ts:1-2`).
 - `account-io.ts:24-33` `AccountIO.make()` — the real terminal I/O: stdout/stderr, `KeteAccount.defaults()`, and a reload of the background service only if one is already running.
 
 ## Key files
 - `account.ts:19-30` `Account` schema (`account.json` shape: platform/gateway URL, organization, key id, device name, storage kind); `:64-81` `save()`, `:50-61` `read()`, `:94-110` `clear()`.
-- `account.ts:113-119` `store()` picks the credential store by `Account["storage"]` kind; `:122-124` `entry()` keys credentials by `<platform host>/<key_id>` so accounts on different platforms never collide.
+- `account.ts:130` `store()` picks the credential store by `Account["storage"]` kind; `:140` `entry()` keys credentials by `<platform host>/<key_id>` so accounts on different platforms never collide.
 - `secret-store.ts:35-141` the four `Store` implementations (`keychain`, `secretService`, `credentialManager`, `file`) — each drives an OS tool via stdin/stdout only, never argv (`secret-store.ts:6-8`); `:148-165` `save()` writes then reads back to verify before trusting a store.
 - `cli-login.ts:22-40` PKCE (`pkce()`, `challengeFor()`, RFC 7636 S256); `:110-198` `listen()` — the 127.0.0.1-only loopback callback listener, Host/state checked per request (`:157-191`).
 - `cli-login.ts:272-315` `exchange()`/`revoke()`/`me()` — the `/api/v1/cli/token`, `/api/v1/cli/logout`, `/api/v1/me` calls; `:331-358` `failure()` maps HTTP status/error code to a typed `PlatformError`.
