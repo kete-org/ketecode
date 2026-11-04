@@ -22,6 +22,7 @@ import {
   type Platform,
 } from "./panel-state"
 import { dismissCliHint, dismissNotice } from "./vscode-host"
+import { KeteAccountPrompt } from "./account-prompt-card"
 import { KeteLocalOffer, KeteOfflineIndicator } from "./local-ui"
 import "./panel.css"
 
@@ -41,6 +42,7 @@ export function KeteEmptyState() {
     <div data-kete="empty-state">
       <KeteMark class="kete-hero-mark" decorative />
       <KeteLocalOffer />
+      <KeteAccountPrompt />
       <Show when={tipVisible(state())}>
         <p class="kete-tip">
           Select any code and press <TipKeys platform={state().platform} /> to ask Kete about it

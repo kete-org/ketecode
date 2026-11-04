@@ -1,0 +1,17 @@
+export default {
+  title: "Account",
+  description: "Sign in to Kete Code to use your organization's models.",
+  "signedIn.title": "Signed in to {{organization}}",
+  "signedIn.description": "Models and agents from your organization are available.",
+  "signedIn.platform": "Platform: {{platform}}",
+  "signedOut.title": "Not signed in",
+  "signedOut.description": "Sign in to use your organization's models, agents and skills.",
+  "signIn": "Sign in",
+  "signOut": "Sign out",
+  "cancel": "Cancel",
+  "waiting.title": "Waiting for the browser…",
+  "waiting.description": "Approve the sign-in in the browser window that opened.",
+  "offline": "Offline mode is on, so signing in is unavailable.",
+  "unavailable": "No Kete Code server is available to sign in with.",
+  "error.generic": "Something went wrong. Try again.",
+} as const

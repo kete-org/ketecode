@@ -342,7 +342,8 @@
   color: var(--kete-text-2);
 }
 
-[data-kete="local-offer"] {
+[data-kete="local-offer"],
+[data-kete="account-prompt"] {
   width: 100%;
   max-width: 480px;
   display: flex;
@@ -355,11 +356,13 @@
   border-radius: var(--kete-r-container);
   background: var(--kete-surface);
 }
-[data-kete="local-offer"] p {
+[data-kete="local-offer"] p,
+[data-kete="account-prompt"] p {
   margin: 0;
   color: var(--kete-text-1);
 }
-[data-kete="local-offer-actions"] {
+[data-kete="local-offer-actions"],
+[data-kete="account-prompt-actions"] {
   display: flex;
   gap: 8px;
 }

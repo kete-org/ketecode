@@ -468,10 +468,18 @@ export function make(
       yield* balanced.pipe(Effect.repeat(Schedule.spaced(balanceInterval)), Effect.forkScoped)
       yield* ctx.event.subscribe().pipe(
         Stream.filter((event) =>
-          ["config.updated", "integration.updated", "credential.updated", "credential.switched"].includes(event.type),
+          [
+            "config.updated",
+            "rpc.kete.account.changed", // signed in or out from a client (kete/account.ts)
+            "integration.updated",
+            "credential.updated",
+            "credential.switched",
+          ].includes(event.type),
         ),
         Stream.runForEach((event) =>
-          event.type === "config.updated" ? reload().pipe(Effect.andThen(balanced)) : Effect.andThen(logged, balanced),
+          event.type === "config.updated" || event.type === "rpc.kete.account.changed"
+            ? reload().pipe(Effect.andThen(balanced))
+            : Effect.andThen(logged, balanced),
         ),
         Effect.forkScoped({ startImmediately: true }),
       )

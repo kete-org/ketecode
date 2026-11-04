@@ -6,7 +6,9 @@ import { ModelResolver } from "@opencode/core/model-resolver"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { Provider } from "@opencode/core/provider"
+import { Rpc } from "@opencode/core/rpc"
 import { Document, Info } from "@opencode/schema/config"
+import { KeteAccountRpc } from "@opencode/schema/kete/account"
 import { Money } from "@opencode/schema/money"
 import { KeteAccount } from "@opencode/util/kete/account"
 import type { KeteSecretStore } from "@opencode/util/kete/secret-store"
@@ -695,6 +697,41 @@ describe("KeteGateway", () => {
               (model) => model !== undefined,
             )
             expect((yield* providers.get(KeteGateway.providerID))?.settings).toEqual({ apiKey: key })
+          }),
+        ),
+      ({ server }) => Effect.promise(() => server.stop(true)),
+    ),
+  )
+
+  it.live("account: signing out through kete.account removes the gateway models without a restart", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(gateway),
+      ({ server }) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const models = yield* Model.Service
+            const rpc = yield* Rpc.Service
+            yield* seedCatalog()
+            const account = yield* signIn(server.url.origin, "account-key")
+            yield* addPlugin({}, account)
+            yield* eventually(
+              models.get(KeteGateway.providerID, Model.ID.make("claude-sonnet-4-5")),
+              (model) => model !== undefined,
+            )
+
+            // What `kete logout` does, then the plugin's event.
+            yield* Effect.promise(async () => KeteAccount.clear(account, await KeteAccount.read(account)))
+            const registration = yield* rpc.register(KeteAccountRpc.Definition, {
+              status: () => Effect.die("unused"),
+              login: () => Effect.die("unused"),
+              cancel: () => Effect.die("unused"),
+              logout: () => Effect.die("unused"),
+            })
+            yield* registration.events.emit("changed", { state: "signed-out" })
+            yield* eventually(
+              models.get(KeteGateway.providerID, Model.ID.make("claude-sonnet-4-5")),
+              (model) => model === undefined,
+            )
           }),
         ),
       ({ server }) => Effect.promise(() => server.stop(true)),

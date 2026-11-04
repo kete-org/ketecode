@@ -83,7 +83,7 @@ export const specs = [
     description: `Sign in to your ${Brand.displayName} account in the browser (for model provider keys, use \`${Brand.cliName} auth login\`)`,
     params: {
       platformUrl: Flag.String("platform-url").pipe(
-        Flag.withDescription(`${Brand.displayName} platform URL (default: KETE_PLATFORM_URL, then kete.platform.url in your config)`),
+        Flag.withDescription(`${Brand.displayName} platform URL (default: KETE_PLATFORM_URL, then kete.platform.url in your config, then ${Brand.urls.platform})`),
         Flag.optional,
       ),
       port: Flag.Int("port").pipe(

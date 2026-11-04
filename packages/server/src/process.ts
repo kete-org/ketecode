@@ -17,6 +17,7 @@ import { NetAddress } from "effect/net"
 import { createServer } from "node:http"
 import { ServerAuth } from "./auth"
 import { isAllowedCorsOrigin } from "./cors"
+import { KeteAccountGate } from "./kete/account-gate" // kete_change
 import { KeteLocalGuard } from "./kete/local-guard" // kete_change
 import { KeteSocketListen } from "./kete/socket-listen" // kete_change
 import { authorizedRequest, unauthorizedResponse } from "./middleware/authorization"
@@ -77,6 +78,7 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
       (transform ? transform(app) : app).pipe(
         HttpMiddleware.compression(),
         HttpMiddleware.cors({ allowedOrigins: (origin) => isAllowedCorsOrigin(origin, options), maxAge: 86_400 }),
+        KeteAccountGate.middleware({ hostname, socket: options.socket, remoteURLs }), // kete_change: credential-changing account RPCs only when local-only
         // kete_change: Host/Origin checks (DNS rebinding, cross-site) before CORS and auth
         KeteLocalGuard.middleware({ hostname, cors: options.cors, allowedHosts: KeteLocalGuard.allowedHostsFromEnvironment() }),
       ),

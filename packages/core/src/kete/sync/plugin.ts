@@ -487,6 +487,13 @@ export function make(
         Stream.runForEach(() => tick),
         Effect.forkScoped({ startImmediately: true }),
       )
+      // Signed in or out from a client (kete/account.ts): `kete login` already synced, so this reloads the cache.
+      yield* ctx.event.subscribe().pipe(
+        Stream.filter((event) => event.type === "rpc.kete.account.changed"),
+        Stream.runForEach(() => tick),
+        Effect.catchCause((cause) => Effect.logWarning("account change sync stopped", { cause })),
+        Effect.forkScoped({ startImmediately: true }),
+      )
     }),
   } satisfies PluginInternal.InternalPlugin)
 }
