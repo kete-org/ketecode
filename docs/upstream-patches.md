@@ -1859,3 +1859,17 @@ the `kete-mcp:` files fail the prompt: move the expansion.
 | `core/src/plugin/internal.ts` | Import; `KeteOutputStyles.Plugin` after `KeteGitCommands.Plugin` in `pre` | internal plugin registration list |
 
 **Sync checklist:** if upstream adds output styles or another persona setting, compare and drop one.
+
+## Plan approval (feature/plan-approval)
+
+`core/src/kete/plan-approval.ts` adds the `present_plan` tool: in Plan mode the agent presents its plan,
+the user approves it in a form, and the session switches to Accept-edits or Default (and from upstream's
+`plan` agent to the default agent). Upstream's Plan plugin (`plugin/plan.ts`) is unchanged; its reminder
+still says the user switches agents, so Plan mode requests also get a short Kete reminder to call the tool.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KetePlanApproval.Plugin` after `KeteOutputStyles.Plugin` in `pre` | internal plugin registration list |
+
+**Sync checklist:** if upstream adds its own plan-exit tool or changes the Plan reminder, compare and drop
+ours or the extra reminder.

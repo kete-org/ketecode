@@ -137,6 +137,21 @@ A subagent follows its root session's mode (the root-most session that has one).
 (`kete job run`, cloud jobs) don't use these defaults: they keep their own fail-closed policy
 ([ADR 0008](adr/0008-unattended-runs-fail-closed.md)).
 
+### Plan approval
+
+In Plan mode the agent finishes by presenting its plan (the `present_plan` tool). You get a
+question with the whole plan and three answers:
+
+- **Approve and let it edit**: the session switches to `accept-edits` and, if it was on the read-only
+  Plan agent, to your default agent; the agent then implements the plan in the same turn.
+- **Approve, with the usual checks**: the same, but the session switches to `default`.
+- **Keep planning**: nothing changes; what you write goes back to the agent, which revises the plan
+  and presents it again.
+
+Only your answer leaves Plan mode: the agent can't approve its own plan. The tool is offered only in
+your own Plan mode session — not to subagents, not in other modes, and never in unattended runs,
+which can't ask. You can still switch modes yourself at any time.
+
 ### Choosing a mode
 
 | Client | How |
