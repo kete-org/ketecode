@@ -1,5 +1,6 @@
 export * as ToolServer from "./server.js"
 
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import type { LanguageModelV3FunctionTool } from "@ai-sdk/provider"
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk"
 import type { Tool } from "@modelcontextprotocol/server"
@@ -26,7 +27,7 @@ export async function make(
   server.setRequestHandler("tools/list", async () => ({ tools: definitions }))
   server.setRequestHandler("tools/call", async (request) => {
     const name = ToolNames.PREFIX + request.params.name
-    if (!ToolNames.original(name, tools)) throw new Error(`Claude Code called an unregistered OpenCode tool: ${name}`)
+    if (!ToolNames.original(name, tools)) throw new Error(`Claude Code called an unregistered ${Brand.displayName} tool: ${name}`) // kete_change
     return pending.call(name)
   })
   // Claude Agent SDK bundles its own MCP SDK types; its public instance type also names the higher-level McpServer.

@@ -126,9 +126,12 @@ export function KeteVSCodeShell() {
       if (!workspace.directory || !conn || (!force && (workspace.opened || location.pathname !== "/"))) return
       workspace.opened = true
       const context = global.ensureServerCtx(conn)
-      context.projects.open(workspace.directory)
-      context.projects.touch(workspace.directory)
-      workspace.drafting = tabs.newDraft({ server: ServerConnection.key(conn), directory: workspace.directory }).catch(() => undefined)
+      const directory = workspace.directory
+      // add() registers the folder's project on the server and marks it this client's last used one.
+      workspace.drafting = context.projects
+        .add(directory)
+        .then(() => tabs.newDraft({ server: ServerConnection.key(conn), directory }))
+        .catch(() => undefined)
     }
     const listener = (data: unknown) => {
       const vscodeTheme = KeteVSCodeTheme.themeMessage(data)

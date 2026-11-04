@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { NodeFileSystem, NodeServices } from "@effect/platform-node"
 import { Global } from "@opencode/util/global"
 import { OPENCODE_VERSION } from "../src/version"
@@ -125,28 +126,28 @@ test("global --server and --standalone flags parse in any position for server-co
 
   const url = "http://127.0.0.1:43210"
   const serverCases: ReadonlyArray<readonly [ReadonlyArray<string>, string]> = [
-    [["--server", url, "session", "list"], "opencode session list"],
-    [["session", "--server", url, "list"], "opencode session list"],
-    [["session", "list", "--server", url], "opencode session list"],
-    [["session", "--server", url, "delete", "ses_123"], "opencode session delete"],
-    [["--server", url, "plugin", "list"], "opencode plugin list"],
-    [["plugin", "--server", url, "list"], "opencode plugin list"],
-    [["plugin", "list", "--server", url], "opencode plugin list"],
-    [["plugin", "--server", url, "check"], "opencode plugin check"],
-    [["plugin", "--server", url, "update"], "opencode plugin update"],
-    [["--server", url, "mcp", "list"], "opencode mcp list"],
-    [["mcp", "--server", url, "list"], "opencode mcp list"],
-    [["mcp", "list", "--server", url], "opencode mcp list"],
-    [["mcp", "--server", url, "auth", "linear"], "opencode mcp auth"],
-    [["mcp", "--server", url, "logout", "linear"], "opencode mcp logout"],
-    [["auth", "--server", url, "list"], "opencode auth list"],
-    [["debug", "--server", url, "config"], "opencode debug config"],
-    [["debug", "--server", url, "agents"], "opencode debug agents"],
-    [["debug", "--server", url, "heap-dump"], "opencode debug heap-dump"],
-    [["--server", url, "models"], "opencode models"],
-    [["models", "--server", url], "opencode models"],
-    [["--server", url, "run", "hello"], "opencode run"],
-    [["run", "hello", "--server", url], "opencode run"],
+    [["--server", url, "session", "list"], `${Brand.cliName} session list`], // kete_change
+    [["session", "--server", url, "list"], `${Brand.cliName} session list`], // kete_change
+    [["session", "list", "--server", url], `${Brand.cliName} session list`], // kete_change
+    [["session", "--server", url, "delete", "ses_123"], `${Brand.cliName} session delete`], // kete_change
+    [["--server", url, "plugin", "list"], `${Brand.cliName} plugin list`], // kete_change
+    [["plugin", "--server", url, "list"], `${Brand.cliName} plugin list`], // kete_change
+    [["plugin", "list", "--server", url], `${Brand.cliName} plugin list`], // kete_change
+    [["plugin", "--server", url, "check"], `${Brand.cliName} plugin check`], // kete_change
+    [["plugin", "--server", url, "update"], `${Brand.cliName} plugin update`], // kete_change
+    [["--server", url, "mcp", "list"], `${Brand.cliName} mcp list`], // kete_change
+    [["mcp", "--server", url, "list"], `${Brand.cliName} mcp list`], // kete_change
+    [["mcp", "list", "--server", url], `${Brand.cliName} mcp list`], // kete_change
+    [["mcp", "--server", url, "auth", "linear"], `${Brand.cliName} mcp auth`], // kete_change
+    [["mcp", "--server", url, "logout", "linear"], `${Brand.cliName} mcp logout`], // kete_change
+    [["auth", "--server", url, "list"], `${Brand.cliName} auth list`], // kete_change
+    [["debug", "--server", url, "config"], `${Brand.cliName} debug config`], // kete_change
+    [["debug", "--server", url, "agents"], `${Brand.cliName} debug agents`], // kete_change
+    [["debug", "--server", url, "heap-dump"], `${Brand.cliName} debug heap-dump`], // kete_change
+    [["--server", url, "models"], `${Brand.cliName} models`], // kete_change
+    [["models", "--server", url], `${Brand.cliName} models`], // kete_change
+    [["--server", url, "run", "hello"], `${Brand.cliName} run`], // kete_change
+    [["run", "hello", "--server", url], `${Brand.cliName} run`], // kete_change
   ]
 
   for (const [args, expectedPath] of serverCases) {
@@ -157,7 +158,7 @@ test("global --server and --standalone flags parse in any position for server-co
 
   captured.length = 0
   await runArgs(["session", "--standalone", "list"])
-  expect(captured).toEqual([{ path: "opencode session list", server: undefined, standalone: true }])
+  expect(captured).toEqual([{ path: `${Brand.cliName} session list`, server: undefined, standalone: true }]) // kete_change
 
   await expect(runArgs(["plugin", "add", "some-plugin", "--server", url])).rejects.toThrow()
   await expect(runArgs(["plugin", "remove", "some-plugin", "--server", url])).rejects.toThrow()
@@ -198,7 +199,7 @@ test("local config commands do not start or require a server", async () => {
     ])
     expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" })
     expect(stdout).toContain('MCP server "demo" added')
-    const config = await Bun.file(path.join(root, "config", "opencode.json")).json()
+    const config = await Bun.file(path.join(root, "config", Brand.configFiles[0])).json() // kete_change
     expect(config).toMatchObject({
       mcp: {
         servers: {
@@ -206,7 +207,7 @@ test("local config commands do not start or require a server", async () => {
         },
       },
     })
-    expect(await Bun.file(path.join(root, "state", "opencode", ServiceConfig.filename())).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "state", Brand.appDirectory, ServiceConfig.filename())).exists()).toBe(false) // kete_change
   } finally {
     await fs.rm(root, { recursive: true, force: true })
   }

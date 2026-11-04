@@ -1216,6 +1216,7 @@ describe("ShellTool", () => {
             }),
           ),
           deps: [
+            Config.node, // kete_change: the shell tool reads the sandbox settings
             Environment.node,
             FileAccess.node,
             Permission.node,

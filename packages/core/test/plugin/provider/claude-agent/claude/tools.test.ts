@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Fiber, Scope } from "effect"
 import { TestClock } from "effect/testing"
@@ -355,7 +356,7 @@ describe("Claude tool steps", () => {
       ])
       const test = yield* TestSessions.start(claude)
       const error = yield* TestTools.step(test.model, TestTools.prompt()).pipe(Effect.flip)
-      expect(String(error.cause)).toContain("OpenCode tool server did not connect")
+      expect(String(error.cause)).toContain(`${Brand.displayName} tool server did not connect`) // kete_change
       expect(claude.runs).toHaveLength(1)
       yield* test.registry.close()
       claude.check()

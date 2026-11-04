@@ -32,7 +32,7 @@ export const make = Effect.gen(function* () {
 
   /** Runs `git args` in `cwd`. Fails only when git can't be started or times out; check `exitCode`. */
   const run = (cwd: string, args: readonly string[]) =>
-    proc.run(ChildProcess.make(gitExecutable, [...args], { cwd, extendEnv: true, stdin: "ignore" }), { timeout }).pipe(
+    proc.run(ChildProcess.make(gitExecutable(), [...args], { cwd, extendEnv: true, stdin: "ignore" }), { timeout }).pipe(
       Effect.map(
         (result): Result => ({
           exitCode: result.exitCode,

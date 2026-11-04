@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { existsSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -245,7 +246,7 @@ it.live("reports renaming as unsupported on a daemon without the rename feature"
       body: {
         _tag: "PtyFeatureUnsupportedError",
         feature: "rename",
-        message: "Terminal renaming will be available after OpenCode's terminal service restarts",
+        message: `Terminal renaming will be available after ${Brand.displayName}'s terminal service restarts`, // kete_change
       },
     })
     expect(daemon.ops).not.toContain("rename")

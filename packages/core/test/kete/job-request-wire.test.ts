@@ -8,7 +8,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { LLM, LLMClient, Message, ToolCallPart, ToolDefinition, type LanguageModel } from "@opencode/ai"
+import { ai, LLMClient, Message, ToolCallPart, ToolDefinition, type LanguageModel } from "@opencode/ai/effect"
 import * as Anthropic from "@opencode/ai/providers/anthropic"
 import * as Google from "@opencode/ai/providers/google"
 import * as OpenAI from "@opencode/ai/providers/openai"
@@ -53,9 +53,9 @@ const tool = ToolDefinition.make({
 function request(
   model: LanguageModel,
   reasoning: Record<string, Record<string, unknown>>,
-  extra: Partial<Parameters<typeof LLM.request>[0]> = {},
+  extra: Partial<Parameters<typeof ai.request>[0]> = {},
 ) {
-  return LLM.request({
+  return ai.request({
     id: "job_req",
     model,
     system: "You are a careful engineer.",
@@ -85,7 +85,7 @@ const withoutReasoning = [
   Message.user("Go on."),
 ]
 
-const send = (calls: Call[], llm: ReturnType<typeof LLM.request>) =>
+const send = (calls: Call[], llm: ReturnType<typeof ai.request>) =>
   LLMClient.generate(llm).pipe(
     Effect.exit,
     Effect.provide(

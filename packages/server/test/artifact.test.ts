@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import fs from "node:fs/promises"
 import path from "node:path"
 import { expect } from "bun:test"
@@ -67,14 +68,14 @@ export default {
 `,
       )
       await fs.writeFile(
-        path.join(enabled, "opencode.json"),
+        path.join(enabled, Brand.configFiles[0]), // kete_change
         JSON.stringify({
           plugins: [{ package: pluginDir }],
           experimental: { artifacts: true },
         }),
       )
       await fs.writeFile(
-        path.join(enabledOther, "opencode.json"),
+        path.join(enabledOther, Brand.configFiles[0]), // kete_change
         JSON.stringify({
           experimental: { artifacts: true },
         }),

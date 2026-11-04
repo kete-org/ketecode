@@ -11,7 +11,7 @@
 
 export * as KeteWorkflows from "./workflows.js"
 
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import type { ConfigKete } from "@opencode/schema/config/kete"
 import { Effect, Schema, Stream } from "effect"

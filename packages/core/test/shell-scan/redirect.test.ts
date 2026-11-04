@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import { ShellParse } from "../../src/shell/parse.js"
 import { ShellScan } from "../../src/shell/scan.js"
 import { Wildcard } from "../../src/util/wildcard.js"
-import os from "os" // kete_change
 
 async function checkResources(source: string) {
   const parsed = await Effect.runPromise(ShellParse.scan(source, "/bin/bash", "/workspace"))
@@ -164,6 +163,6 @@ describe("Bash redirect resource oracle", () => {
   test("redirect before cd operand retains the target directory", async () => {
     const source = "pwd && cd >out /outside"
     const parsed = await Effect.runPromise(ShellParse.scan(source, "/bin/bash", "/workspace"))
-    expect(parsed).toEqual({ commands: [{ resource: "pwd", save: "pwd *" }], directories: ["/outside", os.homedir()] }) // kete_change: the unresolved `cd` also adds home (kete/shell-directory.ts)
+    expect(parsed).toEqual({ commands: [{ resource: "pwd", save: "pwd *" }], directories: ["/outside"] })
   })
 })

@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { PersistentPty } from "@opencode/core/persistent-pty"
 import { PtyTicket } from "@opencode/core/pty/ticket"
 import {
@@ -117,7 +118,7 @@ export const PersistentPtyHandler = HttpApiBuilder.group(Api, "server.experiment
                 "PersistentPty.UnsupportedError": (error) =>
                   new PtyFeatureUnsupportedError({
                     feature: error.feature,
-                    message: "Terminal renaming will be available after OpenCode's terminal service restarts",
+                    message: `Terminal renaming will be available after ${Brand.displayName}'s terminal service restarts`, // kete_change
                   }),
                 "PersistentPty.UnavailableError": unavailable,
               }),

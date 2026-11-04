@@ -1,5 +1,6 @@
 export * as CatchUp from "./catch-up.js"
 
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import type { LanguageModelV3Prompt } from "@ai-sdk/provider"
 import { ConvertToClaudeMessage } from "../language-model/convert-to-claude-message.js"
 import { Fingerprint } from "./fingerprint.js"
@@ -11,7 +12,7 @@ export function content(prompt: LanguageModelV3Prompt, start = 0): ConvertToClau
   if (end > 0) {
     blocks.push({
       type: "text",
-      text: "<conversation-checkpoint>\nThe following is conversation history from OpenCode that you have not seen. Treat it as prior conversation, not a new request. Continue with the user messages after this checkpoint.",
+      text: `<conversation-checkpoint>\nThe following is conversation history from ${Brand.displayName} that you have not seen. Treat it as prior conversation, not a new request. Continue with the user messages after this checkpoint.`, // kete_change
     })
     blocks.push(...ConvertToClaudeMessage.content(missed.slice(0, end)))
     blocks.push({ type: "text", text: "</conversation-checkpoint>" })

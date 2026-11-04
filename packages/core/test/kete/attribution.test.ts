@@ -9,7 +9,6 @@ import { KiloPlugin } from "@opencode/core/plugin/provider/kilo"
 import { LLMGatewayPlugin } from "@opencode/core/plugin/provider/llmgateway"
 import { NvidiaPlugin } from "@opencode/core/plugin/provider/nvidia"
 import { OpenRouterPlugin } from "@opencode/core/plugin/provider/openrouter"
-import { VercelPlugin } from "@opencode/core/plugin/provider/vercel"
 import { ZenmuxPlugin } from "@opencode/core/plugin/provider/zenmux"
 import { Provider } from "@opencode/core/provider"
 import { Brand } from "@opencode/util/kete/brand"
@@ -22,7 +21,7 @@ const it = testEffect(PluginTestLayer)
 const addPlugins = Effect.fn(function* () {
   const plugin = yield* Plugin.Service
   const host = yield* PluginHost.make(plugin)
-  for (const item of [OpenRouterPlugin, VercelPlugin, KiloPlugin, LLMGatewayPlugin, ZenmuxPlugin, NvidiaPlugin, CerebrasPlugin])
+  for (const item of [OpenRouterPlugin, KiloPlugin, LLMGatewayPlugin, ZenmuxPlugin, NvidiaPlugin, CerebrasPlugin])
     yield* item.effect(host)
   yield* KeteAttribution.Plugin.effect(host)
 })
@@ -30,7 +29,6 @@ const addPlugins = Effect.fn(function* () {
 const compatible = (id: string, baseURL: string) => ({ id, package: "@opencode/ai/providers/openai-compatible", baseURL })
 const providers = [
   { id: "openrouter", package: "@opencode/ai/providers/openrouter" },
-  { id: "vercel", package: Provider.aisdk("@ai-sdk/vercel") },
   compatible("kilo", "https://api.kilo.ai/api/gateway"),
   compatible("zenmux", "https://zenmux.ai/api/v1"),
   compatible("nvidia", "https://integrate.api.nvidia.com/v1"),
@@ -74,7 +72,6 @@ describe("KeteAttribution", () => {
       expect(Brand.urls.website).toBeUndefined()
       for (const id of ["openrouter", "kilo", "zenmux"])
         expect(yield* headersOf(catalog, id)).toEqual({ "X-Title": "Kete Code" })
-      expect(yield* headersOf(catalog, "vercel")).toEqual({ "x-title": "Kete Code" })
       expect(yield* headersOf(catalog, "nvidia")).toEqual({ "X-Title": "Kete Code", "X-BILLING-INVOKE-ORIGIN": "KeteCode" })
       expect(yield* headersOf(catalog, "cerebras")).toEqual({ "X-Cerebras-3rd-Party-Integration": "kete-code" })
     }),

@@ -162,6 +162,15 @@ export const Plugin = {
               const fetchChecked = (userAgent?: string) =>
                 KeteWebRedirect.follow({
                   url: input.url,
+                  check: (url) =>
+                    permission.assertNotDenied({
+                      action: name,
+                      resources: [url],
+                      metadata: { ...input, url },
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.messageID, id: context.id },
+                    }),
                   fetch: (url) =>
                     http
                       .execute(request(url, input.format, userAgent))

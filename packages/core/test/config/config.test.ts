@@ -435,8 +435,8 @@ describe("Config", () => {
           yield* Effect.promise(async () => {
             await fs.mkdir(global, { recursive: true })
             await fs.mkdir(project, { recursive: true })
-            await fs.writeFile(path.join(global, "opencode.json"), JSON.stringify(named("global")))
-            await fs.writeFile(path.join(project, "opencode.json"), JSON.stringify(named("project")))
+            await fs.writeFile(path.join(global, Brand.configFiles[0]), JSON.stringify(named("global"))) // kete_change
+            await fs.writeFile(path.join(project, Brand.configFiles[0]), JSON.stringify(named("project"))) // kete_change
           })
           const integrationID = Integration.ID.make("https://example.com")
           const credentialNode = makeGlobalNode({
@@ -519,7 +519,7 @@ describe("Config", () => {
         const write = (directory: string, policies: unknown[]) =>
           fs
             .mkdir(directory, { recursive: true })
-            .then(() => fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ policies })))
+            .then(() => fs.writeFile(path.join(directory, Brand.configFiles[0]), JSON.stringify({ policies }))) // kete_change
         return Effect.promise(() =>
           Promise.all([
             write(system, [shell("shell:rm*", "deny")]),
@@ -615,7 +615,7 @@ describe("Config", () => {
         return Effect.promise(() =>
           fs.mkdir(system, { recursive: true }).then(() =>
             fs.writeFile(
-              path.join(system, "opencode.json"),
+              path.join(system, Brand.configFiles[0]), // kete_change
               JSON.stringify({
                 policies: [
                   { action: "integration.use", resource: "*", effect: "deny" },

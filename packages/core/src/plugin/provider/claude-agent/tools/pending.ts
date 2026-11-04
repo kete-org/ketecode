@@ -1,5 +1,6 @@
 export * as PendingTools from "./pending.js"
 
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import type { CallToolResult } from "@modelcontextprotocol/server"
 import type { ToolResult } from "./result.js"
 
@@ -39,7 +40,7 @@ export function make(): Interface {
     async call(name: string) {
       const id = next
       next = undefined
-      if (!id) throw new Error("Claude invoked an OpenCode tool without its PreToolUse ID")
+      if (!id) throw new Error(`Claude invoked a ${Brand.displayName} tool without its PreToolUse ID`) // kete_change
       const call = expect(id, name)
       const result = await call.result.promise
       if (result.replacement) replacements.set(id, result.replacement)

@@ -24,7 +24,7 @@ import { KeteConfinedFs } from "@opencode/util/kete/confined-fs"
 import { KeteLinuxFfi } from "@opencode/util/kete/linux-ffi"
 import { Context, Effect, Layer } from "effect"
 import { HttpEffect, HttpRouter, HttpServer } from "effect/http"
-import { LanguageModel, LLMClient } from "../../../ai/src"
+import { LanguageModel, LLMClient } from "../../../ai/src/effect"
 import { OpenAIChat } from "../../../ai/src/protocols/openai-chat"
 import { TestLLM } from "../../../ai/src/testing"
 import { initRepo } from "../../../core/test/fixture/git"
@@ -137,9 +137,9 @@ if (linux)
       })
       const s = yield* server(repoDir, path.join(base, "data"), base)
       yield* s.llm.push(
-        TestLLM.tool("call-read", "read", { path: path.join(repoDir, "leak.txt") }),
-        TestLLM.tool("call-write", "write", { path: path.join(repoDir, "written.txt"), content: "ok\n" }),
-        TestLLM.tool("call-read-ok", "read", { path: path.join(repoDir, "README.md") }),
+        TestLLM.toolCall("call-read", "read", { path: path.join(repoDir, "leak.txt") }),
+        TestLLM.toolCall("call-write", "write", { path: path.join(repoDir, "written.txt"), content: "ok\n" }),
+        TestLLM.toolCall("call-read-ok", "read", { path: path.join(repoDir, "README.md") }),
         TestLLM.text("done", "step-1"),
       )
       const session = yield* Effect.promise(() =>

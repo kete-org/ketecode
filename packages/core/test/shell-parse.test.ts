@@ -143,7 +143,8 @@ describe("ShellParse", () => {
     const dashArgs = await Effect.runPromise(
       ShellParse.scan("cd -P /first && cd -- -/../../../etc && cd -", "/bin/bash", "/workspace"),
     )
-    expect(dashArgs.directories).toEqual(["/first", "-/../../../etc"])
+    // kete_change: `cd -` goes to an earlier directory that can't be known, so Kete Code adds the filesystem root (kete/shell-directory.ts)
+    expect(dashArgs.directories).toEqual(["/first", "-/../../../etc", path.parse("/workspace").root])
 
     const wrapped = await Effect.runPromise(
       ShellParse.scan("command cd /outside; builtin cd /elsewhere; command -v cd", "/bin/bash", "/workspace"),
@@ -163,6 +164,7 @@ describe("ShellParse", () => {
       )
       expect(rootHome.directories).toEqual([
         process.platform === "darwin" ? "/var/root/secret" : "/root/secret",
+        "/", // kete_change: Kete Code also asks about another user's home (kete/shell-directory.ts)
         "~root",
       ])
 
@@ -173,7 +175,8 @@ describe("ShellParse", () => {
           "/workspace",
         ),
       )
-      expect(tildeForms.directories).toEqual(["/outside"])
+      // kete_change: Kete Code adds the root for each `~+`, `~-`, `~N` and `~user` form, which it can't resolve (kete/shell-directory.ts)
+      expect(tildeForms.directories).toEqual(["/outside", "/", "/", "/", "/", "/"])
       expect(tildeForms.commands).toEqual([
         { resource: "cd ~-", save: "cd *" },
         { resource: "cd ~+1", save: "cd *" },
@@ -184,7 +187,8 @@ describe("ShellParse", () => {
       const dynamicCd = await Effect.runPromise(
         ShellParse.scan("cd {..,x} && cd .[.] && cd .? && cd $'\\x2e'[.] && cd '.[.]'", "/bin/bash", "/workspace"),
       )
-      expect(dynamicCd.directories).toEqual([".[.]"])
+      // kete_change: brace and glob targets could be anywhere, so Kete Code adds the root for each (kete/shell-directory.ts)
+      expect(dynamicCd.directories).toEqual(["/", "/", "/", "/", ".[.]"])
       expect(dynamicCd.commands).toEqual([
         { resource: "cd {..,x}", save: "cd *" },
         { resource: "cd .[.]", save: "cd *" },
@@ -195,7 +199,7 @@ describe("ShellParse", () => {
       const nobodyHome = await Effect.runPromise(
         ShellParse.scan("cd ~nobody", "/bin/bash", "/workspace"),
       )
-      expect(nobodyHome.directories).toHaveLength(1)
+      expect(nobodyHome.directories).toHaveLength(2) // kete_change: plus the root Kete Code adds for `~user` (kete/shell-directory.ts)
       expect(nobodyHome.directories[0]).not.toBe(
         path.join(process.platform === "darwin" ? "/Users" : "/home", "nobody"),
       )

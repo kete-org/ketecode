@@ -245,9 +245,25 @@ const compatibilityCases: Array<[string, string, Record<string, string>, ShellPa
       },
     ],
   ]
+  // kete_change start: Kete Code also reports where an unresolved directory change may lead — home for a bare `cd`,
+  // the filesystem root when it can't be known — so the external-directory question asks (kete/shell-directory.ts).
+  // Upstream's own handling of these commands still applies.
+  const keteDirectories: Record<string, (home: string) => string[]> = {
+    "cd $HOME; pwd": () => ["/"],
+    "cd; pwd": (home) => [home],
+    'target=/outside; cd "$target"; pwd': () => ["/"],
+    "HOME=/outside; cd; pwd": (home) => [home],
+    "CDPATH=/outside cd child": () => ["child", "/"],
+    "cd -; pushd; popd; pwd": (home) => ["/", home],
+  }
+  // kete_change end
   test.each(compatibilityCases)(
     "extracts resources, saved prefixes, and directories: %s %s %j",
-    async (shell, command, env, expected) => {
+    async (shell, command, env, upstream) => {
+      // kete_change start
+      const kete = shell === "bash" ? keteDirectories[command] : undefined
+      const expected = kete ? { ...upstream, directories: kete(env.HOME ?? os.homedir()) } : upstream
+      // kete_change end
       if (Object.keys(env).length > 0) {
         const child = Bun.spawn({
           cmd: [
@@ -420,7 +436,8 @@ describe("scanner behavior on former tree-sitter gaps", () => {
           { resource: "Set-Location +", save: "Set-Location *" },
           { resource: "Set-Location .[.]", save: "Set-Location *" },
         ],
-        directories: [".[.]"],
+        // kete_change: `Set-Location -` and `+` go to an earlier directory that can't be known; Kete Code adds the root (kete/shell-directory.ts)
+        directories: [path.parse("/workspace").root, path.parse("/workspace").root, ".[.]"],
       },
     },
   ]) {

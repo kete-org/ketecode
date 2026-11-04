@@ -581,7 +581,7 @@ describe("WebFetchTool registration", () => {
       respond = () => Effect.succeed(new Response("", { status: 301, headers: { location: "file:///etc/passwd" } }))
       expect(yield* executeTool(registry, call({ url: "https://example.com/a", format: "text" }))).toMatchObject({
         status: "error",
-        error: { message: "URL must use http:// or https://" },
+        error: { message: "Redirect to a non-HTTP URL: file:" }, // kete_change: KeteWebRedirect.follow's message
       })
       expect(checks).toEqual([])
 

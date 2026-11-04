@@ -1,5 +1,6 @@
 export * as ClaudeSessions from "./sessions.js"
 
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
   LanguageModelV3FunctionTool,
@@ -239,7 +240,7 @@ export function registry() {
           const connected = message.mcp_servers.some(
             (server) => server.name === "opencode" && server.status === "connected",
           )
-          if (!connected) throw new Error("The OpenCode tool server did not connect to Claude Code")
+          if (!connected) throw new Error(`The ${Brand.displayName} tool server did not connect to Claude Code`) // kete_change
         }
         if (
           message.type === "assistant" &&

@@ -1,5 +1,6 @@
 export * as ClaudeSystemPrompt from "./system-prompt.js"
 
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import type { Options } from "@anthropic-ai/claude-agent-sdk"
 import type { LanguageModelV3Prompt } from "@ai-sdk/provider"
 
@@ -12,12 +13,12 @@ const primary = {
   // Agent changes must take effect when a process resumes the same native session.
   snapshot: false,
   append:
-    "<runtime_info>You are running in OpenCode through the Claude Code harness. Mention this only when asked.</runtime_info>",
+    `<runtime_info>You are running in ${Brand.displayName} through the Claude Code harness. Mention this only when asked.</runtime_info>`, // kete_change
 } satisfies Options["systemPrompt"]
 
 export function make(role?: string, instructions?: string) {
   const blocks = [primary.append]
-  if (role) blocks.push("# Agent role (from OpenCode)\n" + role)
+  if (role) blocks.push(`# Agent role (from ${Brand.displayName})\n` + role) // kete_change
   if (instructions) blocks.push(instructions)
   return { ...primary, append: blocks.join("\n\n") }
 }

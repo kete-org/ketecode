@@ -1,5 +1,6 @@
 export * as Artifact from "./artifact.js"
 
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -218,7 +219,7 @@ const layer = Layer.effect(
       name: "Local",
       capabilities: ["static"],
       prompt:
-        "Artifacts are served as HTML by this OpenCode server. Only people who can reach this server can open them.",
+        `Artifacts are served as HTML by this ${Brand.displayName} server. Only people who can reach this server can open them.`, // kete_change
       create: (input) =>
         replaceDirectoryFiles(itemDir(input.id), input.files).pipe(
           Effect.as({ url: `/api/experimental/artifacts/${encodeURIComponent(input.id)}/view/` }),

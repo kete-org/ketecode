@@ -26,10 +26,12 @@ export default Runtime.handler(Commands.commands.run, (input) =>
     )
     if (!trust.ok) return yield* Effect.fail(new Error(trust.message))
     // kete_change end
+    // kete_change start: the trust check's server choice
     const server = yield* ServerConnection.resolve({
-      server: trust.args.server, // kete_change
-      standalone: trust.args.standalone, // kete_change
+      server: trust.args.server,
+      standalone: trust.args.standalone,
     }).pipe(
+      // kete_change end
       Effect.tapError((error) => Effect.logError("run could not resolve its server", { cause: error })),
       Effect.catch((error) => Effect.sync(() => reportRunError(input, error.message))),
     )
