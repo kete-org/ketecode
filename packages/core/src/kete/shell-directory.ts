@@ -44,7 +44,9 @@ export function implicit(words: ReadonlyArray<string | Target>, cwd: string, opt
   if (options.cdpath && !text.startsWith("/") && !text.startsWith(".")) return [root(cwd)]
   if (text === "") return []
   if (target.expands || target.brace || target.glob) return [root(cwd)]
-  if (text === "-" || /^[+-]\d+$/.test(text) || text.includes("$") || text.includes("`")) return [root(cwd)]
+  if (text === "-" || /^[+-]\d+$/.test(text)) return [root(cwd)]
+  // A `$` or backtick the tokenizer read as literal (single quotes, `\$`) is part of a folder name; otherwise it may expand.
+  if (!target.quoted && (text.includes("$") || text.includes("`"))) return [root(cwd)]
   // `~` and `~/x` are expanded by the parser; `~+`, `~-`, `~user` aren't.
   if (!target.quoted && text.startsWith("~") && text !== "~" && !text.startsWith("~/")) return [root(cwd)]
   return []

@@ -1,13 +1,13 @@
 export * as ShellTool from "./shell.js"
 
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import path from "path" // kete_change
 import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
 import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
 import type { Tool } from "@opencode/schema/tool"
 import { Deferred, Effect, Option, Schema, Scope } from "effect" // kete_change: Option
-import { Config } from "../../config.js"
+import { Config } from "../../config.js" // kete_change
 import { Environment } from "../../environment/index.js"
 import { Job } from "../../job.js"
 import { FileAccess } from "../../file-access.js"
@@ -16,7 +16,6 @@ import { NonNegativeInt } from "../../schema.js"
 import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { Shell } from "../../shell.js"
-import { shellParserWasm } from "#shell-parser-wasm"
 import { ShellParse } from "../../shell/parse.js"
 import { ShellSelect } from "../../shell/select.js"
 import { ShellResult } from "../../shell/result.js"
@@ -121,7 +120,7 @@ export const Plugin = {
     const shellSelect = yield* ShellSelect.Service
     const compatibleShell = shellSelect.resolve({ priority: "compat" })
     const permission = yield* Permission.Service
-    const config = yield* Config.Service
+    const config = yield* Config.Service // kete_change
     // kete_change start: an unattended run's commands don't see credentials (kete/tool-env.ts)
     const toolEnv: KeteToolEnv.Lookup = {
       session: (id) => sessions.get(id).pipe(Effect.option),
@@ -151,10 +150,7 @@ export const Plugin = {
       const target = yield* access.resolve({ path: invocation.cwd, kind: "directory" })
       invocation.cwd = target.absolute
       const timeout = invocation.timeout
-      const portable =
-        Config.latest(yield* config.entries(), "experimental")?.portable_shell_scanner ??
-        (shellParserWasm.bash === "" || ctx.app.channel === "local" || ctx.app.channel === "dev")
-      const parsed = yield* ShellParse.scan(invocation.command, invocation.shell, target.absolute, { portable })
+      const parsed = yield* ShellParse.scan(invocation.command, invocation.shell, target.absolute)
       const directories = yield* Effect.forEach(parsed.directories, (directory) =>
         access.resolve({
           path: FileAccess.resolvePath(target.absolute, directory),

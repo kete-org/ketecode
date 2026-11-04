@@ -21,7 +21,7 @@
 export * as KeteReviewMode from "./review-mode.js"
 
 import path from "node:path"
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
 import { Tool } from "@opencode/schema/tool"

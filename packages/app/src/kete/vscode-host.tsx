@@ -14,7 +14,7 @@
 
 import { useLocation } from "@solidjs/router"
 import { createEffect, onCleanup, onMount } from "solid-js"
-import { OPEN_DIFF_EVENT, openDiffPath } from "@opencode/gui-extensions/kete/open-diff"
+import { OPEN_DIFF_EVENT, openDiffPath } from "@opencode/gui-plugins/kete/open-diff"
 import { useComposerState } from "@/composer/persistence"
 import { useGlobal } from "@/runtime/server/runtime"
 import { ServerConnection } from "@/runtime/server/registry"
@@ -126,9 +126,12 @@ export function KeteVSCodeShell() {
       if (!workspace.directory || !conn || (!force && (workspace.opened || location.pathname !== "/"))) return
       workspace.opened = true
       const context = global.ensureServerCtx(conn)
-      context.projects.open(workspace.directory)
-      context.projects.touch(workspace.directory)
-      workspace.drafting = tabs.newDraft({ server: ServerConnection.key(conn), directory: workspace.directory }).catch(() => undefined)
+      const directory = workspace.directory
+      // add() registers the folder's project on the server and marks it this client's last used one.
+      workspace.drafting = context.projects
+        .add(directory)
+        .then(() => tabs.newDraft({ server: ServerConnection.key(conn), directory }))
+        .catch(() => undefined)
     }
     const listener = (data: unknown) => {
       const vscodeTheme = KeteVSCodeTheme.themeMessage(data)

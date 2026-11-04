@@ -81,10 +81,14 @@ The report is written to `.git/kete-upstream-sync-report.md`.
 - **New upstream tests that assert OpenCode names**: `verify` reports them as new
   failures; retarget them to `Brand` values with markers, as in the rebrand.
 - **New GitHub workflows**: every inherited workflow is disabled in the repository
-  settings, but a workflow _file added_ by upstream starts enabled. Disable each
-  one listed in the report (`gh workflow disable <file>`) before merging. The repository is
-  public (ADR 0010): an enabled upstream workflow on `pull_request_target` or with secrets could
-  run for fork pull requests, so check `gh workflow list --all` after every sync.
+  settings, but a workflow at a _new path_ starts enabled, whether upstream added or renamed it
+  (the report lists both). GitHub can disable a workflow only once it is on `main`, and a
+  `pull_request` workflow runs on the sync pull request itself. So **before opening the pull
+  request**, make each listed workflow manual-only: comment out its `on:` triggers and leave
+  `workflow_dispatch:`, marked `kete_change` and recorded in `docs/upstream-patches.md` (the
+  v2.2.5 sync is the example). **After merging**, disable each one (`gh workflow disable <file>`)
+  and check `gh workflow list --all`. The repository is public (ADR 0010): an enabled upstream
+  workflow on `pull_request_target` or with secrets could run for fork pull requests.
 - **Hosted-service defaults**: review new upstream features for opencode.ai
   endpoints, telemetry, or providers enabled by default (see
   `packages/core/src/kete/hosted.ts`).

@@ -21,7 +21,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { Effect, Context, Layer } from "effect"
 import { HttpEffect, HttpRouter, HttpServer } from "effect/http"
-import { LanguageModel, LLMClient } from "../../../ai/src"
+import { LanguageModel, LLMClient } from "../../../ai/src/effect"
 import { OpenAIChat } from "../../../ai/src/protocols/openai-chat"
 import { TestLLM } from "../../../ai/src/testing"
 import { initRepo } from "../../../core/test/fixture/git"
@@ -114,7 +114,7 @@ gated(
       const client = OpenCode.make({ baseUrl: "http://kete.local", fetch: fetchFn })
 
       yield* llm.push(
-        TestLLM.tool("call-shell", "shell", { command: "id -u > uid.txt; id -G >> uid.txt" }),
+        TestLLM.toolCall("call-shell", "shell", { command: "id -u > uid.txt; id -G >> uid.txt" }),
         TestLLM.text("done", "step-1"),
       )
       const session = yield* Effect.promise(() =>
