@@ -64,12 +64,12 @@ Goal: lead on context efficiency and safe autonomy, the any-model advantage.
 | # | Item | Source | Status | Size | Upstream edits |
 |---|---|---|---|---|---|
 | B1 | **Load MCP tools only when needed**: send tool names, fetch schemas on demand (tool search) | Claude Code | done upstream (v2.1.4 Code Mode: MCP tools default to `codemode`, sent as one `execute` tool plus a catalog of about 2,000 tokens with `search` for the rest; `packages/core/src/tool.ts`, `codemode/catalog.ts`) | — | none |
-| B2 | **`/context` breakdown**: system prompt, tools, MCP, memory files, messages | Claude Code | *new* | M | none |
+| B2 | **`/context` breakdown**: system prompt, tools, MCP, memory files, messages | Claude Code | done (#75: `/context`, `core/src/kete/context-breakdown.ts`) | — | none |
 | B3 | **Prompt caching for Anthropic models**: verify what upstream's provider adapters do; add cache breakpoints if missing (gateway and BYOK) | Claude Code | done upstream (v2.1.4 sync); local gateway check passed 2026-10-29 (4 stable breakpoints across turns); live cache-read check pending a Claude model on the gateway | — | none |
-| B4 | **Plan approval**: Plan mode ends with a plan the user approves, then switches to Accept-edits or Default | Claude Code | *new* | M | plan agent |
-| B5 | **More hook events**: before compaction, subagent stop | Claude Code | *new* | S | none |
-| B6 | **`@`-mention MCP resources** in the prompt | Claude Code | *new* | S | autocomplete |
-| B7 | **Output styles**: named personas (default, explanatory, learning, reviewer) | Claude Code | *new* | S | system prompt seam |
+| B4 | **Plan approval**: Plan mode ends with a plan the user approves, then switches to Accept-edits or Default | Claude Code | done (#89: `present_plan`, `core/src/kete/plan-approval.ts`) | M | none (upstream's plan agent unchanged) |
+| B5 | **More hook events**: before compaction, subagent stop | Claude Code | done (#86: `PreCompact`, `SubagentStop`) | S | none |
+| B6 | **`@`-mention MCP resources** in the prompt | Claude Code | done (#87: terminal UI; docs/mcp-resources.md) | S | autocomplete |
+| B7 | **Output styles**: named personas (default, explanatory, learning, reviewer) | Claude Code | done (#88: `kete.outputStyle`, docs/output-styles.md) | S | none (`context` hook) |
 | B8 | **Security-review command**, reusing review_v1 | Claude Code | done: `/security-review` (`core/src/kete/git-commands.ts`) runs on the read-only Security agent; review_v1 is job-only, so it isn't reused | — | none |
 
 ### Milestone C — Power users (terminal)
