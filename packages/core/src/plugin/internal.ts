@@ -136,6 +136,7 @@ import { KeteDoctor } from "../kete/doctor.js" // kete_change
 import { KeteHandshake } from "../kete/handshake.js" // kete_change
 import { KeteContextBreakdown } from "../kete/context-breakdown.js" // kete_change
 import { KeteGitCommands } from "../kete/git-commands.js" // kete_change
+import { KeteOutputStyles } from "../kete/output-styles.js" // kete_change
 import { KeteAutoMemory } from "../kete/auto-memory.js" // kete_change
 import { KeteMemoryFiles } from "../kete/memory-files.js" // kete_change
 import { KeteShare } from "../kete/share/plugin.js" // kete_change
@@ -353,6 +354,8 @@ const pre = [
   KeteHandshake.Plugin,
   // kete_change: built-in /commit and /pr prompt commands; see kete/git-commands.ts
   KeteGitCommands.Plugin,
+  // kete_change: kete.outputStyle text at the end of the system prompt; see kete/output-styles.ts
+  KeteOutputStyles.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 const post = [

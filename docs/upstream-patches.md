@@ -1848,3 +1848,14 @@ prompt in the `session.prompt` hook, before upstream materializes attachments.
 **Sync checklist:** if upstream's TUI adds MCP resources to `@` itself (its web app autocompletes them),
 drop ours. If `SessionPrompt.prepare` stops running the `prompt` hook before materializing attachments,
 the `kete-mcp:` files fail the prompt: move the expansion.
+
+## Output styles (feature/output-styles)
+
+`core/src/kete/output-styles.ts` adds `kete.outputStyle`'s text (a built-in style or the user's
+`output-styles/<name>.md`) to the system prompt in the `context` hook; no upstream prompt changes.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteOutputStyles.Plugin` after `KeteGitCommands.Plugin` in `pre` | internal plugin registration list |
+
+**Sync checklist:** if upstream adds output styles or another persona setting, compare and drop one.

@@ -17630,6 +17630,10 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "outputStyle": {
+                "type": "string",
+                "maxLength": 200
               }
             },
             "additionalProperties": false

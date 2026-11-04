@@ -102,6 +102,7 @@ export function isKeteOwned(file: string): boolean {
     // The parity plan against Claude Code and Codex CLI.
     normalized === "docs/parity-plan.md" ||
     normalized === "docs/statusline.md" ||
+    normalized === "docs/output-styles.md" ||
     normalized === "docs/folder-trust.md" ||
     normalized === "docs/history-search.md" ||
     normalized === "docs/home-notices.md" ||
