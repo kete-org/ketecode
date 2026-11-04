@@ -1,3 +1,4 @@
+import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { KeteVSCodeShell } from "@/kete/vscode-host" // kete_change
 import "@/index.css"
 import { VoiceProvider } from "@/voice/context"
@@ -58,7 +59,7 @@ export function AppBaseProviders(
 ) {
   return (
     <MetaProvider>
-      <Title>OpenCode</Title>
+      <Title>{Brand.displayName}</Title> {/* kete_change */}
       <Font />
       <ThemeProvider
         onThemeApplied={(_, mode, scheme) => {
