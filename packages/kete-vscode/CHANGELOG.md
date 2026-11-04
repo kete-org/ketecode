@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Bundles the new `kete` runtime: responses that hit the output limit carry on, compaction keeps
+  recent messages word for word, long-running commands are no longer cut off after five minutes, and
+  policy statements move to a top-level `policies` key (the old form still works). Details in the CLI
+  changelog.
+
 ## 0.2.12
 
 - Bundles the 0.2.12 `kete` runtime. No changes to the extension itself.

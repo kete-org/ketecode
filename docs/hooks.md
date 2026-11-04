@@ -154,10 +154,11 @@ always ask (see [Permissions](permissions.md)), and sandboxed commands can't wri
 An organization, or your global config, can turn hooks off with a policy statement:
 
 ```jsonc
-{ "experimental": { "policies": [ { "action": "permission", "resource": "hooks:*", "effect": "deny" } ] } }
+{ "policies": [ { "action": "tool.use", "resource": "hooks:*", "effect": "deny" } ] }
 ```
 
-`hooks:PreToolUse` etc. turns off one event. Such statements in a project's config are ignored (a
+`hooks:PreToolUse` etc. turns off one event. The older form (under `experimental`, with the
+`permission` action) still works. Such statements in a project's config are ignored (a
 repository can't switch off your own hooks); Kete Code logs that it ignored them.
 
 ## Limits
