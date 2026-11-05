@@ -37,3 +37,37 @@ it.live("kete.handshake answers with the protocol and runtime version, with no l
     })
   }),
 )
+
+it.live("kete.modes/list answers with both mode summaries", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const context = yield* Layer.build(
+      createEmbeddedRoutes({
+        database: { path: ":memory:" },
+        models: { fetch: false },
+        config: { directory: directory.path, project: false, content: "{}" },
+        fs: { filewatcher: false },
+      }).pipe(Layer.provide(HttpServer.layerServices)),
+    )
+    const handler = Context.get(context, HttpRouter.HttpRouter)
+      .asHttpEffect()
+      .pipe(HttpEffect.toWebHandlerWith(context))
+    const response = yield* Effect.promise(() =>
+      handler(
+        new Request("http://opencode.local/api/rpc/kete.modes/list", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ input: {} }),
+        }),
+      ),
+    )
+    expect(response.status).toBe(200)
+    const body = (yield* Effect.promise(() => response.json())) as {
+      output: { id: string; available: boolean }[]
+    }
+    expect(body.output.map((item) => [item.id, item.available])).toEqual([
+      ["code", true],
+      ["work", false],
+    ])
+  }),
+)

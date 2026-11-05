@@ -1,9 +1,19 @@
-// Work mode: a placeholder (Work mode spec, Phase 0). Nothing reads mode profiles yet.
-// Its agents, permissions and the skills it uses (which live in kete-loom, not this repository)
-// are decided in a later phase.
+// Work mode: delegated knowledge work outside a repository.
+// Embedded in the binary and decoded strictly by core/src/kete/modes.ts (schema/src/kete/modes.ts);
+// not user-editable. Its skills live in kete-loom, not this repository.
 {
   "id": "work",
   "name": "Work",
-  "description": "Placeholder for Work mode; not available yet.",
-  "placeholder": true
+  "description": "Delegate knowledge work: files you grant, a few safe tools, approvals by action.",
+  "agent": "work-orchestrator",
+  // Not available until WS1 1.3 enforces the fields below.
+  "available": false,
+  "files": "granted",
+  "shell": { "run": "allowlist", "allow": ["python", "node"], "windows": "off" },
+  "network": "off",
+  "git": false,
+  "web": true,
+  "mcp": false,
+  "approvals": "action-class",
+  "outputs": "kete-outputs"
 }
