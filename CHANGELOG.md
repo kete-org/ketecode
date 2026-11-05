@@ -6,6 +6,10 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
 
 ## Unreleased
 
+- **Raise or lower reasoning effort:** Alt+. and Alt+, step the model variant up and down and stop at
+  the ends (Ctrl+T still cycles). See `docs/terminal-keys.md`.
+- **`/keymap debug`** shows, for each key you press, the key Kete read, the raw bytes and the command
+  it ran, to find out why a key does nothing in your terminal.
 - **`/context`** shows how much of the context window each part of the session takes (system prompt,
   tools, MCP tools, memory files, skills, messages), with the provider's own count of the last request
   when it reports one, and which MCP tools a denied `execute` keeps out.

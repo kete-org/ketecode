@@ -179,6 +179,8 @@ export const Definitions = {
   "permission.mode.cycle": keybind("<leader>p", "Cycle permission mode"), // kete_change: kete/permission-mode.tsx
   "variant.cycle": keybind("ctrl+t", "Cycle model variants"),
   "variant.list": keybind("none", "List model variants"),
+  "variant.next": keybind("alt+.", "Raise model variant"), // kete_change: kete/variant-step.tsx
+  "variant.previous": keybind({ name: ",", meta: true }, "Lower model variant"), // kete_change: an object, since "," separates keys in a string
 
   "session.page.up": keybind("pageup,ctrl+alt+b", "Scroll messages up by one page"),
   "session.page.down": keybind("pagedown,ctrl+alt+f", "Scroll messages down by one page"),

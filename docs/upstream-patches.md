@@ -1951,3 +1951,18 @@ composer reads the chosen mode when it creates the session.
 
 **Sync checklist:** if upstream changes `session.create`'s arguments in `composer-adapter.ts`, re-apply the three
 marked lines; if upstream adds its own mode or workspace switch, compare and drop ours.
+
+## Variant keys and key debugging (feature/variant-keys)
+
+`tui/src/kete/variant-step.tsx` adds `variant.next` / `variant.previous` (Alt+. / Alt+,: the model
+variant one step up or down, stopping at the ends); `tui/src/kete/keymap-debug.tsx` adds
+`/keymap debug` (a toast per key with the parsed key, raw bytes and the command it ran, from the
+keymap's `dispatch` event and `key:after` intercept through `useKeymap()`; no keymap edit).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/config/keybind.ts` | Two marked defaults, `variant.next` and `variant.previous` | keybind defaults and their config schema are one upstream table |
+| `tui/src/app.tsx` | Imports; `useKeteVariantStep()` and `useKeteKeymapDebug()` beside the other Kete hooks | app-level hooks have no registration seam |
+
+**Sync checklist:** if upstream adds its own variant up/down commands or a key debugging view, compare
+and drop ours.

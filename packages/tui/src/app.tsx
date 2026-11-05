@@ -5,6 +5,8 @@ import { Brand } from "@opencode/util/kete/brand" // kete_change
 import { useKeteLocalModels } from "./kete/local-offer" // kete_change
 import { useKetePermissionModeCommands } from "./kete/permission-mode" // kete_change
 import { useKeteAddDir } from "./kete/add-dir" // kete_change
+import { useKeteVariantStep } from "./kete/variant-step" // kete_change
+import { useKeteKeymapDebug } from "./kete/keymap-debug" // kete_change
 import "./component/spinner-renderable"
 import { Effect, Latch } from "effect"
 import { Service, type Endpoint } from "@opencode/client/effect/service"
@@ -523,6 +525,8 @@ function App() {
   useKeteLocalModels() // kete_change: first-run local models offer; once-per-session no-tools notice
   useKetePermissionModeCommands() // kete_change: cycle permission mode (<leader>p, /mode); --permission-mode on a resumed session
   useKeteAddDir() // kete_change: --add-dir: refusals with reasons; the folders on a resumed session
+  useKeteVariantStep() // kete_change: raise/lower the model variant (Alt+. / Alt+,)
+  useKeteKeymapDebug() // kete_change: /keymap debug
   let paletteTimer: ReturnType<typeof setTimeout> | undefined
   const afterFrame = () => {
     // The native writer can still be flushing the frame when FRAME fires. Keep OSC probes behind visible app output.
