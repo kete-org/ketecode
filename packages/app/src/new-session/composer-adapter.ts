@@ -18,6 +18,7 @@ import { SessionRouteKey, SessionStateKey } from "@/runtime/server/scope"
 import { createSessionMessageHandoff } from "@/session/handoff"
 import type { DraftMcpControls } from "./mcp"
 import { KeteModeDraft } from "@/kete/mode" // kete_change
+import { KeteModeSwitch } from "@/kete/mode-switch/state" // kete_change
 
 export function createNewSessionComposerAdapter(props: {
   draftID: string
@@ -94,16 +95,23 @@ export function createNewSessionComposerAdapter(props: {
         return
       }
 
+      // kete_change start: the session's mode (Code | Work); Work leaves the agent to the runtime
+      const kete = KeteModeSwitch.createFields({
+        agent: selection.agent,
+        metadata: KeteModeDraft.metadata(draftID),
+        mode: KeteModeSwitch.chosen(server.key, currentDirectory),
+      })
+      // kete_change end
       const created = data.session.create({
         id,
-        agent: selection.agent,
+        agent: kete.agent, // kete_change
         model: {
           id: selection.model.modelID,
           providerID: selection.model.providerID,
           variant: selection.variant,
         },
         location: { directory: sessionDirectory },
-        metadata: KeteModeDraft.metadata(draftID), // kete_change: "Ask" in force before the first tool call, not raced against it
+        metadata: kete.metadata, // kete_change: "Ask" in force before the first tool call, not raced against it; Work's session mode
       })
       KeteModeDraft.clear(draftID) // kete_change
       const creation = created.request.then(

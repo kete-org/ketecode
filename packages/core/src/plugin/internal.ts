@@ -113,6 +113,7 @@ import { KeteAgentSync } from "../kete/sync/plugin.js" // kete_change
 import { KetePermissionMode } from "../kete/permission-mode.js" // kete_change
 import { KeteSandbox } from "../kete/sandbox.js" // kete_change
 import { KeteRoles } from "../kete/roles.js" // kete_change
+import { KeteWorkAgent } from "../kete/work-agent.js" // kete_change
 import { KeteSubagents } from "../kete/subagents.js" // kete_change
 import { KeteWorktrees } from "../kete/worktrees.js" // kete_change
 import { KetePermissionCeiling } from "../kete/permission-ceiling.js" // kete_change
@@ -318,6 +319,8 @@ const pre = [
   KeteAttribution.Plugin,
   // kete_change: starter role agents when not signed in to an organization; before KeteBudgetRule so they get its rule
   KeteRoles.Plugin,
+  // kete_change: the hidden agent behind Work mode, for everyone (roles skip organization users); before KeteBudgetRule
+  KeteWorkAgent.Plugin,
   // kete_change: after AgentPlugin, before configuration rules are appended (post); see kete/budget.ts
   KeteBudgetRule.Plugin,
   // kete_change: an unattended run's policy loosens "ask" to "allow"; before mode/ceiling so they can still tighten it back; see kete/unattended.ts

@@ -100,3 +100,57 @@ story("switches between Build and Plan",async ({ mount }) => {
   await build.click()
   await expect(build).toHaveAttribute("aria-checked", "true")
 })
+
+story("shows Work disabled with its hint and leaves Code checked when it is clicked", async ({ mount }) => {
+  const root = await mount("app-kete-shell--mode-switch")
+  const group = root.getByRole("radiogroup", { name: "Mode" })
+  const code = group.getByRole("radio", { name: "Code" })
+  const work = group.getByRole("radio", { name: "Work" })
+
+  await expect(code).toHaveAttribute("aria-checked", "true")
+  await expect(work).toHaveAttribute("aria-disabled", "true")
+  await expect(root.getByText("Not available yet")).toBeVisible()
+  await expect(work).toHaveAccessibleDescription("Not available yet")
+  // Playwright refuses to click an aria-disabled element unless forced; a user can still try.
+  await work.click({ force: true })
+  await expect(code).toHaveAttribute("aria-checked", "true")
+  await expect(root.getByTestId("last")).toHaveText("")
+})
+
+story("selects Work by click when it is available", async ({ mount }) => {
+  const root = await mount("app-kete-shell--mode-switch-work-available")
+  const group = root.getByRole("radiogroup", { name: "Mode" })
+
+  await expect(group.getByRole("radio", { name: "Work" })).not.toHaveAttribute("aria-disabled", "true")
+  await group.getByRole("radio", { name: "Work" }).click()
+  await expect(group.getByRole("radio", { name: "Work" })).toHaveAttribute("aria-checked", "true")
+  await expect(root.getByTestId("last")).toHaveText("work")
+})
+
+story("moves between available modes with the arrow keys and skips unavailable ones", async ({ mount, page }) => {
+  const available = await mount("app-kete-shell--mode-switch-work-available")
+  const code = available.getByRole("radio", { name: "Code" })
+  const work = available.getByRole("radio", { name: "Work" })
+
+  await expect(code).toHaveAttribute("tabindex", "0")
+  await expect(work).toHaveAttribute("tabindex", "-1")
+  await page.keyboard.press("Tab")
+  await expect(code).toBeFocused()
+  await expect(code).toHaveCSS("outline-style", "solid")
+  await page.keyboard.press("ArrowRight")
+  await expect(work).toHaveAttribute("aria-checked", "true")
+  await expect(work).toBeFocused()
+  await expect(work).toHaveAttribute("tabindex", "0")
+  await expect(code).toHaveAttribute("tabindex", "-1")
+})
+
+story("arrow keys stay on Code while Work is unavailable", async ({ mount, page }) => {
+  const root = await mount("app-kete-shell--mode-switch")
+  const code = root.getByRole("radio", { name: "Code" })
+
+  await page.keyboard.press("Tab")
+  await expect(code).toBeFocused()
+  await page.keyboard.press("ArrowRight")
+  await expect(code).toHaveAttribute("aria-checked", "true")
+  await expect(code).toBeFocused()
+})

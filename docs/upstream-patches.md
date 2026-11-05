@@ -1935,3 +1935,19 @@ opened; try again." Paths never checked in the call (glob, grep, list, other dri
 
 **Sync checklist:** if upstream changes `Files.read/write` in `local.ts` or adds another byte path for the file
 tools, route it through `KeteVerifiedOpen`.
+
+## Code | Work switch (WS1 1.4)
+
+`core/src/kete/work-agent.ts` (plugin `kete.work-agent`) registers the hidden `work-orchestrator` agent that
+`modes/work.jsonc` names; it is its own plugin because `KeteRoles` skips organization users. The switch itself
+is Kete-owned (`app/src/kete/mode-switch/`, mounted through the Kete sidebar's `mode` slot). The new-session
+composer reads the chosen mode when it creates the session.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteWorkAgent.Plugin` in `pre` right after `KeteRoles.Plugin` (before `KeteBudgetRule`) | internal plugins are registered only in this list |
+| `app/src/new-session/composer-adapter.ts` | Import; `KeteModeSwitch.createFields(...)` before `data.session.create`; its `agent`/`metadata` replace two fields | the create call is built here; no hook between the composer and `session.create` |
+| `app/src/runtime/i18n/en.ts` | Two keys (`kete.mode.label`, `kete.mode.unavailable`) | the dictionary is one file |
+
+**Sync checklist:** if upstream changes `session.create`'s arguments in `composer-adapter.ts`, re-apply the three
+marked lines; if upstream adds its own mode or workspace switch, compare and drop ours.

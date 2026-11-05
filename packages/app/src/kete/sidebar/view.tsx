@@ -44,6 +44,8 @@ export function KeteSidebarView(props: {
   onMore: () => void
   /** Rendered at the start of each session row, e.g. the busy dot. */
   status?: (id: string) => JSX.Element
+  /** The Code | Work switch, above the navigation; only on the new-session screen. */
+  mode?: JSX.Element
   footer?: JSX.Element
 }) {
   const Row = (row: { session: SidebarSession }) => (
@@ -61,6 +63,7 @@ export function KeteSidebarView(props: {
 
   return (
     <nav data-kete="sidebar" aria-label="Kete Code">
+      {props.mode}
       <div data-kete="sidebar-nav">
         <button type="button" onClick={() => props.onSearch()}>
           <Icon name="magnifying-glass" />

@@ -242,6 +242,7 @@ desktop UI state):
    - What: the agent (prompt, tools from the profile) and a top-of-sidebar switch that remembers the last mode per workspace (`Persist.serverWorkspace`).
    - New sessions use the selected mode.
    - Tests: a component story test.
+   - Done (2026-11-05): the switch shows on the new-session screen (the sidebar's top, for the draft's workspace), not on session routes. Work stays unavailable (`available: false`) until the file-I/O follow-up.
 
 **Phase B — WS2 and WS3.**
 - 2.1 grant store with live revoke;
