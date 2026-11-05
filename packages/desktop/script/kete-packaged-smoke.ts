@@ -143,7 +143,7 @@ function option(name: string) {
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
-async function until<T>(what: string, ms: number, check: () => Promise<T | undefined>): Promise<T> {
+export async function until<T>(what: string, ms: number, check: () => Promise<T | undefined>): Promise<T> {
   const deadline = Date.now() + ms
   let last: unknown
   while (Date.now() < deadline) {
@@ -227,6 +227,46 @@ async function taskkill(pid: number) {
   await Bun.spawn(["taskkill", "/PID", String(pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" }).exited
 }
 
+/** The executable to launch; a tarball is unpacked under `root`. */
+export async function unpackApp(app: App, root: string) {
+  if (app.kind === "exe") return app.exe
+  if (app.kind === "bundle") return executable(app.bundle)
+  const unpacked = path.join(root, "bundle")
+  await fs.mkdir(unpacked)
+  const tar = Bun.spawn(["tar", "-xf", app.tar, "-C", unpacked], { stdout: "ignore", stderr: "inherit" })
+  if ((await tar.exited) !== 0) throw new Error(`tar failed on ${app.tar}`)
+  return executable(path.join(unpacked, app.bundle))
+}
+
+/** Stops the app, then every runtime seen (the runtime is detached, so the app's tree doesn't include it).
+ *  Returns the pids still alive after 10 s. */
+export async function stopAll(input: {
+  app?: { pid: number; exited: Promise<unknown> }
+  runtimePids: Set<number>
+  current: () => Promise<{ pid: number } | undefined>
+}) {
+  const { app, runtimePids } = input
+  if (app) {
+    if (process.platform === "win32") {
+      await taskkill(app.pid)
+    } else {
+      kill(app.pid, "SIGTERM")
+      const exited = await Promise.race([app.exited.then(() => true), Bun.sleep(10_000).then(() => false)])
+      if (!exited) kill(app.pid, "SIGKILL")
+    }
+    await Promise.race([app.exited, Bun.sleep(10_000)])
+  }
+  // A runtime that registered after the last check still belongs to this run.
+  const last = await input.current().catch(() => undefined)
+  if (last) runtimePids.add(last.pid)
+  for (const pid of runtimePids) process.platform === "win32" ? await taskkill(pid) : kill(pid, "SIGKILL")
+  const pids = () => [...runtimePids, ...(app ? [app.pid] : [])]
+  return until("processes to exit", 10_000, async () => (pids().every((pid) => !alive(pid)) ? true : undefined)).then(
+    () => undefined,
+    () => pids().filter(alive),
+  )
+}
+
 async function main() {
   const dir = option("--dir") ?? path.join(import.meta.dir, "../../../dist/desktop")
   const app = findApp({
@@ -266,16 +306,7 @@ async function main() {
   }
 
   try {
-    let exe: string
-    if (app.kind === "exe") exe = app.exe
-    else if (app.kind === "bundle") exe = executable(app.bundle)
-    else {
-      const unpacked = path.join(root, "bundle")
-      await fs.mkdir(unpacked)
-      const tar = Bun.spawn(["tar", "-xf", app.tar, "-C", unpacked], { stdout: "ignore", stderr: "inherit" })
-      if ((await tar.exited) !== 0) throw new Error(`tar failed on ${app.tar}`)
-      exe = executable(path.join(unpacked, app.bundle))
-    }
+    const exe = await unpackApp(app, root)
     await writeServiceConfig(env.OPENCODE_DESKTOP_TEST_ROOT ?? root, freePort())
     const started = Date.now()
     // To a file, not a pipe: the runtime the app starts inherits these and outlives the app.
@@ -309,27 +340,7 @@ async function main() {
       }
     }
   } finally {
-    if (appProcess) {
-      if (process.platform === "win32") {
-        await taskkill(appProcess.pid)
-      } else {
-        kill(appProcess.pid, "SIGTERM")
-        const exited = await Promise.race([appProcess.exited.then(() => true), Bun.sleep(10_000).then(() => false)])
-        if (!exited) kill(appProcess.pid, "SIGKILL")
-      }
-      await Promise.race([appProcess.exited, Bun.sleep(10_000)])
-    }
-    // A runtime that registered after the last check still belongs to this run.
-    const last = await current().catch(() => undefined)
-    if (last) runtimePids.add(last.pid)
-    // The runtime is detached from the app, so the app's process tree doesn't include it.
-    for (const pid of runtimePids) process.platform === "win32" ? await taskkill(pid) : kill(pid, "SIGKILL")
-    const left = await until("processes to exit", 10_000, async () =>
-      [...runtimePids, ...(appProcess ? [appProcess.pid] : [])].every((pid) => !alive(pid)) ? true : undefined,
-    ).then(
-      () => undefined,
-      () => [...runtimePids, ...(appProcess ? [appProcess.pid] : [])].filter(alive),
-    )
+    const left = await stopAll({ app: appProcess, runtimePids, current })
     if (left?.length) failure ??= new Error(`left a process behind: ${left.join(", ")}`)
     if (failure) {
       if (appProcess) console.error("--- runtime run directly\n" + redact(await diagnoseRuntime(env.OPENCODE_DESKTOP_TEST_ROOT ?? root, env), secrets))

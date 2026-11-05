@@ -89,3 +89,20 @@ jobs:
       - name: Smoke packaged app
         timeout-minutes: 10 # above the script's own waits (180 + 120 + 60 s plus cleanup)
         run: bun run --cwd packages/desktop script/kete-packaged-smoke.ts
+
+      # Manual runs only: drives the packaged app's window against a fake model (docs/desktop.md).
+      - name: E2E packaged app
+        if: github.event_name == 'workflow_dispatch'
+        timeout-minutes: 15
+        env:
+          KETE_E2E_RESULTS: ${{ runner.temp }}/kete-e2e
+        run: bun run --cwd packages/desktop e2e/kete/electron.ts
+
+      - name: Upload E2E results
+        if: failure() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kete-e2e-${{ matrix.target }}
+          path: ${{ runner.temp }}/kete-e2e
+          retention-days: 7
+          if-no-files-found: ignore

@@ -18,6 +18,7 @@ import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
+import { KeteVerifiedOpen } from "../../kete/verified-open.js" // kete_change
 
 export const name = "edit"
 
@@ -386,6 +387,7 @@ export const Plugin = {
                   ? error
                   : new ToolFailure({ message: `Unable to edit ${input.path}`, error }),
               ),
+              KeteVerifiedOpen.scoped, // kete_change: the file opened is the file checked
             )
           },
         }),
