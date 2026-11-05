@@ -44,7 +44,7 @@ describe.skipIf(!linux)("real openat2", () => {
   test("the flag table matches fs.constants on this architecture", () => {
     const sys = KeteLinuxFfi.linux()
     if ("unsupported" in sys) throw new Error(sys.unsupported)
-    for (const name of ["O_DIRECTORY", "O_NOFOLLOW", "O_CREAT", "O_TRUNC", "O_NOCTTY", "O_NONBLOCK", "O_WRONLY"] as const)
+    for (const name of ["O_DIRECTORY", "O_NOFOLLOW", "O_CREAT", "O_EXCL", "O_TRUNC", "O_NOCTTY", "O_NONBLOCK", "O_WRONLY"] as const)
       expect({ name, value: sys.flags[name] }).toEqual({ name, value: (constants as Record<string, number>)[name]! })
   })
 

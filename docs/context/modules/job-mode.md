@@ -1,7 +1,7 @@
 ---
 module: job-mode
-paths: [packages/util/src/kete/job-mode.ts, packages/util/src/kete/tool-runner.ts, packages/util/src/kete/tool-helper.ts, packages/core/src/kete/job-plugin.ts, packages/core/src/kete/job-request.ts, packages/core/src/kete/job-request/*, packages/server/src/kete/job-server.ts, packages/cli/src/kete/job-connection.ts, packages/util/src/kete/job-secrets.ts, packages/cli/src/kete/job-preflight.ts, packages/cli/src/kete/job-serve.ts, packages/cli/src/kete/job-standalone.ts, packages/cli/src/kete/dumpable.ts, packages/util/src/kete/linux-ffi.ts, packages/util/src/kete/confined-fs.ts, packages/util/src/kete/job-fs-util.ts, packages/util/src/kete/job-audit-sink.ts, packages/core/src/kete/job-files.ts, packages/cli/src/kete/job-orchestration.ts, packages/util/src/kete/orchestration-spec.ts, packages/core/src/kete/orchestrate.ts, packages/core/src/kete/orchestration/*, packages/core/src/kete/dag.ts]
-verified-at: 52ddc2f9ef
+paths: [packages/util/src/kete/job-mode.ts, packages/util/src/kete/tool-runner.ts, packages/util/src/kete/tool-helper.ts, packages/core/src/kete/job-plugin.ts, packages/core/src/kete/job-request.ts, packages/core/src/kete/job-request/*, packages/server/src/kete/job-server.ts, packages/cli/src/kete/job-connection.ts, packages/util/src/kete/job-secrets.ts, packages/cli/src/kete/job-preflight.ts, packages/cli/src/kete/job-serve.ts, packages/cli/src/kete/job-standalone.ts, packages/cli/src/kete/dumpable.ts, packages/util/src/kete/linux-ffi.ts, packages/util/src/kete/confined-fs.ts, packages/util/src/kete/job-fs-util.ts, packages/util/src/kete/job-audit-sink.ts, packages/core/src/kete/job-files.ts, packages/cli/src/kete/job-orchestration.ts, packages/util/src/kete/orchestration-spec.ts, packages/core/src/kete/orchestrate.ts, packages/core/src/kete/orchestration/*, packages/core/src/kete/dag.ts, packages/util/src/kete/darwin-ffi.ts]
+verified-at: 16d806c84b
 ---
 
 ## Quick answers
@@ -264,9 +264,9 @@ verified-at: 52ddc2f9ef
   (tests) still logs nothing, matching its prior no-registration behavior. `runtime_type` resolution
   itself is unchanged.
 - How are the worktree's files confined in a job (piece A3)? `KeteJobServer.replacements` opens the
-  root once (`confine(process.cwd())`, `job-server.ts:121`; `confineReal` = `KeteConfinedFs.open` over
-  `KeteLinuxFfi.linux()`, `:97`) and adds three replacements (the list is now **11**,
-  `job-server.ts:138-140`): `Environment.node` → `KeteJobFiles.node(root)`
+  root once (`confine(process.cwd())`, `job-server.ts:139`; `confineReal` = `KeteConfinedFs.open` over
+  `KeteLinuxFfi.linux()`, `:109`) and adds three replacements (the list is now **11**,
+  `job-server.ts:156-158`): `Environment.node` → `KeteJobFiles.node(root)`
   (`core/src/kete/job-files.ts`: all seven `Environment.files` methods through `KeteConfinedFs.ops`,
   never `node:fs`), `FSUtil.node` → `KeteJobFsUtil.layer(root)` (`util/src/kete/job-fs-util.ts`) and
   `FileSystemSearch.node` → `FileSystemSearch.configured({ fff: false })`. Every open is
@@ -275,6 +275,39 @@ verified-at: 52ddc2f9ef
   the tree and a magic link are refused ("Job mode: refused to follow a symbolic link or leave the
   working tree", no absolute path in it). Root = cwd = the entrypoint's worktree; a workspace-placed
   location is a defect (`job-files.ts`, `layer`). Contract: contracts.md §6d.
+- How do `linux-ffi.ts` and `job-files.ts` fit together, and can local file tools reuse them? Layers:
+  (1) `util/src/kete/linux-ffi.ts` = raw syscalls only. `linux()` (`:244`) is called once and returns
+  a `Syscalls` bundle or `{ unsupported: reason }` (not Linux, arch not x64/arm64, no `Bun`, libc load
+  failed); it `dlopen`s musl (`/lib/libc.musl-<arch>.so.1` if present) else `libc.so.6`, and loads
+  `bun:ffi` lazily via `require` inside `linux()` so the Node build bundles and nothing runs at import.
+  `openat2` and `getdents64` have no libc wrapper, so they go through variadic `syscall(2)` by number
+  (`syscallNumbers`: openat2 437 on both, getdents64 217 x64 / 61 arm64); `mkdirat`, `unlinkat`,
+  `renameat`, `fcntl` are plain libc symbols. `openat2` takes a 24-byte `open_how` (`openHow`:
+  flags, mode, resolve; mode must be 0 without O_CREAT) and `RESOLVE_NO_MAGICLINKS 0x02`,
+  `RESOLVE_NO_SYMLINKS 0x04`, `RESOLVE_BENEATH 0x08`. `O_DIRECTORY`/`O_NOFOLLOW` differ per arch
+  (`flagsByArch`, exposed as `Syscalls.flags`; use them, never `fs.constants`/literals). Results are
+  `Result<A>` = `{ok,value}|{ok:false,errno}` (errno read in the same synchronous turn; `errnoName`).
+  Descriptor I/O after the open (`fstat`, `pread`, `writeAll`, `close`) is Node's callback fd API on
+  the raw integer (no path, off the JS thread). `parseDirents` decodes `getdents64` records. Tests inject
+  an in-memory `Syscalls` fake (`util/test/kete/fixture/fake-syscalls.ts`).
+  (2) `util/src/kete/confined-fs.ts`: `open(rootLexical, sys)` (`:90`) realpaths the root, takes an
+  `O_PATH|O_DIRECTORY` fd, probes `openat2` and throws `StartError` (never falls back to plain open) on
+  non-Linux/ENOSYS/E2BIG/EINVAL; `ops(root)` (`:231`) gives `read/write/stat/list/remove/move/mkdir/
+  realPath`, each resolving a path relative to the root fd with `RESOLVE` (`:55`, all three flags),
+  returning `Outcome<A>` = ok | `missing` | `refused` (ELOOP/EXDEV) | `wrongKind` | `failed`
+  (`fromErrno`); `mkdir -p` is one component at a time; remove/move use `unlinkat`/`renameat` on
+  parent dirfds.
+  (3) `core/src/kete/job-files.ts`: `driver(root, spawner)` maps those seven `ops` into the
+  `Environment.FilesImpl` overrides, via `lift`: `missing` -> `Environment.NotFound` (or `Failed` where
+  the method has no NotFound), `wrongKind` -> `WrongKind` (read, list), `refused` -> `Failed` with
+  `KeteConfinedFs.Refused` (relative path only), else `Failed`. `layer(root)`/`node(root)` build
+  `Environment.Service`; a workspace location dies. Wired by `job-server.ts` (see above).
+  Reuse for local file tools: take `KeteConfinedFs.ops(KeteConfinedFs.open(dir, KeteLinuxFfi.linux()))`
+  and adapt its `Outcome`s as `job-files.ts` does. Limits: Linux x64/arm64 under Bun only; `RESOLVE_
+  BENEATH|NO_SYMLINKS` refuses every symlink, so a local workspace that uses symlinks needs a
+  different resolve set (`resolve` is a parameter of `openat2`, but `confined-fs.ts` hard-codes
+  `RESOLVE`); `Root.fd` is held for the process's life. Local file tools today use
+  `core/src/kete/verified-open.ts` (see the `permissions` card).
 - Which paths read the worktree in-process (the map that drove A3)? read/write/edit/patch and the
   read tool's directory listing → `Environment.files` (upstream: `makeLocalDriver`, node:fs, follows
   symlinks; seam `core/src/environment/environment.ts:24-33`; **there is no "list" tool in v2**, a

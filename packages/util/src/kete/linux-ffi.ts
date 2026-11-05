@@ -19,7 +19,7 @@
 
 export * as KeteLinuxFfi from "./linux-ffi.js"
 
-import { close as fsClose, closeSync, existsSync, fstat as fsFstat, read as fsRead, write as fsWrite } from "node:fs"
+import { close as fsClose, closeSync, existsSync, fstat as fsFstat, fstatSync, read as fsRead, write as fsWrite } from "node:fs"
 
 export type Arch = "x64" | "arm64"
 
@@ -67,6 +67,7 @@ export interface Flags {
   readonly O_RDONLY: number
   readonly O_WRONLY: number
   readonly O_CREAT: number
+  readonly O_EXCL: number
   readonly O_NOCTTY: number
   readonly O_TRUNC: number
   readonly O_NONBLOCK: number
@@ -80,6 +81,7 @@ const common = {
   O_RDONLY: 0,
   O_WRONLY: 0o1,
   O_CREAT: 0o100,
+  O_EXCL: 0o200,
   O_NOCTTY: 0o400,
   O_TRUNC: 0o1000,
   O_NONBLOCK: 0o4000,
@@ -129,6 +131,8 @@ export interface Syscalls {
   readonly openat2: (dirfd: number, path: string, flags: number, mode: number, resolve: number) => Result<number>
   /** One `getdents64(fd, buffer, buffer.length)` call: the number of bytes filled, 0 at the end. */
   readonly getdents64: (fd: number, buffer: Uint8Array) => Result<number>
+  /** Every entry of an open directory, read to its end (`.` and `..` skipped). */
+  readonly readdir: (fd: number) => Result<Dirent[]>
   readonly mkdirat: (dirfd: number, name: string, mode: number) => Result<void>
   readonly unlinkat: (dirfd: number, name: string, flags: number) => Result<void>
   readonly renameat: (fromDirfd: number, fromName: string, toDirfd: number, toName: string) => Result<void>
@@ -175,6 +179,87 @@ export function parseDirents(buffer: Uint8Array, length: number): Dirent[] {
     offset += reclen
   }
   return out
+}
+
+const DIRENT_BUFFER_BYTES = 64 * 1024
+
+/** Reads a directory to its end with repeated `getdents64` calls: 0 bytes is the end, an error is returned as is. */
+export function readDirents(getdents64: (buffer: Uint8Array) => Result<number>): Result<Dirent[]> {
+  const buffer = new Uint8Array(DIRENT_BUFFER_BYTES)
+  const out: Dirent[] = []
+  for (;;) {
+    const result = getdents64(buffer)
+    if (!result.ok) return result
+    if (result.value === 0) return { ok: true, value: out }
+    out.push(...parseDirents(buffer, result.value))
+  }
+}
+
+/**
+ * `openat2` emulated with one `openat` per component, for kernels without it (< 5.6: RHEL 8, WSL1).
+ * Each intermediate is opened O_PATH|O_NOFOLLOW (no device open, works on execute-only directories)
+ * and checked with `kind`: a symlink is ELOOP (never followed), a non-directory ENOTDIR. The last
+ * component gets O_NOFOLLOW too (O_PATH|O_NOFOLLOW still yields the link itself, as with openat2).
+ * Needs RESOLVE_NO_SYMLINKS. RESOLVE_BENEATH refuses an absolute path or `..` (EXDEV); without it an
+ * absolute path walks from an fd for "/", not from `dirfd`. Empty components are skipped, so a
+ * trailing slash does not demand a directory (openat2 would give ENOTDIR for a file).
+ */
+export function emulateOpenat2(
+  sys: {
+    readonly flags: Flags
+    readonly openat: (dirfd: number, path: string, flags: number, mode: number) => Result<number>
+    readonly close: (fd: number) => Result<void>
+    readonly kind: (fd: number) => Result<Kind>
+  },
+  dirfd: number,
+  path: string,
+  flags: number,
+  mode: number,
+  resolve: number,
+): Result<number> {
+  const F = sys.flags
+  const bad = (value: number): Result<number> => ({ ok: false, errno: value })
+  if ((resolve & RESOLVE_NO_SYMLINKS) === 0) return bad(errno.EINVAL)
+  const parts = path.split("/").filter((part) => part !== "" && part !== ".")
+  if ((resolve & RESOLVE_BENEATH) !== 0 && (path.startsWith("/") || parts.includes(".."))) return bad(errno.EXDEV)
+  let current = dirfd
+  let owned = false
+  if (path.startsWith("/")) {
+    const root = sys.openat(AT_FDCWD, "/", F.O_PATH | F.O_DIRECTORY | F.O_NOFOLLOW | F.O_CLOEXEC, 0)
+    if (!root.ok) return root
+    current = root.value
+    owned = true
+  }
+  if (parts.length === 0) {
+    const self = sys.openat(current, ".", flags | F.O_NOFOLLOW, mode)
+    if (owned) sys.close(current)
+    return self
+  }
+  for (const [index, part] of parts.entries()) {
+    const last = index === parts.length - 1
+    const next = last
+      ? sys.openat(current, part, flags | F.O_NOFOLLOW, mode)
+      : sys.openat(current, part, F.O_PATH | F.O_NOFOLLOW | F.O_CLOEXEC, 0)
+    if (owned) sys.close(current)
+    if (!next.ok) return next
+    current = next.value
+    owned = true
+    if (!last) {
+      const kind = sys.kind(current)
+      const failure = !kind.ok ? kind.errno : kind.value === "symlink" ? errno.ELOOP : kind.value !== "directory" ? errno.ENOTDIR : 0
+      if (failure !== 0) {
+        sys.close(current)
+        return { ok: false, errno: failure }
+      }
+    }
+  }
+  return { ok: true, value: current }
+}
+
+/** Whether a failed `openat2` falls back to the emulation: ENOSYS (kernel < 5.6) or, with
+ * `fallback`, EPERM (older Docker seccomp profiles answer unknown syscalls with EPERM, not ENOSYS). */
+export function shouldEmulate(failure: number, fallback: boolean): boolean {
+  return fallback && (failure === errno.ENOSYS || failure === errno.EPERM)
 }
 
 /** The architecture's key in the tables above, or `undefined` for an unsupported one. */
@@ -240,8 +325,10 @@ function libcPath(value: Arch) {
 
 /** The real syscalls through libc, or why they're unavailable (not Linux, an unsupported
  * architecture, not the Bun runtime, or libc failed to load). Opens libc once; the library stays
- * open for the process's life (it's the process's own libc). */
-export function linux(platform: NodeJS.Platform = process.platform, archName: string = process.arch): Linux {
+ * open for the process's life (it's the process's own libc). With `fallback`, an `openat2` that
+ * the kernel lacks (ENOSYS, or EPERM from a seccomp filter) is emulated per component (`emulateOpenat2`); job mode leaves it off
+ * and refuses to start instead. */
+export function linux(platform: NodeJS.Platform = process.platform, archName: string = process.arch, fallback = false): Linux {
   if (platform !== "linux") return { unsupported: `not Linux (${platform})` }
   const key = arch(archName)
   if (key === undefined) return { unsupported: `unsupported architecture (${archName})` }
@@ -255,6 +342,7 @@ export function linux(platform: NodeJS.Platform = process.platform, archName: st
       // Variadic in libc; integer and pointer arguments pass identically in registers on x86_64 SysV
       // and Linux AAPCS64. Pointers are passed as their numeric address (`ffi.ptr`).
       syscall: { args: ["i64", "i64", "u64", "u64", "u64"], returns: "i64" },
+      openat: { args: ["i32", "ptr", "i32", "u32"], returns: "i32" },
       mkdirat: { args: ["i32", "ptr", "u32"], returns: "i32" },
       unlinkat: { args: ["i32", "ptr", "i32"], returns: "i32" },
       renameat: { args: ["i32", "ptr", "i32", "ptr"], returns: "i32" },
@@ -274,20 +362,40 @@ export function linux(platform: NodeJS.Platform = process.platform, archName: st
   const cstr = (value: string) => Buffer.from(value + "\0", "utf8")
   const status = (result: number): Result<void> => (result === -1 ? { ok: false, errno: lastErrno() } : { ok: true, value: undefined })
 
+  const flags = flagsByArch[key]
+  const getdents64: Syscalls["getdents64"] = (fd, buffer) => {
+    const result = Number(symbols.syscall(numbers.getdents64, fd, ffi.ptr(buffer), buffer.byteLength, 0))
+    if (result < 0) return { ok: false, errno: lastErrno() }
+    return { ok: true, value: result }
+  }
+  const fdKind = (fd: number): Result<Kind> => {
+    try {
+      return { ok: true, value: kindOf(fstatSync(fd)) }
+    } catch (error) {
+      return { ok: false, errno: codeErrno(error) }
+    }
+  }
+  // `openat` is variadic in libc, but the fixed four-argument binding is safe on x86_64 and arm64
+  // Linux: every argument is an integer or pointer, passed in registers.
+  const openat = (dirfd: number, path: string, openFlags: number, mode: number): Result<number> => {
+    const result = symbols.openat(dirfd, cstr(path), openFlags, mode)
+    return result < 0 ? { ok: false, errno: lastErrno() } : { ok: true, value: result }
+  }
+
   return {
-    flags: flagsByArch[key],
-    openat2: (dirfd, path, flags, mode, resolve) => {
+    flags,
+    openat2: (dirfd, path, openFlags, mode, resolve) => {
       const name = cstr(path)
-      const how = openHow(flags, mode, resolve)
+      const how = openHow(openFlags, mode, resolve)
       const result = Number(symbols.syscall(numbers.openat2, dirfd, ffi.ptr(name), ffi.ptr(how), OPEN_HOW_SIZE))
-      if (result < 0) return { ok: false, errno: lastErrno() }
-      return { ok: true, value: result }
+      if (result >= 0) return { ok: true, value: result }
+      const failure = lastErrno()
+      if (shouldEmulate(failure, fallback))
+        return emulateOpenat2({ flags, openat, close: nodeFdIo.close, kind: fdKind }, dirfd, path, openFlags, mode, resolve)
+      return { ok: false, errno: failure }
     },
-    getdents64: (fd, buffer) => {
-      const result = Number(symbols.syscall(numbers.getdents64, fd, ffi.ptr(buffer), buffer.byteLength, 0))
-      if (result < 0) return { ok: false, errno: lastErrno() }
-      return { ok: true, value: result }
-    },
+    getdents64,
+    readdir: (fd) => readDirents((buffer) => getdents64(fd, buffer)),
     mkdirat: (dirfd, name, mode) => status(symbols.mkdirat(dirfd, cstr(name), mode)),
     unlinkat: (dirfd, name, flags) => status(symbols.unlinkat(dirfd, cstr(name), flags)),
     renameat: (fromDirfd, fromName, toDirfd, toName) =>
@@ -313,10 +421,16 @@ export function setCloexec(fd: number, platform: NodeJS.Platform = process.platf
   }
   if (platform === "darwin" && typeof Bun !== "undefined") {
     const ffi = require("bun:ffi") as typeof import("bun:ffi")
-    const library = ffi.dlopen("/usr/lib/libSystem.B.dylib", { fcntl: { args: ["i32", "i32", "i32"], returns: "i32" } })
+    // Apple arm64 passes variadic arguments on the stack: pad x2..x7 so the third argument lands there.
+    const padded = process.arch === "arm64"
+    const library = ffi.dlopen("/usr/lib/libSystem.B.dylib", {
+      fcntl: { args: padded ? ["i32", "i32", "i64", "i64", "i64", "i64", "i64", "i64", "i64"] : ["i32", "i32", "i32"], returns: "i32" },
+    })
     try {
       // F_SETFD and FD_CLOEXEC have the same values on macOS.
-      if (library.symbols.fcntl(fd, F_SETFD, FD_CLOEXEC) === -1) throw new Error(`cannot mark descriptor ${fd} close-on-exec`)
+      const fcntl = library.symbols.fcntl as unknown as (...args: number[]) => number
+      const result = padded ? fcntl(fd, F_SETFD, 0, 0, 0, 0, 0, 0, FD_CLOEXEC) : fcntl(fd, F_SETFD, FD_CLOEXEC)
+      if (result === -1) throw new Error(`cannot mark descriptor ${fd} close-on-exec`)
     } finally {
       library.close()
     }

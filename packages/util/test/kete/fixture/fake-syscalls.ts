@@ -180,6 +180,7 @@ export function makeFake(options: FakeOptions) {
   const sys: KeteLinuxFfi.Syscalls = {
     flags: F,
     openat2,
+    readdir: (fd) => KeteLinuxFfi.readDirents((buffer) => sys.getdents64(fd, buffer)),
     getdents64: (fd, buffer) => {
       const open = fds.get(fd)
       if (open === undefined) return fail(E.EBADF)
