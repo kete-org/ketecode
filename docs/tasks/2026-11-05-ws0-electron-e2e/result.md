@@ -22,7 +22,7 @@ The implementer had no shell; the main session ran every check.
 | desktop `bun test ./script ./e2e`, typecheck | 72 pass; clean |
 | `bun run lint`, `upstream:check` | exit 0; pass |
 | AC2 local, macOS arm64, fresh `OPENCODE_CHANNEL=dev` pack, two runs | window 2.1 / 2.3 s, connected 6.1 / 5.6 s, answer 0.3 / 0.2 s; no app or runtime process left |
-| AC3 CI dispatch | see PR |
+| AC3 CI dispatch (run 42106880740) | macOS: window 1.5 s, connected 2.8 s, answer 2.4 s; Windows: window 0.8 s, connected 3.3 s, answer 0.8 s; smoke passed on both |
 | Review | approve. Fixed: the exit promise is now made before `close()` (no 10 s wait). The provider check now walks the config entries instead of matching text (a model name contained the same string). |
 
 Fixed after the implementer: the Kete home shows the composer for the added project, so `home-new-session` is clicked only if it is visible.
@@ -30,7 +30,7 @@ Fixed after the implementer: the Kete home shows the composer for the added proj
 ## Acceptance criteria
 - [x] AC1: fake provider SSE and config writer tests; `declaresProvider` tests.
 - [x] AC2: two local runs passed (above).
-- [ ] AC3: dispatch run on macOS and Windows (PR).
+- [x] AC3: dispatch run passed on macOS and Windows (above); PR runs skip the step.
 - [x] AC4: checks above; `docs/desktop.md` updated.
 
 ## Cards updated
