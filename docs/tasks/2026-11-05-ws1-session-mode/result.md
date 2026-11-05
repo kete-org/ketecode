@@ -17,7 +17,7 @@ The implementer had no shell; the main session ran every check.
 | core full `bun run test` | ripgrep/shell/location tests fail locally; see `verify --base main` |
 | server `bun run test ./test/kete` | 49 pass, 0 fail |
 | `bun run lint`, `upstream:check` | exit 0; pass |
-| `verify --base main` | see PR |
+| `verify --base main` | util, core, tui: 0 new failures; server 3 and cli 1 "new" (OAuth callback ports, managed port occupancy) pass when re-run alone (13/13, 29/29): port contention from a parallel run |
 | Review | reviewer: changes needed → session import bypassed the create check (fixed, tested, recorded), cards (done at close); upstream-guard: approve |
 
 Fixed after the implementer: `guardCreate` refused a child that left the key out under a Work parent; it now inherits it.
