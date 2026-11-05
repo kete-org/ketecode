@@ -9,6 +9,9 @@
 // descriptors obtained that way. A symlink anywhere in the path (`ELOOP`) or an escape (`EXDEV`) is
 // a refusal; there is never a fallback to a plain `open`.
 //
+// The module also backs the local file tools (root `/`, core/src/kete/verified-open.ts) and runs on
+// macOS through darwin-ffi.ts. `open()` (job mode's start) stays Linux-only.
+//
 // Paths are checked before any syscall: a NUL byte, an absolute path outside the root and a `..`
 // escape are refused outright. Results are plain discriminated unions (no Effect), adapted by
 // core's job-mode Environment driver (core/src/kete/job-files.ts) and the FSUtil wrapper
@@ -57,7 +60,6 @@ const RESOLVE = KeteLinuxFfi.RESOLVE_BENEATH | KeteLinuxFfi.RESOLVE_NO_SYMLINKS 
 export const MAX_RETRIES = 8
 /** The deepest directory tree `remove` walks. */
 export const MAX_REMOVE_DEPTH = 512
-const DIRENT_BUFFER_BYTES = 64 * 1024
 const READ_CHUNK_BYTES = 64 * 1024
 
 export interface Root {
@@ -190,14 +192,8 @@ function parentAndName(rel: string): { readonly parent: string; readonly name: s
 }
 
 function readEntries(root: Root, fd: number): Outcome<KeteLinuxFfi.Dirent[]> {
-  const buffer = new Uint8Array(DIRENT_BUFFER_BYTES)
-  const out: KeteLinuxFfi.Dirent[] = []
-  for (;;) {
-    const result = root.sys.getdents64(fd, buffer)
-    if (!result.ok) return fromErrno(result.errno)
-    if (result.value === 0) return ok(out)
-    out.push(...KeteLinuxFfi.parseDirents(buffer, result.value))
-  }
+  const result = root.sys.readdir(fd)
+  return result.ok ? ok(result.value) : fromErrno(result.errno)
 }
 
 function direntKind(type: number): Kind | undefined {
@@ -217,6 +213,10 @@ export interface Ops {
   readonly remove: (value: string) => Promise<Outcome<void>>
   readonly move: (from: string, to: string) => Promise<Outcome<void>>
   readonly mkdir: (value: string) => Promise<Outcome<void>>
+  /** Opens `value` with `flags` (no symlink in any component); the caller closes the descriptor. */
+  readonly open: (value: string, flags: number, mode?: number) => Outcome<number>
+  /** Creates a new file (O_EXCL, parents made as needed); EEXIST if it exists. The caller closes the descriptor. */
+  readonly create: (value: string, mode: number) => Outcome<number>
   /** The canonical path of an existing, non-symlink entry inside the root. */
   readonly realPath: (value: string) => Promise<Outcome<string>>
 }
@@ -434,6 +434,24 @@ export function ops(root: Root): Ops {
       if (dir.kind !== "ok") return dir
       closeQuiet(sys, dir.value)
       return ok(undefined)
+    },
+
+    open: (value, flags, mode = 0) => {
+      const rel = inside(root, value)
+      return rel.kind === "ok" ? openAt(root, root.fd, rel.value, flags, mode) : rel
+    },
+
+    create: (value, mode) => {
+      const rel = inside(root, value)
+      if (rel.kind !== "ok") return rel
+      if (rel.value === ".") return failed("EISDIR")
+      const { parent, name } = parentAndName(rel.value)
+      const dir = mkdirp(parent)
+      if (dir.kind !== "ok") return dir
+      const fd = withFdSync(sys, dir.value, (dirfd) =>
+        openAt(root, dirfd, name, F.O_WRONLY | F.O_CREAT | F.O_EXCL | F.O_NOCTTY | F.O_NONBLOCK, mode),
+      )
+      return fd.kind === "missing" ? failed("ENOENT") : fd
     },
 
     realPath: async (value) => {
