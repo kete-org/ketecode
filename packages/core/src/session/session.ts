@@ -31,6 +31,7 @@ import { SessionSchema } from "./schema.js"
 import { SessionStore } from "./store.js"
 import { KeteUnattendedPolicy } from "../kete/unattended-policy.js" // kete_change
 import { KeteAddDir } from "../kete/add-dir.js" // kete_change
+import { KeteSessionMode } from "../kete/session-mode.js" // kete_change
 
 type PromptRequest = SessionPrompt.Input & {
   id?: SessionMessage.ID
@@ -90,6 +91,7 @@ export const make = Effect.fn("Session.make")(function* () {
   ) {
     const session = yield* get(sessionID) // kete_change: keep the fetched session for the unattended-lock guard
     yield* KeteUnattendedPolicy.guardMetadata(session.metadata, input.metadata) // kete_change: refuse dropping, changing or adding kete.unattended (ADR 0008)
+    yield* KeteSessionMode.guardMetadata(session.metadata, input.metadata) // kete_change: kete.sessionMode is fixed at create (WS1)
     const metadata = yield* KeteAddDir.guard(fs, KeteAddDir.context(fs, session.location.directory), session.metadata, input.metadata) // kete_change: refuse invalid extra folders (kete.dirs) and store them as real paths
     yield* bus.publish(SessionEvent.MetadataUpdated, { sessionID, metadata }) // kete_change
   })

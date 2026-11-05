@@ -25,6 +25,7 @@ import { SessionProjector } from "./projector.js"
 import { SessionMessageTable, SessionTable } from "./sql.js"
 import { KeteAddDir } from "../kete/add-dir.js" // kete_change
 import { KeteShareRecord } from "../kete/share/record.js" // kete_change
+import { KeteSessionMode } from "../kete/session-mode.js" // kete_change
 
 export const Data = SessionTransfer.Data
 export type Data = SessionTransfer.Data
@@ -105,6 +106,7 @@ const layer = Layer.effect(
             location: input.location,
             subpath,
           }))
+        const metadata = yield* KeteSessionMode.guardCreate(undefined, KeteShareRecord.without(KeteAddDir.withoutDirs(input.data.info.metadata))) // kete_change: an imported session's kete.sessionMode is validated like a created one's (WS1)
         yield* bus
           .publish(
             SessionEvent.Created,
@@ -119,7 +121,7 @@ const layer = Layer.effect(
               title: input.data.info.title,
               agent: input.data.info.agent,
               model: input.data.info.model,
-              metadata: KeteShareRecord.without(KeteAddDir.withoutDirs(input.data.info.metadata)), // kete_change: an imported session brings no extra folders (they skip the guard here) and no share record
+              metadata, // kete_change: an imported session brings no extra folders (they skip the guard here) and no share record
               permissions: input.data.info.permissions,
             },
             {

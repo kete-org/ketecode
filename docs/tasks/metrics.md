@@ -42,3 +42,4 @@ about 10 tasks, drop any agent that isn't saving calls.
 | 2026-11-04 | ws0-sidecar-supervision | large | scout, planner ×2, implementer (no shell), reviewer, upstream-guard, librarian ×3 | 1 | 0 | 0% | n/a | n/a |
 | 2026-11-04 | plan-approval (parity B4) | medium | security-reviewer (built in the main session) | 0 | – | – | n/a | n/a |
 | 2026-11-05 | ws1-mode-profiles | large | librarian ×3, planner ×2, implementer (no shell), reviewer | 0 | – | – | n/a | n/a |
+| 2026-11-05 | ws1-session-mode | large | scout, librarian ×2, planner, implementer (no shell), reviewer, upstream-guard | 1 | 0 | 0% | n/a | n/a |

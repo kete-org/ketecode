@@ -1,11 +1,14 @@
 ---
 module: unattended
 paths: [packages/core/src/kete/unattended-policy.ts, packages/core/src/kete/tool-env.ts, packages/core/src/kete/unattended.ts, packages/core/src/kete/run-checks.ts, packages/schema/src/kete/unattended.ts]
-verified-at: 460d1de894
+verified-at: 08f5855d87
 ---
 
 ## Quick answers
-- Does the tool env carry a marker? Yes: `KETE_AGENT_SHELL=1` is added to every agent shell's env after filtering (`core/src/kete/tool-env.ts:130`); it is not an allow-listed pass-through, so `passEnv` cannot remove it.
+- Is session metadata mutable after create, and which keys are locked? `Session.setMetadata` replaces the whole record (`core/src/session/session.ts:87-95`); two keys are locked: `kete.unattended` (`KeteUnattendedPolicy.guardMetadata`, `unattended-policy.ts:175`) and `kete.sessionMode` (`KeteSessionMode.guardMetadata`, `core/src/kete/session-mode.ts:73`, called at `session/session.ts:94`; add/change/drop dies with `LockedError`); `kete.dirs` is validated, not locked (`KeteAddDir.guard`).
+- How does `Session.create` build `metadata` and `agent`? `core/src/session.ts:301-317`: `KeteAddDir.guard` (invalid `kete.dirs` dies with `KeteAddDir.RefusedError`, `add-dir.ts:36,138` — a defect, not a typed failure), then `KeteSessionMode.guardCreate` (`:303`), then `KeteUnattendedPolicy.inheritMetadata` builds the stored `metadata:`; `agent:` is `input.agent` else the mode's agent. Session import (`core/src/session/transfer.ts:109`) runs `guardCreate` too.
+- Does a policy-allowed `shell` ask grant sandbox network access? It is marked via `KeteSandboxActions.markPolicyAllowed` in `applyPolicy` (`unattended.ts:~203-208`); the sandbox's last hook decides (`sandbox` card). Family children are listed through `KeteSubagents.children` (all pages), not `Session.list`.
+- Does the tool env carry a marker? Yes: `KETE_AGENT_SHELL=1` is added to every agent shell's env after filtering (`core/src/kete/tool-env.ts:129-131`, via `KeteEnv.agentShell`; it makes `kete share` refuse inside the agent shell); it is not an allow-listed pass-through, so `passEnv` cannot remove it.
 - What environment do the agent's shell commands get? `core/src/kete/tool-env.ts` (task 2026-10-05-unattended-secret-hygiene, A1): `Shell.create` always spreads `KeteToolEnv.withoutKeteCredentials(...)` (`core/src/shell.ts:267`, marked) — no `KETE_*`/`OPENCODE_*` name ending `_KEY`/`_TOKEN`/`_SECRET`/`_PASSWORD`, nor `KeteJobSecrets.environmentSecrets`; the shell tool's `before` callback then calls `KeteToolEnv.forSession` (`core/src/tool/plugin/shell.ts:116-121,217`, marked), which in an unattended family (`KeteUnattendedPolicy.resolve`, an undecodable policy included) or job mode also drops credential-looking names (`credentialSuffixes`/`credentialNames`, `tool-env.ts:38-69`) except `kete.unattended.passEnv` (never a Kete credential; exact on POSIX, case-insensitive on win32). Interactive sessions keep everything else. User docs: `docs/jobs.md` "Secrets in an unattended run".
 - Can a repository's own config change providers or MCP servers in `kete job run`? No, unless trusted (B1): the CLI refuses before contacting the server — the `cli` card, `cli/src/kete/job-project-config.ts`, `docs/jobs.md` "Repository config in an unattended run". This module (core) has no project-config check of its own; an unattended session created through the API by another client isn't covered (documented residual).
 - What does the run check do offline? `KeteRunChecks` takes an optional `model` input (`core/src/kete/run-checks.ts`) and, when offline mode is on, fails the step with `SessionError` type `offline` unless the model is local (`:50`, `KeteOffline.isLocalModel`); the runner passes it at `session/runner/llm.ts:229`. Cached policy is unaffected.
@@ -57,7 +60,7 @@ verified-at: 460d1de894
   `metadata: input.metadata ?? parent?.metadata`; `resolve` also walks `parentID` upward
   defensively for a session created before this invariant existed.
 - Can it be removed, changed, or added after creation? No — `Session.setMetadata`
-  (`packages/core/src/session/session.ts:76-82`) calls `KeteUnattendedPolicy.guardMetadata`, which
+  (`packages/core/src/session/session.ts:92`) calls `KeteUnattendedPolicy.guardMetadata`, which
   dies with `LockedError` on any drop/change, or an add to a session that didn't have it at
   creation. `setPermissions` is refused too (D2) via `guardPermissions`.
 - What happens to an `ask`? `KeteUnattended.PolicyPlugin` (early `evaluate` hook) turns an `ask`
@@ -215,7 +218,7 @@ for; this task only adds the enforcement, not a way to start a job.
   (config-edit deny, `kete job run` task), a Kete-config target's `allow`→`deny` too — never the
   reverse (`unattended.ts:206-224`).
 - `kete.unattended` can only be set at session creation, never after — `guardMetadata` must run
-  before `setMetadata` publishes (`session/session.ts:76-82`), and every family member must carry
+  before `setMetadata` publishes (`session/session.ts:92`), and every family member must carry
   its own copy (`inheritMetadata`) so `resolve`'s ancestor walk is a defensive fallback, not the
   primary mechanism.
 - A broken ancestor chain **before** any session carrying the key is found must resolve
