@@ -50,6 +50,11 @@ export const makeLocalDriver = (spawner: ChildProcessSpawner["Service"]): Driver
       Effect.gen(function* () {
         const info = yield* stat(value, true)
         if (info.type !== "directory") return yield* new WrongKind({ path: value, actual: info.type })
+        // kete_change start: a checked folder is listed without following a swapped link (kete/verified-open.ts)
+        const checked = yield* KeteVerifiedOpen.expected(value)
+        const listed = checked === undefined ? undefined : yield* KeteVerifiedOpen.list(value, checked)
+        if (listed !== undefined) return listed
+        // kete_change end
         const entries = yield* attempt(value, () => fs.readdir(value, { withFileTypes: true }), true)
         return entries.map((entry) => ({ name: entry.name, type: fileType(entry) }))
       }),
@@ -64,7 +69,14 @@ export const makeLocalDriver = (spawner: ChildProcessSpawner["Service"]): Driver
         })
       }),
     // kete_change end
-    remove: (value) => attempt(value, () => fs.rm(value, { recursive: true, force: true })),
+    // kete_change start: a checked file is deleted without following a swapped link (kete/verified-open.ts)
+    remove: (value) =>
+      Effect.gen(function* () {
+        const checked = yield* KeteVerifiedOpen.expected(value)
+        if (checked !== undefined && (yield* KeteVerifiedOpen.remove(value, checked))) return
+        yield* attempt(value, () => fs.rm(value, { recursive: true, force: true }))
+      }),
+    // kete_change end
     move: (from, to) =>
       Effect.gen(function* () {
         yield* stat(from, false)

@@ -1918,23 +1918,33 @@ Kete-owned files (`kete/sandbox.ts`, `kete/sandbox/actions.ts`, `kete/audit.ts`)
 
 **Sync checklist:** none beyond the list entry; the plugin uses only public hooks.
 
-## Verified open for file tools (fix/file-tools-verify-open)
+## Verified open for file tools (fix/file-tools-verify-open, fix/file-tools-openat)
 
 The read, write, edit and patch tools check a path (`FileAccess.resolve`) and later open it by the same path,
 so a symlink swapped in between could redirect the open outside the approved folder. `core/src/kete/verified-open.ts`
 records the real path each tool call checked (a per-call `Context.Reference` registry), and the local driver
 opens the file and proves the descriptor is the file at that path (`realpath` and dev/ino, bigint, no POSIX-only
 flags); on any mismatch nothing is read or written and the tool fails with "The file changed while it was being
-opened; try again." Paths never checked in the call (glob, grep, list, other drivers, job mode) are untouched.
+opened; try again." Paths never checked in the call (glob, grep, other drivers, job mode) are untouched.
+
+fix/file-tools-openat: on Linux and macOS the checked real path is opened relative to a descriptor of `/` with no
+symbolic link in any component (`KeteConfinedFs.ops` over `openat2`, a per-component walk on kernels without it, or
+`openat` with `O_NOFOLLOW_ANY` on macOS via `util/src/kete/darwin-ffi.ts`), so a folder swapped for a link after the
+check redirects nothing: creates (with missing parents), overwrites, reads, deletes (`unlinkat`, files only), listings
+and the formatter's pre-check are all covered. If the platform layer can't load, the file tools refuse with a clear
+message (fail closed). Windows keeps the identity check only. Tests inject the platform through
+`KeteVerifiedOpen.CurrentPlatform`.
 
 | File | Change | Why no seam |
 | --- | --- | --- |
 | `core/src/file-access.ts` | Import; one line recording `absolute -> real ?? absolute` after `KeteRealPath.follow` | the real path is computed only here |
-| `core/src/environment/local.ts` | Import; marked blocks in `read` and `write` delegating registered paths | `Files` takes a bare path, so a hook would reopen by path (the bug) |
+| `core/src/environment/local.ts` | Import; marked blocks in `read`, `write`, `list` and `remove` delegating registered paths | `Files` takes a bare path, so a hook would reopen by path (the bug) |
+| `core/src/formatter.ts` | Import; one line at the top of `Formatter.file` returning `false` unless `KeteVerifiedOpen.formattable(filepath)` | the formatter runs by path and has no hook before it |
 | `core/src/tool/plugin/read.ts`, `write.ts`, `edit.ts`, `patch.ts` | Import; `KeteVerifiedOpen.scoped` as the last pipe of `execute` | each call needs its own registry and the clear error |
 
-**Sync checklist:** if upstream changes `Files.read/write` in `local.ts` or adds another byte path for the file
-tools, route it through `KeteVerifiedOpen`.
+**Sync checklist:** if upstream changes `Files.read/write/list/remove` in `local.ts` or adds another byte path for
+the file tools (any new `Files` method the tools call, or another process that touches a checked path), route it
+through `KeteVerifiedOpen`. The tools never call `files.move` or `files.mkdir` (patch "move" is `write` + `remove`).
 
 ## Code | Work switch (WS1 1.4)
 

@@ -8,6 +8,7 @@ import { AppProcess } from "@opencode/util/process"
 import { Location } from "./location.js"
 import type { Info } from "./formatter/builtins.js"
 import { State } from "./state.js"
+import { KeteVerifiedOpen } from "./kete/verified-open.js" // kete_change
 
 type Data = {
   formatters: Info[]
@@ -54,6 +55,7 @@ const layer = Layer.effect(
     })
 
     const file = Effect.fn("Formatter.file")(function* (filepath: string) {
+      if (!(yield* KeteVerifiedOpen.formattable(filepath))) return false // kete_change: a checked file is formatted only if it still opens without a link (kete/verified-open.ts)
       const extension = path.extname(filepath)
       const matching = state.get().formatters.filter((formatter) => formatter.extensions.includes(extension))
 

@@ -34,12 +34,14 @@ The implementer had no shell; the main session ran every check.
 - [x] AC4 — checks above; no POSIX-only flags on Windows (non-blocking read is POSIX only).
 
 ## Known residual (needs openat-based I/O; follow-up before Work mode is available)
-- A **new** file: its parent folder can still be toggled to a symlink between the check and the exclusive create, so an empty or
-  model-written new file can land outside; `mkdir` of missing parents follows symlinks too.
-- **Deletes and moves** (`patch`) and **directory listing** are not verified.
-- The **formatter** runs on the path after the write.
-- The identity is recorded by path right after the check, so a toggle in that instant can still record the wrong file.
-These need component-by-component opening without following symlinks (`openat` with `O_NOFOLLOW`, via Bun FFI), which plain
+Closed by `docs/tasks/2026-11-05-file-tools-openat` (no-follow I/O from `/`), except where noted:
+- ~~A **new** file: its parent folder can still be toggled to a symlink between the check and the exclusive create, so an empty or
+  model-written new file can land outside; `mkdir` of missing parents follows symlinks too.~~ Closed (create and missing parents).
+- ~~**Deletes and moves** (`patch`) and **directory listing** are not verified.~~ Closed (delete, move = write + delete, listing).
+- The **formatter** runs on the path after the write. **Partly closed:** the path is re-checked without links just before it runs;
+  a swap between that check and the formatter's own open is not covered.
+- The identity is recorded by path right after the check, so a toggle in that instant can still record the wrong file. **Still open.**
+These needed component-by-component opening without following symlinks (`openat` with `O_NOFOLLOW`, via Bun FFI), which plain
 `node:fs` can't do. Work stays `available: false` until then; it is listed as the next security item for Phase B (2.4).
 
 ## Cards updated
