@@ -1916,3 +1916,21 @@ Kete-owned files (`kete/sandbox.ts`, `kete/sandbox/actions.ts`, `kete/audit.ts`)
 | `core/src/plugin/internal.ts` | Import; `KeteWorkMode.Plugin` in `pre` after `KetePermissionMode.Plugin` (after both loosening hooks; it only denies); its id in `guarded` | internal plugins are registered only in this list |
 
 **Sync checklist:** none beyond the list entry; the plugin uses only public hooks.
+
+## Verified open for file tools (fix/file-tools-verify-open)
+
+The read, write, edit and patch tools check a path (`FileAccess.resolve`) and later open it by the same path,
+so a symlink swapped in between could redirect the open outside the approved folder. `core/src/kete/verified-open.ts`
+records the real path each tool call checked (a per-call `Context.Reference` registry), and the local driver
+opens the file and proves the descriptor is the file at that path (`realpath` and dev/ino, bigint, no POSIX-only
+flags); on any mismatch nothing is read or written and the tool fails with "The file changed while it was being
+opened; try again." Paths never checked in the call (glob, grep, list, other drivers, job mode) are untouched.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/file-access.ts` | Import; one line recording `absolute -> real ?? absolute` after `KeteRealPath.follow` | the real path is computed only here |
+| `core/src/environment/local.ts` | Import; marked blocks in `read` and `write` delegating registered paths | `Files` takes a bare path, so a hook would reopen by path (the bug) |
+| `core/src/tool/plugin/read.ts`, `write.ts`, `edit.ts`, `patch.ts` | Import; `KeteVerifiedOpen.scoped` as the last pipe of `execute` | each call needs its own registry and the clear error |
+
+**Sync checklist:** if upstream changes `Files.read/write` in `local.ts` or adds another byte path for the file
+tools, route it through `KeteVerifiedOpen`.

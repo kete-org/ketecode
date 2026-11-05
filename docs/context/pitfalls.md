@@ -112,6 +112,7 @@ Mistakes to avoid, grouped. Each item cites where the rule lives or where it bit
   HTTP request goes through — including `core/src/generate.ts`'s `Generate`, which bypasses session
   hooks entirely — and the only one whose caller can fail with a typed error. See the `job-mode`
   card.
+- A new byte path for read/write/edit/patch must go through `files.read`/`files.write` inside `KeteVerifiedOpen.scoped`; otherwise it reopens by path without verification (`permissions` card).
 
 ## Tests (additions)
 - **On-start dialogs show in every whole-app TUI test:** the fixture client answers no providers/models (`tui/test/fixture/tui-client.ts:150`), so the first-run setup screen appears unless the test seeds the `kete-setup` storage key as done.
