@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { appConnected, connectedLine, executable, freePort, writeServiceConfig, findApp, handshake, handshakeRequest, readRegistration, redact, registrationDir, findRegistration, smokeEnv } from "./kete-packaged-smoke"
+import { appConnected, connectedLine, executable, freePort, writeServiceConfig, findApp, handshake, handshakeRequest, readRegistration, redact, registrationDir, findRegistration, smokeEnv, stopAll } from "./kete-packaged-smoke"
 
 const password = "s3cret-pass"
 const dirs: string[] = []
@@ -127,6 +127,14 @@ describe("kete-packaged-smoke", () => {
     )
     expect(error?.message).toBe(`no service at ${url}`)
     expect(error?.message).not.toContain(password)
+  })
+
+  test("stopAll kills a registered runtime and reports no survivors", async () => {
+    const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { stdout: "ignore", stderr: "ignore" })
+    const left = await stopAll({ runtimePids: new Set(), current: async () => ({ pid: child.pid }) })
+    expect(left).toBeUndefined()
+    await child.exited
+    expect(child.killed || child.exitCode !== null || child.signalCode !== null).toBe(true)
   })
 
   test("redact removes the password and its Basic credential", () => {

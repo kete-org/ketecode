@@ -81,6 +81,23 @@ app and every runtime it saw (unlike a normal quit, which leaves the runtime run
 it prints the app's output and logs with the service password redacted. CI runs it after packaging on macOS
 and Windows.
 
+## End-to-end test
+
+```sh
+bun run --cwd packages/desktop e2e/kete/electron.ts [--dir <dist/desktop>] [--app <path>] [--channel <c>] [--keep]
+```
+
+Run it after a fresh `pack`, with the CLI and app built on the same `OPENCODE_CHANNEL` (as for the smoke test).
+It launches the packaged app through Playwright's `_electron` with the smoke test's isolation, skips onboarding,
+points the runtime at a fake OpenAI-compatible model on a local port (`e2e/kete/fake-provider.ts`, written to
+`kete.json`, nothing is downloaded), answers the native folder dialog from the main process, adds a project,
+opens a new session, sends "hello" and waits for the fake answer. It is a Bun script, not the Playwright runner,
+because it reuses the smoke test's Bun helpers. It prints the window, connected and answer times. On failure it
+saves a Playwright trace and a screenshot to `$KETE_E2E_RESULTS` (or a fresh temp folder whose path it prints)
+and prints the logs with the service password redacted. It closes the app first and then kills every runtime
+it saw, and fails if a process survives. CI runs it only on manual dispatch of `kete-desktop.yml`, on macOS and
+Windows, and uploads the results folder on failure.
+
 ## Clean-install checklist
 
 Before a release, on a clean macOS and a clean Windows machine:
