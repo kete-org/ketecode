@@ -297,6 +297,17 @@ async function main() {
       const listing = await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: path.join(root, "app", "state"), onlyFiles: true })).catch(() => [])
       console.error("--- runtime processes (app still running)\n" + (await windowsSnapshot()) + `state files: ${listing.join(", ") || "none"}`)
     }
+    // Which location answers: the runtime's own working directory (no header) or an explicit one.
+    const registration = await current().catch(() => undefined)
+    if (registration) {
+      for (const directory of [undefined, root]) {
+        const request = handshakeRequest(registration.url, registration.password)
+        if (directory) request.headers.set("x-opencode-directory", encodeURIComponent(directory))
+        const response = await fetch(request).catch((error: unknown) => String(error))
+        const text = typeof response === "string" ? response : `${response.status} ${(await response.text()).slice(0, 300)}`
+        console.error(`--- handshake ${directory ? "with directory " + directory : "without a directory"}: ${redact(text, secrets)}`)
+      }
+    }
   } finally {
     if (appProcess) {
       if (process.platform === "win32") {
