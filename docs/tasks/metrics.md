@@ -50,3 +50,4 @@ about 10 tasks, drop any agent that isn't saving calls.
 | 2026-11-05 | ws1-mode-switch | large | scout, librarian, planner, implementer (no shell), reviewer, upstream-guard, accessibility-reviewer | 1 | 0 | 0% | n/a | n/a |
 | 2026-11-05 | transcript-search (parity C1) | medium | typescript-reviewer (built in the main session) | 0 | – | – | n/a | n/a |
 | 2026-11-05 | vim-mode (parity C2) | large | typescript-reviewer (built in the main session) | 0 | – | – | n/a | n/a |
+| 2026-11-05 | file-tools-openat | large | librarian ×2, planner, implementer ×4 (no shell), reviewer ×2, upstream-guard, security-reviewer ×4 | 0 | – | – | n/a | n/a |

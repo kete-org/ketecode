@@ -49,3 +49,22 @@ Done (no shell, nothing run):
 - paths: darwin-ffi.ts added to modules/job-mode.md and permissions.md.
 Decision: wiring tested through the `shouldEmulate` seam, not an injected binding in `linux()`.
 Open: the real-libc path (`linux()` with a live seccomp EPERM) is untested.
+
+## Implementer: PR2 wiring (2026-11-05)
+Done (no shell, NOTHING RUN):
+- `core/src/kete/verified-open.ts` rewritten per plan step 6: `Platform`, `load(platform, arch)` (linux uses `linux(p, a, true)`; darwin probes `/var` -> ELOOP), `CurrentPlatform` Reference (load throws -> unsupported), `read`/`write` switch on it (identity bodies unchanged, moved to `readIdentity`/`writeIdentity`), new `list`, `remove`, `formattable`; `verify` now takes `BigIntStats`; `changed`/`unsupported` helpers.
+- Upstream, marked: `environment/local.ts` (list, remove), `formatter.ts` (import + one line). `docs/upstream-patches.md` updated. `job-fs-sites.test.ts` reason text only.
+- Tests: `core/test/kete/verified-open-nofollow.test.ts` (AC1-AC3, EACCES, folder delete -> "only files are deleted", macOS create in unreadable folder).
+- #100 `result.md`: closed create/mkdir, delete/move/list; formatter PARTLY (pre-check only); identity-at-record still open.
+Decisions: EACCES gets a message ("permission denied (on macOS ... needs read permission ...)") via `errorFor`; folder delete (EISDIR/EPERM from `unlinkat`) -> Failed "only files are deleted here, not folders"; macOS `formattable` of a write-only file is false (O_EVTONLY needs read) with a warning, writes to it still work.
+Behaviour change to flag: `remove` of a checked FOLDER now fails (was recursive `fs.rm`).
+Not done: cards (permissions, job-mode, pitfalls) - librarian; `setCloexec` fix (PR1 note) not touched.
+
+## Implementer: PR2 security fixes (2026-11-05)
+Done (no shell, NOTHING RUN) in `verified-open.ts` + `verified-open-nofollow.test.ts` + `result.md`:
+1. `Entry.link`; `record` sets `linkParent` = lexical dirname only if `realpath(dirname) === dirname`; registry agreement compares `link`; `remove` refuses a link with no `linkParent` ("refused to delete a symbolic link inside a linked folder"). Tests: new refusal test; existing link tests set `link: true`.
+2. `formattable` false when `path.resolve(value)` differs from `checked.real`; header + result.md note the spawn-time swap.
+3. `single(opened)`: write of an existing file with nlink > 1 fails "it has other hard links; refused to write it" (writeNoFollow and writeIdentity; reads unchanged). Tests: refused write, read still works.
+4. `discardNoFollow` closes the dir in a finally.
+5. Identity ChangedError no longer includes the new real path.
+Decision: `same()` (case-insensitive on win32) used for the formatter path compare. Open: on a machine where the workspace path itself contains a link (e.g. /var on macOS), `formattable` is now false for all files; flag if that matters.

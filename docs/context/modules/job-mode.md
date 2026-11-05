@@ -1,7 +1,7 @@
 ---
 module: job-mode
 paths: [packages/util/src/kete/job-mode.ts, packages/util/src/kete/tool-runner.ts, packages/util/src/kete/tool-helper.ts, packages/core/src/kete/job-plugin.ts, packages/core/src/kete/job-request.ts, packages/core/src/kete/job-request/*, packages/server/src/kete/job-server.ts, packages/cli/src/kete/job-connection.ts, packages/util/src/kete/job-secrets.ts, packages/cli/src/kete/job-preflight.ts, packages/cli/src/kete/job-serve.ts, packages/cli/src/kete/job-standalone.ts, packages/cli/src/kete/dumpable.ts, packages/util/src/kete/linux-ffi.ts, packages/util/src/kete/confined-fs.ts, packages/util/src/kete/job-fs-util.ts, packages/util/src/kete/job-audit-sink.ts, packages/core/src/kete/job-files.ts, packages/cli/src/kete/job-orchestration.ts, packages/util/src/kete/orchestration-spec.ts, packages/core/src/kete/orchestrate.ts, packages/core/src/kete/orchestration/*, packages/core/src/kete/dag.ts, packages/util/src/kete/darwin-ffi.ts]
-verified-at: 16d806c84b
+verified-at: bfa438ef48
 ---
 
 ## Quick answers
@@ -275,6 +275,7 @@ verified-at: 16d806c84b
   the tree and a magic link are refused ("Job mode: refused to follow a symbolic link or leave the
   working tree", no absolute path in it). Root = cwd = the entrypoint's worktree; a workspace-placed
   location is a defect (`job-files.ts`, `layer`). Contract: contracts.md §6d.
+- Does anything besides job mode use `linux-ffi.ts`/`confined-fs.ts`/`darwin-ffi.ts`? Yes: local file tools (`core/src/kete/verified-open.ts:74` `load`, `permissions` card). `darwin-ffi.ts` `darwin()` (`:64`) returns the same `Syscalls` shape on macOS (O_NOFOLLOW_ANY; strips O_NOFOLLOW; O_EVTONLY stand-in for O_PATH; `readdir` via `fdopendir`/`readdir` on a dup). `linux(platform, arch, true)` (`linux-ffi.ts:331`) is the opt-in fallback: when openat2 returns ENOSYS/EPERM (`shouldEmulate` `:261`) it walks components from an fd for `/` with O_NOFOLLOW (`emulateOpenat2` `:207`); job mode keeps `fallback=false`. `confined-fs.ts` `Ops` gained `open` (`:439`, any flags under the root) and `create` (`:444`, mkdir parents + create), and `Syscalls.readdir` serves listing (`confined-fs.ts:195`).
 - How do `linux-ffi.ts` and `job-files.ts` fit together, and can local file tools reuse them? Layers:
   (1) `util/src/kete/linux-ffi.ts` = raw syscalls only. `linux()` (`:244`) is called once and returns
   a `Syscalls` bundle or `{ unsupported: reason }` (not Linux, arch not x64/arm64, no `Bun`, libc load
@@ -424,7 +425,8 @@ own file tools, the entrypoint-owned audit sink) are done; see their Quick answe
 | `cli/src/kete/job-serve.ts` | `prepare` — job-mode shape check, non-dumpable, secrets message, overlay |
 | `cli/src/kete/dumpable.ts` | `disable` — `prctl(PR_SET_DUMPABLE, 0)` via `bun:ffi` |
 | `util/src/kete/linux-ffi.ts` | `bun:ffi` syscalls (`openat2`, `getdents64`, `setCloexec`), per-arch `O_DIRECTORY`/`O_NOFOLLOW` and syscall numbers (x64/arm64), `linux()` → `unsupported` off Linux |
-| `util/src/kete/confined-fs.ts` | `open(root, sys)` → `Root`; `ops(root)` read/write/stat/list/remove/move/mkdir, all beneath the root; `Refused` |
+| `util/src/kete/darwin-ffi.ts` | macOS `Syscalls` (`darwin()`): `openat`/`mkdirat`/`unlinkat`/`renameat`/`readdir` through libSystem, O_NOFOLLOW_ANY |
+| `util/src/kete/confined-fs.ts` | `open(root, sys)` → `Root`; `ops(root)` read/write/open/create/stat/list/remove/move/mkdir, all beneath the root; `Refused` |
 | `util/src/kete/job-fs-util.ts` | FSUtil wrapper: routed / refused / delegated lists, confined scan/glob walks |
 | `util/src/kete/job-audit-sink.ts` | fd parse/validate, bounded `writer` (10 s timeout), `relay`, caps (19 MB detail / 20 MB total) |
 | `core/src/kete/job-files.ts` | `Environment` driver over `KeteConfinedFs.ops` (`node(root)`) |

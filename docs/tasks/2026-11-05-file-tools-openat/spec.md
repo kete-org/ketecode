@@ -1,7 +1,7 @@
 # Spec: File tools open paths without following swapped links
 
 - Task: `docs/tasks/2026-11-05-file-tools-openat` · Size: large · Created: 2026-11-05
-- Status: approved (2026-11-05, user: "start the openat file I/O fix"; Phase A pre-approval of recommended options) <!-- draft → agreed (medium) / approved (large) → built → closed -->
+- Status: closed (approved 2026-11-05, user: "start the openat file I/O fix"; Phase A pre-approval of recommended options) <!-- draft → agreed (medium) / approved (large) → built → closed -->
 
 ## Goal
 Close the rest of the file-tool race that #100 narrowed. After the permission check, the read, write, edit and
