@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Driver } from "./driver.js"
 import { Failed, NotFound, WrongKind, type FileInfo, type FilesImpl, type FileType } from "./files.js"
+import { KeteVerifiedOpen } from "../kete/verified-open.js" // kete_change
 
 /**
  * The host filesystem binding. Deliberately raw node:fs rather than effect's
@@ -20,6 +21,10 @@ export const makeLocalDriver = (spawner: ChildProcessSpawner["Service"]): Driver
       Effect.gen(function* () {
         const info = yield* stat(value, true)
         if (info.type !== "file") return yield* new WrongKind({ path: value, actual: info.type })
+        // kete_change start: a file the tool checked is opened and proven to be that file (kete/verified-open.ts)
+        const checked = yield* KeteVerifiedOpen.expected(value)
+        if (checked !== undefined) return yield* KeteVerifiedOpen.read(value, checked, range)
+        // kete_change end
         if (range === undefined) {
           const bytes = yield* attempt(value, () => fs.readFile(value), true)
           return { info, bytes }
@@ -49,10 +54,16 @@ export const makeLocalDriver = (spawner: ChildProcessSpawner["Service"]): Driver
         return entries.map((entry) => ({ name: entry.name, type: fileType(entry) }))
       }),
     write: (value, bytes) =>
-      attempt(value, async () => {
-        await fs.mkdir(path.dirname(value), { recursive: true })
-        await fs.writeFile(value, bytes)
+      // kete_change start: a file the tool checked is opened and proven to be that file (kete/verified-open.ts)
+      Effect.gen(function* () {
+        const checked = yield* KeteVerifiedOpen.expected(value)
+        if (checked !== undefined) return yield* KeteVerifiedOpen.write(value, checked, bytes)
+        yield* attempt(value, async () => {
+          await fs.mkdir(path.dirname(value), { recursive: true })
+          await fs.writeFile(value, bytes)
+        })
       }),
+    // kete_change end
     remove: (value) => attempt(value, () => fs.rm(value, { recursive: true, force: true })),
     move: (from, to) =>
       Effect.gen(function* () {
