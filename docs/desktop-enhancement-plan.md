@@ -154,7 +154,7 @@ Existing work this builds on (merged 2026-11-04): Electron desktop (#78), deskto
 | `packages/core/src/agent.ts` | the default agent comes from the session's mode profile instead of the hard-coded `build` | WS1 |
 | `packages/core/src/session/*` (create path) | store `mode` on the session (metadata, as `kete/mode.ts` already does) | WS1 |
 | `packages/core/src/permission.ts` | `decided_via` on replies; action-class asks (`fs.delete`, `net.send`, …) | WS3 |
-| `packages/server/src/process.ts` / routes | register `/api/kete/modes`, library/approvals routes (one marked mount, as the account gate does); the protocol handshake is the `kete.handshake` plugin RPC and needs no route | WS0, WS1, WS3 |
+| `packages/server/src/process.ts` / routes | register library/approvals routes (one marked mount, as the account gate does); the protocol handshake is the `kete.handshake` plugin RPC and needs no route | WS0, WS1, WS3 |
 | `packages/desktop/src/main/service/background-service.ts` | a crash watcher that calls the existing `ensure`, plus a banner event | WS0 |
 | `packages/app/src/shell/state/layout.tsx` | accept the new top-level routes (Assistant, Experts, Loom, Connectors, Automation, Library), or keep them as `/?view=` | WS4–WS8 |
 | `packages/app/src/shell/routes/routes.tsx` | mount the Kete destinations | WS4–WS8 |
@@ -169,7 +169,7 @@ Everything else lives in `src/kete/` paths. The upstream-merge test in §8 of th
 
 HTTP (under `/api/kete/…`, local-only where noted, gated like `kete.account`):
 - `POST /api/rpc/kete.handshake/get` (the `kete.handshake` plugin RPC) → `{ output: { protocol: 1, runtime: "0.3.0", modes: ["code","work"] } }`. The desktop refuses to connect when `protocol` differs from its own (WS0).
-- `GET /api/kete/modes` → `[{ id, name, description, agent, available }]` (WS1).
+- `POST /api/rpc/kete.modes/list` (the `kete.modes` plugin RPC, served by the handshake plugin) → `{ output: [{ id, name, description, agent, available }] }` (WS1).
 - `POST /session` gains an optional `mode: "code" | "work"`. The mode is fixed for the session's lifetime (WS1).
 - `GET|POST|DELETE /api/kete/folders` → `{ id, path, realPath, addedAt }[]`. Local-only; revoking applies at once to running sessions (WS2).
 - `POST /api/kete/plan/:sessionID/:planID/{run|cancel}`, `PUT …/plan/:planID` (edit) (WS3).
@@ -225,7 +225,7 @@ desktop UI state):
    - Runs on manual dispatch and in the release workflow, not on every PR, to stay within free minutes.
 5. **1.1 Profile schema and loader.**
    - What: an Effect `Schema` for `modes/*.jsonc` (id, name, agent, permissions, tools, shell allowlist, network, git, web, mcp, approvals, outputs) and a validated loader.
-   - `GET /api/kete/modes`.
+   - `kete.modes/list` plugin RPC (no route mount).
    - `work.jsonc` filled in (still unavailable until 1.3).
 6. **1.2 Session mode.**
    - What: `mode` on session create (stored in metadata; immutable). The default agent comes from the profile, a marked edit in `agent.ts`.

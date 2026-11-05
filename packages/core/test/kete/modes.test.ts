@@ -1,17 +1,29 @@
 import { describe, expect, test } from "bun:test"
-import path from "node:path"
-import { type ParseError, parse } from "jsonc-parser"
-
-// Mode profiles (src/kete/modes): nothing reads them yet, so this only keeps them well-formed.
-const directory = path.join(import.meta.dir, "../../src/kete/modes")
+// Importing the loader decodes both shipped profiles strictly; a bad one throws here.
+import { KeteModes } from "../../src/kete/modes"
 
 describe("mode profiles", () => {
-  for (const id of ["code", "work"])
-    test(`${id}.jsonc is valid JSONC with its own id`, async () => {
-      const errors: ParseError[] = []
-      const profile = parse(await Bun.file(path.join(directory, `${id}.jsonc`)).text(), errors, { allowTrailingComma: true })
-      expect(errors).toEqual([])
-      expect(profile.id).toBe(id)
-      expect(typeof profile.name).toBe("string")
-    })
+  test("both shipped profiles load, in order", () => {
+    expect(KeteModes.list().map((item) => item.id)).toEqual(["code", "work"])
+    expect(KeteModes.get("work").available).toBe(false)
+  })
+
+  test("code is today's behaviour", () => {
+    expect(KeteModes.get("code").agent).toBe("build")
+  })
+
+  test("work is locked down", () => {
+    const work = KeteModes.get("work")
+    expect(work.network).toBe("off")
+    expect(work.git).toBe(false)
+    expect(work.shell.windows).toBe("off")
+  })
+
+  test("summaries carry no enforcement fields", () => {
+    for (const summary of KeteModes.summaries()) expect(Object.keys(summary)).not.toContain("shell")
+  })
+
+  test("only code is available", () => {
+    expect(KeteModes.available()).toEqual(["code"])
+  })
 })

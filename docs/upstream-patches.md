@@ -1812,7 +1812,8 @@ or that has no `kete.handshake` RPC, and shows the incompatible panel on every r
 | `app/e2e/utils/mock-server.ts` | `rpcCall` answers `kete.handshake.get` | else every e2e scenario shows the incompatible panel |
 
 **Sync checklist:** keep the handshake call after `server.info` in `checkServerHealth`, and keep the gate mounted inside `<main>`.
-Tests: `schema/test/kete/handshake.test.ts`, `server/test/kete/handshake.test.ts`, `app/src/kete/handshake.test.ts`,
+The same plugin also serves `kete.modes/list` (WS1 mode profiles, `core/src/kete/modes.ts`), so it needs no extra `internal.ts` edit.
+Tests: `schema/test/kete/handshake.test.ts`, `schema/test/kete/modes.test.ts`, `core/test/kete/modes.test.ts`, `server/test/kete/handshake.test.ts`, `app/src/kete/handshake.test.ts`,
 `app/src/kete/incompatible-gate-state.test.ts`, `app/component-tests/kete-shell.spec.ts`.
 
 ## WS0 sidecar supervision (feature/desktop-sidecar-supervision)
