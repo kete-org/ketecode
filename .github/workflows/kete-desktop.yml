@@ -30,14 +30,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Apple silicon. `--single` builds the runner's own CLI target (cli-darwin-arm64).
+          # `cli-target` is the CLI build the desktop bundles (desktop/script/utils.ts CLI_BINARIES `directory`).
           - os: macos-latest
             target: darwin-arm64
-            cli-flags: ""
+            cli-target: darwin-arm64
           # The x64 desktop bundles the baseline CLI (cli-windows-x64-baseline), as releases do.
           - os: windows-latest
             target: windows-x64
-            cli-flags: "--baseline"
+            cli-target: windows-x64-baseline
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -54,9 +54,19 @@ jobs:
         run: bun run --cwd packages/desktop test
 
       # The app bundles this commit's `kete`, not a published one (packages/desktop/script/build.ts).
+      # The CLI build takes OPENCODE_TARGET as an explicit target, so it must name the bundled one: with
+      # windows-x64 it built cli-windows-x64, the desktop found no cli-windows-x64-baseline and fell back
+      # to downloading the published CLI.
       - name: Build CLI
         shell: bash
-        run: bun run --cwd packages/cli build --single --skip-install --skip-web-ui ${{ matrix.cli-flags }}
+        env:
+          OPENCODE_TARGET: ${{ matrix.cli-target }}
+        run: bun run --cwd packages/cli build --skip-install --skip-web-ui
+
+      # Without it the desktop build downloads the published CLI instead of failing.
+      - name: Check the bundled CLI was built
+        shell: bash
+        run: test -x "packages/cli/dist/cli-${{ matrix.cli-target }}/bin/kete" || test -f "packages/cli/dist/cli-${{ matrix.cli-target }}/bin/kete.exe"
 
       - name: Build desktop app
         run: bun run --cwd packages/desktop build
