@@ -50,7 +50,8 @@ import {
 export type Tone = "muted" | "accent" | "warning" | "error"
 
 export type Entry = {
-  id: ItemID
+  /** `vim` is the prompt's vim mode, shown first whenever vim keys are on. */
+  id: ItemID | "vim"
   text: string
   tone: Tone
   /** A leading glyph that keeps the warning colour even when colours are off. */
@@ -76,7 +77,8 @@ export const DIRECTORY_MIN = 12
 
 /**
  * The entries that fit in `width` columns on one line: the directory shortens first (down to
- * DIRECTORY_MIN), then items drop from the end, the directory last. The sandbox warning is never dropped.
+ * DIRECTORY_MIN), then items drop from the end, the directory last. The sandbox warning and the vim mode are
+ * never dropped.
  */
 export function fit(entries: ReadonlyArray<Entry>, width: number): Entry[] {
   const kept = [...entries]
@@ -92,7 +94,7 @@ export function fit(entries: ReadonlyArray<Entry>, width: number): Entry[] {
   }
   while (totalWidth(kept) > width) {
     if (shorten()) continue
-    const other = kept.findLastIndex((entry) => entry.id !== "sandbox" && entry.id !== "directory")
+    const other = kept.findLastIndex((entry) => entry.id !== "sandbox" && entry.id !== "vim" && entry.id !== "directory")
     // The directory goes last, once it can't shorten further and nothing else is left to drop.
     const index = other >= 0 ? other : kept.findIndex((entry) => entry.id === "directory")
     if (index < 0) break
@@ -184,6 +186,8 @@ export function KeteStatusLineRow(props: {
   /** Where the prompt will work. Absent while a turn runs, which hides the directory and branch. */
   location?: LocationRef
   actions?: DirectoryActions
+  /** The prompt's vim mode label ("NORMAL", "INSERT", "/pattern"), when vim keys are on. */
+  vim?: string
 }) {
   const config = useConfig()
   const data = useData()
@@ -298,7 +302,8 @@ export function KeteStatusLineRow(props: {
     const ids: ItemID[] = [...parsed().items]
     // The sandbox warning is never hidden by configuration.
     if (!ids.includes("sandbox")) ids.push("sandbox")
-    return ids.map((id) => item[id]()).filter((entry): entry is Entry => entry !== undefined)
+    const shown = ids.map((id) => item[id]()).filter((entry): entry is Entry => entry !== undefined)
+    return props.vim ? [{ id: "vim", text: props.vim, tone: props.vim === "INSERT" ? "muted" : "accent" } as Entry, ...shown] : shown
   })
   const visible = createMemo(() => fit(entries(), width()))
 

@@ -258,6 +258,7 @@ export const Info = Schema.Struct({
   cursor: Schema.optional(Cursor),
   statusline: Schema.optional(KeteStatusLineConfig), // kete_change
   tips: Schema.optional(Schema.Boolean).annotate({ description: "Show a tip on the home screen" }), // kete_change
+  vim: Schema.optional(Schema.Boolean).annotate({ description: "Vim keys in the prompt (toggle with /vim)" }), // kete_change
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
