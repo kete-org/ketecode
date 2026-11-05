@@ -1323,6 +1323,8 @@ export const dict = {
   "usage.retry": "Try again",
   "toast.kete.sidecar.restarting": "{{product}} runtime stopped. Restarting…", // kete_change
   "toast.kete.sidecar.restarted": "{{product}} runtime restarted", // kete_change
+  "kete.mode.label": "Mode", // kete_change
+  "kete.mode.unavailable": "Not available yet", // kete_change
 }
 
 export default dict

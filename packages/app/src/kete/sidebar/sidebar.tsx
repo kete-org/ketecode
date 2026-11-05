@@ -7,7 +7,7 @@
 
 import { useQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
-import { createMemo, createSignal, onCleanup } from "solid-js"
+import { createMemo, createSignal, onCleanup, Show } from "solid-js"
 import { createHomeController } from "@/home/model"
 import { HOME_SESSION_LIMIT, mergeHomeSessionIndex, retainHomeSessions } from "@/home/sessions/index"
 import { homeSessionsQuery } from "@/home/sessions/queries"
@@ -19,6 +19,7 @@ import { ServerConnection } from "@/runtime/server/registry"
 import { useSettingsSurface } from "@/settings/surface"
 import { sessionHasOpenTab, useTabs } from "@/shell/tabs/tabs"
 import { sessionLabel } from "@/session/title"
+import { KeteModeSwitchConnector } from "../mode-switch/mode-switch"
 import { KeteSidebarAccount } from "./account"
 import { projectGroups, recentSessions } from "./records"
 import { KeteSidebarView, type SidebarSession } from "./view"
@@ -82,6 +83,24 @@ export function KeteSidebar(props: { newSession: () => unknown }) {
     return current.type === "session" ? current.sessionId : undefined
   }
 
+  // The switch acts on the new-session draft's workspace: only a draft tab carries a directory.
+  const draftWorkspace = () => {
+    const current = route()
+    const conn = home.server.focused()
+    const ctx = home.server.focusedContext()
+    if (current.type !== "draft" || !conn || !ctx) return undefined
+    const server = ServerConnection.key(conn)
+    const tab = tabs.store.find((item) => item.type === "draft" && item.draftID === current.draftID)
+    if (tab?.type !== "draft" || tab.server !== server) return undefined
+    return { ctx, server, directory: tab.directory }
+  }
+
+  // Remounts the switch when the workspace changes, so each starts from its own saved choice.
+  const workspaceKey = createMemo(() => {
+    const workspace = draftWorkspace()
+    return workspace ? workspace.server + "\n" + workspace.directory : undefined
+  })
+
   const open = (id: string) => {
     const conn = home.server.focused()
     const record = records().find((item) => item.session.id === id)
@@ -123,6 +142,14 @@ export function KeteSidebar(props: { newSession: () => unknown }) {
       onOpen={open}
       onMore={() => navigate("/?view=sessions")}
       status={status}
+      mode={
+        <Show when={workspaceKey()} keyed>
+          {(_key) => {
+            const workspace = draftWorkspace()
+            return workspace ? <KeteModeSwitchConnector {...workspace} /> : undefined
+          }}
+        </Show>
+      }
       footer={<KeteSidebarAccount ctx={home.server.focusedContext()} />}
     />
   )

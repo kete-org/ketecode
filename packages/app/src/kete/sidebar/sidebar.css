@@ -38,6 +38,47 @@
   outline-offset: 1px;
 }
 
+/* Code | Work, a segmented control like the composer's Build | Plan (panel.css). */
+[data-kete="mode-switch-wrap"] {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-kete="mode-switch"] {
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--kete-border);
+  border-radius: 999px;
+  background: var(--kete-surface);
+}
+[data-kete="sidebar"] [data-kete="mode-switch"] button {
+  flex: 1 1 0;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  text-align: center;
+}
+[data-kete="sidebar"] [data-kete="mode-switch"] button[aria-checked="true"] {
+  background: var(--kete-brand);
+  color: var(--kete-brand-paper);
+}
+[data-kete="sidebar"] [data-kete="mode-switch"] button[aria-disabled="true"] {
+  color: var(--kete-text-3);
+  cursor: not-allowed;
+}
+[data-kete="sidebar"] [data-kete="mode-switch"] button[aria-disabled="true"]:hover {
+  background: none;
+}
+[data-kete="mode-hint"] {
+  padding: 0 8px;
+  color: var(--kete-text-2); /* informative text needs 4.5:1; text-3 is about 3.4:1 */
+  font-size: 12px;
+}
+
 [data-kete="sidebar-nav"] {
   flex: none;
   display: flex;

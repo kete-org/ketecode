@@ -6,7 +6,7 @@
   "name": "Work",
   "description": "Delegate knowledge work: files you grant, a few safe tools, approvals by action.",
   "agent": "work-orchestrator",
-  // Enforced since WS1 1.3 (core/src/kete/work-mode.ts); not available until WS1 1.4 adds the agent.
+  // Enforced since WS1 1.3 (core/src/kete/work-mode.ts); the agent exists since WS1 1.4 (work-agent.ts); still unavailable until the openat file-I/O follow-up.
   "available": false,
   "files": "granted",
   "shell": { "run": "allowlist", "allow": ["python", "python3", "node"], "windows": "off" },
