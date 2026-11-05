@@ -1835,6 +1835,19 @@ tells every window with `KeteSidecarRestarting` / `KeteSidecarReady { url }`; th
 Tests: `desktop/src/main/kete/sidecar-watcher.test.ts`, `sidecar-watcher.integration.test.ts`,
 `desktop/src/shared/kete/sidecar-events.test.ts`, `desktop/src/renderer/kete/sidecar-status-state.test.ts`.
 
+## WS0 packaged smoke (feature/desktop-packaged-smoke)
+
+`packages/desktop/script/kete-packaged-smoke.ts` runs the packed app under `OPENCODE_DESKTOP_TEST_ROOT`. Upstream's
+`preferApplicationEnvironment` deletes `XDG_STATE_HOME` unless the login shell sets it, and on Windows it reads no
+shell, so the test root's state dir was always dropped: the desktop then looked under Electron's profile folder and
+the runtime under `USERPROFILE`, and they never found each other's registration.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `desktop/src/main/lifecycle/environment.ts` | the `delete process.env.XDG_STATE_HOME` line also requires no test root (marked) | the deletion is inline in the env setup |
+
+**Sync checklist:** if upstream changes how the desktop picks `XDG_STATE_HOME`, keep a test root's state dir intact.
+
 ## MCP resource mentions (feature/mcp-resource-mentions)
 
 The TUI's `@` menu lists MCP resources (`tui/src/kete/mcp-mentions.ts`) and attaches a picked one as a

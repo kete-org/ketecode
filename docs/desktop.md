@@ -64,6 +64,36 @@ CI (`.github/workflows/kete-desktop.yml`) builds macOS (arm64) and Windows (x64)
 the desktop, the web UI or the code they share, and uploads the apps as workflow artifacts. Signing,
 notarisation and publishing come later; they need certificates this public repository must not hold.
 
+## Smoke test
+
+```sh
+bun run --cwd packages/desktop script/kete-packaged-smoke.ts [--dir <dist/desktop>] [--app <path>] [--channel <c>] [--keep]
+```
+
+Run it after a fresh `pack` (it tests whatever is in `dist/desktop/`). Build the CLI and the app with the same
+`OPENCODE_CHANNEL` (CI uses `dev`): the app looks for the runtime's registration file by that channel's name and
+waits forever for one a differently built CLI never writes. It unpacks and launches the packaged
+app with a temporary `HOME` and state directories (`OPENCODE_DESKTOP_TEST_ROOT` isolates the app's own data),
+waits for the runtime to register and answer `kete.handshake` with the expected protocol and the `code` mode,
+pins the runtime to a free port (so a `kete serve` already running on the channel's default port doesn't
+block it), waits for the app to finish connecting, kills the runtime and waits for the app to restart it. It prints the ready and restart times, then stops the
+app and every runtime it saw (unlike a normal quit, which leaves the runtime running), fails if any process survives, and deletes the temporary directory (`--keep` keeps it, for its logs). On failure
+it prints the app's output and logs with the service password redacted. CI runs it after packaging on macOS
+and Windows.
+
+## Clean-install checklist
+
+Before a release, on a clean macOS and a clean Windows machine:
+
+1. Install the app from the CI artifact and open it (unsigned: see the `xattr` / SmartScreen note above).
+2. Sign in, start a Code session and get an answer.
+3. End the runtime (`opencode-cli` in Activity Monitor / Task Manager). The app shows the notice, restarts it
+   and shows the "restarted" toast.
+4. Quit the app. The runtime keeps running by design; stop it with `kete service stop` and confirm no
+   `opencode-cli` is left.
+5. Uninstall: delete the app, `~/Library/Application Support/<app id>` (macOS) or `%APPDATA%\<app id>`
+   (Windows), and `~/.local/state/kete`.
+
 ## Icons
 
 ```sh

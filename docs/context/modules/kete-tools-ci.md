@@ -1,10 +1,12 @@
 ---
 module: kete-tools-ci
-paths: [packages/kete-tools/src/*, packages/kete-tools/distribution/*, .github/workflows/kete-extension-publish.yml, .github/workflows/kete-installer-smoke.yml, .github/workflows/kete-job-image.yml, packages/kete-tools/leak-allowlist.txt, .github/workflows/kete-build.yml, .github/workflows/kete-release.yml, .github/workflows/kete-root-helper.yml, .github/workflows/kete-egress.yml, .github/workflows/kete-job-entrypoint.yml, .github/workflows/kete-job-host.yml, .opencode-version]
-verified-at: 3d489dad3d
+paths: [.github/workflows/kete-desktop.yml, packages/kete-tools/src/*, packages/kete-tools/distribution/*, .github/workflows/kete-extension-publish.yml, .github/workflows/kete-installer-smoke.yml, .github/workflows/kete-job-image.yml, packages/kete-tools/leak-allowlist.txt, .github/workflows/kete-build.yml, .github/workflows/kete-release.yml, .github/workflows/kete-root-helper.yml, .github/workflows/kete-egress.yml, .github/workflows/kete-job-entrypoint.yml, .github/workflows/kete-job-host.yml, .opencode-version]
+verified-at: b84b58294d
 ---
 
 ## Quick answers
+- Which workflows exist for the desktop app, and can CI reuse `packages/cli/script/service-smoke.ts`? `kete-desktop.yml` (see the `desktop` card) builds and packs unsigned apps into `dist/desktop/` and uploads them (`:61-73`). `service-smoke.ts` is run by `check-test.yml:187,219` and the upstream release workflows (`release.yml:199`, `release-dry-run.yml:182`), all inherited and disabled; it hardcodes the `opencode` binary name and OpenCode's `state/opencode` registration directory, so it targets neither `kete` nor a packaged app. See the `desktop` card for what a packaged smoke must change.
+- What does the `kete-desktop.yml` "Smoke packaged app" step do? After the artifact upload (so a failing build still uploads), `bun run --cwd packages/desktop script/kete-packaged-smoke.ts` (`kete-desktop.yml:76-81`, 6-minute timeout) launches the packed app from `dist/desktop/`, checks `kete.handshake`, kills the runtime and waits for the restart. CLI and app must be built with the same `OPENCODE_CHANNEL` (`dev` there) or the app never finds the runtime's registration file; details in the `desktop` card.
 - **Where is the Harness step image built and published?** `kete-harness-plugin.yml` (path-filtered PR/push/dispatch, no secrets: shellcheck, typecheck, tests against the built linux-x64 kete, amd64 image + `scripts/smoke.sh --full`, arm64 image under QEMU + smoke) and, in `kete-release.yml`, `harness-plugin-image` (same `needs` as `image`, `contents: read`, builds from the release's linux kete, saves `kete-harness-plugin-images` on tags with its SHA-256) → `harness-plugin-publish` (tags only, `packages: write` + `id-token: write`, no checkout: push, index `ghcr.io/kete-org/kete-harness-plugin:<tag>`, cosign sign + verify, same pattern as `image-publish`). `publish` needs it and appends the index digest to the notes. `kete-build` runs the package's tests (`suite kete-harness-plugin test`). One-time: grant the GHCR package Actions access (`docs/release.md`). See the `harness-plugin` card.
 - Why does `upstream:check` accept `docs/integrations/*.md` without markers? `isKeteOwned` (`packages/kete-tools/src/lib.ts`) lists `docs/integrations/` (the MCP preset guides) next to `docs/adr/`; upstream has no `docs/` at the pinned tag. A new top-level Kete doc outside these prefixes needs an entry there too.
 - **How is the CLI distributed publicly, and what publishes what?** ADR 0009. `build` also runs
@@ -299,6 +301,8 @@ Open VSX only through `kete-extension-publish.yml`.
   `bun run --cwd packages/kete-tools upstream:check`.
 
 ## Changes
+- 2026-11-04: added the "Smoke packaged app" step to `kete-desktop.yml` (packaged-smoke task).
+- 2026-11-04: refreshed after the OpenCode v2.2.5 sync (`.opencode-version` is `v2.2.5`; eight upstream workflows were renamed and several removed, `release*.yml`, `check*.yml`, `triage-*.yml` added), `kete-desktop.yml`, `kete-runner.yml`, `changelog-check.ts` and `isKeteOwned` additions (`docs/desktop.md`, `CHANGELOG.md`, `docs/platform-issues/`, several user guides; `lib.ts:89-126`); `addedWorkflows` now uses `--no-renames` (`lib.ts:318`). The older detail in this card (workflow lists, version pins) was not re-audited line by line.
 
 - `docs/tasks/2026-10-03-cli-distribution/` (ADR 0009): `build` assembles the public set; `publish`
   loses `environment: registries` and the Marketplace/Open VSX steps (now
