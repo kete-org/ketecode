@@ -1,10 +1,11 @@
 ---
 module: server-sdk
 paths: [packages/server/src/kete/local-guard.ts, packages/server/script/kete/isolated-test.ts, packages/server/src/process.ts, packages/server/src/kete/socket-listen.ts, packages/server/src/kete/constant-time.ts, packages/server/src/auth.ts, packages/server/src/middleware/authorization.ts, packages/server/src/options.ts, packages/protocol, packages/client]
-verified-at: 94eab8d8fd
+verified-at: 4b77172c15
 ---
 ## Quick answers
-- What is the `kete.handshake` RPC? A plugin RPC (`kete.handshake/get`, no input) returning `{ protocol, runtime, modes }`: defined in `schema/src/kete/handshake.ts`, `KeteHandshakeRpc.PROTOCOL` (`:15`) is the one protocol number (bump on a changed or removed field; clients accept an exact match only), registered by `core/src/kete/handshake.ts:10` and listed in `core/src/plugin/internal.ts:350`. The app calls it from `app/src/kete/handshake.ts:15`; card `web-app`.
+- What is `kete.modes/list`? A plugin RPC (`KeteModesRpc.Definition`, `schema/src/kete/modes.ts:49`) returning the mode profile summaries (`KeteModes.summaries()`), registered next to the handshake in `core/src/kete/handshake.ts:25`; the handshake's `modes` field is `KeteModes.available()` (`:22`), so the two always agree.
+- What is the `kete.handshake` RPC? A plugin RPC (`kete.handshake/get`, no input) returning `{ protocol, runtime, modes }`: defined in `schema/src/kete/handshake.ts`, `KeteHandshakeRpc.PROTOCOL` (`:15`) is the one protocol number (bump on a changed or removed field; clients accept an exact match only), registered by `core/src/kete/handshake.ts:15-24` and listed in `core/src/plugin/internal.ts:355`. The app calls it from `app/src/kete/handshake.ts:15`; card `web-app`.
 - How does an RPC call with no `location` resolve? `requestRef` in `server/src/location.ts:71-78` falls back to `process.cwd()`, so location-free RPCs like the handshake answer anywhere.
 - What is a plugin's `ctx.app.version`? The runtime version (`plugin/src/app.ts:1-5`; used by `core/src/kete/share/plugin.ts:156` and the handshake's `runtime`).
 - What error does a client get for an unknown RPC? An `RpcError` (HTTP 400) with type `rpc.unavailable` or `rpc.method_not_found` (`core/src/rpc.ts:108-114`); guard with `isRpcError` (`client/src/promise/generated/types.ts:3226`). `rpc.unavailable` also fires if a location closes mid-call (`core/src/rpc.ts:133-135`).
