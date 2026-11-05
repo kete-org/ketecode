@@ -323,8 +323,11 @@ async function main() {
     if (failure) {
       if (appProcess) console.error("--- runtime run directly\n" + redact(await diagnoseRuntime(env.OPENCODE_DESKTOP_TEST_ROOT ?? root, env), secrets))
       for await (const log of new Bun.Glob("**/*.log").scan({ cwd: root, absolute: true })) {
-        const text = await Bun.file(log).text().catch(() => "")
-        console.error(`--- ${log}\n` + redact(text.split("\n").slice(-200).join("\n"), secrets))
+        const lines = (await Bun.file(log).text().catch(() => "")).split("\n")
+        // The runtime's log fills with repeated requests; its warnings and errors come first so they survive the cut.
+        const problems = lines.filter((line) => /level=(WARN|ERROR)/.test(line)).slice(0, 100)
+        if (problems.length) console.error(`--- ${log} (warnings and errors)\n` + redact(problems.join("\n"), secrets))
+        console.error(`--- ${log}\n` + redact(lines.slice(-200).join("\n"), secrets))
       }
     }
     if (process.argv.includes("--keep")) console.error(`kept ${root}`)
