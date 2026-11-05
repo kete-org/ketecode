@@ -2,6 +2,9 @@
 // profile and bwrap arguments (escaping, ordering), the git hooksPath reader, the model-facing
 // notice, the escape hook's decisions, and the approval marks the permission hooks leave.
 import { describe, expect, test } from "bun:test"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { Effect, Option } from "effect"
 import { Agent } from "@opencode/core/agent"
 import { KetePermissionMode } from "@opencode/core/kete/permission-mode"
@@ -103,6 +106,28 @@ describe("Seatbelt profile", () => {
 
   test("escapeRegex escapes every ERE metacharacter", () => {
     expect(KeteSeatbelt.escapeRegex("a.b*c+d?e(f)g[h]i{j}k|l^m$n\\o")).toBe("a\\.b\\*c\\+d\\?e\\(f\\)g\\[h\\]i\\{j\\}k\\|l\\^m\\$n\\\\o")
+  })
+
+  test("Work mode (noLinks) forbids creating symlinks and hard links; other profiles don't", () => {
+    const work = KeteSeatbelt.profile(policy({ noLinks: true })).profile
+    expect(work).toContain("(deny file-write-create (vnode-type SYMLINK))")
+    expect(work).toContain("(deny file-link)")
+    expect(KeteSeatbelt.profile(policy()).profile).not.toContain("(deny file-link)")
+  })
+
+  test.skipIf(process.platform !== "darwin")("Work mode's link rules stop ln and os.symlink under sandbox-exec", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "kete-nolinks-"))
+    try {
+      await fs.writeFile(path.join(dir, "f"), "x")
+      const profile = '(version 1)\n(allow default)\n(deny file-write-create (vnode-type SYMLINK))\n(deny file-link)\n'
+      const run = (script: string) =>
+        Bun.spawnSync(["/usr/bin/sandbox-exec", "-p", profile, "/bin/sh", "-c", script], { cwd: dir }).exitCode
+      expect(run("ln -s f s")).not.toBe(0)
+      expect(run("ln f h")).not.toBe(0)
+      expect(run("echo y > g")).toBe(0)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
   })
 
   test("network rules only without network; Mach allowlist and AppleEvents always", () => {
@@ -211,6 +236,34 @@ describe("escape decisions", () => {
     expect(KeteSandbox.decide("default", "shell", ["ls"], {})).toBeUndefined()
     // A missing reason is treated as a request (asks), never as automatic.
     expect(KeteSandbox.decide("default", "sandbox_off", ["ls"], {})?.effect).toBe("ask")
+  })
+})
+
+describe("network decision", () => {
+  test("a Work command has no network whatever the settings or an approval say; a request is refused", () => {
+    for (const settings of ["all", "approved", "none"] as const)
+      for (const approved of [false, true]) {
+        expect(KeteSandbox.networkFor(settings, approved, true, undefined)).toBe(false)
+        expect(KeteSandbox.networkFor(settings, approved, true, "network")).toBe("refuse-work")
+      }
+  })
+  test("a Code command keeps today's decisions", () => {
+    expect(KeteSandbox.networkFor("all", false, false, undefined)).toBe(true)
+    expect(KeteSandbox.networkFor("approved", false, false, undefined)).toBe(false)
+    expect(KeteSandbox.networkFor("approved", true, false, undefined)).toBe(true)
+    expect(KeteSandbox.networkFor("none", true, false, undefined)).toBe(false)
+    expect(KeteSandbox.networkFor("approved", false, false, "network")).toBe("ask")
+    expect(KeteSandbox.networkFor("approved", true, false, "network")).toBe(true)
+    expect(KeteSandbox.networkFor("all", false, false, "network")).toBe(true)
+    expect(KeteSandbox.networkFor("none", false, false, "network")).toBe("refuse-config")
+  })
+  test("the Work mark set on a request's copy reaches the original", () => {
+    const original: Record<string, unknown> = {}
+    const copy = KeteSandboxActions.linked({ ...original }, original)
+    expect(KeteSandboxActions.work(original)).toBe(false)
+    KeteSandboxActions.markWork(copy)
+    expect(KeteSandboxActions.work(original)).toBe(true)
+    expect(KeteSandboxActions.work(undefined)).toBe(false)
   })
 })
 

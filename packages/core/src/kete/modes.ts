@@ -1,5 +1,5 @@
 // Mode profiles (./modes/*.jsonc): embedded in the binary, decoded strictly at module load. A bad
-// profile is a startup error, never a default. Not user-editable. Nothing enforces the fields yet (WS1 1.3).
+// profile is a startup error, never a default. Not user-editable. The Work profile's fields are enforced by work-mode.ts (WS1 1.3).
 
 export * as KeteModes from "./modes.js"
 

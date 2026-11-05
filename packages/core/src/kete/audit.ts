@@ -139,8 +139,16 @@ export type CommandLine = LineBase & {
   readonly duration_ms?: number
 }
 export type TruncatedLine = LineBase & { readonly type: "truncated" }
+/** A Work session's refused tool, file access, command or network use (kete/work-mode.ts). */
+export type WorkRefusalLine = LineBase & {
+  readonly type: "work_refusal"
+  readonly rule: "tool" | "files" | "shell" | "network"
+  readonly tool: string
+  readonly input?: string
+  readonly message: string
+}
 
-export type Line = RunStarted | RunEnded | ToolLine | PermissionLine | ModelLine | FileLine | CommandLine | TruncatedLine
+export type Line = RunStarted | RunEnded | ToolLine | PermissionLine | ModelLine | FileLine | CommandLine | TruncatedLine | WorkRefusalLine
 
 const isErrnoCode = (error: unknown): string => (Predicate.isObject(error) && "code" in error && typeof error.code === "string" ? error.code : "unknown")
 
@@ -372,6 +380,19 @@ const appendToFile = (state: WriterState, root: string, line: Line, kind: "detai
         state.bytes.set(root, bytes + serialized.length)
       }),
     )
+  })
+
+/** Appends a Work refusal for an interactive session: unlike `create`, makes the directory for a root with no file yet. */
+export const appendWork = (state: WriterState, root: string, line: WorkRefusalLine): Effect.Effect<void, WriteError> =>
+  Effect.gen(function* () {
+    if (state.storage.kind === "file") {
+      const file = yield* filePath(state.dataDir, root)
+      yield* Effect.tryPromise({
+        try: () => mkdir(path.dirname(file), { recursive: true, mode: 0o700 }),
+        catch: (error) => new WriteError({ path: file, code: isErrnoCode(error) }),
+      })
+    }
+    yield* append(state, root, line, "always")
   })
 
 // --- `begin`: run-checks.ts calls this before every step of an unattended family, passing the

@@ -1890,3 +1890,16 @@ every `Agent.select(session.agent)` caller agrees without editing `agent.ts` or 
 | `core/src/session/transfer.ts` | Import; `metadata` runs through `KeteSessionMode.guardCreate` before `Created` (an import would otherwise bypass the create check) | import publishes `Created` itself |
 
 **Sync checklist:** if upstream adds a session mode or typed session kind, compare and drop ours.
+
+## Work enforcement (WS1 1.3)
+
+`core/src/kete/work-mode.ts` (plugin `kete.work-mode`) holds a Work session (root-most session's
+`kete.sessionMode`) to the Work profile through the `evaluate`, `tool.execute.before` and `session`
+`context`/`compaction`/`generate` hooks; Code sessions pass through. The sandbox and audit changes are in
+Kete-owned files (`kete/sandbox.ts`, `kete/sandbox/actions.ts`, `kete/audit.ts`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteWorkMode.Plugin` in `pre` after `KetePermissionMode.Plugin` (after both loosening hooks; it only denies); its id in `guarded` | internal plugins are registered only in this list |
+
+**Sync checklist:** none beyond the list entry; the plugin uses only public hooks.
