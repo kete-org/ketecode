@@ -148,6 +148,25 @@ export class RefusedError extends Schema.TaggedError<RefusedError>()("KeteSandbo
   message: Schema.String,
 }) {}
 
+export const workRefusal = "Work mode: commands run only inside the sandbox, without network."
+
+/**
+ * Whether a sandboxed command gets network: `true`/`false`, `"ask"` (the model requested it and a
+ * person must approve), or a refusal. A Work session's command never has network, whatever the
+ * settings or an approval say, and a request for network is refused.
+ */
+export function networkFor(
+  settingsNetwork: KeteSandboxSettings.Network,
+  approved: boolean,
+  work: boolean,
+  request: Request | undefined,
+): boolean | "ask" | "refuse-config" | "refuse-work" {
+  if (work) return request === undefined ? false : "refuse-work"
+  const network = settingsNetwork === "all" || (settingsNetwork === "approved" && approved)
+  if (request !== "network" || network) return network
+  return settingsNetwork === "none" ? "refuse-config" : "ask"
+}
+
 /** One per shell tool activation (a runtime location). */
 export function make(deps: Deps) {
   const placeholders = KeteSandboxResolve.shared
@@ -173,6 +192,10 @@ export function make(deps: Deps) {
     request: Request | undefined,
     ask: Ask,
   ) {
+    // kete_change start: a job host runs commands without this sandbox, so a Work session's command can't run there
+    if (KeteJobMode.enabled(env) && KeteSandboxActions.work(approvals.get(invocation)))
+      return yield* new RefusedError({ message: workRefusal })
+    // kete_change end
     if (KeteJobMode.enabled(env)) return { outcome: { kind: "job" } as Outcome, release: NONE } satisfies Prepared
     const settings = settingsFrom(yield* deps.config.entries(), deps.global.config, env)
 
@@ -190,18 +213,23 @@ export function make(deps: Deps) {
         })
       return yield* unsandboxed("unavailable", available.reason)
     }
+    // kete_change start: a Work session's command never leaves the sandbox and never gets network (kete/work-mode.ts)
+    const work = KeteSandboxActions.work(approvals.get(invocation))
+    if (work && request === "off") return yield* new RefusedError({ message: workRefusal })
+    // Only seatbelt can forbid creating links (policy.noLinks); without it a Work command could race the file tools' path check.
+    if (work && available.mechanism !== "seatbelt") return yield* new RefusedError({ message: workRefusal })
+    // kete_change end
     if (request === "off") return yield* unsandboxed("requested", "approved for this command")
 
     const approvedByPerson = KeteSandboxActions.approved(approvals.get(invocation))
-    let network = settings.network === "all" || (settings.network === "approved" && approvedByPerson)
-    if (request === "network" && !network) {
-      if (settings.network === "none")
-        return yield* new RefusedError({
-          message: 'Network access in the sandbox is off by configuration (kete.sandbox.network: "none").',
-        })
-      yield* ask({ action: KeteSandboxActions.network })
-      network = true
-    }
+    const decision = networkFor(settings.network, approvedByPerson, work, request)
+    if (decision === "refuse-work") return yield* new RefusedError({ message: workRefusal })
+    if (decision === "refuse-config")
+      return yield* new RefusedError({
+        message: 'Network access in the sandbox is off by configuration (kete.sandbox.network: "none").',
+      })
+    if (decision === "ask") yield* ask({ action: KeteSandboxActions.network })
+    const network = decision === "ask" || decision === true
 
     const mechanism = available.mechanism
     const extraWrite = deps.folders ? yield* deps.folders(Session.ID.make(sessionID)) : []
@@ -224,7 +252,7 @@ export function make(deps: Deps) {
           },
           placeholders,
         )
-        const plan = { mechanism, executable: available.executable, policy: result.policy, cwd: invocation.cwd }
+        const plan = { mechanism, executable: available.executable, policy: work ? { ...result.policy, noLinks: true } : result.policy, cwd: invocation.cwd }
         try {
           KeteSandboxPlans.validate(plan)
         } catch (error) {

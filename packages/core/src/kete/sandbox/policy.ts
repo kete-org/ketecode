@@ -42,6 +42,9 @@ export interface Policy {
   readonly tmpfs: ReadonlyArray<string>
   /** Without network: where Unix sockets may still be connected (workspace, private temp). */
   readonly sockets: ReadonlyArray<string>
+  /** macOS: no new symlinks or hard links (Work mode), so a command can't swap a checked path for a
+   * link to a file outside the granted folders between the file tools' check and their I/O. */
+  readonly noLinks?: boolean
 }
 
 /** A path sandbox-exec or bwrap can't be given safely (control characters, relative). */

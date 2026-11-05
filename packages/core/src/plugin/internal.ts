@@ -142,6 +142,7 @@ import { KeteAutoMemory } from "../kete/auto-memory.js" // kete_change
 import { KeteMemoryFiles } from "../kete/memory-files.js" // kete_change
 import { KeteShare } from "../kete/share/plugin.js" // kete_change
 import { KeteAccount } from "../kete/account.js" // kete_change
+import { KeteWorkMode } from "../kete/work-mode.js" // kete_change
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
@@ -325,6 +326,8 @@ const pre = [
   KeteAddDirPlugin.Plugin,
   // kete_change: safe defaults and permission modes (only tighten); see kete/permission-mode.ts
   KetePermissionMode.Plugin,
+  // kete_change: Work sessions only: files, tools, shell and network held to the Work profile (only denies); after both loosening hooks; see kete/work-mode.ts
+  KeteWorkMode.Plugin,
   // kete_change: the OS sandbox's escapes always ask (Plan blocks them); its status RPC; see kete/sandbox.ts
   KeteSandbox.Plugin,
   // kete_change: stopping a session stops its running subagents; see kete/subagents.ts
@@ -418,6 +421,7 @@ export const guarded: ReadonlySet<string> = new Set([
   KeteOffline.Plugin.id,
   KeteSandbox.Plugin.id,
   KeteSandbox.ApprovalPlugin.id,
+  KeteWorkMode.Plugin.id,
 ])
 // kete_change end
 
