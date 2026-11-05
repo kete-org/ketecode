@@ -72,6 +72,7 @@ import * as KetePermissionModeView from "../../kete/permission-mode" // kete_cha
 import * as KeteAddDirView from "../../kete/add-dir" // kete_change
 import { KeteStatusLineRow } from "../../kete/statusline" // kete_change (abbreviateHome and truncateFilePath imports moved there)
 import { createKeteHistorySearch, KeteHistorySearchBar } from "../../kete/history-search-bar" // kete_change
+import { useKeteVim } from "../../kete/vim-prompt" // kete_change
 import { limitLabel, useUsageLimits } from "../usage"
 
 export type PromptProps = {
@@ -1100,6 +1101,7 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  const keteVim = useKeteVim(inputTarget) // kete_change: vim keys (/vim), src/kete/vim-prompt.tsx
   // kete_change start: prompt history search (Ctrl+R), src/kete/history-search-bar.tsx
   const keteSearch = createKeteHistorySearch({
     entries: () => history.entries(),
@@ -1567,6 +1569,7 @@ export function Prompt(props: PromptProps) {
       })
     }
     resetComposer()
+    keteVim.reset() // kete_change
   }
 
   // Keep the last resolved prompt display visible while destination catalogs load;
@@ -1798,7 +1801,7 @@ export function Prompt(props: PromptProps) {
               focusedTextColor={muted() ? theme.text.muted : theme.text.base}
               minHeight={1}
               maxHeight={maxHeight()}
-              cursorStyle={cursorStyle()}
+              cursorStyle={keteVim.cursorStyle(cursorStyle())} // kete_change: a block cursor in vim normal mode
               onContentChange={() => {
                 const value = input.plainText
                 setStore("prompt", "text", value)
@@ -1919,7 +1922,7 @@ export function Prompt(props: PromptProps) {
                         flash={theme.decrease(theme.text.feedback.warning.base, 2)}
                       />
                       {/* kete_change */}
-                      <KeteStatusLineRow sessionID={props.sessionID} />
+                      <KeteStatusLineRow sessionID={props.sessionID} vim={keteVim.label()} />
                     </box>
                   </Match>
                   <Match when={move.progress()}>
@@ -1945,6 +1948,7 @@ export function Prompt(props: PromptProps) {
                       sessionID={props.sessionID}
                       location={keteStatusLocation()}
                       actions={locationActions}
+                      vim={keteVim.label()}
                     />
                     {/* kete_change end */}
                   </Match>

@@ -14,6 +14,8 @@ changelog (`packages/kete-vscode/CHANGELOG.md`).
   and scrolls to it; ↑/↓ (or n/N) walk the matches. See `docs/transcript-search.md`.
 - **Copy one code block:** `/copy` now asks what to copy: the whole reply, one of its code blocks, or the
   transcript.
+- **Vim keys in the prompt:** `/vim` turns on normal and insert modes with motions, `d`/`c`/`y` with text
+  objects, undo and search; the mode shows in the status line. Off by default. See `docs/vim-mode.md`.
 - **`/context`** shows how much of the context window each part of the session takes (system prompt,
   tools, MCP tools, memory files, skills, messages), with the provider's own count of the last request
   when it reports one, and which MCP tools a denied `execute` keeps out.

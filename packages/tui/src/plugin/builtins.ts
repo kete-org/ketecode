@@ -23,6 +23,7 @@ import Storybook from "../feature-plugins/system/storybook"
 import Stats from "../feature-plugins/system/stats"
 import Latex from "@opencode/latex/plugin"
 import Merman from "@opencode/merman/plugin"
+import KeteVim from "../kete/vim-prompt" // kete_change
 
 export const builtins = [
   HomeFooter,
@@ -40,6 +41,7 @@ export const builtins = [
   KeteDoctor, // kete_change: /doctor, the setup checks dialog
   KeteContext, // kete_change: /context, the context usage breakdown
   KeteTerminalSetup, // kete_change: /terminal-setup, Shift+Enter guidance
+  KeteVim, // kete_change: /vim, vim keys in the prompt
   SidebarMcp,
   // SidebarTodo, // kete_change: KeteTodo shows the task list
   SidebarFooter,

@@ -1981,3 +1981,18 @@ selection. `tui/src/kete/copy-picker.tsx` adds the copy picker (response, one co
 
 **Sync checklist:** if upstream adds transcript search or per-block copy, compare and drop ours; if
 `messages.copy`'s run changes, re-apply the picker at its end.
+
+## Vim mode (feature/vim-mode)
+
+`tui/src/kete/vim.ts` is the engine (normal and insert modes, motions, operators, text objects, undo, search);
+`tui/src/kete/vim-prompt.tsx` feeds it the prompt's keys through a keymap intercept and applies each result as
+one textarea edit, and adds `/vim`. No upstream vim mode existed (checked 2026-11-05).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/component/prompt/index.tsx` | Import; `useKeteVim(inputTarget)`; `keteVim.reset()` in `clearPrompt`; `cursorStyle` through `keteVim.cursorStyle`; `vim` label on both `KeteStatusLineRow`s | the controller needs the prompt's textarea and its clear path |
+| `tui/src/config/index.tsx` | `vim` key | the TUI config schema is upstream's |
+| `tui/src/plugin/builtins.ts` | Import; `KeteVim` in the list | builtin plugin list |
+
+**Sync checklist:** if upstream adds a vim mode or its own modal editing, compare and drop ours; if the prompt's
+textarea stops using display-column offsets, `columnOf`/`indexOf` in `vim-prompt.tsx` must follow.
