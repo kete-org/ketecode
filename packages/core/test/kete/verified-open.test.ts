@@ -76,7 +76,9 @@ describe("KeteVerifiedOpen", () => {
     const file = path.join(root, "a.txt")
     await fs.writeFile(file, "checked")
     const entry = await checked(file)
-    await fs.rm(file)
+    // Moved aside, not deleted: a deleted file's inode number can be reused at once (Linux), and the threat is
+    // a path redirected to another existing file, which always has its own inode.
+    await fs.rename(file, path.join(root, "aside.txt"))
     await fs.writeFile(file, "replacement")
     expect(await failure(KeteVerifiedOpen.read(file, entry))).toMatchObject({ _tag: "Environment.Failed" })
     expect(await failure(KeteVerifiedOpen.write(file, entry, new TextEncoder().encode("X")))).toMatchObject({ _tag: "Environment.Failed" })
