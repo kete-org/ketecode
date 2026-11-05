@@ -75,9 +75,9 @@ Goal: lead on context efficiency and safe autonomy, the any-model advantage.
 ### Milestone C — Power users (terminal)
 | # | Item | Source | Status | Size | Upstream edits |
 |---|---|---|---|---|---|
-| C1 | **Transcript search** (`<leader>/`, `/find`) and a `/copy` picker (response, single code block, transcript) | Codex | approved (spec P4) | M | session route |
-| C2 | **Vim mode** for the prompt (check upstream first) | Codex + Claude Code | approved (spec P5) | L | prompt |
-| C3 | **Reasoning effort up/down** (Alt+. / Alt+,), **`/keymap debug`**, **Mermaid** investigation | Codex | approved (spec P6) | S | small |
+| C1 | **Transcript search** (`<leader>/`, `/find`) and a `/copy` picker (response, single code block, transcript) | Codex | done (#96: `tui/src/kete/transcript-search.tsx`, `copy-picker.tsx`; docs/transcript-search.md) | M | session route, message dialog, keybind default |
+| C2 | **Vim mode** for the prompt (check upstream first) | Codex + Claude Code | done (#97: `/vim`, `tui/src/kete/vim.ts`; no upstream vim mode existed; docs/vim-mode.md) | L | prompt, TUI config key, builtin list |
+| C3 | **Reasoning effort up/down** (Alt+. / Alt+,), **`/keymap debug`**, **Mermaid** investigation | Codex | done (#94: `variant.next`/`variant.previous`, `/keymap debug`; docs/terminal-keys.md). Mermaid needed nothing: upstream's `merman` plugin already renders flowcharts in the TUI offline (its 80-column test passes) | S | keybind defaults, two hooks in `app.tsx` |
 
 ### Milestone D — Team and automation (Wave 2)
 | # | Item | Source | Status | Size |
