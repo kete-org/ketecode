@@ -5,7 +5,7 @@
 // n/N after Enter) walk older and newer matches. The match is highlighted with the renderer's text selection.
 // Esc closes the bar and clears the highlight.
 
-import { TextBufferRenderable, type InputRenderable, type Renderable, type ScrollBoxRenderable } from "@opentui/core"
+import { TextBufferRenderable, type InputRenderable, type Renderable, type ScrollBoxRenderable, type WidthMethod } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { createSignal, onCleanup, Show, type Accessor } from "solid-js"
 import { useConfig } from "../config"
@@ -27,9 +27,9 @@ export function findOffsets(text: string, query: string): { start: number; end: 
 type Laid = { readonly plainText: string; readonly lineInfo: { lineStartCols: number[] } }
 
 /** The cell (column, visual row) inside a laid-out text of the character at `offset`. */
-function cell(node: Laid, offset: number) {
+function cell(node: Laid, offset: number, widthMethod: WidthMethod) {
   // `lineStartCols` are display columns from the start of the text (kete/text-columns.ts).
-  const col = columnOf(node.plainText, offset)
+  const col = columnOf(node.plainText, offset, widthMethod)
   const starts = node.lineInfo.lineStartCols
   let row = 0
   while (row + 1 < starts.length && starts[row + 1]! <= col) row++
@@ -37,21 +37,21 @@ function cell(node: Laid, offset: number) {
 }
 
 /** Where a selection of `[start, end)` begins and ends (both inclusive cells), relative to the text's origin. */
-export function selectionCells(node: Laid, start: number, end: number) {
-  return { anchor: cell(node, start), focus: cell(node, Math.max(start, end - 1)) }
+export function selectionCells(node: Laid, start: number, end: number, widthMethod: WidthMethod) {
+  return { anchor: cell(node, start, widthMethod), focus: cell(node, Math.max(start, end - 1), widthMethod) }
 }
 
 export type Hit = { readonly node: TextBufferRenderable; readonly start: number; readonly end: number }
 
 /** Every match under `root`, top to bottom (depth-first, children in order). */
-export function collect(root: Renderable, query: string): Hit[] {
+export function collect(root: Renderable, query: string, widthMethod: WidthMethod): Hit[] {
   const hits: Hit[] = []
   const visit = (node: Renderable) => {
     if (!node.visible || node.isDestroyed) return
     if (node instanceof TextBufferRenderable) {
       for (const { start, end } of findOffsets(node.plainText, query)) {
         // Rows clipped away by the node's height (a collapsed tool input) aren't shown, so aren't matches.
-        if (selectionCells(node, start, end).anchor.row >= Math.max(1, node.height)) continue
+        if (selectionCells(node, start, end, widthMethod).anchor.row >= Math.max(1, node.height)) continue
         hits.push({ node, start, end })
       }
       return
@@ -95,7 +95,7 @@ export function createKeteTranscriptSearch(input: {
 
   const highlight = (hit: Hit) => {
     renderer.clearSelection()
-    const { anchor, focus } = selectionCells(hit.node, hit.start, hit.end)
+    const { anchor, focus } = selectionCells(hit.node, hit.start, hit.end, renderer.widthMethod)
     renderer.startSelection(hit.node, hit.node.x + anchor.col, hit.node.y + anchor.row)
     // Finished, not a drag in progress: otherwise the next mouse-up would copy the match (copy on select).
     renderer.updateSelection(hit.node, hit.node.x + focus.col, hit.node.y + focus.row, { finishDragging: true })
@@ -108,7 +108,7 @@ export function createKeteTranscriptSearch(input: {
       if (current !== generation) return
       const scroll = input.scroll()
       if (!scroll || scroll.isDestroyed || !active()) return
-      const hits = collect(scroll, query())
+      const hits = collect(scroll, query(), renderer.widthMethod)
       if (hits.length === 0) {
         index = -1
         setPosition({ index: 0, total: 0 })
@@ -118,7 +118,7 @@ export function createKeteTranscriptSearch(input: {
       index = pick(hits.length)
       setPosition({ index: index + 1, total: hits.length })
       const hit = hits[index]!
-      const row = hit.node.y + selectionCells(hit.node, hit.start, hit.end).anchor.row
+      const row = hit.node.y + selectionCells(hit.node, hit.start, hit.end, renderer.widthMethod).anchor.row
       const top = scroll.viewport.y
       if (row < top || row >= top + scroll.viewport.height) {
         scroll.stickyScroll = false

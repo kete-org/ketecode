@@ -36,11 +36,11 @@ test("selectionCells select exactly the match in wrapped and multi-line text", a
     box.add(text)
     renderer.root.add(box)
     await renderOnce()
-    const hits = collect(renderer.root, "needle")
+    const hits = collect(renderer.root, "needle", renderer.widthMethod)
     expect(hits.map((hit) => hit.start)).toEqual([22, 46])
     // "find the" wraps across two visual lines.
     for (const [start, end] of [[22, 28], [46, 52], [13, 21]] as const) {
-      const { anchor, focus } = selectionCells(text, start, end)
+      const { anchor, focus } = selectionCells(text, start, end, renderer.widthMethod)
       renderer.clearSelection()
       renderer.startSelection(text, text.x + anchor.col, text.y + anchor.row)
       renderer.updateSelection(text, text.x + focus.col, text.y + focus.row)

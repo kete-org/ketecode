@@ -1,34 +1,29 @@
-// Display columns as the TUI's text and textarea renderables count them (@opentui/core 0.8): each code point
-// adds its own width (so "⚠️" is 1 and a joined emoji family is the sum of its people), a tab adds 2, and a
-// newline adds 1 between lines. Text offsets, `lineInfo.lineStartCols` and textarea offsets use these columns.
+// Display columns as the TUI's text and textarea renderables count them: text offsets,
+// `lineInfo.lineStartCols` and textarea offsets are cells from the start of the text under the renderer's width
+// method (`wcwidth` or `unicode`: they differ on emoji like "⚠️"), with a tab as its fixed width and a newline as
+// one. `measureEditText` is the renderer's own measure; widths add up grapheme by grapheme.
 
-import { stringWidth } from "../util/string-width"
+import { measureEditText, type WidthMethod } from "@opentui/core"
 
-const TAB = 2
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
-export const columns = (char: string) => (char === "\t" ? TAB : char === "\n" ? 1 : stringWidth(char))
-
-/** The column of string index `index` (rounded up past a surrogate pair it falls inside). */
-export function columnOf(text: string, index: number) {
+/** The column of string index `index` (an index inside a grapheme counts that whole grapheme). */
+export function columnOf(text: string, index: number, widthMethod: WidthMethod) {
   let column = 0
-  let at = 0
-  for (const char of text) {
-    if (at >= index) break
-    column += columns(char)
-    at += char.length
+  for (const { index: start, segment } of graphemes.segment(text)) {
+    if (start >= index) break
+    column += measureEditText(segment, { widthMethod })
   }
   return column
 }
 
-/** The string index at `column`, snapped to the start of the character the column falls inside. */
-export function indexOf(text: string, column: number) {
-  let at = 0
+/** The string index at `column`, snapped to the start of the grapheme the column falls inside. */
+export function indexOf(text: string, column: number, widthMethod: WidthMethod) {
   let current = 0
-  for (const char of text) {
-    const next = current + columns(char)
-    if (next > column) return at
+  for (const { index, segment } of graphemes.segment(text)) {
+    const next = current + measureEditText(segment, { widthMethod })
+    if (next > column) return index
     current = next
-    at += char.length
   }
   return text.length
 }
