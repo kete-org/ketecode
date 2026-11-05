@@ -106,6 +106,7 @@ export function isKeteOwned(file: string): boolean {
     normalized === "docs/folder-trust.md" ||
     normalized === "docs/history-search.md" ||
     normalized === "docs/terminal-keys.md" ||
+    normalized === "docs/transcript-search.md" ||
     normalized === "docs/home-notices.md" ||
     normalized === "docs/sharing.md" ||
     // The desktop Code | Work programme plan.

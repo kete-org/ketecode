@@ -98,6 +98,14 @@ import { nextThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseShellOutput, collapseToolOutput } from "../../util/collapse-tool-output"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
+// kete_change start: transcript search and the copy picker (parity C1)
+import {
+  createKeteTranscriptSearch,
+  KeteTranscriptSearchBar,
+  useKeteTranscriptSearchCommand,
+} from "../../kete/transcript-search"
+import { DialogKeteCopy } from "../../kete/copy-picker"
+// kete_change end
 import { usePathFormatter } from "../../context/path-format"
 import { useLocation } from "../../context/location"
 import * as KeteShare from "../../kete/share" // kete_change
@@ -499,6 +507,15 @@ export function Session(props: {
       updateAwayFromBottom()
     })
   }
+  // kete_change start: transcript search (<leader>/, /find; kete/transcript-search.tsx)
+  const keteSearch = createKeteTranscriptSearch({
+    scroll: () => scroll,
+    ensureAllRows,
+    afterLayout,
+    onClose: () => prompt()?.focus(),
+  })
+  useKeteTranscriptSearchCommand(keteSearch, () => true)
+  // kete_change end
 
   function isAwayFromBottom() {
     if (
@@ -1312,11 +1329,14 @@ export function Session(props: {
           return
         }
 
-        clipboard
-          .write(text)
-          .then(() => toast.show({ message: "Message copied to clipboard!", variant: "success" }))
-          .catch(() => toast.show({ message: "Failed to copy to clipboard", variant: "error" }))
-        dialog.clear()
+        // kete_change start: a picker: the response, one of its code blocks, or the transcript (kete/copy-picker.tsx)
+        dialog.replace(() => (
+          <DialogKeteCopy
+            text={text}
+            transcript={() => void commands().find((command) => command.id === "session.copy")?.run()}
+          />
+        ))
+        // kete_change end
       },
     },
     {
@@ -1602,6 +1622,11 @@ export function Session(props: {
                 <QueuedPromptDock prompts={queuedPrompts()} onOpen={openQueuedPrompts} />
               </Show>
               <Slot path="session.composer.top" input={{ sessionID: route.sessionID }} />
+              {/* kete_change start: transcript search bar */}
+              <Show when={keteSearch.active()}>
+                <KeteTranscriptSearchBar search={keteSearch} />
+              </Show>
+              {/* kete_change end */}
               <Composer
                 sessionID={route.sessionID}
                 open={composer.open || (!!session()?.parentID && forms().length === 0)}
@@ -1652,6 +1677,7 @@ export function Session(props: {
                 <Match when={!disabled()}>
                   <Prompt
                     visible={true}
+                    disabled={keteSearch.active()} // kete_change: the transcript search bar has the keys and focus
                     ref={bind}
                     muted={props.promptMuted}
                     onSubmit={() => {
