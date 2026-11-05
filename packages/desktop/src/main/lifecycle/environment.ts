@@ -31,7 +31,7 @@ export const preferApplicationEnvironment = Effect.gen(function* () {
   const shell = process.platform === "win32" ? null : getUserShell()
   const shellEnv = shell ? yield* loadShellEnv(shell) : null
   yield* Effect.sync(() => {
-    if (!shellEnv?.XDG_STATE_HOME) delete process.env.XDG_STATE_HOME
+    if (!shellEnv?.XDG_STATE_HOME && !process.env.OPENCODE_DESKTOP_TEST_ROOT) delete process.env.XDG_STATE_HOME // kete_change: keep the test root's state dir (configure.ts createTestRoot); on Windows there is no shell env, so it was always dropped
     Object.assign(process.env, {
       ...shellEnv,
       // kete_change start: also under the KETE_* names the runtime reads (kete/runtime-env.ts)
