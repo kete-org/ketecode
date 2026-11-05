@@ -6,7 +6,7 @@
 // string indices. Each change is applied as one replacement through the textarea's own editing calls,
 // so attachment marks (files, pasted text) move with the text like any other edit.
 
-import type { CursorStyleOptions, KeyEvent, TextareaRenderable } from "@opentui/core"
+import type { CursorStyleOptions, KeyEvent, TextareaRenderable, WidthMethod } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { Plugin } from "@opencode/plugin/tui"
 import { createEffect, createSignal, on, onCleanup } from "solid-js"
@@ -25,9 +25,9 @@ export function keyOf(event: Pick<KeyEvent, "name" | "sequence" | "ctrl" | "meta
   return { name: event.name, ...(char ? { char } : {}), ...(event.ctrl ? { ctrl: true } : {}), ...(event.meta ? { meta: true } : {}) }
 }
 
-export function read(textarea: Pick<TextareaRenderable, "plainText" | "cursorOffset">): Buffer {
+export function read(textarea: Pick<TextareaRenderable, "plainText" | "cursorOffset">, widthMethod: WidthMethod): Buffer {
   const text = textarea.plainText
-  return { text, cursor: indexOf(text, textarea.cursorOffset) }
+  return { text, cursor: indexOf(text, textarea.cursorOffset, widthMethod) }
 }
 
 /** Applies `after` to the textarea, which shows `before`, as one replacement plus a cursor move. */
@@ -35,18 +35,19 @@ export function write(
   textarea: Pick<TextareaRenderable, "setSelection" | "deleteSelection" | "insertText" | "cursorOffset">,
   before: Buffer,
   after: Buffer,
+  widthMethod: WidthMethod,
 ) {
   const change = diff(before.text, after.text)
   if (change.end > change.start || change.insert) {
-    const start = columnOf(before.text, change.start)
+    const start = columnOf(before.text, change.start, widthMethod)
     if (change.end > change.start) {
-      textarea.setSelection(start, columnOf(before.text, change.end))
+      textarea.setSelection(start, columnOf(before.text, change.end, widthMethod))
       textarea.deleteSelection()
     }
     textarea.cursorOffset = start
     if (change.insert) textarea.insertText(change.insert)
   }
-  textarea.cursorOffset = columnOf(after.text, after.cursor)
+  textarea.cursorOffset = columnOf(after.text, after.cursor, widthMethod)
 }
 
 /** One prompt's vim mode. `input` is the prompt's textarea. */
@@ -59,7 +60,7 @@ export function useKeteVim(input: () => TextareaRenderable | undefined) {
 
   const current = () => {
     const textarea = input()
-    return textarea && !textarea.isDestroyed ? read(textarea) : undefined
+    return textarea && !textarea.isDestroyed ? read(textarea, renderer.widthMethod) : undefined
   }
   // Turning vim on (or a new prompt) starts in insert mode, so typing works as before.
   createEffect(on(enabled, () => setState(initial("insert", current()))))
@@ -72,7 +73,7 @@ export function useKeteVim(input: () => TextareaRenderable | undefined) {
       if (!enabled() || !textarea || textarea.isDestroyed || renderer.currentFocusedEditor !== textarea) return
       // While autocomplete is open, Esc and the arrows belong to it.
       if (textarea.traits.capture?.includes("escape") && state().mode === "insert") return
-      const before = read(textarea)
+      const before = read(textarea, renderer.widthMethod)
       // The prompt's first insert starts here (the textarea wasn't mounted when the state was made).
       const previous = state()
       const ready = previous.mode === "insert" && !previous.insertStart ? { ...previous, insertStart: before } : previous
@@ -80,7 +81,7 @@ export function useKeteVim(input: () => TextareaRenderable | undefined) {
       setState(result.state)
       if (!result.handled) return
       consume()
-      write(textarea, before, result.buffer)
+      write(textarea, before, result.buffer, renderer.widthMethod)
     },
     { priority: 100 },
   )

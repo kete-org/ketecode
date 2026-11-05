@@ -30,14 +30,14 @@ test("write applies a change to a real textarea, with wide characters before it"
     textarea.focus()
     await renderOnce()
     const before = { text: textarea.plainText, cursor: 4 }
-    textarea.cursorOffset = columnOf(before.text, before.cursor)
-    expect(read(textarea)).toEqual(before)
-    write(textarea, before, { text: "中😀 bar\nnext", cursor: 4 })
+    textarea.cursorOffset = columnOf(before.text, before.cursor, renderer.widthMethod)
+    expect(read(textarea, renderer.widthMethod)).toEqual(before)
+    write(textarea, before, { text: "中😀 bar\nnext", cursor: 4 }, renderer.widthMethod)
     expect(textarea.plainText).toBe("中😀 bar\nnext")
-    expect(read(textarea).cursor).toBe(4)
-    write(textarea, read(textarea), { text: "中😀 bar\nnew\nnext", cursor: 9 })
+    expect(read(textarea, renderer.widthMethod).cursor).toBe(4)
+    write(textarea, read(textarea, renderer.widthMethod), { text: "中😀 bar\nnew\nnext", cursor: 9 }, renderer.widthMethod)
     expect(textarea.plainText).toBe("中😀 bar\nnew\nnext")
-    expect(read(textarea).cursor).toBe(9)
+    expect(read(textarea, renderer.widthMethod).cursor).toBe(9)
   } finally {
     renderer.destroy()
   }
@@ -51,13 +51,13 @@ test("write keeps tabs and edits whole graphemes (emoji sharing a surrogate, fla
     textarea.focus()
     await renderOnce()
     // x on the a after a tab.
-    write(textarea, { text: "\tab", cursor: 1 }, { text: "\tb", cursor: 1 })
+    write(textarea, { text: "\tab", cursor: 1 }, { text: "\tb", cursor: 1 }, renderer.widthMethod)
     expect(textarea.plainText).toBe("\tb")
-    expect(read(textarea).cursor).toBe(1)
+    expect(read(textarea, renderer.widthMethod).cursor).toBe(1)
     for (const [from, to] of [["x😃y", "x😀y"], ["🇬🇧", "🇬🇭"], ["a🇬🇭b", "ab"]]) {
-      write(textarea, read(textarea), { text: from, cursor: 0 })
+      write(textarea, read(textarea, renderer.widthMethod), { text: from, cursor: 0 }, renderer.widthMethod)
       expect(textarea.plainText).toBe(from)
-      write(textarea, { text: from, cursor: 0 }, { text: to, cursor: 0 })
+      write(textarea, { text: from, cursor: 0 }, { text: to, cursor: 0 }, renderer.widthMethod)
       expect(textarea.plainText).toBe(to)
     }
   } finally {
