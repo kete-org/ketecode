@@ -12,6 +12,7 @@ import { AbsolutePath } from "../../schema.js"
 import { ReadToolFileSystem } from "../read-filesystem.js"
 import { Environment } from "../../environment/index.js"
 import { KeteInstructionFiles } from "../../kete/instruction-files.js" // kete_change
+import { KeteVerifiedOpen } from "../../kete/verified-open.js" // kete_change
 import { Global } from "@opencode/util/global" // kete_change
 import os from "os" // kete_change
 
@@ -132,6 +133,7 @@ export const Plugin = {
                     : `Unable to read ${input.path}`
                 return new ToolFailure({ message, error })
               }),
+              KeteVerifiedOpen.scoped, // kete_change: the file opened is the file checked
             )
           },
         }),

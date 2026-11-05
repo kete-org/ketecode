@@ -215,7 +215,8 @@ By default Kete Code asks before it reads or edits anything outside the workspac
 real path: a file or folder inside the workspace that is a symlink to somewhere else asks too, for the
 folder it really leads to. Rules and saved approvals for `external_directory` are matched against that real
 folder too, so a rule for a path written through a symlink (macOS `/tmp` is `/private/tmp`) may need the
-real path. To work in more
+real path. The read, write, edit and patch tools also verify that the file they open is the one the check
+approved, and refuse (asking you to try again) if a symlink was swapped in meanwhile. To work in more
 folders without asking each time, add them to the session:
 
 - `kete --add-dir ../lib` or `kete run --add-dir ../lib "…"` (repeat the flag, up to 10 folders), or

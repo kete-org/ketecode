@@ -15,6 +15,7 @@ import { Patch } from "@opencode/util/patch"
 import { Permission } from "../../permission.js"
 import DESCRIPTION from "../patch.txt"
 import { fileDiff } from "./file-diff.js"
+import { KeteVerifiedOpen } from "../../kete/verified-open.js" // kete_change
 
 export const name = "patch"
 
@@ -310,6 +311,7 @@ export const Plugin = {
               Effect.mapError((error) =>
                 error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to apply patch", error }),
               ),
+              KeteVerifiedOpen.scoped, // kete_change: the file opened is the file checked
             )
           },
         }),

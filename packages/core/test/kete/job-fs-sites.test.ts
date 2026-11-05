@@ -59,6 +59,7 @@ function found(): Set<string> {
 
 const allowlist: Readonly<Record<string, { readonly category: Category; readonly reason: string }>> = {
   "packages/core/src/environment/local.ts": { category: "replaced", reason: "the local Environment driver; job mode replaces Environment.node (kete/job-files.ts)" },
+  "packages/core/src/kete/verified-open.ts": { category: "replaced", reason: "the local Environment driver's verified read/write (called only from environment/local.ts); job mode replaces Environment.node" },
   "packages/core/src/kete/mcp-secrets.ts": { category: "data-dir", reason: "creates <data>/mcp-servers/<server>, the working directory of an MCP server that gets a stored secret" },
   "packages/core/src/kete/audit.ts": { category: "data-dir", reason: "the audit file under <data>/audit; job mode writes to the pipe instead" },
   "packages/core/src/kete/orchestration/turn-state.ts": {

@@ -5,6 +5,7 @@ verified-at: b8e534dfcb
 ---
 
 ## Quick answers
+- Are `stale-write.ts`'s reads verified? Inside a tool scope yes: it calls `FileAccess.resolve` and `files.read` (`stale-write.ts:78`), so they go through `KeteVerifiedOpen` (see the `permissions` card).
 - Why does session_move still ask for a destination inside an added folder? Its `external_directory` request carries `kete.sessionMove` metadata (`session-move.ts:28`, `:90`), which the add-dir grant skips because moving changes what instructions and config load.
 - Branch naming: `kete/agent-<slug>`, `worktrees.ts:44` (`branchPrefix`), slug from `worktrees.ts:223`.
 - Branch base: the parent session's last commit on its repository directory (`worktrees.ts:210-217`), not the parent's uncommitted changes.

@@ -16,6 +16,7 @@ import { Formatter } from "../../formatter.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
+import { KeteVerifiedOpen } from "../../kete/verified-open.js" // kete_change
 
 export const name = "write"
 
@@ -93,6 +94,7 @@ export const Plugin = {
             }).pipe(
               Effect.map((output) => ({ output, content: toModelContent(output) })),
               Effect.mapError((error) => new ToolFailure({ message: `Unable to write ${input.path}`, error })),
+              KeteVerifiedOpen.scoped, // kete_change: the file opened is the file checked
             ),
         }),
       )
