@@ -26,6 +26,9 @@ export type Reason = (typeof reasons)[number]
 
 export const approvedKey = "kete.sandbox.approved"
 export const policyKey = "kete.sandbox.policyAllowed"
+// Set by Work mode (kete/work-mode.ts) on every shell request of a Work session: the command runs with no
+// network whatever the settings or an approval say, and may not leave the sandbox.
+export const workKey = "kete.sandbox.work"
 
 /** Whether `action` is one of the sandbox's own permission actions. */
 export function isSandboxAction(action: string) {
@@ -64,6 +67,15 @@ export function markApproved(metadata: Record<string, unknown> | undefined) {
 /** Records that an unattended run's policy allowed the shell request carrying `metadata`. */
 export function markPolicyAllowed(metadata: Record<string, unknown> | undefined) {
   mark(metadata, policyKey)
+}
+
+/** Records that the shell request carrying `metadata` belongs to a Work session (no network, no escape). */
+export function markWork(metadata: Record<string, unknown> | undefined) {
+  mark(metadata, workKey)
+}
+
+export function work(metadata: Readonly<Record<string, unknown>> | undefined) {
+  return metadata?.[workKey] === true
 }
 
 /** The approval hook's rule, given the final decision. */

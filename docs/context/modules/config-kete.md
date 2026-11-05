@@ -1,9 +1,10 @@
 ---
 module: config-kete
 paths: [packages/schema/src/config/kete.ts, packages/schema/src/config.ts, packages/core/src/config/normalize.ts, packages/core/src/config/discovery.ts, packages/core/src/config.ts]
-verified-at: 08f5855d87
+verified-at: ce02e0bcc9
 ---
 ## Quick answers
+- Does a config setting loosen Work mode? No: Work ignores `kete.sandbox.network` (`all` included) and `kete.subagents.worktree` for its sessions (`sandbox.ts:158`, `work-mode.ts:126-129`; `permissions` card). The `work.jsonc` profile stays `available: false`.
 - Where are the Work/Code mode profiles and can users edit them? `core/src/kete/modes/{code,work}.jsonc`, loaded by `core/src/kete/modes.ts` (`KeteModes`: `list`/`get`/`summaries`/`available`); schema `KeteModesRpc.Profile` in `schema/src/kete/modes.ts`. They are not user config: embedded at build time and decoded strictly at module load, so a bad profile fails the runtime (tests `core/test/kete/modes.test.ts`, `schema/test/kete/modes.test.ts`).
 - When are mode profiles read, and what does `available: false` do? At session create: `KeteSessionMode.guardCreate` (`core/src/kete/session-mode.ts:52`) looks the profile up with `KeteModes.get` and dies with `RefusedError` if `available` is false or the value isn't a mode; a child must match its parent's mode. The profile's agent becomes the session's agent (`core/src/session.ts:316`).
 - How is a non-code file embedded in the binary? Bun import: `import x from "./f.md" with { type: "text" }` (`core/src/models-dev.ts:18`, `core/src/kete/skill.ts:22`), or a plain `.jsonc` import that Bun parses at bundle time (`core/src/kete/modes.ts:8-9`); no runtime file read, so no install-path lookup.

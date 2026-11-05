@@ -1835,6 +1835,19 @@ tells every window with `KeteSidecarRestarting` / `KeteSidecarReady { url }`; th
 Tests: `desktop/src/main/kete/sidecar-watcher.test.ts`, `sidecar-watcher.integration.test.ts`,
 `desktop/src/shared/kete/sidecar-events.test.ts`, `desktop/src/renderer/kete/sidecar-status-state.test.ts`.
 
+## WS0 packaged smoke (feature/desktop-packaged-smoke)
+
+`packages/desktop/script/kete-packaged-smoke.ts` runs the packed app under `OPENCODE_DESKTOP_TEST_ROOT`. Upstream's
+`preferApplicationEnvironment` deletes `XDG_STATE_HOME` unless the login shell sets it, and on Windows it reads no
+shell, so the test root's state dir was always dropped: the desktop then looked under Electron's profile folder and
+the runtime under `USERPROFILE`, and they never found each other's registration.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `desktop/src/main/lifecycle/environment.ts` | the `delete process.env.XDG_STATE_HOME` line also requires no test root (marked) | the deletion is inline in the env setup |
+
+**Sync checklist:** if upstream changes how the desktop picks `XDG_STATE_HOME`, keep a test root's state dir intact.
+
 ## MCP resource mentions (feature/mcp-resource-mentions)
 
 The TUI's `@` menu lists MCP resources (`tui/src/kete/mcp-mentions.ts`) and attaches a picked one as a
@@ -1890,6 +1903,19 @@ every `Agent.select(session.agent)` caller agrees without editing `agent.ts` or 
 | `core/src/session/transfer.ts` | Import; `metadata` runs through `KeteSessionMode.guardCreate` before `Created` (an import would otherwise bypass the create check) | import publishes `Created` itself |
 
 **Sync checklist:** if upstream adds a session mode or typed session kind, compare and drop ours.
+
+## Work enforcement (WS1 1.3)
+
+`core/src/kete/work-mode.ts` (plugin `kete.work-mode`) holds a Work session (root-most session's
+`kete.sessionMode`) to the Work profile through the `evaluate`, `tool.execute.before` and `session`
+`context`/`compaction`/`generate` hooks; Code sessions pass through. The sandbox and audit changes are in
+Kete-owned files (`kete/sandbox.ts`, `kete/sandbox/actions.ts`, `kete/audit.ts`).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteWorkMode.Plugin` in `pre` after `KetePermissionMode.Plugin` (after both loosening hooks; it only denies); its id in `guarded` | internal plugins are registered only in this list |
+
+**Sync checklist:** none beyond the list entry; the plugin uses only public hooks.
 
 ## Verified open for file tools (fix/file-tools-verify-open)
 
