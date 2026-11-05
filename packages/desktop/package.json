@@ -39,6 +39,7 @@
     "@opencode/schema": "workspace:*",
     "@opencode/ui": "workspace:*",
     "@opencode/util": "workspace:*",
+    "@playwright/test": "catalog:",
     "@sentry/solid": "catalog:",
     "@solidjs/router": "catalog:",
     "@types/bun": "catalog:",

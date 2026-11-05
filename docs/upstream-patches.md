@@ -1599,6 +1599,7 @@ The Electron app as Kete Code (docs/desktop.md). Identity values come from `util
 | `desktop/electron-builder.config.ts` | App IDs, product names, `kete://`, `kete-desktop-*` artifacts and `kete` deb/rpm from `KeteDesktop`; `publish` from `KeteDesktop.updateFeeds` (none yet); Kete Code author metadata; prod uses the ICNS (no Icon Composer package); OpenCode's legacy launcher commented out | identity, and no update checks against OpenCode's servers |
 | `desktop/electron-builder.config.test.ts` | Expects Kete Code's IDs, no feed, no legacy launcher, the ICNS | tests the rows above |
 | `desktop/package.json` | `@opencode/util` dev dependency | `Brand` and `KeteDesktop` |
+| `desktop/package.json` | `@playwright/test` dev dependency (`catalog:`) | `e2e/kete/electron.ts` drives the packaged app with Playwright's `_electron` |
 | `desktop/script/utils.ts` | `@ketecode/cli-<platform>` packages (`latest`/`next`) named lazily, each target's build directory, the `kete` binary | bundles Kete Code's CLI; electron.vite.config.ts loads this file under Node, which can't resolve util's `.js` specifiers |
 | `desktop/script/build.ts` | The local CLI's directory; `next` for beta | as above |
 | `desktop/script/pack.ts` | No `app-update.yml` without a feed; `kete-desktop-*` names | updates off |
