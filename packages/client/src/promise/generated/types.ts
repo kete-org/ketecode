@@ -2574,6 +2574,13 @@ export type ConfigEntry =
               sandbox?: boolean
             }>
             Stop?: Array<{ command: string; match?: string; timeout?: number; network?: boolean; sandbox?: boolean }>
+            SubagentStop?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
             SessionStart?: Array<{
               command: string
               match?: string
@@ -2588,10 +2595,18 @@ export type ConfigEntry =
               network?: boolean
               sandbox?: boolean
             }>
+            PreCompact?: Array<{
+              command: string
+              match?: string
+              timeout?: number
+              network?: boolean
+              sandbox?: boolean
+            }>
             unsandboxed?: boolean
           }
           memory?: { claudeMd?: boolean; imports?: boolean; auto?: boolean }
           lsp?: { unsandboxed?: boolean }
+          outputStyle?: string
         }
       }
     }

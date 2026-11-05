@@ -45,6 +45,7 @@ import type { Context as PluginContext } from "@opencode/plugin/effect/plugin"
 import { Tool } from "@opencode/schema/tool"
 import { Global } from "@opencode/util/global"
 import { KeteJobMode } from "@opencode/util/kete/job-mode"
+import { Message } from "@opencode/ai/effect"
 import { Effect, Option, Predicate, Stream } from "effect"
 import type { Entry as ConfigEntry } from "@opencode/schema/config"
 import { Config } from "../config.js"
@@ -74,7 +75,7 @@ type Entry = KeteHooksSettings.Entry
 export const MAX_PAYLOAD_TEXT = 32 * 1024
 /** Bytes of a tool's input a PreToolUse hook gets; a larger input blocks the call. */
 export const MAX_TOOL_INPUT = 4 * 1024 * 1024
-/** Stop and Notification hooks running at once; more are skipped (logged). */
+/** Stop, SubagentStop and Notification hooks running at once; more are skipped (logged). */
 export const MAX_BACKGROUND = 8
 
 /** Events that may ask the user to trust project hooks. */
@@ -162,6 +163,8 @@ export interface Deps {
   }) => Effect.Effect<boolean>
   /** Whether the session belongs to an unattended run; default: KeteUnattendedPolicy. */
   readonly unattended?: (sessionID: string) => Effect.Effect<boolean>
+  /** The parent session and agent of a subagent's session; default: the session store. */
+  readonly subagent?: (sessionID: string) => Effect.Effect<{ parentID: string; agent?: string } | undefined>
   /** Overrides the OS sandbox's availability (tests). */
   readonly availability?: () => Promise<{ available: true; mechanism: "seatbelt" | "bubblewrap"; executable: string } | { available: false; reason: string }>
 }
@@ -230,6 +233,16 @@ export function make(deps: Deps = {}) {
                 Effect.catchCause(() => Effect.succeed(true)),
               )
             : Effect.succeed(false))
+
+      const subagent =
+        deps.subagent ??
+        ((sessionID: string) =>
+          sessions
+            ? sessions.get(sessionID as SessionSchema.ID).pipe(
+                Effect.map((info) => (info.parentID ? { parentID: info.parentID, ...(info.agent ? { agent: info.agent } : {}) } : undefined)),
+                Effect.catchCause(() => Effect.succeed(undefined)),
+              )
+            : Effect.succeed(undefined))
 
       // Trust decisions this process made, by fingerprint; pending questions are shared.
       const declined = new Set<string>()
@@ -491,6 +504,19 @@ export function make(deps: Deps = {}) {
         }).pipe(Effect.catchCause((cause) => Effect.logWarning("UserPromptSubmit hooks failed", { cause }))),
       )
 
+      // PreCompact: runs before the summary request; its output (context only: it can't block) goes
+      // after the history as a user message, so the request keeps the cached [system][history] prefix.
+      // It never asks for trust and never stops the compaction.
+      yield* ctx.session.hook("compaction", (event) =>
+        Effect.gen(function* () {
+          const added = (yield* runAll("PreCompact", event.sessionID, { agent: event.agent })).flatMap(({ outcome }) =>
+            outcome.kind === "ok" && outcome.context ? [`<hook event="PreCompact">\n${escape(outcome.context)}\n</hook>`] : [],
+          )
+          if (added.length > 0)
+            event.messages.push(Message.user(`For the summary, from PreCompact hooks:\n${added.join("\n")}`))
+        }).pipe(Effect.catchCause((cause) => Effect.logWarning("PreCompact hooks failed", { cause }))),
+      )
+
       let inFlight = 0
       const background = (event: Event, sessionID: string, payload: Record<string, unknown>) =>
         Effect.suspend(() => {
@@ -525,8 +551,22 @@ export function make(deps: Deps = {}) {
             event.type === "session.execution.succeeded" ||
             event.type === "session.execution.failed" ||
             event.type === "session.execution.interrupted"
-          )
-            return Effect.forkDetach(background("Stop", sessionID, { status: event.type.slice("session.execution.".length) }))
+          ) {
+            const status = event.type.slice("session.execution.".length)
+            return Effect.forkDetach(
+              Effect.gen(function* () {
+                const child = yield* subagent(sessionID)
+                // Stop keeps running for every session (as before); SubagentStop only for a subagent's, after it.
+                yield* background("Stop", sessionID, { status })
+                if (child)
+                  yield* background("SubagentStop", sessionID, {
+                    status,
+                    parent_session_id: child.parentID,
+                    ...(child.agent ? { agent: child.agent } : {}),
+                  })
+              }).pipe(Effect.catchCause((cause) => Effect.logWarning("Stop hooks failed", { cause }))),
+            )
+          }
           if (event.type === "permission.asked")
             return Effect.forkDetach(
               background("Notification", sessionID, {

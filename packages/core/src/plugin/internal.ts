@@ -127,6 +127,7 @@ import { KeteWorkflows } from "../kete/workflows.js" // kete_change
 import { KeteTodo } from "../kete/todo.js" // kete_change
 import { KeteLsp } from "../kete/lsp.js" // kete_change
 import { KeteHooks } from "../kete/hooks.js" // kete_change
+import { KeteMcpMentions } from "../kete/mcp-mentions.js" // kete_change
 import { PermissionSaved } from "../permission/saved.js" // kete_change
 import { Project } from "../project.js" // kete_change
 import { KeteFolderTrust } from "../kete/folder-trust.js" // kete_change
@@ -135,6 +136,8 @@ import { KeteDoctor } from "../kete/doctor.js" // kete_change
 import { KeteHandshake } from "../kete/handshake.js" // kete_change
 import { KeteContextBreakdown } from "../kete/context-breakdown.js" // kete_change
 import { KeteGitCommands } from "../kete/git-commands.js" // kete_change
+import { KeteOutputStyles } from "../kete/output-styles.js" // kete_change
+import { KetePlanApproval } from "../kete/plan-approval.js" // kete_change
 import { KeteAutoMemory } from "../kete/auto-memory.js" // kete_change
 import { KeteMemoryFiles } from "../kete/memory-files.js" // kete_change
 import { KeteShare } from "../kete/share/plugin.js" // kete_change
@@ -342,6 +345,8 @@ const pre = [
   KeteLsp.Plugin,
   // kete_change: shell commands configured under kete.hooks (project hooks only once trusted); see kete/hooks.ts
   KeteHooks.Plugin,
+  // kete_change: `@`-mentioned MCP resources read into the prompt (kete-mcp: attachments); see kete/mcp-mentions.ts
+  KeteMcpMentions.Plugin,
   // kete_change: the `kete.folder.trust` RPC (the TUI loads project plugins only once trusted); see kete/folder-trust/rpc.ts
   KeteFolderTrustRpcPlugin.Plugin,
   // kete_change: the `kete.doctor` RPC (config file checks, folder trust) for `kete doctor` and /doctor; see kete/doctor.ts
@@ -350,6 +355,10 @@ const pre = [
   KeteHandshake.Plugin,
   // kete_change: built-in /commit and /pr prompt commands; see kete/git-commands.ts
   KeteGitCommands.Plugin,
+  // kete_change: kete.outputStyle text at the end of the system prompt; see kete/output-styles.ts
+  KeteOutputStyles.Plugin,
+  // kete_change: present_plan ends Plan mode once the user approves the plan; see kete/plan-approval.ts
+  KetePlanApproval.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 const post = [

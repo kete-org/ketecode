@@ -199,6 +199,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
     kete?: Record<string, unknown>
     sandbox?: "real" | "none"
     files?: Record<string, string>
+    subagents?: Record<string, { parentID: string; agent?: string }>
     orgPolicies?: SyncedPolicy[]
   }) {
     const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "kete-hooks-test-")))
@@ -250,6 +251,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
           return answer
         }),
       unattended: () => Effect.succeed(options.unattended ?? false),
+      subagent: (sessionID) => Effect.succeed(options.subagents?.[sessionID]),
       ...(options.sandbox === "real" ? {} : { availability: async () => ({ available: false as const, reason: "test" }) }),
     })
     const layer = await Effect.runPromise(
@@ -290,6 +292,12 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
       await Effect.runPromise(sessionHooks.get("prompt")!(event))
       return event.prompt.text as string
     }
+    const compaction = async (sessionID = "ses_1") => {
+      const event: any = { sessionID, agent: "build", system: [], messages: [] }
+      await Effect.runPromise(sessionHooks.get("compaction")!(event))
+      expect(event.system).toEqual([])
+      return event.messages as unknown[]
+    }
     const emit = (type: string, data: unknown) => Effect.runPromise(PubSub.publish(events, { type, data }))
     const file = (name: string) => path.join(workspace, name)
     const waitFor = async (check: () => Promise<boolean>) => {
@@ -299,6 +307,7 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
       before,
       after,
       prompt,
+      compaction,
       emit,
       file,
       waitFor,
@@ -420,6 +429,71 @@ describe.skipIf(!posix)("the plugin with real commands", () => {
     const h = await setup({ unattended: true, kete: { hooks: { unsandboxed: true } }, project: { PreToolUse: [{ command: "exit 2" }] } })
     expect(Exit.isSuccess(await h.before("read"))).toBe(true)
     expect(h.asked).toEqual([])
+  })
+
+  test("SubagentStop runs after Stop for a subagent's session only", async () => {
+    const h = await setup({
+      user: {
+        Stop: [{ command: `cat >> "${"$"}KETE_PROJECT_DIR/stop.txt"` }],
+        SubagentStop: [{ command: `cat >> "${"$"}KETE_PROJECT_DIR/subagent.txt"` }],
+      },
+      subagents: { ses_child: { parentID: "ses_main", agent: "explore" } },
+    })
+    await h.emit("session.execution.succeeded", { sessionID: "ses_main" })
+    await h.emit("session.execution.failed", { sessionID: "ses_child" })
+    const read = (name: string) => fs.readFile(h.file(name), "utf8").catch(() => "")
+    await h.waitFor(async () => (await read("stop.txt")).split("}{").length === 2 && (await read("subagent.txt")).endsWith("}"))
+    const subagent = await read("subagent.txt")
+    // SubagentStop starts only after the subagent's Stop finished.
+    expect((await read("stop.txt")).includes('"session_id":"ses_child"')).toBe(true)
+    expect(subagent.split("}{")).toHaveLength(1)
+    expect(JSON.parse(subagent)).toMatchObject({
+      event: "SubagentStop",
+      session_id: "ses_child",
+      status: "failed",
+      parent_session_id: "ses_main",
+      agent: "explore",
+    })
+    const stops = await read("stop.txt")
+    expect(stops).toContain('"session_id":"ses_main"')
+    expect(stops).toContain('"session_id":"ses_child"')
+  })
+
+  test("PreCompact runs before the summary and adds its output as instructions; a failure doesn't stop it", async () => {
+    const h = await setup({
+      user: {
+        PreCompact: [
+          { command: `cat > "${"$"}KETE_PROJECT_DIR/compact.json"; echo "Keep the migration plan."` },
+          { command: "exit 7" },
+          { command: "echo 'not an instruction' >&2; exit 2" },
+        ],
+      },
+    })
+    const messages = await h.compaction()
+    expect(messages).toHaveLength(1)
+    const text = JSON.stringify(messages[0])
+    expect(text).toContain('"role":"user"')
+    expect(text).toContain('<hook event=\\"PreCompact\\">\\nKeep the migration plan.\\n</hook>')
+    expect(text).not.toContain("not an instruction")
+    expect(JSON.parse(await fs.readFile(h.file("compact.json"), "utf8"))).toMatchObject({ event: "PreCompact", session_id: "ses_1", agent: "build" })
+    const quiet = await setup({ user: { PreCompact: [{ command: "true" }] } })
+    expect(await quiet.compaction()).toEqual([])
+  })
+
+  test("PreCompact and SubagentStop never ask", async () => {
+    const h = await setup({
+      kete: { hooks: { unsandboxed: true } },
+      project: { PreCompact: [{ command: "echo project" }], SubagentStop: [{ command: "true" }], UserPromptSubmit: [{ command: "true" }] },
+      subagents: { ses_c: { parentID: "ses_1" } },
+    })
+    expect(await h.compaction()).toEqual([])
+    await h.emit("session.execution.succeeded", { sessionID: "ses_c" })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(h.asked).toEqual([])
+    // Once trusted (through an event that asks), the project's PreCompact hook runs.
+    await h.prompt("hi")
+    expect(h.asked).toHaveLength(1)
+    expect(JSON.stringify(await h.compaction())).toContain("project")
   })
 
   test("Stop and Notification never ask", async () => {

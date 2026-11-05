@@ -1833,3 +1833,43 @@ tells every window with `KeteSidecarRestarting` / `KeteSidecarReady { url }`; th
 `Ipc.layer` sees the decorated service), keep both union entries, keep the status component mounted inside `AppInterface`.
 Tests: `desktop/src/main/kete/sidecar-watcher.test.ts`, `sidecar-watcher.integration.test.ts`,
 `desktop/src/shared/kete/sidecar-events.test.ts`, `desktop/src/renderer/kete/sidecar-status-state.test.ts`.
+
+## MCP resource mentions (feature/mcp-resource-mentions)
+
+The TUI's `@` menu lists MCP resources (`tui/src/kete/mcp-mentions.ts`) and attaches a picked one as a
+`kete-mcp:` file (`util/src/kete/mcp-mention.ts`); `core/src/kete/mcp-mentions.ts` reads it into the
+prompt in the `session.prompt` hook, before upstream materializes attachments.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/component/prompt/autocomplete.tsx` | Import; a marked memo of resource options, and one marked line adding them to the `@` options | the `@` option list is built inline in the component |
+| `core/src/plugin/internal.ts` | Import; `KeteMcpMentions.Plugin` after `KeteHooks.Plugin` in `pre` | internal plugin registration list |
+
+**Sync checklist:** if upstream's TUI adds MCP resources to `@` itself (its web app autocompletes them),
+drop ours. If `SessionPrompt.prepare` stops running the `prompt` hook before materializing attachments,
+the `kete-mcp:` files fail the prompt: move the expansion.
+
+## Output styles (feature/output-styles)
+
+`core/src/kete/output-styles.ts` adds `kete.outputStyle`'s text (a built-in style or the user's
+`output-styles/<name>.md`) to the system prompt in the `context` hook; no upstream prompt changes.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KeteOutputStyles.Plugin` after `KeteGitCommands.Plugin` in `pre` | internal plugin registration list |
+
+**Sync checklist:** if upstream adds output styles or another persona setting, compare and drop one.
+
+## Plan approval (feature/plan-approval)
+
+`core/src/kete/plan-approval.ts` adds the `present_plan` tool: in Plan mode the agent presents its plan,
+the user approves it in a form, and the session switches to Accept-edits or Default (and from upstream's
+`plan` agent to the default agent). Upstream's Plan plugin (`plugin/plan.ts`) is unchanged; its reminder
+still says the user switches agents, so Plan mode requests also get a short Kete reminder to call the tool.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/plugin/internal.ts` | Import; `KetePlanApproval.Plugin` after `KeteOutputStyles.Plugin` in `pre` | internal plugin registration list |
+
+**Sync checklist:** if upstream adds its own plan-exit tool or changes the Plan reminder, compare and drop
+ours or the extra reminder.

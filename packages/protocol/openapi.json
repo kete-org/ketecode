@@ -17463,6 +17463,7 @@
                   },
                   "max_concurrent": {
                     "type": "integer",
+                    "maximum": 9007199254740991,
                     "exclusiveMinimum": 0
                   },
                   "worktree": {
@@ -17576,6 +17577,12 @@
                       "$ref": "#/components/schemas/ConfigKete.HookEncoded"
                     }
                   },
+                  "SubagentStop": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
                   "SessionStart": {
                     "type": "array",
                     "items": {
@@ -17583,6 +17590,12 @@
                     }
                   },
                   "Notification": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ConfigKete.HookEncoded"
+                    }
+                  },
+                  "PreCompact": {
                     "type": "array",
                     "items": {
                       "$ref": "#/components/schemas/ConfigKete.HookEncoded"
@@ -17617,6 +17630,10 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "outputStyle": {
+                "type": "string",
+                "maxLength": 200
               }
             },
             "additionalProperties": false
