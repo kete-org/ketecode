@@ -51,7 +51,7 @@ describe("kete-packaged-smoke", () => {
     const env = smokeEnv("/r", { PATH: "/bin" })
     expect(env.PATH).toBe("/bin")
     expect(env.HOME).toBe("/r")
-    expect(env.USERPROFILE).toBe("/r")
+    expect(env.USERPROFILE).toBeUndefined()
     for (const name of ["CONFIG", "DATA", "CACHE", "STATE"]) expect(env[`XDG_${name}_HOME`]?.startsWith(path.join("/r"))).toBe(true)
     expect(env.OPENCODE_DESKTOP_TEST_ROOT).toBe(path.join("/r", "app"))
     expect(registrationDir(env)).toBe(path.join("/r", "app", "state", "kete"))
@@ -114,7 +114,7 @@ describe("kete-packaged-smoke", () => {
   test("handshake rejects a wrong protocol, a missing code mode and a 401", async () => {
     await expect(handshake(fake({ protocol: 99, runtime: "k", modes: ["code"] }), password)).rejects.toThrow("protocol 99, expected 1")
     await expect(handshake(fake({ protocol: 1, runtime: "k", modes: ["work"] }), password)).rejects.toThrow('lacks "code"')
-    await expect(handshake(fake(null, 401), password)).rejects.toThrow("handshake HTTP 401")
+    await expect(handshake(fake(null, 401), password)).rejects.toThrow("handshake HTTP 401 from")
   })
 
   test("handshake reports a stopped server without leaking the password", async () => {

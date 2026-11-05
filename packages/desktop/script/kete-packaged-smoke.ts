@@ -43,7 +43,7 @@ export function smokeEnv(root: string, base: Env): Env {
   return {
     ...base,
     HOME: root,
-    USERPROFILE: root,
+    // Not USERPROFILE: Windows expands its known folders (Documents, …) from it, and the app needs them.
     XDG_CONFIG_HOME: path.join(root, "config"),
     XDG_DATA_HOME: path.join(root, "data"),
     XDG_CACHE_HOME: path.join(root, "cache"),
@@ -118,7 +118,8 @@ export async function handshake(url: string, password: string) {
   const response = await fetch(handshakeRequest(url, password)).catch(() => {
     throw new Error(`no service at ${url}`)
   })
-  if (response.status !== 200) throw new Error(`handshake HTTP ${response.status} from ${url}`)
+  if (response.status !== 200)
+    throw new Error(`handshake HTTP ${response.status} from ${url}: ${(await response.text().catch(() => "")).slice(0, 500)}`)
   const body: unknown = await response.json()
   const output = typeof body === "object" && body !== null && "output" in body ? body.output : undefined
   const result = await Schema.decodeUnknownPromise(KeteHandshakeRpc.Result)(output)
