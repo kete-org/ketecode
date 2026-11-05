@@ -171,6 +171,9 @@ export function profile(policy: Policy): Profile {
     "(deny job-creation)",
   )
 
+  if (policy.noLinks)
+    lines.push("", "; Work mode: no new symlinks or hard links.", "(deny file-write-create (vnode-type SYMLINK))", "(deny file-link)")
+
   if (!policy.network) {
     lines.push(
       "",

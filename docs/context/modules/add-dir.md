@@ -1,10 +1,11 @@
 ---
 module: add-dir
 paths: [packages/core/src/kete/add-dir.ts, packages/core/src/kete/add-dir-plugin.ts, packages/schema/src/kete/add-dir.ts, packages/cli/src/kete/add-dir.ts, packages/tui/src/kete/add-dir.tsx]
-verified-at: 063cfce610
+verified-at: ce02e0bcc9
 ---
 
 ## Quick answers
+- Does Work mode use the folders? Yes: `kete/work-mode.ts:148-149` allows exactly the location plus `KeteAddDir.live` folders for `read`/`edit`/`external_directory`/`glob`/`grep`/shell `workdir`, by real path (`permissions` card).
 - Does import stripping chain? Yes: `session/transfer.ts` wraps it as `KeteShareRecord.without(KeteAddDir.withoutDirs(...))`, so an import brings neither extra folders nor a share record.
 - How does a session get extra working folders? Session metadata key `kete.dirs` (list of real paths; `add-dir.ts:30`), set by `kete --add-dir <path>` (repeat, max 10), `kete run --add-dir`, or the `/add-dir` command (`add-dir-plugin.ts:133` (`ctx.command.transform`)). Subagents inherit the root session's folders.
 - Where is a folder validated? `KeteAddDir.validate` (`add-dir.ts:97`), called by `guard` (`:128`), which `Session.setMetadata` and `Session.create` run (`session/session.ts:84`, `session.ts:263`); a refusal is a defect (`RefusedError`), so clients pre-check through RPC `kete.add-dir` `check` (`schema/src/kete/add-dir.ts`). Refused: file-system root, home or above, credential folders (`SECRET` in `add-dir.ts:26`: `SECRET_HOME_DIRS` `memory-imports.ts:79`, sandbox `credentials`, `Library`), PATH folders, anything inside the workspace, wildcard characters, more than `MAX`; always refused in job mode.

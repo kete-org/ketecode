@@ -1,10 +1,13 @@
 ---
 module: audit-log
 paths: [packages/core/src/kete/audit.ts, packages/util/src/kete/redact.ts, packages/util/src/kete/job-audit-sink.ts]
-verified-at: 3c3e792370
+verified-at: ce02e0bcc9
 ---
 
 ## Quick answers
+- Where do Work refusals go? `work_refusal` lines (`WorkRefusalLine`, `audit.ts:143`, part of `Line` `:151`: `rule` tool/files/shell/network, `tool`, `input` as JSON text, `message`) written by `KeteAudit.appendWork` (`audit.ts:386`) for any session family, not only unattended: it makes `<data>/audit/` (0700) first (`append`/`create` do not; `create` only writes a first line) then appends with "always". `kete/work-mode.ts` owns its writer state (`makeWriterState`), so its per-root mutex and byte count are separate from the unattended writer's on the same file. A failed write is logged and the refusal still stands (no interrupt).
+- Can the audit log be written for a non-unattended session? Not as built: handlers return early unless `KeteUnattendedPolicy.resolve` says unattended (`audit.ts:483`, `:503`, `:587`); the file writer is `<Global.data>/audit/<root>.jsonl` (`audit.ts:149`), appended at `audit.ts:369`.
+- Does redaction know Kete's own keys? Yes: `kete_(live|test)_…` is in `keyShapes` (`util/src/kete/redact.ts:43`).
 - Is `KeteRedact` used elsewhere? Yes, a second user: the session-share snapshot (`core/src/kete/share/snapshot.ts`) uses the same window -> redact -> cap order. Card `session-share`.
 - Where does the log live in a job (piece A3)? Nowhere on disk: with job mode on, `storageFor()`
   (`audit.ts:229`) picks the **sink** storage (`sinkStorage`, `:226`), whose destination is the

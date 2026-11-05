@@ -431,6 +431,52 @@ describe("KeteAudit handlers", () => {
   })
 })
 
+describe("KeteAudit.appendWork", () => {
+  test("a Work refusal creates the directory (0700) and file (0600) and redacts a secret in its input", async () => {
+    await Effect.runPromise(
+      withTempDir(({ path: dir }) =>
+        Effect.gen(function* () {
+          const writer = KeteAudit.makeWriterState(dir, KeyedMutex.makeUnsafe<string>())
+          const line: KeteAudit.WorkRefusalLine = {
+            v: 1,
+            ts: new Date().toISOString(),
+            type: "work_refusal",
+            session_id: rootID,
+            root_id: rootID,
+            rule: "tool",
+            tool: "memory",
+            input: JSON.stringify({ token: "sk-ant-abcdefghijklmnopqrstuvwx0123" }),
+            message: "Work mode: the memory tool is not available.",
+          }
+          yield* KeteAudit.appendWork(writer, rootID, line)
+          yield* KeteAudit.appendWork(writer, rootID, line)
+          const text = yield* Effect.promise(() => readFile(path.join(dir, "audit", `${rootID}.jsonl`), "utf8"))
+          expect(text).not.toContain("sk-ant-abcdefghijklmnopqrstuvwx0123")
+          expect(text.trim().split("\n")).toHaveLength(2)
+          expect(JSON.parse(text.split("\n")[0]!)).toMatchObject({ type: "work_refusal", rule: "tool", tool: "memory" })
+          if (process.platform !== "win32") {
+            expect((yield* Effect.promise(() => stat(path.join(dir, "audit", `${rootID}.jsonl`)))).mode & 0o777).toBe(0o600)
+            expect((yield* Effect.promise(() => stat(path.join(dir, "audit")))).mode & 0o777).toBe(0o700)
+          }
+        }),
+      ),
+    )
+  })
+
+  test("a root id that isn't an id is a write error, never a path", async () => {
+    await Effect.runPromise(
+      withTempDir(({ path: dir }) =>
+        Effect.gen(function* () {
+          const writer = KeteAudit.makeWriterState(dir, KeyedMutex.makeUnsafe<string>())
+          const line = { v: 1, ts: "", type: "work_refusal", session_id: "x", root_id: "../x", rule: "files", tool: "read", message: "m" } as const
+          const exit = yield* Effect.exit(KeteAudit.appendWork(writer, "../x", line))
+          expect(exit._tag).toBe("Failure")
+        }),
+      ),
+    )
+  })
+})
+
 describe("KeteAudit.append", () => {
   test("redact: a tool line's input and excerpt are redacted before being written", async () => {
     await Effect.runPromise(
