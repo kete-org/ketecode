@@ -1874,3 +1874,19 @@ still says the user switches agents, so Plan mode requests also get a short Kete
 
 **Sync checklist:** if upstream adds its own plan-exit tool or changes the Plan reminder, compare and drop
 ours or the extra reminder.
+
+## Session mode (WS1 1.2)
+
+`core/src/kete/session-mode.ts` owns the session metadata key `kete.sessionMode` (`code` | `work`): it is
+validated and fixed at create, a child stays in its parent's mode, and a Work session stores its profile's
+agent as the session's `agent` at create (a child that names no agent gets its mode's agent, not the parent's current one). Session hooks can't fail, so the refusals are plain guard calls, like
+`KeteAddDir.guard` and `KeteUnattendedPolicy.guardMetadata` beside them. Storing the agent at create means
+every `Agent.select(session.agent)` caller agrees without editing `agent.ts` or those callers.
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `core/src/session.ts` | Import; `moded` guard line in `create`; `agent:` falls back to the mode's agent; `metadata:` uses `moded` | session hooks can't refuse a create |
+| `core/src/session/session.ts` | Import; `KeteSessionMode.guardMetadata` in `setMetadata` | session hooks can't refuse an update |
+| `core/src/session/transfer.ts` | Import; `metadata` runs through `KeteSessionMode.guardCreate` before `Created` (an import would otherwise bypass the create check) | import publishes `Created` itself |
+
+**Sync checklist:** if upstream adds a session mode or typed session kind, compare and drop ours.

@@ -1,10 +1,11 @@
 ---
 module: config-kete
 paths: [packages/schema/src/config/kete.ts, packages/schema/src/config.ts, packages/core/src/config/normalize.ts, packages/core/src/config/discovery.ts, packages/core/src/config.ts]
-verified-at: 4b77172c15
+verified-at: 08f5855d87
 ---
 ## Quick answers
 - Where are the Work/Code mode profiles and can users edit them? `core/src/kete/modes/{code,work}.jsonc`, loaded by `core/src/kete/modes.ts` (`KeteModes`: `list`/`get`/`summaries`/`available`); schema `KeteModesRpc.Profile` in `schema/src/kete/modes.ts`. They are not user config: embedded at build time and decoded strictly at module load, so a bad profile fails the runtime (tests `core/test/kete/modes.test.ts`, `schema/test/kete/modes.test.ts`).
+- When are mode profiles read, and what does `available: false` do? At session create: `KeteSessionMode.guardCreate` (`core/src/kete/session-mode.ts:52`) looks the profile up with `KeteModes.get` and dies with `RefusedError` if `available` is false or the value isn't a mode; a child must match its parent's mode. The profile's agent becomes the session's agent (`core/src/session.ts:316`).
 - How is a non-code file embedded in the binary? Bun import: `import x from "./f.md" with { type: "text" }` (`core/src/models-dev.ts:18`, `core/src/kete/skill.ts:22`), or a plain `.jsonc` import that Bun parses at bundle time (`core/src/kete/modes.ts:8-9`); no runtime file read, so no install-path lookup.
 - How do I reject unknown keys when decoding? Pass `onExcessProperty: "error"` to the Effect Schema decoder: `core/src/kete/modes.ts:11`, `core/src/kete/unattended-policy.ts:88` (`doctor.ts:28` uses `"ignore"` on purpose).
 - How does folder trust affect config loading? `Config.load` (`packages/core/src/config.ts:285`) loads project files raw, then `folderTrust.gate(assemble, ...)` (`:397`, `KeteFolderTrust` in `core/src/kete/folder-trust.ts`) holds back guarded project settings until the folder is trusted and substitutes `{file:}`/`{env:}` from the fingerprinted text (`configTexts` `:136`); `folderTrust.changes()` triggers a reload (`:500`). Markers are `kete_change`.
