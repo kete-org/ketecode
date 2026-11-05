@@ -16,7 +16,7 @@ The implementer had no shell; the main session ran every check and fixed the scr
 | `bun run lint`, `upstream:check` | exit 0; pass |
 | `verify --base main` | not run: it covers util/server/core/tui/cli, none touched |
 | Local AC2, macOS arm64, `OPENCODE_CHANNEL=dev` pack | 4/4 pass (last after the review fixes): ready 4.8–5.2 s, restart 5.5 s each; no app or runtime process left; temp dirs removed |
-| CI AC3 | see PR checks |
+| CI AC3 | both jobs pass: macOS ready 10.5 s, restart 6.9 s; Windows ready 4.4 s, restart 6.0 s |
 | Review | reviewer: changes needed (2 major: Windows paths unverified, Windows cleanup; 4 minor) → Windows cleanup awaits `taskkill` per runtime pid, `rm` failure is a warning, not-found error lists the dir, step timeout 10 min, docs note; Windows layout checked by this PR's Windows job (AC3). Not done: redacting a password from a registration that fails to decode (low risk) |
 
 Local-run fixes to the implementer's script: the registration lives under the test root with a channel-dependent
@@ -27,12 +27,22 @@ port avoids the dev channel's fixed port (taken by an installed `kete serve` her
 ## Acceptance criteria
 - [x] AC1 — unit tests: `findApp`, `executable`, `smokeEnv`, `registrationDir`, `findRegistration` (channel-named file), `readRegistration` (missing/partial/invalid), `appConnected`, `writeServiceConfig`/`freePort`, `handshakeRequest`, `redact`.
 - [x] AC2 — three local runs pass (above).
-- [ ] AC3 — CI on this PR (macOS and Windows).
+- [x] AC3 — CI on this PR (macOS and Windows).
 - [x] AC4 — tests with a fake service: wrong protocol and missing `code` rejected, no service → "no service at …"; `--app /nonexistent` exits 1 with a clear message.
 - [x] AC5 — checklist in `docs/desktop.md`; checks above.
 
 Observed: kill→ready 5.5 s for the packaged app on an M-series Mac, against the 5 s target (detection about
 0.5–1 s, runtime start about 4.5 s). The script reports it; it fails only past 60 s.
+
+## Windows findings (first run of the packaged app on Windows)
+- CI bundled the **published** CLI on Windows: `OPENCODE_TARGET=windows-x64` made the CLI build produce `cli-windows-x64` while the
+  desktop bundles `cli-windows-x64-baseline`, so the desktop build silently downloaded `@ketecode/cli-windows-x64@latest` (no
+  `kete.handshake`). The workflow now builds the bundled target and fails if it is missing. Release builds were not affected.
+- The test root lost its state dir on Windows: upstream's `preferApplicationEnvironment` drops `XDG_STATE_HOME` unless a login shell
+  sets it, and Windows reads none. One marked line keeps it under `OPENCODE_DESKTOP_TEST_ROOT` (real installs unaffected).
+- Overriding `USERPROFILE` broke Windows known folders (Documents); the smoke now keeps it.
+- On failure the smoke prints the runtime's own output (run with pipes and detached), a Windows process/port snapshot, the
+  runtime log's warnings and errors, and handshake probes with and without a directory.
 
 ## Cards updated
 desktop, kete-tools-ci (smoke script, workflow step, same-channel rule, fixed dev port, test root, inherited stdio).
