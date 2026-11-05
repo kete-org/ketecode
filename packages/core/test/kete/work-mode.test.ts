@@ -95,23 +95,24 @@ const before = (d: KeteWorkMode.Deps, session: string, tool: string, input: unkn
   )
 
 describe("work mode files", () => {
-  const cases: Array<[string, string, string, boolean]> = [
-    // [name, action, resource, allowed]
-    ["a file in the location", "read", "a.txt", true],
-    ["a new file in a new folder of the location", "edit", "new/dir/f.txt", true],
-    ["a granted folder's file", "read", path.join(granted, "f.txt"), true],
-    ["a sibling folder of the project", "read", "../sibling/x.txt", false],
-    ["an absolute path outside", "read", path.join(outside, "secret.txt"), false],
-    ["a ../ path out", "edit", "../x.txt", false],
-    ["a symlink inside leading outside", "read", "link/secret.txt", false],
-    ["a new file through a symlink leading outside", "edit", "link/new.txt", false],
-    ["a granted directory", "external_directory", path.join(granted, "*"), true],
-    ["an outside directory", "external_directory", path.join(outside, "*"), false],
-    ["the file-system root", "external_directory", "/*", false],
-    ["a sibling directory", "external_directory", path.join(sibling, "*"), false],
+  const cases: Array<[string, string, () => string, boolean]> = [
+    // [name, action, resource, allowed]; resources are thunks: the folders exist only after beforeAll
+    ["a file in the location", "read", () => "a.txt", true],
+    ["a new file in a new folder of the location", "edit", () => "new/dir/f.txt", true],
+    ["a granted folder's file", "read", () => path.join(granted, "f.txt"), true],
+    ["a sibling folder of the project", "read", () => "../sibling/x.txt", false],
+    ["an absolute path outside", "read", () => path.join(outside, "secret.txt"), false],
+    ["a ../ path out", "edit", () => "../x.txt", false],
+    ["a symlink inside leading outside", "read", () => "link/secret.txt", false],
+    ["a new file through a symlink leading outside", "edit", () => "link/new.txt", false],
+    ["a granted directory", "external_directory", () => path.join(granted, "*"), true],
+    ["an outside directory", "external_directory", () => path.join(outside, "*"), false],
+    ["the file-system root", "external_directory", () => "/*", false],
+    ["a sibling directory", "external_directory", () => path.join(sibling, "*"), false],
   ]
-  for (const [name, action, resource, allowed] of cases) {
+  for (const [name, action, at, allowed] of cases) {
     test(`files: ${name} is ${allowed ? "allowed" : "denied"}; a Code session is untouched`, async () => {
+      const resource = at()
       const d = deps()
       const work = await evaluate(d, ids.work, action, [resource], "ask")
       expect(work.effect).toBe(allowed ? "ask" : "deny")
