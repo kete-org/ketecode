@@ -1966,3 +1966,18 @@ keymap's `dispatch` event and `key:after` intercept through `useKeymap()`; no ke
 
 **Sync checklist:** if upstream adds its own variant up/down commands or a key debugging view, compare
 and drop ours.
+
+## Transcript search and the copy picker (feature/transcript-search)
+
+`tui/src/kete/transcript-search.tsx` adds `session.search` (`<leader>/`, `/find`): a bar above the prompt that
+finds text in the session's rendered text nodes and highlights the current match with the renderer's
+selection. `tui/src/kete/copy-picker.tsx` adds the copy picker (response, one code block, transcript).
+
+| File | Change | Why no seam |
+| --- | --- | --- |
+| `tui/src/routes/session/index.tsx` | Imports; the search controller after `ensureAllRows`; the bar after the `session.composer.top` slot; the prompt `disabled` while the bar is open (so it can't take the focus back); `messages.copy` opens the picker instead of copying (its last five lines) | the search needs the route's scroll box and `ensureAllRows` (tail-first mounting); the slot gets neither |
+| `tui/src/routes/session/dialog-message.tsx` | Copy on a reply with code blocks opens the picker | the dialog's options are a literal list |
+| `tui/src/config/keybind.ts` | `session.search` default | keybind defaults are one upstream table |
+
+**Sync checklist:** if upstream adds transcript search or per-block copy, compare and drop ours; if
+`messages.copy`'s run changes, re-apply the picker at its end.

@@ -48,3 +48,4 @@ about 10 tasks, drop any agent that isn't saving calls.
 | 2026-11-05 | file-tools-verify-open | large | planner, implementer (no shell), reviewer, upstream-guard, security-reviewer, librarian | 0 | – | – | n/a | n/a |
 | 2026-11-05 | ws0-electron-e2e | large | librarian ×2, planner, implementer (no shell), reviewer | 0 | – | – | n/a | n/a |
 | 2026-11-05 | ws1-mode-switch | large | scout, librarian, planner, implementer (no shell), reviewer, upstream-guard, accessibility-reviewer | 1 | 0 | 0% | n/a | n/a |
+| 2026-11-05 | transcript-search (parity C1) | medium | typescript-reviewer (built in the main session) | 0 | – | – | n/a | n/a |

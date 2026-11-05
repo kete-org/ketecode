@@ -10,6 +10,7 @@ import { DialogFork } from "./dialog-fork"
 import { usePromptRestore } from "../../prompt/restore"
 import { useNewDesigns } from "../../config"
 import { appendToSessionPrompt } from "../../component/prompt/draft-stash"
+import { codeBlocks, DialogKeteCopy } from "../../kete/copy-picker" // kete_change
 
 export function DialogMessage(props: { messageID: string; sessionID: string }) {
   const data = useData()
@@ -66,6 +67,12 @@ export function DialogMessage(props: { messageID: string; sessionID: string }) {
                   : "text" in value
                     ? value.text
                     : ""
+            // kete_change start: a reply with code blocks opens the copy picker (kete/copy-picker.tsx)
+            if (value.type === "assistant" && codeBlocks(text).length > 0) {
+              dialog.replace(() => <DialogKeteCopy text={text} />)
+              return
+            }
+            // kete_change end
             try {
               await clipboard.write(text)
               dialog.clear()

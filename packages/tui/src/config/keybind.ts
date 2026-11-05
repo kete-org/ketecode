@@ -196,6 +196,7 @@ export const Definitions = {
   "session.message.user.previous": keybind("none", "Navigate to previous user message"),
   "session.messages_last_user": keybind("alt+end", "Navigate to last user message"),
   "messages.copy": keybind("<leader>y", "Copy message"),
+  "session.search": keybind("<leader>/", "Search this session"), // kete_change: kete/transcript-search.tsx
   "session.undo": keybind("<leader>u", "Undo message"),
   "session.redo": keybind("<leader>r", "Redo message"),
   "session.toggle.thinking": keybind("none", "Toggle thinking blocks visibility"),
