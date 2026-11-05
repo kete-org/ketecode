@@ -24,7 +24,7 @@ The implementer had no shell; the main session ran every check.
 | core `bun run test ./test/kete` | 1813 pass / 12 skip / 0 fail |
 | server `bun run test ./test/kete` | 49 pass |
 | `bun run lint`, `upstream:check` | exit 0; pass |
-| `verify --base main` | see PR |
+| `verify --base main` | 0 new failures in util, server, core, tui, cli |
 | Review | reviewer: approve (minors: duplicate refusal text, job-mode note, verify) |
 | Security review | 1st pass: high (symlink race between the file tools' check and their I/O), medium (worktree subagent and setup script bypass), low (job mode skipped Work) → fixed as above. 2nd pass: medium/low closed; high **narrowed, not closed** (see below) |
 
