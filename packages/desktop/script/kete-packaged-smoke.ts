@@ -8,6 +8,7 @@ import { KeteHandshakeRpc } from "@opencode/schema/kete/handshake"
 import { Brand } from "@opencode/util/kete/brand"
 import { KeteDesktop } from "@opencode/util/kete/desktop"
 import { Schema } from "effect"
+import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -48,6 +49,8 @@ export function smokeEnv(root: string, base: Env): Env {
     XDG_CACHE_HOME: path.join(root, "cache"),
     XDG_STATE_HOME: path.join(root, "state"),
     OPENCODE_DESKTOP_TEST_ROOT: path.join(root, "app"),
+    // The runtime's kete.log is the only trace of a start-up that hangs.
+    OPENCODE_LOG_LEVEL: "DEBUG",
   }
 }
 
@@ -173,7 +176,8 @@ function kill(pid: number, signal: NodeJS.Signals) {
   }
 }
 
-/** On failure: run the CLI the app staged once, in the same env, and return what it prints (the app only logs its start). */
+/** On failure: run the CLI the app staged, in the same env, once with pipes and once spawned the way the app's
+ *  client does (detached, stdout ignored), and report what it prints and whether it registers. */
 async function diagnoseRuntime(testRoot: string, env: Env) {
   const cli = path.join(testRoot, "desktop", "cli")
   const stage = (await fs.readdir(cli).catch(() => []))[0]
@@ -181,11 +185,41 @@ async function diagnoseRuntime(testRoot: string, env: Env) {
   const exe = path.join(cli, stage, process.platform === "win32" ? "opencode-cli.exe" : "opencode-cli")
   // The XDG dirs the app gives its runtime (main/lifecycle/configure.ts `createTestRoot`).
   const dirs = Object.fromEntries(["data", "config", "cache", "state"].map((d) => [`XDG_${d.toUpperCase()}_HOME`, path.join(testRoot, d)]))
-  const child = Bun.spawn([exe, "serve", "--service"], { env: { ...env, ...dirs } as Record<string, string>, stdout: "pipe", stderr: "pipe" })
-  const timer = setTimeout(() => child.kill(), 15_000)
-  const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
-  clearTimeout(timer)
-  return `${exe} serve --service exited ${code}\n${out}${err}`.slice(-8_000)
+  const runEnv = { ...env, ...dirs }
+  const registrations = path.join(testRoot, "state", Brand.appDirectory)
+  const report: string[] = []
+  for (const mode of ["pipes", "detached"] as const) {
+    await fs.rm(registrations, { recursive: true, force: true })
+    const started = Date.now()
+    const child =
+      mode === "pipes"
+        ? spawn(exe, ["serve", "--service"], { env: runEnv, stdio: ["ignore", "pipe", "pipe"] })
+        : spawn(exe, ["serve", "--service"], { env: runEnv, stdio: ["ignore", "ignore", "pipe"], detached: true, windowsHide: true })
+    let output = ""
+    child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()))
+    child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()))
+    const file = await until(`${mode}: registration`, 20_000, () => findRegistration(registrations)).catch(() => undefined)
+    report.push(`${mode}: ${file ? `registered ${path.basename(file)} after ${((Date.now() - started) / 1000).toFixed(1)} s` : "no registration in 20 s"}`)
+    if (process.platform === "win32" && child.pid) await taskkill(child.pid)
+    else child.kill("SIGKILL")
+    await new Promise((resolve) => (child.exitCode !== null ? resolve(undefined) : child.once("exit", resolve)))
+    report.push(`${mode}: exit ${child.exitCode ?? child.signalCode}\n${output.slice(-4_000)}`)
+  }
+  return report.join("\n")
+}
+
+/** Windows only, before the app is stopped: the runtime processes and what they listen on. */
+async function windowsSnapshot() {
+  const script =
+    "Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'opencode-cli*' -or $_.Name -like 'Kete Code*' } | " +
+    "Format-Table ProcessId,ParentProcessId,Name,CommandLine -AutoSize -Wrap | Out-String -Width 400; " +
+    "$ids = (Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'opencode-cli*' }).ProcessId; " +
+    "Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $ids -contains $_.OwningProcess } | " +
+    "Format-Table LocalAddress,LocalPort,OwningProcess -AutoSize | Out-String"
+  const child = Bun.spawn(["powershell", "-NoProfile", "-Command", script], { stdout: "pipe", stderr: "pipe" })
+  const [out, err] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])
+  await child.exited
+  return out + err
 }
 
 async function taskkill(pid: number) {
@@ -258,6 +292,10 @@ async function main() {
     console.log(`restart ${((Date.now() - killed) / 1000).toFixed(1)} s (target 5 s, ceiling 60 s)`)
   } catch (cause) {
     failure = cause
+    if (process.platform === "win32" && appProcess) {
+      const listing = await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: path.join(root, "app", "state"), onlyFiles: true })).catch(() => [])
+      console.error("--- runtime processes (app still running)\n" + (await windowsSnapshot()) + `state files: ${listing.join(", ") || "none"}`)
+    }
   } finally {
     if (appProcess) {
       if (process.platform === "win32") {
